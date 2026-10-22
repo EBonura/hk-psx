@@ -6,7 +6,8 @@ license = "GPL-2.0-or-later"
 description = "hk-psx's cookers in Rust: the original install to cooked PS1 data"
 
 [dependencies]
-ab_glyph = { version = "0.2", default-features = false, features = ["std"] }
+ab_glyph_rasterizer = "0.1"
+ttf-parser = "0.25"
 hk-dotnet = { path = "../hk-dotnet" }
 hk-format = { path = "../../shared/hk-format" }
 hk-lz4 = { path = "../hk-lz4" }

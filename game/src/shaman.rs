@@ -519,7 +519,7 @@ mod live {
                     SPELL_LINE,
                 );
                 for (i, line) in SPELL_NOTE.iter().enumerate() {
-                    panel_text(160 - panel_width(line) / 2, 130 + i as i16 * 14, line);
+                    panel_text(160 - panel_width(line) / 2, 130 + i as i16 * 16, line);
                 }
                 true
             }

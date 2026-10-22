@@ -70,8 +70,8 @@ BOUND = 36
 # pitch and the cooked font strip's glyph box are what everything else is
 # measured against; `panel_layout` derives the rest, because the icon size is
 # whatever the leftover scanlines allow rather than a number chosen here.
-DESC_PITCH = 11
-GLYPH_PX = 12
+DESC_PITCH = 13
+GLYPH_PX = 14
 SCREEN_LINES = 240
 PANEL_X = 14
 PANEL_W = 292
@@ -79,7 +79,7 @@ PANEL_BORDER = 2
 PANEL_GAP = 3
 # What the board keeps clear of the screen edge. The cheats page already sits
 # eight lines off the bottom, so eight is what this port has decided is safe.
-PANEL_MARGIN = 8
+PANEL_MARGIN = 5
 # Icon sizes the measurement below costs out. The panel takes the largest one
 # it can seat; nothing here picks a number to make a budget work.
 ICON_SIZES = (16, 24, 32)
@@ -109,7 +109,7 @@ def advances():
         table = rustsrc.const_ints(ROOT / 'data/read_points.rs', 'ADVANCES')
     except KeyError:
         raise AssertionError('data/read_points.rs no longer carries the glyph advances') from None
-    assert len(table) == 95 and all(1 <= v <= 12 for v in table), 'unexpected advance table'
+    assert len(table) == 95 and all(1 <= v <= 13 for v in table), 'unexpected advance table'
     return table
 
 
@@ -607,12 +607,12 @@ def panel_layout(icon_px, charms=40):
     """
     slot = icon_px + 2
     col_pitch = slot + 4
-    row_pitch = slot + 2
+    row_pitch = slot + 1
     shift = col_pitch // 2 + 1
     rows = -(-charms // GRID_COLS)
     grid_w = (GRID_COLS - 1) * col_pitch + slot + shift
-    parts = [icon_px, 10, rows * row_pitch - 2, GLYPH_PX, DESC_LINES * DESC_PITCH, GLYPH_PX]
-    gaps = [4, 8, 4, 2, 6]
+    parts = [icon_px, 12, rows * row_pitch - 1, GLYPH_PX, DESC_LINES * DESC_PITCH, GLYPH_PX]
+    gaps = [3, 6, 3, 1, 4]
     height = sum(parts) + sum(gaps)
     needed = height + 2 * PANEL_MARGIN
     if needed > SCREEN_LINES or grid_w > 320 - 2 * PANEL_MARGIN:

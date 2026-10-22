@@ -17,6 +17,7 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/title_cards.rs"
 ));
+use crate::menu::state::{FONT_PAGE_Y, FONT_X, GLYPH_H, GLYPH_W};
 use crate::persist::{self, Kind};
 
 const NONE: u8 = u8::MAX;
@@ -190,20 +191,20 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
         let i = (b - 32) as usize;
         if b != b' ' && unsafe { USED } < GLYPHS {
             let u = crate::dialogue::glyph_u(i) as u8;
-            let page = (i / 21 * 64) as u16;
+            let v = crate::dialogue::glyph_v(i) as u8;
             let clut = Clut::new(320, 481).uv_clut_word();
             // Added to the view: the glyph palette is semi-transparent (font_strip.rs).
-            let tpage = Tpage::new(page, 256, TexDepth::Bit4).uv_tpage_word(1);
+            let tpage = Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1);
             unsafe {
                 if scale == 1 {
-                    // A 12x12 rectangle samples texel for texel: exact.
+                    // A glyph-sized rectangle samples texel for texel: exact.
                     RECTS[USED] = Rect {
                         tag: 0,
                         mode: 0xe100_0000 | tpage as u32,
                         color: 0x6600_0000 | u32::from(level) * 0x0001_0101,
                         xy: x as u16 as u32 | ((y as u16 as u32) << 16),
-                        uv: u32::from(u) | (244 << 8) | (u32::from(clut) << 16),
-                        wh: 12 | (12 << 16),
+                        uv: u32::from(u) | (u32::from(v) << 8) | (u32::from(clut) << 16),
+                        wh: GLYPH_W as u32 | ((GLYPH_H as u32) << 16),
                     };
                 } else {
                     // A polygon seeds its texture coordinate half a texel in and steps a
@@ -213,11 +214,13 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
                     // 11 rows from the blank top row over 22 pixels (row 255 is the last
                     // texel there is). That shows 11 of the 12 rows, 2 pixels each, with
                     // only the last row of a descender halved.
-                    let (w, h) = (12 * scale, 11 * scale);
+                    let (gw, gh) = (GLYPH_W as i16, GLYPH_H as i16 - 1);
+                    let (w, h) = (gw * scale, gh * scale);
                     let y = y + scale / 2;
+                    let (u1, v1) = (u + GLYPH_W as u8 - 1, v + GLYPH_H as u8 - 1);
                     QUADS[USED] = QuadTextured::with_material(
                         [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
-                        [(u - 1, 244), (u + 11, 244), (u - 1, 255), (u + 11, 255)],
+                        [(u - 1, v), (u1, v), (u - 1, v1), (u1, v1)],
                         TextureMaterial::blended(clut, tpage, (level, level, level), BlendMode::Add),
                     );
                 }
@@ -261,9 +264,9 @@ pub fn prepare(paused: bool) {
     if !sup.is_empty() {
         line(sup, y, 1, level, centre);
     }
-    line(main, y + 14, 2, level, centre);
+    line(main, y + 16, 2, level, centre);
     if !sub.is_empty() {
-        line(sub, y + 42, 1, level, centre);
+        line(sub, y + 50, 1, level, centre);
     }
 }
 pub fn append(ot: &mut OrderingTable<1>) {

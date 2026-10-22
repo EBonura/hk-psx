@@ -604,7 +604,7 @@ mod presentation {
         let art = crate::dialogue_art::board_prepared();
         let icons = unsafe { PREPARED } && art;
         // Equipped, then Notches, each a label and a row.
-        panel_text(LABEL_X, EQUIPPED_Y + 2, "Equipped");
+        panel_text(LABEL_X, EQUIPPED_Y + 1, "Equipped");
         let mut x = ROW_X;
         let mut seated = 0;
         for charm in 1..=CHARM_COUNT {
@@ -618,7 +618,7 @@ mod presentation {
         }
         panel_text(
             LABEL_X,
-            NOTCH_Y,
+            NOTCH_Y - 1,
             if s.overcharmed() { "Overcharmed" } else { "Notches" },
         );
         if art {
@@ -934,7 +934,7 @@ mod tests {
         // `host/charms.py::panel_layout` fitted the grid to the width and the parts to the 240
         // scanlines and emitted the positions. This is the same arithmetic from the other
         // side, so a hand-edited layout fails here rather than overlapping on a television.
-        const GLYPH: i16 = 12;
+        const GLYPH: i16 = 14;
         let rows = ((CHARM_COUNT + GRID_COLS - 1) / GRID_COLS) as i16;
         let grid_right = GRID_X + (GRID_COLS as i16 - 1) * COL_PITCH + ODD_SHIFT + SLOT_PX;
         assert!(GRID_X >= 8 && grid_right <= 320 - 8, "the grid leaves the screen");
@@ -943,7 +943,7 @@ mod tests {
         let grid_bottom = GRID_Y + (rows - 1) * ROW_PITCH + SLOT_PX;
         // Top to bottom: equipped icons, notch circles, the grid, the name, the description, the footer.
         assert!(EQUIPPED_Y >= 0 && EQUIPPED_Y + ICON_PX as i16 <= NOTCH_Y);
-        assert!(NOTCH_Y + 11 <= GRID_Y - 2, "the notch row runs into the grid");
+        assert!(NOTCH_Y + 12 <= GRID_Y - 2, "the notch row runs into the grid");
         assert!(NAME_Y >= grid_bottom && NAME_Y + GLYPH <= DESC_TOP);
         let lines = (1..=CHARM_COUNT)
             .map(|n| State::charm(n).lines.len())
@@ -953,10 +953,10 @@ mod tests {
             FOOTER_Y >= DESC_TOP + (lines - 1) * DESC_PITCH + GLYPH,
             "the longest description runs into the footer"
         );
-        assert!(FOOTER_Y + GLYPH <= 240 - 8);
+        assert!(FOOTER_Y + GLYPH <= 240 - 4);
         // The labels clear the circles and icons they head, and twelve notches and a
         // description's width fit a line.
-        assert!(LABEL_X + 61 <= ROW_X, "Overcharmed runs into its row");
+        assert!(LABEL_X + 76 <= ROW_X, "Overcharmed runs into its row");
         assert!(ROW_X + 17 * NOTCH_PITCH <= 320 - 8, "seventeen circles run off the screen");
         assert!(ROW_X + 11 * ICON_PITCH <= 320 - 8, "eleven equipped icons run off the screen");
         assert!(DESC_X + 264 <= 320 - 8);

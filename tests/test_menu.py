@@ -15,7 +15,7 @@ class MenuRuntimeTests(unittest.TestCase):
             art=struct.pack('<8sHHI',b'HKMENU03',320,240,pixels)+bytes(512+pixels)+bytes([6]*95+[0])
             # The disc chunk carries the glyph sheet right after the title art
             # (host/build_guest.py boot_art), then the title's ornaments (3,576 bytes); MENU_BYTES is the title art alone.
-            (root/'data/menu.hk').write_bytes(art+bytes(7712+3576))
+            (root/'data/menu.hk').write_bytes(art+bytes(12832+3576))
             # The art is read from the disc now; the guest links only its size,
             # checksum and glyph advances, which host/cook_menu.py generates.
             (root/'data/menu.rs').write_text(f'pub const MENU_BYTES:usize={len(art)};\npub const MENU_CHECKSUM:u32=0;\n'

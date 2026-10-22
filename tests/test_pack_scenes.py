@@ -21,10 +21,10 @@ def atlases_for(scenes):
 
 class PackScenes(unittest.TestCase):
     def test_largest_scene_uses_full_arena_then_immutable_aligned_prefix(self):
-        out=allocate_scenes([entry(1,116756,1,141,[2]),entry(0,929692,18,1065,[1,3])],arena_bytes=1069056)
+        out=allocate_scenes([entry(1,116756,1,141,[2]),entry(0,929692,18,665,[1,3])],arena_bytes=1069056)
         self.assertEqual([e['scene_id']for e in out],[0,1])
         self.assertEqual([(e['ram_offset'],e['arena_capacity'])for e in out],[(0,1069056),(929692,139364)])
-        self.assertEqual([(e['page_base'],e['palette_base'])for e in out],[(0,0),(18,1065)])
+        self.assertEqual([(e['page_base'],e['palette_base'])for e in out],[(0,0),(18,665)])
         self.assertEqual([e['chunk_id']for e in out],[1,2])
         odd=allocate_scenes([entry(0,1001,1,1,[1]),entry(1,8,1,1,[2])],arena_bytes=1024)
         self.assertEqual(odd[1]['ram_offset'],1004)
@@ -37,22 +37,22 @@ class PackScenes(unittest.TestCase):
         """
         from pack_scenes import MAX_PAGES
         self.assertEqual(MAX_PAGES,19)
-        gate=allocate_scenes([entry(0,929692,18,1065,[1]),entry(1,116756,9,141,[2])],
+        gate=allocate_scenes([entry(0,929692,18,665,[1]),entry(1,116756,9,141,[2])],
                              arena_bytes=1069056,residency='scene_gate')
         self.assertEqual([e['page_base']for e in gate],[0,0])
         with self.assertRaisesRegex(ValueError,'page'):
-            allocate_scenes([entry(0,929692,18,1065,[1]),entry(1,116756,2,141,[2])],
+            allocate_scenes([entry(0,929692,18,665,[1]),entry(1,116756,2,141,[2])],
                             arena_bytes=1069056)
 
     def test_compact_allocation_and_manifest_keep_full_host_provenance(self):
-        a=entry(0,1000000,18,1000,[1]);a.update(resident_raw_len=300000,resident_stored_len=150000,resident_raw_fnv=31,resident_stored_fnv=41,
+        a=entry(0,1000000,18,600,[1]);a.update(resident_raw_len=300000,resident_stored_len=150000,resident_raw_fnv=31,resident_stored_fnv=41,
             resident_raw_path='compact.hk',resident_stored_path='compact.hlzc',texture_flags=[3,0,0,0])
         b=entry(1,100000,1,100,[2]);b.update(resident_raw_len=40000,resident_stored_len=20000,resident_raw_fnv=51,resident_stored_fnv=61)
         scenes=allocate_scenes([a,b],arena_bytes=350000)
         self.assertEqual(scenes[0]['raw_len'],1000000)
         self.assertEqual(scenes[1]['ram_offset'],300000)
         atlases=atlases_for(scenes)
-        r=dict(scenes=scenes,arena_bytes=350000,raw_resident_bytes=340000,total_pages=19,total_palettes=1100,atlases=atlases)
+        r=dict(scenes=scenes,arena_bytes=350000,raw_resident_bytes=340000,total_pages=19,total_palettes=700,atlases=atlases)
         m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1}]}
         text=manifest(r,m)
         self.assertIn('stored_len:150000,stored_fnv:41,raw_len:300000,raw_fnv:31',text)
@@ -84,7 +84,7 @@ class PackScenes(unittest.TestCase):
         with self.assertRaises(ValueError):allocate_scenes([])
         with self.assertRaises(ValueError):allocate_scenes([entry(0,100,1,1,[1])]*2)
     def test_scene_gate_allocation_reuses_memory_without_joint_limit(self):
-        a=entry(0,320000,18,1068,[1]);b=entry(1,89000,6,408,[2])
+        a=entry(0,320000,18,668,[1]);b=entry(1,89000,6,408,[2])
         out=allocate_scenes([a,b],arena_bytes=369180,residency='scene_gate')
         self.assertEqual([(e['ram_offset'],e['page_base'],e['palette_base'])for e in out],[(0,0,0)]*2)
         self.assertEqual([e['arena_capacity']for e in out],[369180]*2)
@@ -93,7 +93,7 @@ class PackScenes(unittest.TestCase):
             with self.assertRaises(ValueError):allocate_scenes([bad,b],residency='scene_gate')
         with self.assertRaises(ValueError):allocate_scenes([a],residency='invented')
     def test_scene_gate_decoder_routes_only_matching_atlases(self):
-        a=entry(0,320000,18,1068,[1]);b=entry(1,89000,6,408,[2])
+        a=entry(0,320000,18,668,[1]);b=entry(1,89000,6,408,[2])
         for e in (a,b):
             e.update(resident_stored_path='s'+str(e['scene_id']),resident_raw_path='r'+str(e['scene_id']))
         scenes=allocate_scenes([a,b],residency='scene_gate')
@@ -130,9 +130,9 @@ class PackScenes(unittest.TestCase):
 
     def test_atlas_ownership_requires_contiguous_complete_scene_ranges(self):
         for residency in ('joint','scene_gate'):
-            scenes=allocate_scenes([entry(0,600,2,1100,[1]),entry(1,400,1,100,[2])],residency=residency)
+            scenes=allocate_scenes([entry(0,600,2,700,[1]),entry(1,400,1,100,[2])],residency=residency)
             good=atlases_for(scenes)
-            self.assertEqual(atlas_ranges(scenes,good),[(0,4),(4,6)])
+            self.assertEqual(atlas_ranges(scenes,good),[(0,3),(3,5)])
             cases=[good[:-1],good+[dict(good[0])],good[4:]+good[:4]]
             for field,value in [('scene_index',9),('kind',2),('raw_len',32),('count',0),('count',3),('first',1)]:
                 bad=[dict(a)for a in good];bad[0][field]=value;cases.append(bad)
@@ -140,9 +140,9 @@ class PackScenes(unittest.TestCase):
                 with self.subTest(residency=residency,atlases=bad),self.assertRaises(ValueError):atlas_ranges(scenes,bad)
 
     def test_gate_manifest_rejects_joint_totals_or_nonzero_origins(self):
-        scenes=allocate_scenes([entry(0,600,2,1100,[1]),entry(1,400,1,100,[2])],residency='scene_gate')
+        scenes=allocate_scenes([entry(0,600,2,700,[1]),entry(1,400,1,100,[2])],residency='scene_gate')
         report=dict(residency='scene_gate',scenes=scenes,atlases=atlases_for(scenes),arena_bytes=369180,
-                    total_pages=2,total_palettes=1100,raw_resident_bytes=1000)
+                    total_pages=2,total_palettes=700,raw_resident_bytes=1000)
         metadata={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1}]}
         self.assertIn('SCENE_TOTAL_PAGES:usize=2;',manifest(report,metadata))
         for key,value in [('total_pages',3),('total_palettes',1200)]:

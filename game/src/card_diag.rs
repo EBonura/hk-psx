@@ -347,6 +347,6 @@ pub fn overlay() {
             .s(" d")
             .x(dma2, 8)
     };
-    crate::dialogue::panel_text(2, 214, a.as_str());
-    crate::dialogue::panel_text(2, 226, b.as_str());
+    crate::dialogue::panel_text(2, 210, a.as_str());
+    crate::dialogue::panel_text(2, 224, b.as_str());
 }
