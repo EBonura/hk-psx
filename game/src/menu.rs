@@ -50,6 +50,21 @@ const RIGHT: usize = 64 * 240;
 const PATCH: usize = 192 * 32;
 const METRICS: usize = HEADER + PALETTE + LEFT + RIGHT + 2 * PATCH;
 const _: () = assert!(MENU_BYTES == METRICS + 96);
+// The title's ornaments (host/hk-cook/src/dialogue_art.rs): the two flourishes the text
+// panel uses and the menu pointer, uploaded with the title art as one 4bpp strip that the
+// scene art overwrites afterwards.
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu_ornaments.rs"));
+/// Where the strip sits: the title art's own x range, below its status patches, on the
+/// 4bpp page at x 576. Texel rows of each piece are whole halfwords.
+const ORN_X: u16 = 576;
+const ORN_TOP: u16 = 64;
+const ORN_BOTTOM: u16 = ORN_TOP + TITLE_FLEUR_TOP.2 as u16 + 2;
+const ORN_POINTER: u16 = ORN_BOTTOM + TITLE_FLEUR_BOTTOM.2 as u16 + 2;
+const fn halfwords(width: u8) -> u16 {
+    (width as u16).div_ceil(4)
+}
+const _: () = assert!(halfwords(TITLE_FLEUR_TOP.1) <= 64);
+const _: () = assert!(ORN_POINTER as usize + TITLE_POINTER.2 as usize <= 256);
 const LEVELS: [&str; 11] = [
     "0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%",
 ];
@@ -103,6 +118,41 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
 fn centered(y: i16, value: &str, gain: u8) {
     text(160 - text_width(value) / 2, y, value, gain);
 }
+/// One ornament from the strip, drawn 1:1 at (`x`, `y`): `u`, `v` are its texel position on
+/// the strip's 4bpp page.
+fn ornament(x: i16, y: i16, size: (u8, u8), uv: (u8, u16), gain: u8) {
+    gpu::draw_sprite_material(
+        x,
+        y,
+        size.0 as u16,
+        size.1 as u16,
+        (uv.0, uv.1 as u8),
+        TextureMaterial::opaque(
+            Clut::new(320, 481).uv_clut_word(),
+            Tpage::new(ORN_X, 0, TexDepth::Bit4).uv_tpage_word(0),
+            (gain, gain, gain),
+        ),
+    );
+}
+/// The menu pointer, as the source's title menu shows it: a leaf left of the chosen row pointing
+/// right at it and its mirror right of the row pointing left. The cooked sprite points left, so the
+/// left leaf is the mirrored half of the strip.
+/// The left leaf alone, for the lists whose rows start at a fixed column.
+fn pointer(x: i16, y: i16, gain: u8) {
+    let (w, h) = (TITLE_POINTER.1, TITLE_POINTER.2);
+    ornament(x, y - 1, (w, h), ((halfwords(w) * 4) as u8, ORN_POINTER), gain);
+}
+fn pointers(left: i16, right: i16, y: i16, gain: u8) {
+    let (w, h) = (TITLE_POINTER.1, TITLE_POINTER.2);
+    ornament(left - w as i16 - 4, y - 1, (w, h), ((halfwords(w) * 4) as u8, ORN_POINTER), gain);
+    ornament(right + 4, y - 1, (w, h), (0, ORN_POINTER), gain);
+}
+/// The flourishes above and below a page, centred.
+fn flourishes(top: i16, bottom: i16, gain: u8) {
+    let (t, b) = (TITLE_FLEUR_TOP, TITLE_FLEUR_BOTTOM);
+    ornament(160 - t.1 as i16 / 2, top, (t.1, t.2), (0, ORN_TOP), gain);
+    ornament(160 - b.1 as i16 / 2, bottom, (b.1, b.2), (0, ORN_BOTTOM), gain);
+}
 pub const SLOT_LABELS: [&str; 4] = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"];
 // For size, like `run`: the title is not a gameplay frame, and the resident code
 // budget (docs/BUDGET.md) is what the Options rows would otherwise be spent from.
@@ -120,7 +170,8 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                 };
                 centered(y, label, g);
                 if i == menu.selected {
-                    text(144 - text_width(label) / 2, y, ">", gain);
+                    let half = text_width(label) / 2;
+                    pointers(160 - half, 160 + half, y, gain);
                 }
             }
             centered(222, "Up/Down: choose    X/START: select", gain);
@@ -137,7 +188,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                 text(78, y, SLOT_LABELS[i], g);
                 text(150, y, slots[i], g);
                 if i == menu.selected {
-                    text(62, y, ">", gain);
+                    pointer(52, y, gain);
                 }
             }
             centered(
@@ -173,15 +224,14 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     text(215, y, value, g);
                 }
                 if i == menu.selected {
-                    text(70, y, ">", gain);
+                    pointer(62, y, gain);
                 }
             }
             centered(221, "Left/Right: adjust    O: back", gain);
         }
         Page::Controls => {
-            let border = gain / 2;
-            gpu::draw_rect_flat(16, 39, 288, 192, border, border, border);
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            flourishes(24, 224, gain);
             centered(51, "CONTROLS", gain);
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
                 text(30, 64 + i as i16 * 10, line, gain);
@@ -189,8 +239,8 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
             centered(214, "X / O / START: back", gain);
         }
         Page::Cheats => {
-            gpu::draw_rect_flat(16, 45, 288, 187, gain / 2, gain / 2, gain / 2);
             gpu::draw_rect_flat(18, 47, 284, 183, 0, 0, 0);
+            flourishes(30, 226, gain);
             centered(65, "CHEATS", gain);
             for (i, label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate() {
                 let y = 68 + i as i16 * 11;
@@ -213,7 +263,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     );
                 }
                 if i == menu.selected {
-                    text(30, y, ">", gain);
+                    pointer(22, y, gain);
                 }
             }
             centered(204, "Session only. More in Pause > Cheats", gain);
@@ -394,6 +444,8 @@ pub fn restore(art: Option<&[u8]>) {
     }
     let Some(data) = art else { return };
     upload_font(&data[MENU_BYTES..MENU_BYTES + FONT_BYTES]);
+    let at = crate::boot_art::TITLE_ORNAMENTS.0;
+    upload_ornaments(&data[at..at + TITLE_ORNAMENT_BYTES]);
     let data = &data[..MENU_BYTES];
     assert!(data.len() == METRICS + 96);
     assert!(&data[..8] == b"HKMENU03");
@@ -415,6 +467,18 @@ pub fn restore(art: Option<&[u8]>) {
     upload_bytes(VramRect::new(384, 0, 128, 240), &pixels[..LEFT]);
     upload_bytes(VramRect::new(512, 0, 32, 240), &pixels[LEFT..LEFT + RIGHT]);
     upload_bytes(VramRect::new(544, 0, 96, 64), &pixels[LEFT + RIGHT..]);
+}
+fn upload_ornaments(rows: &[u8]) {
+    let mut put = |piece: (usize, u8, u8), x: u16, y: u16| {
+        let (offset, w, h) = piece;
+        let w = halfwords(w);
+        let len = w as usize * h as usize * 2;
+        upload_bytes(VramRect::new(x, y, w, h as u16), &rows[offset..offset + len]);
+    };
+    put(TITLE_FLEUR_TOP, ORN_X, ORN_TOP);
+    put(TITLE_FLEUR_BOTTOM, ORN_X, ORN_BOTTOM);
+    put(TITLE_POINTER, ORN_X, ORN_POINTER);
+    put(TITLE_POINTER_MIRRORED, ORN_X + halfwords(TITLE_POINTER.1), ORN_POINTER);
 }
 /// The Perpetua glyph sheet's size, which the dialogue panels share.
 pub const FONT_BYTES: usize = 7712;
