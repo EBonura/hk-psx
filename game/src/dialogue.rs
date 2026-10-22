@@ -238,6 +238,11 @@ fn width(text: &str) -> i16 {
         .sum()
 }
 fn text(x: i16, y: i16, text: &str) {
+    text_gain(x, y, text, 0x80);
+}
+/// `text` at a brightness: 0x80 draws the glyph ramp as it is, less dims it.
+fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
+    let color = 0x6400_0000 | u32::from(gain) * 0x0001_0101;
     let mut x = x;
     for b in text.bytes() {
         assert!((32..=126).contains(&b));
@@ -249,7 +254,7 @@ fn text(x: i16, y: i16, text: &str) {
                 USED += 1;
                 p.mode = 0xe100_0000
                     | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0) as u32;
-                p.color = 0x6480_8080;
+                p.color = color;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
                 p.uv = glyph_u(i) as u32
                     | (244 << 8)
@@ -333,10 +338,11 @@ pub fn prepare(
         number(GEO_NUMBER_X, geo_y, geo);
         cell(GEO_COIN_CELL, GEO_COIN_X, geo_y - 1);
         if let Some((p, settings)) = pause {
-            BOXES[0] = RectFlat::new(38, 61, 244, 162, 150, 150, 150);
-            BOXES[1] = RectFlat::new(40, 63, 240, 158, 0, 0, 0);
-            BOX_COUNT = 2;
+            // Every pause screen is the game dimmed behind the source's own ornaments, with
+            // a soft light behind the chosen row, not a box. The charm board keeps its frame.
+            let fleurs = crate::dialogue_art::pause_prepared();
             if p.confirm_reset {
+                pause_backdrop(fleurs, LIST_Y + 7 * LIST_PITCH + 3);
                 text(160 - width("Reset session?") / 2, 108, "Reset session?");
                 text(
                     160 - width("Back to the new game spawn.") / 2,
@@ -351,9 +357,10 @@ pub fn prepare(
             } else if p.charms.open {
                 crate::charms::panel(&p.charms);
             } else if p.cheats {
-                BOXES[0] = RectFlat::new(14, 28, 292, 204, 150, 150, 150);
-                BOXES[1] = RectFlat::new(16, 30, 288, 200, 0, 0, 0);
-                text(160 - width("Cheats") / 2, 38, "Cheats");
+                // Thirteen rows do not leave room for the crest: the dim and the glow only.
+                pause_backdrop(false, 0);
+                text(160 - width("Cheats") / 2, 30, "Cheats");
+                row_glow(44 + p.row as i16 * 10 - 1, 10);
                 for (i, line) in crate::menu::state::CHEAT_ITEMS
                     .iter()
                     .chain(
@@ -369,12 +376,9 @@ pub fn prepare(
                     .enumerate()
                 {
                     let y = 44 + i as i16 * 10;
-                    text(46, y, line);
-                    if p.row == i {
-                        text(29, y, ">");
-                    }
+                    text_gain(46, y, line, row_gain(p.row == i));
                     if i < crate::menu::state::CHEAT_ITEMS.len() {
-                        text(
+                        text_gain(
                             255,
                             y,
                             if settings.cheats.enabled(i) {
@@ -382,6 +386,7 @@ pub fn prepare(
                             } else {
                                 "OFF"
                             },
+                            row_gain(p.row == i),
                         );
                     }
                 }
@@ -391,7 +396,7 @@ pub fn prepare(
                     "X: apply    Left/Right: off/on    O: back",
                 );
             } else if p.controls {
-                text(160 - width("Controls") / 2, 69, "Controls");
+                pause_backdrop(fleurs, LIST_Y + 9 * 11 + 3);
                 for (i, line) in [
                     "D-pad / left stick: Move",
                     "X: Jump    Square: Nail    Up: Inspect",
@@ -406,11 +411,11 @@ pub fn prepare(
                 .iter()
                 .enumerate()
                 {
-                    text(46, 84 + i as i16 * 14, line);
+                    text(160 - width(line) / 2, LIST_Y + i as i16 * 11, line);
                 }
             } else {
-                text(160 - width("Paused") / 2, 69, "Paused");
-                // Seven rows at 16px still clear the footer inside the same box.
+                pause_backdrop(fleurs, LIST_Y + 7 * LIST_PITCH + 3);
+                row_glow(LIST_Y + p.row as i16 * LIST_PITCH - 1, LIST_PITCH);
                 for (i, line) in [
                     "Resume",
                     "Sound effects",
@@ -423,19 +428,20 @@ pub fn prepare(
                 .iter()
                 .enumerate()
                 {
-                    let y = 92 + i as i16 * 16;
-                    text(73, y, line);
-                    if p.row == i {
-                        text(56, y, ">");
-                    }
+                    let y = LIST_Y + i as i16 * LIST_PITCH;
+                    text_gain(LIST_X, y, line, row_gain(p.row == i));
                 }
-                number(222, 108, u32::from(settings.sfx));
-                number(222, 124, u32::from(settings.ambience));
-                number(222, 140, u32::from(settings.music));
-                text(239, 108, "/10");
-                text(239, 124, "/10");
-                text(239, 140, "/10");
-                text(58, 207, "Left / Right: Volume   O: Resume");
+                for (i, volume) in [settings.sfx, settings.ambience, settings.music]
+                    .iter()
+                    .enumerate()
+                {
+                    let y = LIST_Y + (i as i16 + 1) * LIST_PITCH;
+                    number(VOLUME_X, y, u32::from(*volume));
+                    text(VOLUME_X + 17, y, "/10");
+                }
+                // Under the flourish, as the box's footer was.
+                let hint = "Left / Right: Volume   O: Resume";
+                text(160 - width(hint) / 2, 222, hint);
             }
         } else if save_ui != crate::save_ui::Ui::Idle {
             save_notice(save_ui);
@@ -623,6 +629,80 @@ fn ornate(lines: &[&str], more: bool) {
         }
     }
     unsafe { BACKBOARD_COUNT = 9 };
+}
+/// Where the pause screens put their pieces: the crest, the list under it and
+/// the flourish under that, all centred. The HUD's masks and Geo count sit above.
+const FLEUR_Y: i16 = 50;
+const LIST_Y: i16 = 100;
+const LIST_PITCH: i16 = 13;
+const LIST_X: i16 = 84;
+const VOLUME_X: i16 = 190;
+/// How much the game behind a pause screen is darkened, and how bright the light behind the
+/// chosen row is (the source's `menu_backboard_*` and `List_Selection_Glow` sprites).
+const PAUSE_DIM: u8 = 100;
+const ROW_GLOW: u8 = 56;
+/// The chosen row's text is full brightness, the others a step down.
+pub(crate) fn row_gain(chosen: bool) -> u8 {
+    if chosen {
+        0x80
+    } else {
+        0x58
+    }
+}
+/// The pause screens' backdrop: the whole view darkened and, when the ornaments are in
+/// the frame's working set, the crest above the list and the flourish at `bottom`.
+fn pause_backdrop(fleurs: bool, bottom: i16) {
+    unsafe {
+        BACKBOARD[0] = QuadGouraudBlended::new(
+            [(0, 0), (320, 0), (0, 240), (320, 240)],
+            [(PAUSE_DIM, PAUSE_DIM, PAUSE_DIM); 4],
+            BlendMode::Subtract,
+        );
+        BACKBOARD_COUNT = 1;
+        BOX_COUNT = 0;
+    }
+    if fleurs {
+        use crate::dialogue_art::{DIALOGUE_PAUSE_BOTTOM, DIALOGUE_PAUSE_TOP};
+        ornament(DIALOGUE_PAUSE_TOP, 160 - DIALOGUE_PAUSE_TOP.2 as i16 / 2, FLEUR_Y);
+        ornament(DIALOGUE_PAUSE_BOTTOM, 160 - DIALOGUE_PAUSE_BOTTOM.2 as i16 / 2, bottom);
+    }
+}
+/// A soft light behind the chosen row, brightest in the middle and gone at both ends.
+fn row_glow(y: i16, height: i16) {
+    glow(70, 250, y, height);
+}
+fn glow(left: i16, right: i16, y: i16, height: i16) {
+    let mid = (left + right) / 2;
+    let (bright, dark) = ((ROW_GLOW, ROW_GLOW, ROW_GLOW), (0, 0, 0));
+    unsafe {
+        let n = BACKBOARD_COUNT;
+        BACKBOARD[n] = QuadGouraudBlended::new(
+            [(left, y), (mid, y), (left, y + height), (mid, y + height)],
+            [dark, bright, dark, bright],
+            BlendMode::Add,
+        );
+        BACKBOARD[n + 1] = QuadGouraudBlended::new(
+            [(mid, y), (right, y), (mid, y + height), (right, y + height)],
+            [bright, dark, bright, dark],
+            BlendMode::Add,
+        );
+        BACKBOARD_COUNT = n + 2;
+    }
+}
+/// The charm board's backdrop: the view dimmed, the thin flourish above the title and
+/// below the footer, and the light behind the chosen row.
+pub(crate) fn board_frame(glow_y: i16, glow_h: i16) {
+    pause_backdrop(false, 0);
+    if crate::dialogue_art::board_prepared() {
+        let piece = crate::dialogue_art::DIALOGUE_FLEUR_BOTTOM;
+        let x = 160 - piece.2 as i16 / 2;
+        ornament(piece, x, 0);
+        ornament(piece, x, 240 - piece.3 as i16);
+    }
+    glow(18, 302, glow_y, glow_h);
+}
+pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
+    text_gain(x, y, value, gain);
 }
 /// The source prompt marker's label, over the marker's own world point.
 fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {

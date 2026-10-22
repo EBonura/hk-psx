@@ -335,7 +335,17 @@ pub fn render(
     );
     // The text panel's ornaments: like the board, they yield to the view.
     crate::dialogue_art::append_needed(
-        !game.paused && crate::dialogue::panel_up(),
+        if !game.paused {
+            if crate::dialogue::panel_up() {
+                crate::dialogue_art::Art::Panel
+            } else {
+                crate::dialogue_art::Art::None
+            }
+        } else if game.pause_menu.charms.open {
+            crate::dialogue_art::Art::Board
+        } else {
+            crate::dialogue_art::Art::Pause
+        },
         &mut needed,
         &mut needed_len,
     );
@@ -485,7 +495,7 @@ pub fn render(
     if crate::modules::loaded(crate::modules::SHOP) {
         shop::prepare(&game.shop_screen, camera, game.paused);
     }
-    title_card::prepare();
+    title_card::prepare(game.paused);
     render::submit(
         game.vitals.health,
         vitals.max_health,

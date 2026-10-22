@@ -228,13 +228,14 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
         x += crate::dialogue::advance(b) * scale;
     }
 }
-/// Compose this frame's card, if any.
-pub fn prepare() {
+/// Compose this frame's card, if any. A paused game shows none: its clock is stopped, and the
+/// pause pages are drawn over the view rather than in an opaque box that used to hide the card.
+pub fn prepare(paused: bool) {
     unsafe {
         USED = 0;
     }
     let s = state();
-    if s.showing == NONE {
+    if s.showing == NONE || paused {
         return;
     }
     let level = if s.age < FADE {
