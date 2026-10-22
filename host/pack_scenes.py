@@ -27,7 +27,7 @@ SCENE_ARENA_BYTES=354032
 # hk_cache::residency::STATIC_PAGES. The largest of the 45 cooked scenes,
 # Tutorial_01, is 18 pages and the next largest is 9.
 MAX_PAGES=19
-MAX_PALETTES=1248  # Final legacy CLUT strip is reserved for independent Geo art.
+MAX_PALETTES=832  # Two CLUT banks: the third bank's region holds the font image (hk-cache residency.rs FONT_RECT).
 
 GEO_REPORT=ROOT/'.hkpsx/geo-provenance.json'
 

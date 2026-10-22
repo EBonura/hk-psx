@@ -14,7 +14,10 @@
                      // screen's, and a stub with different ones would silently defeat that.
 mod charms {
     pub const UP: u16 = 0x10;
+    pub const RIGHT: u16 = 0x20;
     pub const DOWN: u16 = 0x40;
+    pub const LEFT: u16 = 0x80;
+    pub const GRID_COLS: usize = 10;
     pub const CIRCLE: u16 = 0x2000;
     pub const CROSS: u16 = 0x4000;
     pub struct Screen {
@@ -39,9 +42,15 @@ mod charms {
                 return true;
             }
             if press & DOWN != 0 {
-                self.row += 1;
+                self.row += GRID_COLS;
             }
             if press & UP != 0 {
+                self.row = self.row.saturating_sub(GRID_COLS);
+            }
+            if press & RIGHT != 0 {
+                self.row += 1;
+            }
+            if press & LEFT != 0 {
                 self.row = self.row.saturating_sub(1);
             }
             false

@@ -106,13 +106,16 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
             gpu::draw_sprite_material(
                 x,
                 y,
-                12,
-                12,
-                ((state::GLYPH_U0 + i % 21 * 12) as u8, 244),
+                state::GLYPH_W as u16,
+                state::GLYPH_H as u16,
+                (
+                    (state::GLYPH_U0 + i % state::GLYPH_PER_ROW * state::GLYPH_W) as u8,
+                    (state::FONT_V0 + i / state::GLYPH_PER_ROW * state::GLYPH_ROW_PITCH) as u8,
+                ),
                 // Adding: the glyph palette's entries are semi-transparent (font_strip.rs).
                 TextureMaterial::blended(
                     Clut::new(320, 481).uv_clut_word(),
-                    Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0),
+                    Tpage::new(state::FONT_X, state::FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0),
                     (gain, gain, gain),
                     BlendMode::Add,
                 ),
@@ -123,6 +126,50 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
 }
 fn centered(y: i16, value: &str, gain: u8) {
     text(160 - text_width(value) / 2, y, value, gain);
+}
+/// A space between capitals.
+const CAPS_SPACE: i16 = 6;
+fn caps_index(b: u8) -> Option<usize> {
+    state::CAPS_CHARS.iter().position(|&c| c == b.to_ascii_uppercase())
+}
+/// The width of `value` in capitals (TrajanPro-Bold, as the source's buttons and headings).
+fn caps_width(value: &str) -> i16 {
+    value
+        .bytes()
+        .map(|b| caps_index(b).map_or(CAPS_SPACE, |i| state::CAPS_ADVANCES[i] as i16))
+        .sum()
+}
+/// `value` upper cased in the capitals; the cell is 12 texels tall and its cap line sits where a
+/// 14 texel body glyph's does when drawn one row higher.
+fn caps(x: i16, y: i16, value: &str, gain: u8) {
+    let mut x = x;
+    for b in value.bytes() {
+        let Some(i) = caps_index(b) else {
+            x += CAPS_SPACE;
+            continue;
+        };
+        let (col, row) = (i % state::CAPS_PER_ROW, i / state::CAPS_PER_ROW);
+        gpu::draw_sprite_material(
+            x,
+            y,
+            state::CAPS_W as u16,
+            state::CAPS_H as u16,
+            (
+                (state::GLYPH_U0 + col * state::CAPS_W) as u8,
+                (state::FONT_V0 + state::CAPS_V0 + row * state::CAPS_H) as u8,
+            ),
+            TextureMaterial::blended(
+                Clut::new(320, 481).uv_clut_word(),
+                Tpage::new(state::FONT_X, state::FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0),
+                (gain, gain, gain),
+                BlendMode::Add,
+            ),
+        );
+        x += state::CAPS_ADVANCES[i] as i16;
+    }
+}
+fn centered_caps(y: i16, value: &str, gain: u8) {
+    caps(160 - caps_width(value) / 2, y, value, gain);
 }
 /// One ornament from the strip, drawn 1:1 at (`x`, `y`): `u`, `v` are its texel position on
 /// the strip's 4bpp page.
@@ -168,15 +215,15 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
     match menu.page {
         Page::Main => {
             for (i, label) in state::MAIN_ITEMS.iter().enumerate() {
-                let y = 145 + i as i16 * 17;
+                let y = 140 + i as i16 * 18;
                 let g = if i == menu.selected {
                     gain
                 } else {
                     gain - gain / 4
                 };
-                centered(y, label, g);
+                centered_caps(y, label, g);
                 if i == menu.selected {
-                    let half = text_width(label) / 2;
+                    let half = caps_width(label) / 2;
                     pointers(160 - half, 160 + half, y, gain);
                 }
             }
@@ -185,22 +232,22 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
             // A page of its own, as the source's Select Game is: no logo behind it.
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             flourishes(24, 224, gain);
-            centered(51, "SELECT GAME", gain);
+            centered_caps(51, "SELECT GAME", gain);
             for i in 0..crate::save::PROFILES {
-                let y = 84 + i as i16 * 24;
+                let y = 80 + i as i16 * 26;
                 let g = if i == menu.selected {
                     gain
                 } else {
                     gain - gain / 4
                 };
-                text(78, y, SLOT_LABELS[i], g);
-                text(150, y, slots[i], g);
+                caps(78, y, SLOT_LABELS[i], g);
+                text(150, y - 1, slots[i], g);
                 if i == menu.selected {
                     pointer(52, y, gain);
                 }
             }
             centered(
-                208,
+                206,
                 if fault.is_empty() { "O: back" } else { fault },
                 gain,
             );
@@ -208,15 +255,15 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
         Page::Options => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             flourishes(24, 224, gain);
-            centered(51, "OPTIONS", gain);
+            centered_caps(51, "OPTIONS", gain);
             for (i, label) in state::OPTION_ITEMS.iter().enumerate() {
-                let y = 72 + i as i16 * 17;
+                let y = 70 + i as i16 * 18;
                 let g = if i == menu.selected {
                     gain
                 } else {
                     gain - gain / 4
                 };
-                text(86, y, label, g);
+                caps(70, y, label, g);
                 let mut sign = [0u8; 3];
                 let s = &menu.settings;
                 let value = match i {
@@ -227,29 +274,29 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     _ => "",
                 };
                 if !value.is_empty() {
-                    text(215, y, value, g);
+                    text(220, y - 1, value, g);
                 }
                 if i == menu.selected {
-                    pointer(62, y, gain);
+                    pointer(46, y, gain);
                 }
             }
-            centered(204, "Left/Right: adjust    O: back", gain);
+            centered(206, "Left/Right: adjust    O: back", gain);
         }
         Page::Controls => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             flourishes(24, 224, gain);
-            centered(51, "CONTROLS", gain);
+            centered_caps(51, "CONTROLS", gain);
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
-                text(30, 64 + i as i16 * 10, line, gain);
+                centered(68 + i as i16 * 13, line, gain);
             }
-            centered(214, "X / O / START: back", gain);
+            centered(208, "X / O / START: back", gain);
         }
         Page::Cheats => {
-            gpu::draw_rect_flat(18, 47, 284, 183, 0, 0, 0);
-            flourishes(30, 226, gain);
-            centered(65, "CHEATS", gain);
+            // Thirteen rows at the font's size leave room for no flourishes.
+            gpu::draw_rect_flat(18, 10, 284, 224, 0, 0, 0);
+            centered_caps(14, "CHEATS", gain);
             for (i, label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate() {
-                let y = 68 + i as i16 * 11;
+                let y = 32 + i as i16 * 13;
                 let g = if i == menu.selected {
                     gain
                 } else {
@@ -466,7 +513,7 @@ pub fn restore(art: Option<&[u8]>) {
     assert!(
         data[METRICS..METRICS + 95]
             .iter()
-            .all(|&n| (1..=12).contains(&n))
+            .all(|&n| (1..=state::GLYPH_W as u8).contains(&n))
             && data[METRICS + 95] == 0
     );
     let pixels = &data[HEADER + PALETTE..METRICS];
@@ -486,17 +533,14 @@ fn upload_ornaments(rows: &[u8]) {
     put(TITLE_POINTER, ORN_X, ORN_POINTER);
     put(TITLE_POINTER_MIRRORED, ORN_X + halfwords(TITLE_POINTER.1), ORN_POINTER);
 }
-/// The Perpetua glyph sheet's size, which the dialogue panels share.
-pub const FONT_BYTES: usize = 7712;
+/// The font image's size (Perpetua and the capitals), which the dialogue panels share.
+pub use state::FONT_BYTES;
 fn upload_font(font: &[u8]) {
-    // Reuse the exact original Perpetua glyph sheet and its gameplay reservation.
-    // No new font asset or VRAM region is introduced by the menu.
+    // The palette, then the image in the texture page of the CLUT banks the scenes never use.
     assert_eq!(font.len(), FONT_BYTES);
     upload_bytes(VramRect::new(320, 481, 16, 1), &font[..32]);
-    for page in 0..5 {
-        upload_bytes(
-            VramRect::new(page * 64, 500, 64, 12),
-            &font[32 + page as usize * 1536..32 + (page as usize + 1) * 1536],
-        );
-    }
+    upload_bytes(
+        VramRect::new(state::FONT_X, state::FONT_Y, 64, state::FONT_ROWS),
+        &font[32..],
+    );
 }

@@ -43,7 +43,7 @@ def font_advances_cooked():
     """The glyph advances of ASCII 32..126 that hk-cook dialogue-art cooked with the strip."""
     metrics=json.loads((ROOT/'data/font-metrics.json').read_text())
     advances=metrics['advances']
-    if len(advances)!=95 or not all(1<=a<=12 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
+    if len(advances)!=95 or not all(1<=a<=13 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
     return advances
 
 
@@ -112,7 +112,7 @@ def cook():
     # The glyph strip and its advances are cooked by hk-cook dialogue-art (host/hk-cook/src/font_strip.rs):
     # anti-aliased Perpetua at the PS1 size, one baseline, advances rounded to the pixel.
     advances=font_advances_cooked()
-    if len((ROOT/'data/read_font.hk').read_bytes())!=7712:raise ValueError('data/read_font.hk is not the 7712 byte glyph strip')
+    if len((ROOT/'data/read_font.hk').read_bytes())!=12832:raise ValueError('data/read_font.hk is not the 12832 byte font image')
     points=[]
     for ident,(kind,t) in sc.objects.items():
         if kind!='PlayMakerFSM':continue
@@ -159,6 +159,6 @@ def cook():
     (audit/'provenance.json').write_text(json.dumps({'points':points,'sheet':sheet,'font_source':source.sid(font_obj),'font_sha256':hashlib.sha256(font_obj.get_raw_data()).hexdigest(),
       'outputs':{name:hashlib.sha256((ROOT/'data'/name).read_bytes()).hexdigest() for name in ['read_points.rs','read_font.hk']},
       'adaptations':['Bounded static page layout at320x240','Cross advances, Circle closes','Original hero alignment/turn animation, dialogue sounds and Focus-specific prompt art remain unimplemented']},indent=2)+'\n')
-    print('Cooked three original tablet interactions and',len(points)-3,'closed doors;',sum(len(p['pages']) for p in points),'pages; font7712bytes')
+    print('Cooked three original tablet interactions and',len(points)-3,'closed doors;',sum(len(p['pages']) for p in points),'pages; font image 12832 bytes')
 
 if __name__=='__main__':cook()

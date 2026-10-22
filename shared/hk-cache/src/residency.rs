@@ -2,9 +2,15 @@
 pub const BANKS: usize = 4;
 pub const PAGES: usize = 5;
 pub const CLUTS: usize = 416;
-// Current resident scenes consume1206 CLUTs. Keep their admitted namespace
-// below the last legacy strip, whose space now holds independent Geo art.
-pub const SCENE_CLUTS: usize = 3 * CLUTS;
+// A scene's palettes are numbered from 0 and the largest scene needs 386 of the 416 of the first
+// bank (SCENE_TOTAL_PALETTES, data/scene_manifest.rs), so a scene is admitted into the first two
+// banks (832). The third bank's CLUT region (x320..383, y360..463) holds the font image
+// (`FONT_RECT`), and the fourth's holds Geo, Lifeblood and break-effect art.
+pub const SCENE_CLUTS: usize = 2 * CLUTS;
+/// The font image (Perpetua, the Trajan capitals and the Geo coin; host/hk-cook/src/font_strip.rs):
+/// 256 texels by 100 rows of 4bpp, sampled from the texture page at x320, y256 (rows 104 to 203 of
+/// it), in the third CLUT bank's region, which no scene uses. x,y,width,height in halfwords.
+pub const FONT_RECT: (usize, usize, usize, usize) = (320, 360, 64, 100);
 /// Geo's independent 4bpp art/CLUT allocation in previously unused gaps.
 /// Each tuple is x,y,width,height in VRAM halfwords, not texture pixels.
 pub const GEO_RECTS: [(usize, usize, usize, usize); 5] = [
@@ -195,8 +201,8 @@ pub fn page_xy(page: usize) -> (u16, u16) {
 pub fn clut_xy(bank: usize, palette: usize) -> (u16, u16) {
     assert!(bank < BANKS && palette < CLUTS);
     match bank {
-        // The font starts at row500. Overflow uses the free16-word strip
-        // between its CLUT and the HUD palettes, never a framebuffer row.
+        // Overflow uses the free16-word strip between the font's CLUT and the HUD
+        // palettes, never a framebuffer row.
         0 if palette < 400 => ((palette % 20) as u16 * 16, 480 + (palette / 20) as u16),
         0 => (336, 480 + (palette - 400) as u16),
         1 => (320 + (palette % 4) as u16 * 16, 256 + (palette / 4) as u16),
@@ -400,7 +406,13 @@ mod tests {
             claim(352, 482, 16, 3);
             // Shared subtractive black-mask fade CLUT.
             claim(320, 480, 16, 1);
-            // Original dialogue font strips and separate grayscale CLUT.
+            // The dialogue font's image and its separate grayscale CLUT.
+            let (fx, fy, fw, fh) = FONT_RECT;
+            claim(fx, fy, fw, fh);
+            // The rest of the third CLUT bank's region, which no scene uses, and the rows the
+            // font strips held before it moved there: free, kept out of the spare count, which
+            // is about 16-wide fragments (the atlas route's refusal).
+            claim(320, fy + fh, 64, 464 - (fy + fh));
             claim(0, 500, 320, 12);
             claim(320, 481, 16, 1);
             for (x, y, w, h) in GEO_RECTS {
