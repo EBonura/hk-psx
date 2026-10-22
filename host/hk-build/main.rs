@@ -505,6 +505,11 @@ fn menu_cached(root: &Path, force: bool) -> Result<()> {
             Value::String(sha256_file(&root.join("host").join(name))?),
         );
     }
+    // The title art carries the glyph advances.
+    code.insert(
+        "font-metrics.json".into(),
+        Value::String(sha256_file(&root.join("data/font-metrics.json"))?),
+    );
     let code = Value::Object(code);
     let source = selected_source(root)?;
     if !force && provenance.exists() && cache.exists() {
@@ -856,6 +861,9 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // the guest build reads them; the movies go onto the disc packed below.
     let intro = intro_stage(root, options.intro)?;
     let pgo = mode == BuildMode::Pgo;
+    // The glyph strip and its advances (data/font-metrics.json) come out of this stage; the
+    // title art cooked next carries the advances. A fifth of a second, so it runs every build.
+    rust_step(root, "dialogue-art")?;
     menu_cached(root, options.recook)?;
     assets_cached(root, options.recook)?;
     // Every HKFSM03 bank the guest links: the enemies' original graphs and the scene scripts.

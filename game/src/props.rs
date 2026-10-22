@@ -866,7 +866,7 @@ mod presentation {
     };
     use psx_vram::{upload_bytes, Clut, VramRect};
     /// Animation-cache keys, above the charm board's.
-    pub const KEY_BASE: u16 = crate::charms::KEY_BASE + crate::charms::CHARM_COUNT as u16;
+    pub const KEY_BASE: u16 = crate::charms::KEY_BASE + crate::charms::KEYS as u16;
     const _: () = assert!((KEY_BASE as usize) + PARTS.len() <= hk_cache::MAX_KEYS);
     const MAX_DRAWS: usize = 16;
     /// The frame's props, decided before the working set is prepared: only

@@ -78,7 +78,7 @@ class CookedCatalogueTests(unittest.TestCase):
         # from 8 slots to 24, and the recorded verdict went on interpolating the
         # new number into the old argument. The atlas route above is refused on
         # a reason that cannot move; this one is a live comparison.
-        self.assertEqual(icons['shade_route_slots_needed'], icons['rows_on_screen'] + 4)
+        self.assertEqual(icons['shade_route_slots_needed'], icons['sheets_on_screen'] + 4)
         self.assertEqual(icons['shade_route_fits'],
                          icons['shade_route_slots_needed'] <= icons['animation_slots'])
         # The atlas route needs somewhere resident to put the texels as well as
@@ -98,7 +98,9 @@ class CookedCatalogueTests(unittest.TestCase):
         # What must not change is the reason: the screen refuses the larger
         # sizes, and a trimmed row count or a shorter description is not allowed
         # to buy a bigger icon.
-        self.assertEqual(icons['rows_on_screen'], 6)
+        # The board shows the whole collection, so it asks the cache for the icon sheets (sixteen
+        # icons to a slot), not for a slot a row.
+        self.assertEqual(icons['sheets_on_screen'], 3)
         # The size was chosen when every offered size fit linked RAM, so the
         # screen was the only thing refusing them. That is no longer true:
         # headroom fell from 51,348 to 11,556 over one day of boss work, and
