@@ -67,10 +67,11 @@ def delay_slot_flags():
 # uploads for the game that follows it and nothing reads again, each padded to
 # a word: the Perpetua glyph sheet (data/read_font.hk), the Geo art
 # (data/geo.hk), the Lifeblood art (data/lifeblood.hk) and the title's ornaments
-# (data/menu-ornaments.hk: the flourishes and the menu pointer). Read into the
+# (data/menu-ornaments.hk: the flourishes and the menu pointer) and the area cards' big glyphs
+# (data/card-font.hk, 7,680 bytes for VRAM rows 500..511). Read into the
 # scene arena before the title, it costs no RAM once uploaded; linked into the
 # guest the last three held 17,774 bytes for good.
-BOOT_ART_PARTS=('menu.hk','read_font.hk','geo.hk','lifeblood.hk','menu-ornaments.hk')
+BOOT_ART_PARTS=('menu.hk','read_font.hk','geo.hk','lifeblood.hk','menu-ornaments.hk','card-font.hk')
 
 def module_tables():
     """Write the generated module tables the guest includes (data/modules.rs,
@@ -113,6 +114,7 @@ def boot_art():
           f'pub const FONT_AT:usize={at["read_font.hk"][0]};\n'
           f'pub const GEO_ART:(usize,usize)={at["geo.hk"]};\npub const LIFE_ART:(usize,usize)={at["lifeblood.hk"]};\n'
           f'pub const TITLE_ORNAMENTS:(usize,usize)={at["menu-ornaments.hk"]};\n'
+          f'pub const CARD_FONT:(usize,usize)={at["card-font.hk"]};\n'
           f'pub const INTRO_ART:(usize,usize)={intro_at};\n')
     path=ROOT/'data/boot_art.rs'
     if not path.is_file() or path.read_text()!=text:path.write_text(text)

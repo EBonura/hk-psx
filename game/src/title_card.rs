@@ -8,23 +8,23 @@
 //! seen once. Areas seen are kept in the world store, as the source's visited
 //! bools are. Bosses call `show_boss` with their own title.
 //!
-//! The text uses the dialogue font the disc already has, main line doubled.
-use psx_gpu::material::{BlendMode, TextureMaterial};
-use psx_gpu::ot::OrderingTable;
-use psx_gpu::prim::QuadTextured;
+//! The text uses the dialogue font the disc already has for the small lines; the main line is
+//! the card strip's glyphs (font_strip.rs `cook_cards`): Perpetua rasterised at 40 px, grid
+//! fitted, in bands that sit in VRAM rows 500..511 and are drawn 1:1 as rectangles.
 use psx_vram::{Clut, TexDepth, Tpage};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/title_cards.rs"
 ));
-use crate::menu::state::{FONT_PAGE_Y, FONT_X, GLYPH_H, GLYPH_W};
+use crate::menu::state::{
+    CARD_ADVANCES, CARD_BANDS, CARD_CHARS, CARD_FIRST, CARD_PAGE_Y, CARD_V0, FONT_PAGE_Y, FONT_X,
+    GLYPH_H, GLYPH_W,
+};
 use crate::persist::{self, Kind};
 
 const NONE: u8 = u8::MAX;
 const FADE: u16 = 30;
 const HOLD: u16 = 150;
-// The longest card is 22 letters (Dirtmouth, The Fading Town); a charm name is at most 17.
-const GLYPHS: usize = 24;
 #[derive(Clone, Copy, PartialEq)]
 enum Style {
     Area,
@@ -52,31 +52,6 @@ static mut STATE: State = State {
     style: Style::Area,
     age: 0,
 };
-static mut QUADS: [QuadTextured; GLYPHS] =
-    [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (0, 0, 0)) }; GLYPHS];
-/// A 12x12 textured rectangle with its draw mode in the packet (the panel's glyph).
-#[repr(C, align(4))]
-struct Rect {
-    tag: u32,
-    mode: u32,
-    color: u32,
-    xy: u32,
-    uv: u32,
-    wh: u32,
-}
-static mut RECTS: [Rect; GLYPHS] = [const {
-    Rect {
-        tag: 0,
-        mode: 0,
-        color: 0,
-        xy: 0,
-        uv: 0,
-        wh: 0,
-    }
-}; GLYPHS];
-/// Whether slot `i` of the frame's glyphs is a rectangle (scale 1) or a quad (scale 2).
-static mut KINDS: [bool; GLYPHS] = [false; GLYPHS];
-static mut USED: usize = 0;
 /// Cards shown, and the title index (plus one) of the last.
 #[no_mangle]
 pub static mut HK_TITLE_CARDS: u32 = 0;
@@ -177,66 +152,82 @@ pub fn tick(body: [i32; 4]) {
 /// name starts off screen (`BOSS_CENTRE`, `BOSS_MARGIN`).
 const BOSS_CENTRE: i16 = 56;
 const BOSS_MARGIN: i16 = 12;
-fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
-    let width: i16 = text
-        .bytes()
-        .map(|b| crate::dialogue::advance(b) * scale)
-        .sum();
-    let mut x = if centre < 160 {
+fn start_x(width: i16, centre: i16) -> i16 {
+    if centre < 160 {
         (centre - width / 2).max(BOSS_MARGIN)
     } else {
         centre - width / 2
-    };
+    }
+}
+/// One rectangle of the frame's card, in the panels' packet table (`dialogue::raw_rect`): `wh`
+/// and `uv` as the GPU packs them. The most a card draws is a small line's letters and the main
+/// line's bands (two or three a glyph): Dirtmouth with The Fading Town is the worst, and a charm
+/// name is at most 17.
+fn rect(x: i16, y: i16, tpage: u16, uv: u32, wh: u32, level: u8) {
+    crate::dialogue::raw_rect(x, y, tpage, 0x6600_0000 | u32::from(level) * 0x0001_0101, uv, wh);
+}
+/// A small line, in the dialogue font. A glyph-sized rectangle samples texel for texel: exact.
+fn line(text: &str, y: i16, level: u8, centre: i16) {
+    let width: i16 = text.bytes().map(|b| crate::dialogue::advance(b)).sum();
+    let mut x = start_x(width, centre);
     for b in text.bytes() {
         let i = (b - 32) as usize;
-        if b != b' ' && unsafe { USED } < GLYPHS {
+        if b != b' ' {
             let u = crate::dialogue::glyph_u(i) as u8;
             let v = crate::dialogue::glyph_v(i) as u8;
             let clut = Clut::new(320, 481).uv_clut_word();
             // Added to the view: the glyph palette is semi-transparent (font_strip.rs).
             let tpage = Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1);
-            unsafe {
-                if scale == 1 {
-                    // A glyph-sized rectangle samples texel for texel: exact.
-                    RECTS[USED] = Rect {
-                        tag: 0,
-                        mode: 0xe100_0000 | tpage as u32,
-                        color: 0x6600_0000 | u32::from(level) * 0x0001_0101,
-                        xy: x as u16 as u32 | ((y as u16 as u32) << 16),
-                        uv: u32::from(u) | (u32::from(v) << 8) | (u32::from(clut) << 16),
-                        wh: GLYPH_W as u32 | ((GLYPH_H as u32) << 16),
-                    };
-                } else {
-                    // A polygon seeds its texture coordinate half a texel in and steps a
-                    // fixed amount a pixel, so doubling a glyph exactly means starting one
-                    // texel early: the polygon spans 12 texels over 24 pixels from the
-                    // blank column before the glyph (cells start 4 into the strip) and
-                    // 11 rows from the blank top row over 22 pixels (row 255 is the last
-                    // texel there is). That shows 11 of the 12 rows, 2 pixels each, with
-                    // only the last row of a descender halved.
-                    let (gw, gh) = (GLYPH_W as i16, GLYPH_H as i16 - 1);
-                    let (w, h) = (gw * scale, gh * scale);
-                    let y = y + scale / 2;
-                    let (u1, v1) = (u + GLYPH_W as u8 - 1, v + GLYPH_H as u8 - 1);
-                    QUADS[USED] = QuadTextured::with_material(
-                        [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
-                        [(u - 1, v), (u1, v), (u - 1, v1), (u1, v1)],
-                        TextureMaterial::blended(clut, tpage, (level, level, level), BlendMode::Add),
-                    );
-                }
-                KINDS[USED] = scale == 1;
-                USED += 1;
-            }
+            rect(
+                x,
+                y,
+                tpage,
+                u32::from(u) | (u32::from(v) << 8) | (u32::from(clut) << 16),
+                GLYPH_W as u32 | ((GLYPH_H as u32) << 16),
+                level,
+            );
         }
-        x += crate::dialogue::advance(b) * scale;
+        x += crate::dialogue::advance(b);
     }
 }
-/// Compose this frame's card, if any. A paused game shows none: its clock is stopped, and the
+/// A space in the card font: a quarter of its em.
+const CARD_SPACE: i16 = 10;
+fn card_glyph(b: u8) -> Option<usize> {
+    CARD_CHARS.iter().position(|&c| c == b)
+}
+/// The main line, in the card font: each glyph is a few rectangles of the strip (a band of it
+/// each), drawn 1:1 from the pen position with the top of the line at `y`.
+fn big_line(text: &str, y: i16, level: u8, centre: i16) {
+    let width: i16 = text
+        .bytes()
+        .map(|b| card_glyph(b).map_or(CARD_SPACE, |i| CARD_ADVANCES[i] as i16))
+        .sum();
+    let mut x = start_x(width, centre);
+    let clut = Clut::new(320, 481).uv_clut_word();
+    for b in text.bytes() {
+        let Some(i) = card_glyph(b) else {
+            x += CARD_SPACE;
+            continue;
+        };
+        for band in &CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize] {
+            let (page, u) = (band.x / 256, band.x % 256);
+            let tpage = Tpage::new(page * 64, CARD_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1);
+            rect(
+                x + i16::from(band.dx),
+                y + i16::from(band.dy),
+                tpage,
+                u32::from(u) | (u32::from(CARD_V0 + band.v) << 8) | (u32::from(clut) << 16),
+                u32::from(band.w) | (u32::from(band.h) << 16),
+                level,
+            );
+        }
+        x += CARD_ADVANCES[i] as i16;
+    }
+}
+/// Compose this frame's card, if any, into the panels' packet table: call after `dialogue::prepare`,
+/// which empties it. A paused game shows none: its clock is stopped, and the
 /// pause pages are drawn over the view rather than in an opaque box that used to hide the card.
 pub fn prepare(paused: bool) {
-    unsafe {
-        USED = 0;
-    }
     let s = state();
     if s.showing == NONE || paused {
         return;
@@ -250,33 +241,22 @@ pub fn prepare(paused: bool) {
     } as u16;
     let level = level as u8;
     if s.style == Style::Item {
-        line(unsafe { ITEM_NAME }, 104, 1, level, 160);
+        line(unsafe { ITEM_NAME }, 104, level, 160);
         return;
     }
     let [sup, main, sub] = TITLES[s.showing as usize];
     // The original's boss card sits at the lower left of the screen; its area
     // card is the one at the top centre.
     let (y, centre) = if s.style == Style::Area {
-        (52, 160)
+        (46, 160)
     } else {
-        (170, BOSS_CENTRE)
+        (150, BOSS_CENTRE)
     };
     if !sup.is_empty() {
-        line(sup, y, 1, level, centre);
+        line(sup, y, level, centre);
     }
-    line(main, y + 16, 2, level, centre);
+    big_line(main, y + 16, level, centre);
     if !sub.is_empty() {
-        line(sub, y + 50, 1, level, centre);
-    }
-}
-pub fn append(ot: &mut OrderingTable<1>) {
-    unsafe {
-        for i in (0..USED).rev() {
-            if KINDS[i] {
-                crate::display::ot_add(ot, 0, &mut RECTS[i], 5);
-            } else {
-                crate::display::ot_add(ot, 0, &mut QUADS[i], QuadTextured::WORDS);
-            }
-        }
+        line(sub, y + 16 + 42, level, centre);
     }
 }

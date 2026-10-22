@@ -215,7 +215,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
     match menu.page {
         Page::Main => {
             for (i, label) in state::MAIN_ITEMS.iter().enumerate() {
-                let y = 140 + i as i16 * 18;
+                let y = 152 + i as i16 * 18;
                 let g = if i == menu.selected {
                     gain
                 } else {
@@ -246,11 +246,10 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     pointer(52, y, gain);
                 }
             }
-            centered(
-                206,
-                if fault.is_empty() { "O: back" } else { fault },
-                gain,
-            );
+            // The page has no hint row, as the source's has none; a failed read says so here.
+            if !fault.is_empty() {
+                centered(206, fault, gain);
+            }
         }
         Page::Options => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
@@ -280,7 +279,6 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     pointer(46, y, gain);
                 }
             }
-            centered(206, "Left/Right: adjust    O: back", gain);
         }
         Page::Controls => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
@@ -289,23 +287,35 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
                 centered(68 + i as i16 * 13, line, gain);
             }
-            centered(208, "X / O / START: back", gain);
         }
         Page::Cheats => {
-            // Thirteen rows at the font's size leave room for no flourishes.
-            gpu::draw_rect_flat(18, 10, 284, 224, 0, 0, 0);
-            centered_caps(14, "CHEATS", gain);
-            for (i, label) in state::CHEAT_ITEMS.iter().chain(["Back"].iter()).enumerate() {
-                let y = 32 + i as i16 * 13;
+            // The same panel and flourishes as Options: a window of eight rows follows the
+            // cursor through the twelve cheats and Back.
+            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            flourishes(24, 224, gain);
+            centered_caps(51, "CHEATS", gain);
+            const WINDOW: usize = 8;
+            const TOP: i16 = 68;
+            const PITCH: i16 = 14;
+            let total = state::CHEAT_ITEMS.len() + 1;
+            let first = menu.selected.saturating_sub(WINDOW / 2).min(total - WINDOW);
+            for (i, label) in state::CHEAT_ITEMS
+                .iter()
+                .chain(["Back"].iter())
+                .enumerate()
+                .skip(first)
+                .take(WINDOW)
+            {
+                let y = TOP + (i - first) as i16 * PITCH;
                 let g = if i == menu.selected {
                     gain
                 } else {
                     gain - gain / 4
                 };
-                text(46, y, label, g);
+                text(52, y, label, g);
                 if i < state::CHEAT_ITEMS.len() {
                     text(
-                        254,
+                        248,
                         y,
                         if menu.settings.cheats.enabled(i) {
                             "ON"
@@ -316,11 +326,17 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                     );
                 }
                 if i == menu.selected {
-                    pointer(22, y, gain);
+                    pointer(30, y, gain);
                 }
             }
-            centered(204, "Session only. More in Pause > Cheats", gain);
-            centered(218, "X: toggle    Left/Right: off/on    O: back", gain);
+            // More rows above or below the window.
+            if first > 0 {
+                text(288, TOP - 2, "^", gain);
+            }
+            if first + WINDOW < total {
+                text(288, TOP + (WINDOW as i16 - 1) * PITCH, "v", gain);
+            }
+            centered(194, "Session only. More in Pause > Cheats", gain);
         }
     }
     // BRIGHTNESS over the whole screen, text included (display.rs).
@@ -499,6 +515,9 @@ pub fn restore(art: Option<&[u8]>) {
     upload_font(&data[MENU_BYTES..MENU_BYTES + FONT_BYTES]);
     let at = crate::boot_art::TITLE_ORNAMENTS.0;
     upload_ornaments(&data[at..at + TITLE_ORNAMENT_BYTES]);
+    let (at, len) = crate::boot_art::CARD_FONT;
+    assert_eq!(len, state::CARD_BYTES);
+    upload_bytes(VramRect::new(0, 500, 320, 12), &data[at..at + len]);
     let data = &data[..MENU_BYTES];
     assert!(data.len() == METRICS + 96);
     assert!(&data[..8] == b"HKMENU03");
