@@ -57,9 +57,10 @@ CHARMS = items.CHARMS
 # at this width, measured over all forty rather than chosen.
 DESC_WIDTH = 264
 DESC_LINES = 6
-# Charm rows drawn at once, above the description. The guest takes this from the
-# cooked table so the icon measurement below and the panel can never disagree.
-VISIBLE_ROWS = 6
+# The board is a grid like the source's `Collected Charms`: ten charms to a row, the rows staggered
+# (BB 1..40 of the source's Charms/Backboards sit 1.5 units apart, every second row 0.9 further in).
+GRID_COLS = 10
+SHEET_PX = 64
 # Charm ids the source treats specially, asserted against the FSM below rather
 # than trusted from here.
 FRAGILE = (23, 24, 25)
@@ -547,37 +548,40 @@ def generated_charms_rs(rows, rules, defaults, layout, art):
         entries.append('Charm{name:%s,cost:%d,lines:&[%s],effect:%s,fragile:%s,bound:%s}' % (
             quoted(row['name']), row['cost'], lines, row['effect'] or 'Effect::None',
             'true' if row['fragile'] else 'false', 'true' if row['bound'] else 'false'))
-    panel = layout['panel']
     return '\n'.join([
         '// Generated charm catalogue; localized text from the installed language sheets.',
         f'pub const CHARM_COUNT:usize={len(rows)};',
-        '/// Charm rows the pause panel draws at once, above the description.',
-        f'pub const VISIBLE:usize={VISIBLE_ROWS};',
         f"pub const STARTING_NOTCHES:u8={defaults['charmSlots']};",
         '/// `Overcharm Check` counts a refused attempt and breaks through on this one.',
         f"pub const OVERCHARM_BREAK_ATTEMPT:u8={rules['overcharm_break_attempt']};",
         f'pub const CHARMS:[Charm;CHARM_COUNT]=[' + ','.join(entries) + '];',
-        '/// The board, derived by `host/charms.py::panel_layout` against the 240',
-        '/// scanlines the screen has. The icon size picked the row pitch.',
-        f'pub const PANEL_RECT:(i16,i16,u16,u16)=({panel[0]},{panel[1]},{panel[2]},{panel[3]});',
-        f"pub const TITLE_Y:i16={layout['title_y']};",
+        '/// The board, derived by `host/charms.py::panel_layout` against the 320x240',
+        '/// screen: the icon size picked the slot, the slot picked the grid.',
+        f"pub const GRID_COLS:usize={GRID_COLS};",
+        f"pub const EQUIPPED_Y:i16={layout['equipped_y']};",
         f"pub const NOTCH_Y:i16={layout['notch_y']};",
-        f"pub const ROW_TOP:i16={layout['row_top']};",
+        f"pub const GRID_X:i16={layout['grid_x']};",
+        f"pub const GRID_Y:i16={layout['grid_y']};",
+        f"pub const COL_PITCH:i16={layout['col_pitch']};",
         f"pub const ROW_PITCH:i16={layout['row_pitch']};",
-        '/// A row\'s glyphs, centred against the icon beside them.',
-        f"pub const ROW_TEXT_OFFSET:i16={layout['row_text_offset']};",
+        '/// Every second row sits this far in, as the source\'s backboards do.',
+        f"pub const ODD_SHIFT:i16={layout['odd_shift']};",
+        f"pub const SLOT_PX:i16={layout['slot_px']};",
+        f"pub const NAME_Y:i16={layout['name_y']};",
         f"pub const DESC_TOP:i16={layout['description_y']};",
+        f"pub const DESC_X:i16={layout['description_x']};",
         f"pub const DESC_PITCH:i16={layout['description_pitch']};",
         f"pub const FOOTER_Y:i16={layout['footer_y']};",
-        f"pub const CURSOR_X:i16={layout['cursor_x']};",
-        f"pub const ICON_X:i16={layout['icon_x']};",
-        f"pub const MARK_X:i16={layout['mark_x']};",
-        f"pub const NAME_X:i16={layout['name_x']};",
-        f"pub const COST_X:i16={layout['cost_x']};",
-        '/// Every icon is the same square, so one offset multiply replaces the',
-        '/// `Frame` array the Shade and the ability clips need.',
+        f"pub const LABEL_X:i16={layout['label_x']};",
+        f"pub const ROW_X:i16={layout['row_x']};",
+        f"pub const ICON_PITCH:i16={layout['icon_pitch']};",
+        f"pub const NOTCH_PITCH:i16={layout['notch_pitch']};",
+        '/// Icons are the same square, sixteen to a 64x64 sheet, four to a sheet row.',
         f"pub const ICON_PX:u16={layout['icon_px']};",
         f"pub const ICON_BYTES:usize={art['icon_bytes']};",
+        f"pub const ICON_SHEETS:usize={art['sheets']};",
+        f"pub const ICONS_PER_SHEET_ROW:usize={art['per_row']};",
+        f"pub const SHEET_BYTES:usize={SLOT_BYTES};",
         f"pub const ICON_PALETTE_BYTES:usize={art['palette_bytes']};",
         f"pub const ICON_PALETTE_COUNT:usize={art['palettes']};",
         'pub const ICON_CLUT_RECT:(u16,u16,u16,u16)=(%d,%d,%d,%d);' % tuple(art['clut_rect']),
@@ -591,46 +595,44 @@ def generated_charms_rs(rows, rules, defaults, layout, art):
 RESERVED_ANIMATION_SLOTS = 4
 
 
-def panel_layout(icon_px):
+def panel_layout(icon_px, charms=40):
     """Where the charm board's parts sit for an icon this many pixels square.
 
-    The binding constraint on the icon is 240 scanlines, not linked RAM. The
-    board has to seat a title, the notch counter, `VISIBLE_ROWS` rows whose
-    pitch the icon sets, a `DESC_LINES`-line description and a footer, all
-    inside the screen with a margin. Returning None when they do not all fit is
-    how the icon size gets derived instead of chosen, and the answer does not
-    hang on the gap or the margin: six 24-pixel rows alone are 144 lines, and
-    with the text around them that is already past 240 at zero padding.
+    The board is the source inventory's own arrangement fitted to 320x240: the
+    equipped charms and the notch circles on top, `GRID_COLS` slots to a row,
+    the chosen charm's name with its cost circles, then its description and a
+    footer. A slot is the icon plus a one pixel ring either side; the grid has
+    to fit the width, the parts the 240 scanlines. Returning None-like (`fits`
+    false) when they do not is how the icon size gets derived instead of chosen.
     """
-    pitch = max(icon_px, GLYPH_PX + 2)
-    parts = [GLYPH_PX, GLYPH_PX, VISIBLE_ROWS * pitch, DESC_LINES * DESC_PITCH, GLYPH_PX]
-    height = sum(parts) + PANEL_GAP * len(parts) + 2 * PANEL_BORDER
+    slot = icon_px + 2
+    col_pitch = slot + 4
+    row_pitch = slot + 2
+    shift = col_pitch // 2 + 1
+    rows = -(-charms // GRID_COLS)
+    grid_w = (GRID_COLS - 1) * col_pitch + slot + shift
+    parts = [icon_px, 10, rows * row_pitch - 2, GLYPH_PX, DESC_LINES * DESC_PITCH, GLYPH_PX]
+    gaps = [4, 8, 4, 2, 6]
+    height = sum(parts) + sum(gaps)
     needed = height + 2 * PANEL_MARGIN
-    if needed > SCREEN_LINES:
-        return {'icon_px': icon_px, 'scanlines_needed': needed, 'fits': False}
+    if needed > SCREEN_LINES or grid_w > 320 - 2 * PANEL_MARGIN:
+        return {'icon_px': icon_px, 'scanlines_needed': needed, 'grid_width': grid_w, 'fits': False}
     top = (SCREEN_LINES - height) // 2
-    y = top + PANEL_BORDER + PANEL_GAP
-    at = []
-    for part in parts:
+    at, y = [], top
+    for i, part in enumerate(parts):
         at.append(y)
-        y += part + PANEL_GAP
-    title, notches, rows, description, footer = at
-    # The row's own columns. Only the icon column moves with the icon; the
-    # cursor and the notch cost sit where the text-only board already put them.
-    cursor_x, cost_x = 20, 268
-    icon_x = cursor_x + GLYPH_PX
-    mark_x = icon_x + icon_px + 6
-    name_x = mark_x + 14
-    assert name_x + 100 < cost_x, 'the icon column crowds out the charm names'
+        y += part + (gaps[i] if i < len(gaps) else 0)
+    equipped, notches, grid, name, description, footer = at
     return {
-        'icon_px': icon_px, 'scanlines_needed': needed, 'fits': True,
-        'panel': [PANEL_X, top, PANEL_W, height],
-        'title_y': title, 'notch_y': notches,
-        'row_top': rows, 'row_pitch': pitch, 'row_text_offset': (pitch - GLYPH_PX) // 2,
-        'description_y': description, 'description_pitch': DESC_PITCH,
-        'footer_y': footer,
-        'cursor_x': cursor_x, 'icon_x': icon_x, 'mark_x': mark_x,
-        'name_x': name_x, 'cost_x': cost_x,
+        'icon_px': icon_px, 'scanlines_needed': needed, 'grid_width': grid_w, 'fits': True,
+        'panel': [0, top, 320, height],
+        'equipped_y': equipped, 'notch_y': notches, 'grid_y': grid, 'name_y': name,
+        'description_y': description, 'description_pitch': DESC_PITCH, 'footer_y': footer,
+        'grid_x': (320 - grid_w) // 2, 'col_pitch': col_pitch, 'row_pitch': row_pitch,
+        'odd_shift': shift, 'slot_px': slot,
+        # Labels at the left, the rows of icons and circles from one common column.
+        'label_x': 14, 'row_x': 92, 'icon_pitch': icon_px + 4, 'notch_pitch': 12,
+        'description_x': 28,
     }
 
 
@@ -734,15 +736,31 @@ def icon_art(source, catalogue, side):
                     texels[y * stride + x // 2] |= nibble << ((x & 1) * 4)
             texels_of[index] = bytes(texels)
             clut_of[index] = len(palettes) - 1
-    # Charm order on disc, whatever order they were quantized in: the guest
-    # reaches a frame by multiplying its charm index, and carries no offsets.
-    blob = b''.join(texels_of)
+    # Charm order on disc, whatever order they were quantized in, packed into
+    # sheets: a board that shows every slot at once cannot ask the cache for forty
+    # slots, so sixteen icons share one 64x64 slot (four to a row, charm order)
+    # and the guest finds an icon by its index alone.
+    per_row = SHEET_PX // side
+    assert stride * per_row <= SHEET_PX // 2, 'icons do not tile a sheet row'
+    sheets = []
+    for first in range(0, len(texels_of), per_row * per_row):
+        group = texels_of[first:first + per_row * per_row]
+        rows = -(-len(group) // per_row)
+        sheet = bytearray(SHEET_PX // 2 * rows * side)
+        for k, texels in enumerate(group):
+            column, row = k % per_row, k // per_row
+            for y in range(side):
+                at = (row * side + y) * (SHEET_PX // 2) + column * stride
+                sheet[at:at + stride] = texels[y * stride:(y + 1) * stride]
+        assert len(sheet) <= SLOT_BYTES
+        sheets.append(bytes(sheet))
     palette_bytes = b''.join(palettes)
     return {
-        'payload': bytes(palette_bytes) + bytes(blob),
+        'payload': bytes(palette_bytes) + b''.join(sheets),
         'palette_bytes': len(palette_bytes), 'palettes': len(palettes),
         'icon_bytes': stride * side, 'clut_of': clut_of, 'art_sources': art_sources,
         'clut_rect': list(ICON_CLUT), 'previews': previews,
+        'sheets': len(sheets), 'sheet_bytes': [len(x) for x in sheets], 'per_row': per_row,
     }
 
 
@@ -756,7 +774,7 @@ def _spare_halfwords():
     return rustsrc.const_int(ROOT / 'shared/hk-cache/src/residency.rs', 'SPARE_HALFWORDS')
 
 
-def icon_measurement(source, catalogue, rows_on_screen):
+def icon_measurement(source, catalogue, sheets_on_screen):
     """What the forty charm icons would cost, measured rather than guessed.
 
     Two numbers decide this and neither is a judgement call. `TEXTURE_BUDGET` is
@@ -789,7 +807,7 @@ def icon_measurement(source, catalogue, rows_on_screen):
     layouts = {side: panel_layout(side) for side in ICON_SIZES}
     seatable = [side for side in ICON_SIZES if layouts[side]['fits']]
     chosen = max(seatable) if seatable else None
-    needed_slots = rows_on_screen + RESERVED_ANIMATION_SLOTS
+    needed_slots = sheets_on_screen + RESERVED_ANIMATION_SLOTS
     verdict = [f"The atlas route is out and always will be: a pause screen is reachable from "
                f"every view, so the figure that applies is the tightest view in the world, "
                f"{budget['global_headroom']} free CLUT slots in {tightest[0]} chunk "
@@ -799,27 +817,27 @@ def icon_measurement(source, catalogue, rows_on_screen):
     if needed_slots > slots:
         verdict.append(
             f'The Hollow Shade route has the RAM, {linked(32)} bytes at 32x32, but not the slots: '
-            f'{rows_on_screen} visible rows beside the {RESERVED_ANIMATION_SLOTS} the frozen view '
+            f'{sheets_on_screen} icon sheets beside the {RESERVED_ANIMATION_SLOTS} the frozen view '
             f'reserves is more than the {slots} that exist.')
     else:
         verdict.append(
-            f'The Hollow Shade route fits and did not before: {rows_on_screen} slots for the '
-            f'visible rows beside the {RESERVED_ANIMATION_SLOTS} the frozen view behind the panel '
+            f'The Hollow Shade route fits and did not before: {sheets_on_screen} slots for the '
+            f'icon sheets beside the {RESERVED_ANIMATION_SLOTS} the frozen view behind the panel '
             f'reserves is {needed_slots} of {slots}, and the RAM was never the problem at '
             f'{linked(32)} bytes even for 32x32.')
     if chosen:
         bigger = [s for s in ICON_SIZES if s > chosen]
         verdict.append(
             f'The screen is what set the size, not the RAM: {chosen}-pixel icons need '
-            f"{layouts[chosen]['scanlines_needed']} of {SCREEN_LINES} scanlines beside six rows "
-            f'and a six-line description'
+            f"{layouts[chosen]['scanlines_needed']} of {SCREEN_LINES} scanlines and a {layouts[chosen]['grid_width']} pixel grid beside "
+            f'a six-line description'
             + (f", and {bigger[0]}-pixel ones need {layouts[bigger[0]]['scanlines_needed']}."
                if bigger else '.')
             + f' Icons ship at {chosen}x{chosen}: {linked(chosen)} bytes of texels, plus a'
               ' 32-byte palette for each resident CLUT row they share.')
     elif needed_slots <= slots:
         verdict.append(
-            'No offered icon size can be seated beside six rows and a six-line description inside '
+            'No offered icon size can be seated beside the grid and a six-line description inside '
             f'{SCREEN_LINES} scanlines, so the board stays text only.')
     if not chosen:
         verdict.append('Shipping the screen without icons costs nothing to revisit; trimming an '
@@ -844,13 +862,13 @@ def icon_measurement(source, catalogue, rows_on_screen):
         'resident_vram_halfwords': {f'{side}x{side}': linked(side) // 2 for side in ICON_SIZES},
         'spare_halfwords': _spare_halfwords(),
         'animation_slots': slots,
-        'rows_on_screen': rows_on_screen,
+        'sheets_on_screen': sheets_on_screen,
         # Derived rather than written down, because the slot count moved under
         # this once already: the cache went from 8 to 24 when an unused scenery
         # page was reclaimed, and the sentence explaining the refusal kept
         # interpolating the new number into the old argument.
-        'shade_route_slots_needed': rows_on_screen + RESERVED_ANIMATION_SLOTS,
-        'shade_route_fits': rows_on_screen + RESERVED_ANIMATION_SLOTS <= slots,
+        'shade_route_slots_needed': sheets_on_screen + RESERVED_ANIMATION_SLOTS,
+        'shade_route_fits': sheets_on_screen + RESERVED_ANIMATION_SLOTS <= slots,
         # The size is the largest the screen can seat, not the largest the RAM
         # can hold. Both numbers are here so a later reader can see which one
         # was binding, the way the CLUT and slot halves above already do.
@@ -887,7 +905,7 @@ def source_charm_values(source, assembly, scenes):
     assert refresh[:3] == ['playerData', 'charmSlotsFilled', 'playerData'] and 'charmSlots' in refresh, \
         'RefreshOvercharm no longer compares filled against slots'
     rows = charm_table(catalogue, shell, bonuses, heart, nails, grub, advances())
-    icons = icon_measurement(source, catalogue, VISIBLE_ROWS)
+    icons = icon_measurement(source, catalogue, -(-len(catalogue) // ((SHEET_PX // 16) ** 2)))
     # No size the screen can seat means no icons, and the board stays text only
     # rather than losing rows or description lines to make one fit.
     art = icon_art(source, catalogue, icons['icon_px']) if icons['icon_px'] else None

@@ -9,6 +9,7 @@
 //! bools are. Bosses call `show_boss` with their own title.
 //!
 //! The text uses the dialogue font the disc already has, main line doubled.
+use psx_gpu::material::{BlendMode, TextureMaterial};
 use psx_gpu::ot::OrderingTable;
 use psx_gpu::prim::QuadTextured;
 use psx_vram::{Clut, TexDepth, Tpage};
@@ -191,14 +192,15 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
             let u = crate::dialogue::glyph_u(i) as u8;
             let page = (i / 21 * 64) as u16;
             let clut = Clut::new(320, 481).uv_clut_word();
-            let tpage = Tpage::new(page, 256, TexDepth::Bit4).uv_tpage_word(0);
+            // Added to the view: the glyph palette is semi-transparent (font_strip.rs).
+            let tpage = Tpage::new(page, 256, TexDepth::Bit4).uv_tpage_word(1);
             unsafe {
                 if scale == 1 {
                     // A 12x12 rectangle samples texel for texel: exact.
                     RECTS[USED] = Rect {
                         tag: 0,
                         mode: 0xe100_0000 | tpage as u32,
-                        color: 0x6400_0000 | u32::from(level) * 0x0001_0101,
+                        color: 0x6600_0000 | u32::from(level) * 0x0001_0101,
                         xy: x as u16 as u32 | ((y as u16 as u32) << 16),
                         uv: u32::from(u) | (244 << 8) | (u32::from(clut) << 16),
                         wh: 12 | (12 << 16),
@@ -213,12 +215,10 @@ fn line(text: &str, y: i16, scale: i16, level: u8, centre: i16) {
                     // only the last row of a descender halved.
                     let (w, h) = (12 * scale, 11 * scale);
                     let y = y + scale / 2;
-                    QUADS[USED] = QuadTextured::new(
+                    QUADS[USED] = QuadTextured::with_material(
                         [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
                         [(u - 1, 244), (u + 11, 244), (u - 1, 255), (u + 11, 255)],
-                        clut,
-                        tpage,
-                        (level, level, level),
+                        TextureMaterial::blended(clut, tpage, (level, level, level), BlendMode::Add),
                     );
                 }
                 KINDS[USED] = scale == 1;

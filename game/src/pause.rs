@@ -11,6 +11,8 @@ const CROSS: u16 = 0x4000;
 const _: () = assert!(
     UP == crate::charms::UP
         && DOWN == crate::charms::DOWN
+        && LEFT == crate::charms::LEFT
+        && RIGHT == crate::charms::RIGHT
         && CIRCLE == crate::charms::CIRCLE
         && CROSS == crate::charms::CROSS
 );
@@ -309,11 +311,14 @@ mod tests {
         p.step(0, &mut a, &mut b, &mut 10, &mut cheats);
         assert!(!p.step(CROSS, &mut a, &mut b, &mut 10, &mut cheats));
         assert!(p.charms.open);
-        // Down inside the board moves its cursor, not the pause row.
+        // Down inside the board moves its cursor a grid row, Right a slot, not the pause row.
         p.step(0, &mut a, &mut b, &mut 10, &mut cheats);
         p.step(DOWN, &mut a, &mut b, &mut 10, &mut cheats);
         assert_eq!(p.row, 6);
-        assert_eq!(p.charms.row, 1);
+        assert_eq!(p.charms.row, crate::charms::GRID_COLS);
+        p.step(0, &mut a, &mut b, &mut 10, &mut cheats);
+        p.step(RIGHT, &mut a, &mut b, &mut 10, &mut cheats);
+        assert_eq!(p.charms.row, crate::charms::GRID_COLS + 1);
         p.step(0, &mut a, &mut b, &mut 10, &mut cheats);
         assert!(!p.step(CIRCLE, &mut a, &mut b, &mut 10, &mut cheats));
         assert!(!p.charms.open);

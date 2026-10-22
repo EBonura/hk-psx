@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |763,680|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |271,512|
-| BSS, including shared scene arena and runtime pools |797,812|
-| Total static span |1,833,012|
+| Linked code |763,224|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |273,496|
+| BSS, including shared scene arena and runtime pools |797,816|
+| Total static span |1,834,552|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |149,196|
+| Unallocated gap before reserved stack |147,656|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |46,796|
+| Free RAM below the module pool |45,256|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -36,6 +36,8 @@ The 2026-10-19 console-fix pass (the bench Save notice, card errors and retries,
 The 2026-10-19 polish pass (the original dialogue box, a crisper font and Geo coin, exact title-card glyphs, and the new game's drop in from King's Pass's top gate) took 6,888 bytes of the 60,260 that were free below the module pool, leaving 53,372: linked code 758,912 to 762,160 (+3,248: the ornate panel's layout and backboard, the animation-cache branch for its tiles, the title card's two glyph paths, the new-game entry), linked data 263,432 to 266,456 (+3,024: 3,568 bytes of dialogue ornaments and their 56-byte tile table, less the title card's glyph arrays halved from 48 to 24 and the removed Geo coin quad), BSS +616. The ornaments (`data/dialogue-art.hk`, host/hk-cook/src/dialogue_art.rs) are the whole of the data cost; they reach VRAM through the animation cache's 64x64 slots on demand, so VRAM, which has 304 spare halfwords, pays nothing. The Geo coin lives in a spare cell of the font strip (boot art chunk, no RAM) and replaced `geo_render::hud_coin`. The opening-movie player is a blob in the boot art chunk (intro/, only for `build --intro`), so it costs no resident data; the `intro` feature adds 1,652 bytes of code (an intro build has 1,652 bytes less free below the pool than this table).
 
 The 2026-10-22 menus pass (the original crest and flourishes on the pause pages and the charm board, a dimmed view and a glow behind the chosen row, the title pointer and flourishes) took 6,576 bytes of the 53,372 that were free below the module pool, leaving 46,796: linked code 762,160 to 763,680 (+1,520), linked data 266,456 to 271,512 (+5,056: the dialogue art blob grows from 3,568 to 8,592 bytes for 12 tiles, the pause crest and flourishes among them). The title ornaments (3,576 bytes) ride the boot art chunk and cost no RAM.
+
+The 2026-10-22 font and charm board pass (the panel font rasterised unhinted at 16 coverage levels and drawn adding, so its strip, advances table and boot chunk stay 7,712 and 95 bytes; the charm board as the source's grid of forty slots with the equipped row and the notch circles, its icons in three 64x64 sheets instead of six slots a page, and the Options and Select Game pages on their own panel) took 1,540 bytes of the 46,796 that were free below the module pool, leaving 45,256: linked code 763,680 to 763,224 (-456), linked data 271,512 to 273,496 (+1,984: the board's 51 icon quads, which are initialised data, replace six, and the dialogue art blob grows from 8,592 to 8,892 bytes for the slot ring and two notch circles), BSS +4. The charm icons stay 5,248 bytes (four palettes of 32 and forty 16x16 icons, now packed sixteen to a sheet).
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free

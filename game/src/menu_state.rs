@@ -91,7 +91,7 @@ pub enum Page {
     Cheats,
     Profiles,
 }
-pub const MAIN_ITEMS: [&str; 4] = ["Start Game", "Options", "Controls", "Cheats"];
+pub const MAIN_ITEMS: [&str; 4] = ["Start", "Options", "Controls", "Cheats"];
 const _: () = assert!(CHEAT_ITEMS.len() == crate::cheats::CHEAT_ROWS);
 pub const CHEAT_ITEMS: [&str; 12] = [
     "Invincibility",

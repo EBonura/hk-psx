@@ -32,7 +32,8 @@ mod presentation {
     const _: () = assert!(ART.len() == DIALOGUE_ART_BYTES);
     // A tile is one slot upload, and a slot is 64x64 4bpp.
     const _: () = assert!(DIALOGUE_ART_BYTES <= 9216);
-    /// The text panel's tiles come first, the pause screen's fleurs after them.
+    /// The text panel's tiles come first, the pause screen's fleurs after them, the charm
+    /// board's slot and notch circles last.
     const PANEL_TILES: usize = DIALOGUE_PAUSE_TOP.0;
     /// Which screen asks for ornaments in a frame.
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,7 +43,7 @@ mod presentation {
         Panel,
         /// The pause list and its pages: the crest and the flourish.
         Pause,
-        /// The charm board: the thin flourish above and below.
+        /// The charm board: the empty slot's ring and the notch circles.
         Board,
     }
     /// What this frame's working set carries. A screen draws ornaments only for the
@@ -61,8 +62,8 @@ mod presentation {
         let tiles = match art {
             Art::None => return,
             Art::Panel => 0..PANEL_TILES,
-            Art::Pause => PANEL_TILES..DIALOGUE_TILE_COUNT,
-            Art::Board => DIALOGUE_FLEUR_BOTTOM.0..DIALOGUE_FLEUR_BOTTOM.0 + DIALOGUE_FLEUR_BOTTOM.1,
+            Art::Pause => PANEL_TILES..DIALOGUE_BOARD_SLOT.0,
+            Art::Board => DIALOGUE_BOARD_SLOT.0..DIALOGUE_TILE_COUNT,
         };
         if *len + tiles.len() > needed.len() {
             unsafe { HK_DIALOGUE_ART_CROWDED = HK_DIALOGUE_ART_CROWDED.saturating_add(1) };

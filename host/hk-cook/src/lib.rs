@@ -38,6 +38,7 @@ pub mod false_knight;
 pub mod false_knight_art;
 pub mod fk_bank;
 pub mod fmod;
+pub mod font_strip;
 pub mod focus;
 pub mod focus_art;
 pub mod focus_audio;

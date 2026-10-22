@@ -67,6 +67,11 @@ fn sprite(icon: usize, x: i16, y: i16, cut: u16, gain: u8) -> Sprite {
         material,
     )
 }
+/// Whether this frame's screen covers the HUD (set by `dialogue::prepare`, before the frame is submitted).
+static mut HIDDEN: bool = false;
+pub fn hide(hidden: bool) {
+    unsafe { HIDDEN = hidden };
+}
 /// Prepend before scenery, leaving the HUD last in GPU order. Caller owns
 /// every static packet until both DMA and rasterization finish.
 pub fn append(
@@ -78,6 +83,13 @@ pub fn append(
     paused: bool,
     blue_health: u16,
 ) {
+    unsafe {
+        // The charm board covers the screen, as the source's inventory does: no masks, orb or
+        // Geo count over its rows.
+        if HIDDEN {
+            return;
+        }
+    }
     crate::lifeblood::append_hud(ot, max_health, blue_health);
     unsafe {
         if paused {
