@@ -41,7 +41,7 @@ def cook():
     clean = canvas.copy()
     # The glyph advances come with the strip, from hk-cook dialogue-art (host/hk-cook/src/font_strip.rs).
     advances = json.loads((ROOT/'data/font-metrics.json').read_text())['advances']
-    if len(advances)!=95 or not all(1<=a<=12 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
+    if len(advances)!=95 or not all(1<=a<=13 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
     indexed = canvas.convert('RGB').quantize(colors=256, method=Image.Quantize.MEDIANCUT,
                                            dither=Image.Dither.NONE)
     palette = indexed.getpalette('RGB')
@@ -97,13 +97,13 @@ def cook():
         'format': 'HKMENU03: 16-byte <8sHHI header, 512-byte RGB555 palette, '
                   '61440-byte left 256x240 tile, 15360-byte right 64x240 tile, '
                   'two 6144-byte 192x32 loading/retry prompt tiles, 95 glyph advances and one zero byte.',
-        'shared_font': {'path':'data/read_font.hk','bytes':7712,'source':source.sid(font_obj),
+        'shared_font': {'path':'data/read_font.hk','bytes':12832,'source':source.sid(font_obj),
                         'glyphs':'ASCII32..126, source Perpetua 12 px, hk-cook dialogue-art (font_strip.rs)'},
         'settings':{'sfx':[0,10],'ambience':[0,10],'default':10,'persistence':'current session only'},
         'vram_bytes': 89600,
-        'shared_glyph_vram_bytes':7712,
+        'shared_glyph_vram_bytes':12832,
     })
-    print(f'Cooked title menu: {len(blob)} bytes, 89600 title VRAM bytes plus shared7712-byte glyph reservation.')
+    print(f'Cooked title menu: {len(blob)} bytes, 89600 title VRAM bytes plus the 12832-byte font image.')
 
 
 if __name__ == '__main__':

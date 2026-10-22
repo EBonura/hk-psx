@@ -9,8 +9,9 @@ pub const CIRCLE: u16 = 1 << 13;
 pub const CROSS: u16 = 1 << 14;
 /// Brightness steps either side of the picture as drawn, and the screen
 /// position's reach either side of centre in pixels (display.rs).
-/// Where glyph cells start inside the 256 pixel strip (host/read_points.py `GLYPH_U0`).
-pub const GLYPH_U0: usize = 4;
+// The font image's layout (host/hk-cook/src/font_strip.rs): where it sits in VRAM, the body glyph
+// cells, the capitals and the Geo coin's cell.
+include!("../../data/font_layout.rs");
 pub const BRIGHT_STEPS: i8 = 5;
 pub const SCREEN_RANGE: i8 = 16;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,21 +119,17 @@ pub const OPTION_ITEMS: [&str; 7] = [
 ];
 /// The row that leaves the options page.
 pub const OPTION_BACK: usize = OPTION_ITEMS.len() - 1;
-pub const CONTROL_LINES: [&str; 14] = [
-    "D-pad or left stick: move",
-    "X: jump",
-    "Square: swing nail",
-    "O: cast (tap) or Focus (hold)",
-    "Up + Square: upward nail",
-    "Airborne Down + Square: downward nail",
-    "Up/Down at tablet: inspect",
-    "Start: pause / resume",
-    "Select: charms (inventory)",
-    "L1: quick map (needs a map)",
-    "R1: quick cast",
-    "R2: dash (Mothwing Cloak)",
+pub const CONTROL_LINES: [&str; 10] = [
+    "D-pad or stick: move",
+    "X: jump    Square: nail",
+    "Up + Square: nail up",
+    "Air Down + Square: pogo",
+    "O: cast (tap), Focus (hold)",
+    "R1: quick cast    R2: dash",
     "Hold L2: Crystal Heart",
     "Hold Triangle: Dream Nail",
+    "L1: quick map    Select: charms",
+    "Start: pause    Up: inspect",
 ];
 pub struct State {
     pub page: Page,

@@ -4,6 +4,10 @@ use psx_gpu::{
     ot::OrderingTable,
     prim::{QuadGouraudBlended, RectFlat},
 };
+use crate::menu::state::{
+    CAPS_ADVANCES, CAPS_CHARS, CAPS_H, CAPS_PER_ROW, CAPS_V0, CAPS_W, COIN_CELL, FONT_X,
+    FONT_PAGE_Y, FONT_V0, GLYPH_H, GLYPH_PER_ROW, GLYPH_ROW_PITCH, GLYPH_U0, GLYPH_W,
+};
 use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
 #[path = "npc_state.rs"]
 mod npc_state;
@@ -255,40 +259,79 @@ fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
                 let p = &mut GLYPHS[USED];
                 USED += 1;
                 p.mode = 0xe100_0000
-                    | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
+                    | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1) as u32;
                 p.color = color;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
                 p.uv = glyph_u(i) as u32
-                    | (244 << 8)
+                    | ((glyph_v(i) as u32) << 8)
                     | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
-                p.wh = 12 | (12 << 16);
+                p.wh = GLYPH_W as u32 | ((GLYPH_H as u32) << 16);
             }
         }
         x += ADVANCES[i] as i16;
     }
 }
-/// U of glyph cell `i` in its strip, 21 cells to a strip.
+/// U and V of glyph cell `i` of the font image: `GLYPH_PER_ROW` cells to a row, rows
+/// `GLYPH_ROW_PITCH` apart (the spare texel row keeps the texel above a cell blank).
 pub(crate) const fn glyph_u(i: usize) -> usize {
-    crate::menu::state::GLYPH_U0 + i % 21 * 12
+    GLYPH_U0 + i % GLYPH_PER_ROW * GLYPH_W
 }
-/// One cell of the glyph strip drawn 1:1 at (`x`, `y`), by its index: 0 to 94
-/// are the ASCII glyphs `text` draws, 95 is the Geo coin (host/read_points.py).
-fn cell(i: usize, x: i16, y: i16) {
+pub(crate) const fn glyph_v(i: usize) -> usize {
+    FONT_V0 + i / GLYPH_PER_ROW * GLYPH_ROW_PITCH
+}
+/// The Geo coin, a 12x12 cell of the font image's capitals rows, drawn 1:1 at (`x`, `y`).
+fn coin(x: i16, y: i16) {
     unsafe {
         assert!(USED < CAP);
         let p = &mut GLYPHS[USED];
         USED += 1;
-        p.mode = 0xe100_0000 | Tpage::new((i / 21 * 64) as u16, 256, TexDepth::Bit4).uv_tpage_word(0) as u32;
+        p.mode = 0xe100_0000 | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0) as u32;
         p.color = 0x6480_8080;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
-        p.uv = glyph_u(i) as u32
-            | (244 << 8)
+        let (col, row) = (COIN_CELL % CAPS_PER_ROW, COIN_CELL / CAPS_PER_ROW);
+        p.uv = (GLYPH_U0 + col * CAPS_W) as u32
+            | (((FONT_V0 + CAPS_V0 + row * CAPS_H) as u32) << 8)
             | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
         p.wh = 12 | (12 << 16);
     }
 }
-/// The glyph strip's cell for the Geo coin.
-const GEO_COIN_CELL: usize = 95;
+/// Capitals for the menu buttons and headings (TrajanPro-Bold, as the original's): `value` upper
+/// cased, letters, digits and % only, a space as a gap.
+pub(crate) fn caps_width(value: &str) -> i16 {
+    value
+        .bytes()
+        .map(|b| match CAPS_CHARS.iter().position(|&c| c == b.to_ascii_uppercase()) {
+            Some(i) => CAPS_ADVANCES[i] as i16,
+            None => CAPS_SPACE,
+        })
+        .sum()
+}
+/// A space between capitals.
+pub(crate) const CAPS_SPACE: i16 = 6;
+pub(crate) fn caps_text(x: i16, y: i16, value: &str, gain: u8) {
+    let color = 0x6600_0000 | u32::from(gain) * 0x0001_0101;
+    let mut x = x;
+    for b in value.bytes() {
+        let Some(i) = CAPS_CHARS.iter().position(|&c| c == b.to_ascii_uppercase()) else {
+            x += CAPS_SPACE;
+            continue;
+        };
+        unsafe {
+            assert!(USED < CAP);
+            let p = &mut GLYPHS[USED];
+            USED += 1;
+            p.mode = 0xe100_0000 | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1) as u32;
+            p.color = color;
+            p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
+            let (col, row) = (i % CAPS_PER_ROW, i / CAPS_PER_ROW);
+            p.uv = (GLYPH_U0 + col * CAPS_W) as u32
+                | (((FONT_V0 + CAPS_V0 + row * CAPS_H) as u32) << 8)
+                | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
+            p.wh = CAPS_W as u32 | ((CAPS_H as u32) << 16);
+        }
+        x += CAPS_ADVANCES[i] as i16;
+    }
+}
 fn number(x: i16, y: i16, value: u32) {
     let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
     text(x, y, psx_math::fmt::u32_dec(&mut digits, value));
@@ -336,12 +379,12 @@ pub fn prepare(
         USED = 0;
         BOX_COUNT = 0;
         BACKBOARD_COUNT = 0;
-        let board = pause.is_some_and(|(p, _)| p.charms.open && !p.confirm_reset);
+        let board = pause.is_some_and(|(p, _)| (p.charms.open || p.cheats) && !p.confirm_reset);
         crate::hud::hide(board);
         if !board {
             let geo_y = crate::hud::geo_y(total_masks);
             number(GEO_NUMBER_X, geo_y, geo);
-            cell(GEO_COIN_CELL, GEO_COIN_X, geo_y - 1);
+            coin(GEO_COIN_X, geo_y - 1);
         }
         if let Some((p, settings)) = pause {
             // Every pause screen is the game dimmed behind the source's own ornaments, with
@@ -365,8 +408,14 @@ pub fn prepare(
             } else if p.cheats {
                 // Thirteen rows do not leave room for the crest: the dim and the glow only.
                 pause_backdrop(false, 0);
-                text(160 - width("Cheats") / 2, 30, "Cheats");
-                row_glow(44 + p.row as i16 * 10 - 1, 10);
+                caps_text(160 - caps_width("Cheats") / 2, 12, "Cheats", 0x80);
+                // Seventeen rows at the font's size do not fit: a window of eleven follows the cursor.
+                const WINDOW: usize = 11;
+                const TOP: i16 = 32;
+                const CHEAT_PITCH: i16 = 14;
+                let total = crate::menu::state::CHEAT_ITEMS.len() + 5;
+                let first = p.row.saturating_sub(WINDOW / 2).min(total - WINDOW);
+                row_glow(TOP + (p.row - first) as i16 * CHEAT_PITCH - 1, CHEAT_PITCH);
                 for (i, line) in crate::menu::state::CHEAT_ITEMS
                     .iter()
                     .chain(
@@ -380,8 +429,10 @@ pub fn prepare(
                         .iter(),
                     )
                     .enumerate()
+                    .skip(first)
+                    .take(WINDOW)
                 {
-                    let y = 44 + i as i16 * 10;
+                    let y = TOP + (i - first) as i16 * CHEAT_PITCH;
                     text_gain(46, y, line, row_gain(p.row == i));
                     if i < crate::menu::state::CHEAT_ITEMS.len() {
                         text_gain(
@@ -398,11 +449,18 @@ pub fn prepare(
                 }
                 text(
                     160 - width("X: apply    Left/Right: off/on    O: back") / 2,
-                    219,
+                    214,
                     "X: apply    Left/Right: off/on    O: back",
                 );
+                // More rows above or below the window.
+                if first > 0 {
+                    text(296, 14, "^");
+                }
+                if first + WINDOW < total {
+                    text(157, TOP + WINDOW as i16 * CHEAT_PITCH, "v");
+                }
             } else if p.controls {
-                pause_backdrop(fleurs, LIST_Y + 9 * 11 + 3);
+                pause_backdrop(fleurs, LIST_Y + 9 * 13 + 3);
                 for (i, line) in [
                     "D-pad / left stick: Move",
                     "X: Jump    Square: Nail    Up: Inspect",
@@ -417,7 +475,7 @@ pub fn prepare(
                 .iter()
                 .enumerate()
                 {
-                    text(160 - width(line) / 2, LIST_Y + i as i16 * 11, line);
+                    text(160 - width(line) / 2, LIST_Y + i as i16 * 13, line);
                 }
             } else {
                 pause_backdrop(fleurs, LIST_Y + 7 * LIST_PITCH + 3);
@@ -435,7 +493,7 @@ pub fn prepare(
                 .enumerate()
                 {
                     let y = LIST_Y + i as i16 * LIST_PITCH;
-                    text_gain(LIST_X, y, line, row_gain(p.row == i));
+                    caps_text(LIST_X, y + 1, line, row_gain(p.row == i));
                 }
                 for (i, volume) in [settings.sfx, settings.ambience, settings.music]
                     .iter()
@@ -447,7 +505,7 @@ pub fn prepare(
                 }
                 // Under the flourish, as the box's footer was.
                 let hint = "Left / Right: Volume   O: Resume";
-                text(160 - width(hint) / 2, 222, hint);
+                text(160 - width(hint) / 2, 220, hint);
             }
         } else if save_ui != crate::save_ui::Ui::Idle {
             save_notice(save_ui);
@@ -550,19 +608,19 @@ fn panel(pages: &[&'static [&'static str]], page: usize) {
         return;
     }
     unsafe {
-        BOXES[0] = RectFlat::new(10, 46, 300, 152, 150, 150, 150);
-        BOXES[1] = RectFlat::new(12, 48, 296, 148, 0, 0, 0);
+        BOXES[0] = RectFlat::new(10, 46, 300, 160, 150, 150, 150);
+        BOXES[1] = RectFlat::new(12, 48, 296, 156, 0, 0, 0);
         BOX_COUNT = 2;
     }
     for (i, line) in pages[page].iter().enumerate() {
-        text(24, 59 + i as i16 * 14, line);
+        text(24, 54 + i as i16 * 16, line);
     }
     let footer = if page + 1 < pages.len() {
         "X: Next    O: Close"
     } else {
         "X / O: Close"
     };
-    text(160 - width(footer) / 2, 178, footer);
+    text(160 - width(footer) / 2, 184, footer);
 }
 /// One ornament piece at (`x`, `y`): a textured rectangle per tile, 1:1.
 fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
@@ -596,7 +654,7 @@ fn ornate(lines: &[&str], more: bool) {
     use crate::dialogue_art::{
         DIALOGUE_ARROW, DIALOGUE_FLEUR_BOTTOM, DIALOGUE_FLEUR_TOP, DIALOGUE_STOP, ICON_H, ICON_W,
     };
-    const PITCH: i16 = 14;
+    const PITCH: i16 = 16;
     const GAP: i16 = 6;
     let rows = lines.len().max(1) as i16;
     let top_h = DIALOGUE_FLEUR_TOP.3 as i16;
@@ -645,11 +703,11 @@ fn ornate(lines: &[&str], more: bool) {
 }
 /// Where the pause screens put their pieces: the crest, the list under it and
 /// the flourish under that, all centred. The HUD's masks and Geo count sit above.
-const FLEUR_Y: i16 = 50;
-const LIST_Y: i16 = 100;
-const LIST_PITCH: i16 = 13;
-const LIST_X: i16 = 84;
-const VOLUME_X: i16 = 190;
+const FLEUR_Y: i16 = 44;
+const LIST_Y: i16 = 92;
+const LIST_PITCH: i16 = 14;
+const LIST_X: i16 = 64;
+const VOLUME_X: i16 = 204;
 /// How much the game behind a pause screen is darkened, and how bright the light behind the
 /// chosen row is (the source's `menu_backboard_*` and `List_Selection_Glow` sprites).
 const PAUSE_DIM: u8 = 150;
@@ -682,7 +740,7 @@ fn pause_backdrop(fleurs: bool, bottom: i16) {
 }
 /// A soft light behind the chosen row, brightest in the middle and gone at both ends.
 fn row_glow(y: i16, height: i16) {
-    glow(70, 250, y, height);
+    glow(56, 264, y, height);
 }
 fn glow(left: i16, right: i16, y: i16, height: i16) {
     let mid = (left + right) / 2;
@@ -728,7 +786,7 @@ fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {
     let x = (x - w as i32 / 2).clamp(4, 316 - w as i32) as i16;
     let y = y.clamp(32, 220) as i16;
     unsafe {
-        BOXES[0] = RectFlat::new(x - 3, y - 2, w as u16 + 6, 16, 0, 0, 0);
+        BOXES[0] = RectFlat::new(x - 3, y - 2, w as u16 + 6, 18, 0, 0, 0);
         BOX_COUNT = 1;
     }
     text(x, y, label);

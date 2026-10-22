@@ -781,7 +781,7 @@ mod presentation {
         let top = screen.row / VISIBLE * VISIBLE;
         let mut selected = None;
         for (offset, index) in state.shelf(charms).skip(top).take(VISIBLE).enumerate() {
-            let y = 64 + offset as i16 * 12;
+            let y = 56 + offset as i16 * 15;
             if top + offset == screen.row {
                 panel_text(26, y, ">");
                 selected = Some(index);
@@ -793,14 +793,14 @@ mod presentation {
         }
         if let Some(index) = selected {
             for (i, line) in State::item(index).lines.iter().enumerate() {
-                panel_text(28, 140 + i as i16 * 11, line);
+                panel_text(28, 150 + i as i16 * 13, line);
             }
         }
         let footer = match screen.message {
             Some(refusal) => refusal.message(),
             None => FOOTER,
         };
-        panel_text(160 - panel_width(footer) / 2, 214, footer);
+        panel_text(160 - panel_width(footer) / 2, 216, footer);
     }
 }
 #[cfg(not(test))]
