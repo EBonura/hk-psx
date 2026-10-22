@@ -53,7 +53,10 @@ pub static mut HK_READ_PAGE: u32 = 0;
 pub static mut HK_READ_OPENED: u32 = 0;
 #[no_mangle]
 pub static mut HK_READ_CLOSED: u32 = 0;
-pub(crate) const CAP: usize = 416;
+/// Glyph and art packets a frame can hold. The worst screen is the charm board (tests/charms_runtime
+/// counts 357 for the longest name and description, spaces included, with every ring, circle and
+/// the vessel's glow); a tablet page is at most 161 letters. It was 416, 24 bytes each.
+pub(crate) const CAP: usize = 360;
 #[repr(C, align(4))]
 struct Glyph {
     tag: u32,
@@ -625,14 +628,16 @@ pub(crate) fn raw_rect(x: i16, y: i16, tpage: u16, color: u32, uv: u32, wh: u32)
     }
 }
 fn ornament_tint(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
-    ornament_color(piece, x, y, u32::from(tint) * 0x0001_0101);
+    ornament_color(piece, x, y, u32::from(tint) * 0x0001_0101, false);
 }
 /// One art piece of the charm board, drawn 1:1 at (`x`, `y`) in a colour (r, g, b): the grey
 /// ramp times it, 0x80 a channel as it is.
 pub(crate) fn board_art_rgb(piece: (usize, usize, u16, u16), x: i16, y: i16, (r, g, b): (u8, u8, u8)) {
-    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r));
+    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), false);
 }
-fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32) {
+/// `add`: the piece is added to what is behind it (semi-transparency mode 1, B+F) instead of drawn
+/// over it, as the soul vessel's glow is.
+fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32, add: bool) {
     let clut = Clut::new(320, 481).uv_clut_word() as u32;
     for tile in piece.0..piece.0 + piece.1 {
         let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
@@ -642,8 +647,9 @@ fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32) {
             assert!(USED < CAP);
             let p = &mut GLYPHS[USED];
             USED += 1;
-            p.mode = 0xe100_0000 | crate::render::animation_tpage_word(key) as u32;
-            p.color = 0x6400_0000 | color;
+            let page = crate::render::animation_tpage_word(key);
+            p.mode = 0xe100_0000 | u32::from(if add { page & !0x60 | 0x20 } else { page });
+            p.color = if add { 0x6600_0000 } else { 0x6400_0000 } | color;
             p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
             p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
             p.wh = u32::from(w) | (u32::from(h) << 16);
@@ -850,26 +856,8 @@ pub(crate) fn board_rule(x: i16, y: i16, w: u16) {
     }
 }
 /// A board art piece tinted (r, g, b) and added to what is behind it: the soul vessel's glow.
-pub(crate) fn board_glow_art(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: (u8, u8, u8)) {
-    let clut = Clut::new(320, 481).uv_clut_word() as u32;
-    let tile = piece.0;
-    let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
-    let key = crate::dialogue_art::KEY_BASE + tile as u16;
-    let (u, v) = crate::render::animation_uv(key);
-    unsafe {
-        assert!(USED < CAP);
-        let p = &mut GLYPHS[USED];
-        USED += 1;
-        // Semi-transparency mode 1 (B+F) in the page word, and the semi-transparent command.
-        p.mode = 0xe100_0000 | u32::from(crate::render::animation_tpage_word(key) & !0x60 | 0x20);
-        p.color = 0x6600_0000
-            | u32::from(tint.2) << 16
-            | u32::from(tint.1) << 8
-            | u32::from(tint.0);
-        p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
-        p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
-        p.wh = u32::from(w) | (u32::from(h) << 16);
-    }
+pub(crate) fn board_glow_art(piece: (usize, usize, u16, u16), x: i16, y: i16, (r, g, b): (u8, u8, u8)) {
+    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), true);
 }
 pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
     text_gain(x, y, value, gain);

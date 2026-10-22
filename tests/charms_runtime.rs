@@ -9,7 +9,7 @@
 //! `tests/test_charms.py` holds this copy of it to the value the real module
 //! declares so the two cannot drift apart unnoticed.
 pub mod dialogue {
-    pub const CAP: usize = 416;
+    pub const CAP: usize = 360;
 }
 #[path = "../game/src/charms.rs"]
 pub mod charms;
