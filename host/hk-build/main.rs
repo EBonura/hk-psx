@@ -384,6 +384,49 @@ fn write_source_input_fingerprints(root: &Path, source: &Path) -> Result<Value> 
     Ok(value)
 }
 
+/// The generated files the region cook vouches for, with their hashes: the room bank, the
+/// parameters, the region report as the cook left it (`REGIONS_BASE`, never the live
+/// `data/regions.json`, which the asset stage rewrites) and every region chunk.
+fn region_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
+    let mut outputs: BTreeMap<String, String> = BTreeMap::new();
+    for name in ["data/room.hk", "data/params.rs", REGIONS_BASE] {
+        outputs.insert(name.into(), sha256_file(&root.join(name))?);
+    }
+    for entry in std::fs::read_dir(root.join("data/regions"))? {
+        let path = entry?.path();
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if name.starts_with("chunk_") && name.ends_with(".hk") {
+            outputs.insert(format!("data/regions/{name}"), sha256_file(&path)?);
+        }
+    }
+    Ok(outputs)
+}
+
+/// The recorded outputs (path to sha256) that are missing or whose bytes differ now, in path
+/// order; `None` when `recorded` is not a table at all.
+fn stale_outputs(root: &Path, recorded: &Value) -> Option<Vec<String>> {
+    let table = recorded.as_object()?;
+    Some(
+        table
+            .iter()
+            .filter(|(p, h)| {
+                let path = root.join(p);
+                !(path.is_file() && sha256_file(&path).ok().as_deref() == h.as_str())
+            })
+            .map(|(p, _)| p.clone())
+            .collect(),
+    )
+}
+
+/// `3 generated output(s) differ from the last run, first: a, b, c`.
+fn describe_stale(stale: &[String]) -> String {
+    format!(
+        "{} generated output(s) differ from the last run, first: {}",
+        stale.len(),
+        stale.iter().take(5).map(String::as_str).collect::<Vec<_>>().join(", ")
+    )
+}
+
 /// Recook only when the Windows inputs, the cooker code or the generated outputs changed.
 fn cook_cached(root: &Path, force: bool) -> Result<()> {
     let provenance = root.join(".hkpsx/regions-provenance.json");
@@ -395,21 +438,25 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     if !force && provenance.exists() && cache.exists() {
         let prov = read_json(&provenance)?;
         let old = read_json(&cache)?;
-        let outputs_intact = old["outputs"].as_object().is_some_and(|outputs| {
-            outputs.iter().all(|(p, h)| {
-                let path = root.join(p);
-                path.is_file() && sha256_file(&path).ok().as_deref() == h.as_str()
-            })
-        });
+        // A cache written before the region report was kept apart does not record it: recook once.
+        let stale = if old["outputs"].get(REGIONS_BASE).is_some() {
+            stale_outputs(root, &old["outputs"])
+        } else {
+            None
+        };
         if prov["source"].as_str() == source.to_str()
             && old["code"] == code
             && old["source_manifest_sha256"].as_str() == Some(&source_manifest_sha256)
             && inputs_unchanged(&source, &prov)
-            && old["outputs"].get(REGIONS_BASE).is_some()
-            && outputs_intact
+            && stale.as_ref().is_some_and(Vec::is_empty)
         {
             println!("Cook cache hit: source hashes and generated outputs match.");
             return Ok(());
+        }
+        match stale {
+            Some(stale) if !stale.is_empty() => println!("Cook cache miss: {}", describe_stale(&stale)),
+            Some(_) => println!("Cook cache miss: cooker code or retail source changed."),
+            None => println!("Cook cache miss: no record of the region report as the cook left it."),
         }
     }
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
@@ -424,17 +471,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     // `assets_cached`), so the cache can only vouch for the report as the region
     // cook left it: keep that copy and record it instead of the live file.
     std::fs::copy(root.join("data/regions.json"), root.join(REGIONS_BASE))?;
-    let mut outputs: BTreeMap<String, String> = BTreeMap::new();
-    for name in ["data/room.hk", "data/params.rs", REGIONS_BASE] {
-        outputs.insert(name.into(), sha256_file(&root.join(name))?);
-    }
-    for entry in std::fs::read_dir(root.join("data/regions"))? {
-        let path = entry?.path();
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if name.starts_with("chunk_") && name.ends_with(".hk") {
-            outputs.insert(format!("data/regions/{name}"), sha256_file(&path)?);
-        }
-    }
+    let outputs = region_outputs(root)?;
     std::fs::write(
         &cache,
         serde_json::to_string_pretty(
@@ -618,38 +655,30 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     if !force && cache.exists() {
         let old = read_json(&cache)?;
         if old["key"].as_str() == Some(key.as_str()) {
-            let changed: Vec<&str> = old["outputs"]
-                .as_object()
-                .map(|outputs| {
-                    outputs
-                        .iter()
-                        .filter(|(p, h)| {
-                            let path = root.join(p);
-                            !(path.is_file()
-                                && sha256_file(&path).ok().as_deref() == h.as_str())
-                        })
-                        .map(|(p, _)| p.as_str())
-                        .collect()
-                })
-                .unwrap_or_default();
-            if changed.is_empty() && old["outputs"].is_object() {
+            let stale = stale_outputs(root, &old["outputs"]);
+            if stale.as_ref().is_some_and(Vec::is_empty) {
                 println!(
                     "Asset cache hit: cooker code, region report and generated outputs match."
                 );
                 return Ok(true);
             }
-            println!(
-                "Asset cache miss: {} generated output(s) differ from the last run, first: {}",
-                changed.len(),
-                changed.iter().take(5).copied().collect::<Vec<_>>().join(", ")
-            );
+            match stale {
+                Some(stale) => println!("Asset cache miss: {}", describe_stale(&stale)),
+                None => println!("Asset cache miss: the cache records no generated outputs."),
+            }
         } else {
             println!("Asset cache miss: cooker code, region report or cache verdict changed.");
         }
     }
-    // The scripts and `prepare` below start from the report as the region cook wrote it, as a
-    // cold build does; a previous run left the arena waves in the live file.
-    std::fs::copy(root.join(REGIONS_BASE), root.join("data/regions.json"))?;
+    // The asset cookers (charms, items, shops, NPCs, scripts) read the admitted scene list from
+    // .hkpsx/selected-regions.json, which the prepass writes only after them: a fresh clone had
+    // none, and a rerun would feed them the last run's list. Both it and the live report start
+    // from the report as the region cook wrote it, as in a cold build (`prepare` refuses a
+    // report the arena waves already rewrote). A cache hit must leave both as that run ended
+    // them, because the steps after the asset stage saw them that way in the cold build.
+    for live in ["data/regions.json", ".hkpsx/selected-regions.json"] {
+        std::fs::copy(root.join(REGIONS_BASE), root.join(live))?;
+    }
     for script in ASSET_SCRIPTS {
         match script.strip_prefix("rust:") {
             Some(tool) => rust_step(root, tool)?,
@@ -827,14 +856,6 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // the guest build reads them; the movies go onto the disc packed below.
     let intro = intro_stage(root, options.intro)?;
     let pgo = mode == BuildMode::Pgo;
-    // The asset cookers (charms, items, shops, NPCs, scripts) read the admitted
-    // scene list from .hkpsx/selected-regions.json, which the prepass used to
-    // write only after them: a fresh clone had none, and every other build fed
-    // them the previous cook's list. It is a copy of this cook's report.
-    std::fs::copy(
-        root.join(REGIONS_BASE),
-        root.join(".hkpsx/selected-regions.json"),
-    )?;
     menu_cached(root, options.recook)?;
     assets_cached(root, options.recook)?;
     // Every HKFSM03 bank the guest links: the enemies' original graphs and the scene scripts.
@@ -898,7 +919,10 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
         report_args.push("--pgo");
     }
     python_step(root, "host/build_report.py", &report_args)?;
-    if !pgo && budget_doc::sync(root)? {
+    // The doc pins the shipping build. A disc built with guest features (the route-input test
+    // disc, card-diag) has other figures and must not rewrite it.
+    let shipping = std::env::var_os("HK_GUEST_FEATURES").is_none_or(|f| f.is_empty());
+    if !pgo && shipping && budget_doc::sync(root)? {
         println!("docs/BUDGET.md: pinned figures rewritten from .hkpsx/build-normal.json (commit the doc with this change)");
     }
     check_hot_order(root, !pgo && !options.telemetry)?;
@@ -2551,6 +2575,84 @@ mod tests {
             args,
             ["--root", dir.to_str().unwrap(), "--source", "sdk=/sdk"]
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A tree with the directories `assets_key` reads and the three cache records it names.
+    fn asset_key_tree(name: &str) -> PathBuf {
+        let dir = tree(name);
+        for sub in [
+            "host/hk-cook/src",
+            "host/hk-unity/src",
+            "host/hk-unity/data",
+            "host/hk-pil/src",
+            "host/hk-dotnet/src",
+            ".hkpsx",
+            "data",
+        ] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+        }
+        std::fs::write(dir.join("host/charms.py"), "x = 1\n").unwrap();
+        std::fs::write(dir.join("host/hk-cook/src/lib.rs"), "// cook\n").unwrap();
+        std::fs::write(dir.join(REGIONS_BASE), "{\"base\": 1}").unwrap();
+        std::fs::write(dir.join("data/regions.json"), "{\"base\": 1}").unwrap();
+        std::fs::write(dir.join(".hkpsx/regions-cook-cache.json"), "{}").unwrap();
+        std::fs::write(dir.join(".hkpsx/menu-provenance.json"), "{}").unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_asset_key_ignores_the_report_the_asset_stage_rewrites() {
+        let dir = asset_key_tree("key-live");
+        let cold = assets_key(&dir).unwrap();
+        // crossroads22_wave::prepare rewrites the live report during the asset stage.
+        std::fs::write(dir.join("data/regions.json"), "{\"base\": 1, \"crossroads22_wave_artifact\": \"x\"}")
+            .unwrap();
+        assert_eq!(assets_key(&dir).unwrap(), cold, "a no-op rebuild must keep the key");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_asset_key_follows_every_real_input() {
+        let dir = asset_key_tree("key-inputs");
+        let cold = assets_key(&dir).unwrap();
+        let changed = |path: &str, bytes: &str| {
+            let file = dir.join(path);
+            let before = std::fs::read(&file).unwrap();
+            std::fs::write(&file, bytes).unwrap();
+            let key = assets_key(&dir).unwrap();
+            std::fs::write(&file, before).unwrap();
+            key
+        };
+        assert_ne!(changed(REGIONS_BASE, "{\"base\": 2}"), cold, "the region cook's report");
+        assert_ne!(changed("host/charms.py", "x = 2\n"), cold, "a Python cooker");
+        assert_ne!(changed("host/hk-cook/src/lib.rs", "// other\n"), cold, "a Rust cooker");
+        assert_ne!(changed(".hkpsx/menu-provenance.json", "{\"m\": 1}"), cold, "the menu cook");
+        assert_eq!(assets_key(&dir).unwrap(), cold, "restoring the inputs restores the key");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_cook_vouches_for_the_report_as_it_left_it_not_the_live_file() {
+        let dir = asset_key_tree("cook-outputs");
+        std::fs::create_dir_all(dir.join("data/regions")).unwrap();
+        std::fs::write(dir.join("data/room.hk"), "room").unwrap();
+        std::fs::write(dir.join("data/params.rs"), "params").unwrap();
+        std::fs::write(dir.join("data/regions/chunk_001.hk"), "chunk").unwrap();
+        let recorded = serde_json::to_value(region_outputs(&dir).unwrap()).unwrap();
+        assert!(recorded.get("data/regions.json").is_none());
+        assert_eq!(stale_outputs(&dir, &recorded), Some(vec![]));
+        // The asset stage rewrites the live report: the record still holds.
+        std::fs::write(dir.join("data/regions.json"), "mutated").unwrap();
+        assert_eq!(stale_outputs(&dir, &recorded), Some(vec![]));
+        // A real change to a cooked output, or a vanished one, is caught and named.
+        std::fs::write(dir.join("data/regions/chunk_001.hk"), "other").unwrap();
+        std::fs::remove_file(dir.join("data/room.hk")).unwrap();
+        assert_eq!(
+            stale_outputs(&dir, &recorded),
+            Some(vec!["data/regions/chunk_001.hk".to_string(), "data/room.hk".to_string()])
+        );
+        assert_eq!(stale_outputs(&dir, &serde_json::json!(null)), None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
