@@ -5,7 +5,7 @@
 //! `charms::State` the pause screen equips from, so the two halves of "obtain a
 //! charm" are tested against each other rather than against a mock.
 pub mod dialogue {
-    pub const CAP: usize = 416;
+    pub const CAP: usize = 360;
 }
 #[path = "../game/src/charms.rs"]
 pub mod charms;

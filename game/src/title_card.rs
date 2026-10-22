@@ -197,6 +197,7 @@ fn card_glyph(b: u8) -> Option<usize> {
 }
 /// The main line, in the card font: each glyph is a few rectangles of the strip (a band of it
 /// each), drawn 1:1 from the pen position with the top of the line at `y`.
+#[inline(never)] // `frame::render` is large enough already.
 fn big_line(text: &str, y: i16, level: u8, centre: i16) {
     let width: i16 = text
         .bytes()

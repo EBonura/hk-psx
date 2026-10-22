@@ -1013,7 +1013,7 @@ mod tests {
     #[test]
     fn panel_fits_the_glyph_budget() {
         // `dialogue` draws one packet per non-space character and per art piece into a
-        // 416-entry table and asserts on overflow, so the worst board has to fit at cook time
+        // 360-entry table and asserts on overflow, so the worst board has to fit at cook time
         // rather than at the moment the player opens the screen. The worst board: the chosen
         // charm owned with the longest description, every other slot an empty ring (but the
         // owned one), seventeen notch circles, eleven worn-charm marks and a full cost.
