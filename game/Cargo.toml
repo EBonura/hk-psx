@@ -39,6 +39,11 @@ load-log = []
 # The opening movies on a new game (intro.rs): the player travels as a blob in the boot art chunk, which only a
 # build with this feature (HK_INTRO=1, `cargo hk-build build --intro`) reads.
 intro = []
+# Route input (menu.rs skip_drop): holding L1 R1 L2 R2 while a save slot is chosen starts a new game on
+# King's Pass's ledge instead of with the drop from the top gate, which is where every recorded route tape begins.
+# Test discs only (HK_GUEST_FEATURES=route-input, the disc `cargo hk-build validate` plays); a shipping build
+# has no such input.
+route-input = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }

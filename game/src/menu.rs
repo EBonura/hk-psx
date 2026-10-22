@@ -24,13 +24,21 @@ pub static mut HK_MENU_MUSIC: u32 = 10;
 // arena before the title and uploaded to VRAM; only its size, checksum and the
 // glyph advances stay linked.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu.rs"));
-/// Held together while the save slot is chosen, the four shoulder buttons start a new game on the
-/// ledge instead of with the drop from the top gate (main.rs). The recorded routes (tools/tapes)
-/// press them so they begin where they were recorded.
+/// Test discs only (`route-input`): held together while the save slot is chosen, the four shoulder
+/// buttons start a new game on the ledge instead of with the drop from the top gate (main.rs). The
+/// recorded routes (tools/tapes) press them so they begin where they were recorded. A shipping build
+/// does not read them.
+#[cfg(feature = "route-input")]
 const SKIP_DROP: u16 = button::L1 | button::R1 | button::L2 | button::R2;
+#[cfg(feature = "route-input")]
 static mut SKIP_DROP_HELD: bool = false;
+#[cfg(feature = "route-input")]
 pub fn skip_drop() -> bool {
     unsafe { SKIP_DROP_HELD }
+}
+#[cfg(not(feature = "route-input"))]
+pub const fn skip_drop() -> bool {
+    false
 }
 /// Whether the title art reached VRAM: a retry screen whose read failed draws
 /// no background rather than whatever a scene left in those pages.
@@ -269,6 +277,7 @@ pub fn run(
             let old = menu.settings;
             let (page, row) = (menu.page, menu.selected);
             start = menu.step(bits);
+            #[cfg(feature = "route-input")]
             if start {
                 unsafe { SKIP_DROP_HELD = bits & SKIP_DROP == SKIP_DROP };
             }

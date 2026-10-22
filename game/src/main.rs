@@ -963,17 +963,15 @@ fn main() {
         game.door.restore(s.door_hits);
         game.shade.restore(s.shade);
         game.shade.carry(None);
-    } else if world::scene_of(NEW_GAME_ENTRY.2) == 0
-        && !menu::skip_drop()
-    {
+    } else if world::scene_of(NEW_GAME_ENTRY.2) == 0 && !menu::skip_drop() {
         // A new game enters King's Pass the way the source does: `GameManager.OnWillActivateFirstLevel`
         // sets the entry gate to `top1` (Tutorial_01, (34.5, 93.5)) and the Knight drops down the
         // shaft onto the ledge his death respawn marker (SPAWN) stands on. Dying before a bench
         // still respawns at the marker, which `game.safe` keeps. Every build does this, with or
-        // without the opening movies (intro.rs). Holding all four shoulder buttons (L1 R1 L2 R2, which
-        // a digital pad can give and nobody does by accident) while the save slot is chosen starts him on the ledge instead: the recorded routes (tools/tapes) are bit-exact
-        // from that ledge, and the drop's own frame timing, title card and region binds cannot be made
-        // to match the ones they were recorded in.
+        // without the opening movies (intro.rs). The one exception is a test disc (`route-input`):
+        // holding L1 R1 L2 R2 while the save slot is chosen starts him on the ledge instead. The
+        // recorded routes (tools/tapes) are bit-exact from that ledge, and the drop's own frame
+        // timing, title card and region binds cannot be made to match the ones they were recorded in.
         game.player = Player::spawn(NEW_GAME_ENTRY.0, NEW_GAME_ENTRY.1);
         game.region_id = NEW_GAME_ENTRY.2;
     }

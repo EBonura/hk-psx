@@ -1,0 +1,54 @@
+# On a disc built with the `route-input` feature, holding L1 R1 L2 R2 while the profile is chosen starts the new
+# game on the ledge, with no drop: the Knight is never above the ledge height.
+#
+#   psoxide-gate run tools/journeys/new-game-hold-ledge.toml --disc <hk-psx.cue> --no-hw --out <dir>
+name = "new-game-hold-ledge"
+title = "new game: the shoulder hold starts him on the ledge (route-input disc)"
+disc = ["lib-test/hk-psx.cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 200
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game, with L1 R1 L2 R2 held"
+press = ["cross", "l1", "r1", "l2", "r2"]
+hold = 3
+
+[[step]]
+label = "gameplay is back"
+timeout = 7200
+[step.wait_until]
+kind = "ram"
+sym = "HK_GAME_MODE"
+op = "eq"
+value = 1
+
+[[step]]
+label = "he is on the ledge, not at the top of the shaft"
+wait = 120
+checkpoint = "ledge"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+note = "the ledge (y 11.37, Q16 745,000): no fall from the top gate (y above 3,000,000)"
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0
