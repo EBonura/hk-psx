@@ -41,7 +41,8 @@ fn opening_once_emits_exactly_two_bugs_no_contact_health_and_startup_hit_lock() 
         w.strike_with(p, 0, &POLY),
         Strike {
             opened: true,
-            hit_bugs: 0
+            hit_bugs: 0,
+            hit_at: None
         }
     );
     assert_eq!(w.bugs.iter().flatten().count(), 2);
@@ -50,13 +51,9 @@ fn opening_once_emits_exactly_two_bugs_no_contact_health_and_startup_hit_lock() 
         assert_eq!(w.strike_with(p, 0, &POLY), Strike::default());
     }
     tick(&mut w, p);
-    assert_eq!(
-        w.strike_with(p, 0, &POLY),
-        Strike {
-            opened: false,
-            hit_bugs: 2
-        }
-    );
+    let struck = w.strike_with(p, 0, &POLY);
+    assert_eq!((struck.opened, struck.hit_bugs), (false, 2));
+    assert!(struck.hit_at.is_some(), "the blood is raised where a Scuttler was struck");
     assert_eq!(w.strike_with(p, 0, &POLY), Strike::default());
     assert_eq!(w.granted, 0);
     for _ in 0..71 {
