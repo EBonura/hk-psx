@@ -517,6 +517,7 @@ fn bind(m: usize, address: Option<u32>) {
 /// previous frame's walk can still own the channel when its textures miss the
 /// texture cache. Waiting takes only the pad polls that fall due, never a
 /// service, so it cannot re-enter the caller.
+#[inline(never)]
 fn flush_instruction_cache_idle() {
     #[cfg(target_arch = "mips")]
     while crate::render::dma_pending() {
