@@ -282,7 +282,7 @@ mod live {
     /// is nothing of Cornifer's to draw, so the caller can draw something else.
     pub fn prepare(camera: (i32, i32), geo: u32) -> bool {
         use crate::dialogue::{
-            panel_box, panel_number, panel_pages, panel_prompt, panel_text, panel_width,
+            panel_box, panel_pages, panel_price, panel_prompt, panel_text, panel_width,
         };
         // The conversation box's line pitch.
         const ROW: i16 = 16;
@@ -293,9 +293,8 @@ mod live {
                 let y = panel_box(4);
                 let q = PROMPT[0][0];
                 panel_text(160 - panel_width(q) / 2, y, q);
-                // The box's Geo Text: the toll.
-                panel_number(146, y + ROW, CORNIFER_PRICE);
-                panel_text(174, y + ROW, "Geo");
+                // The box's Geo Text and Geo Sprite: the coin, then the toll.
+                panel_price(y + ROW, CORNIFER_PRICE);
                 let affordable = geo >= CORNIFER_PRICE;
                 for (i, label) in ["Yes", "No"].iter().enumerate() {
                     let y = y + (2 + i as i16) * ROW;

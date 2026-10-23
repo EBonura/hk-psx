@@ -492,6 +492,13 @@ mod presentation {
     static mut ICONS: [QuadTextured; MAX_ICONS] =
         [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; MAX_ICONS];
     static mut ICON_COUNT: usize = 0;
+    /// The worn set the last board frame showed, and the charm whose icon is travelling: (charm,
+    /// the vblank it set off, being worn). Wearing or taking off a charm sends its icon between its
+    /// slot in the collection and the worn row in 0.25 s (`UI Charms`: Tween Up / Tween Down,
+    /// iTweenMoveTo time 0.25, easeOutSine; here the quadratic ease-out).
+    static mut LAST_WORN: psx_math::Mask64 = psx_math::Mask64::EMPTY;
+    static mut FLY: (u8, u32, bool) = (0, 0, false);
+    const FLY_VBLANKS: u32 = 15;
 
     /// One resident CLUT row per cooked palette, above the four the ability
     /// clips took out of the block host/shade.py reserved at y482.
@@ -614,6 +621,20 @@ mod presentation {
         let sel = screen.row;
         let (sx, sy) = slot_xy(sel);
         crate::dialogue::board_backdrop(sx - 8, sx + SLOT_PX + 8, sy - 2, SLOT_PX + 4);
+        let now = psx_rt::interrupts::vblank_count();
+        let fly = unsafe {
+            if crate::dialogue::panel_age() < 3 {
+                (LAST_WORN, FLY.0) = (s.equipped, 0);
+            } else if s.equipped != LAST_WORN {
+                if let Some(charm) = (1..=CHARM_COUNT).find(|&n| s.equipped(n) != !LAST_WORN.and(bit(n)).is_empty())
+                {
+                    FLY = (charm as u8, now, s.equipped(charm));
+                }
+                LAST_WORN = s.equipped;
+            }
+            (usize::from(FLY.0), now.wrapping_sub(FLY.1), FLY.2)
+        };
+        let flying = fly.0 != 0 && fly.1 < FLY_VBLANKS;
         let art = crate::dialogue_art::board_prepared();
         let icons = unsafe { PREPARED } && art;
         if art {
@@ -625,12 +646,24 @@ mod presentation {
         let mut seated = 0;
         for charm in 1..=CHARM_COUNT {
             if s.equipped(charm) && seated < EQUIPPED_SLOTS {
-                if icons {
+                // The icon on its way into the row lands when its flight ends.
+                if icons && !(flying && fly.0 == charm) {
                     icon(charm - 1, x, EQUIPPED_Y, 128);
                 }
                 x += ICON_PITCH;
                 seated += 1;
             }
+        }
+        if icons && flying {
+            // Between the collection slot and the place in the row it holds (or held).
+            let slot = slot_xy(fly.0 - 1);
+            let place = (1..fly.0).filter(|&n| s.equipped(n)).count().min(EQUIPPED_SLOTS - 1) as i16;
+            let (from, to) = ((slot.0 + 1, slot.1 + 1), (ROW_X + place * ICON_PITCH, EQUIPPED_Y));
+            let (from, to) = if fly.2 { (from, to) } else { (to, from) };
+            let u = (fly.1 * 128 / FLY_VBLANKS) as i32;
+            let eased = u * (256 - u) / 128;
+            let at = |a: i16, b: i16| (i32::from(a) + (i32::from(b) - i32::from(a)) * eased / 128) as i16;
+            icon(fly.0 - 1, at(from.0, to.0), at(from.1, to.1), 128);
         }
         panel_text(
             LABEL_X,

@@ -108,6 +108,11 @@ fn level(alpha: u8, luma: u8) -> u8 {
 const TITLE_PIECES: [&str; 2] = ["fleur_top", "fleur_bottom"];
 const TITLE_ORDER: [&str; 4] = ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored"];
 const POINTER_SPRITE: i64 = 101;
+/// The frames of `Menu Fleur Reveal` (sharedassets0.assets clip 58) the pointer shows while it
+/// opens, sampled as a 60 Hz screen does: the clip runs at 120 frames a second, so each presented
+/// frame advances two sprite frames (anim0000, 0002, 0004, 0006, 0008), and the sixth is the final
+/// sprite above.
+const POINTER_STEPS: [i64; 5] = [118, 131, 128, 96, 147];
 const POINTER_W: usize = 20;
 const POINTER_H: usize = 14;
 
@@ -209,6 +214,7 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
     // The title's ornaments are the same pieces, whole instead of cut to cache tiles, plus the
     // menu pointer (see `title_pieces`): rows padded to halfwords, in the order the guest uploads.
     let mut title: Vec<(&str, usize, usize, Vec<u8>)> = Vec::new();
+    let pointer_steps: (Vec<Vec<u8>>, Vec<Vec<u8>>);
     for (name, from, width, height) in PIECES {
         let (full, source_name) = match from {
             Origin::Tk(id) => (
@@ -287,6 +293,17 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         let object = source.object(&shared, POINTER_SPRITE).map_err(|e| e.to_string())?;
         let (full, _) = hk_unity::texture::sprite_image(&source, &object).map_err(|e| e.to_string())?;
         let small = full.resize(POINTER_W, POINTER_H, Filter::Lanczos);
+        // The opening frames, left leaf then mirrored: the strip's slots 2 to 6 and 7 to 11 (menu.rs).
+        let mut steps: Vec<Vec<u8>> = Vec::new();
+        let mut steps_mirrored: Vec<Vec<u8>> = Vec::new();
+        for id in POINTER_STEPS {
+            let object = source.object(&shared, id).map_err(|e| e.to_string())?;
+            let (full, _) = hk_unity::texture::sprite_image(&source, &object).map_err(|e| e.to_string())?;
+            let small = full.resize(POINTER_W, POINTER_H, Filter::Lanczos);
+            steps.push(whole_rows(&indices(&small), POINTER_W, POINTER_H));
+            steps_mirrored.push(whole_rows(&indices(&small.flip_left_right()), POINTER_W, POINTER_H));
+        }
+        pointer_steps = (steps, steps_mirrored);
         for (name, image) in [("pointer", small.clone()), ("pointer_mirrored", small.flip_left_right())] {
             let grey = indices(&image);
             let mut shown = Image::new(Mode::Rgba, POINTER_W, POINTER_H);
@@ -311,6 +328,24 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             );
             ornaments.extend_from_slice(rows);
         }
+        // The pointer's opening frames follow the pieces: left leaf, then the mirrored leaf (the
+        // leaves are the strip's slots 2 to 6 and 7 to 11 of POINTER_W texels each).
+        rust += "/// Offsets of the pointer's twelve slots, each the size of TITLE_POINTER (see menu.rs `leaf`).\n";
+        let mut steps_at: (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+        for (set, at) in [(&pointer_steps.0, &mut steps_at.0), (&pointer_steps.1, &mut steps_at.1)] {
+            for rows in set {
+                at.push(ornaments.len());
+                ornaments.extend_from_slice(rows);
+            }
+        }
+        // The pointer's twelve slots in the order the strip holds them (`menu.rs`): final left leaf
+        // (the cooked sprite, pointing left), final right leaf (its mirror), the left leaf's five
+        // opening frames, then the right leaf's.
+        let pointer_at = |name: &str| rust.lines().find(|l| l.contains(&format!("TITLE_{}:", name.to_uppercase()))).and_then(|l| l.split('(').nth(2)).and_then(|t| t.split(',').next()).and_then(|n| n.trim().parse::<usize>().ok());
+        let mut slots = vec![pointer_at("pointer").ok_or("pointer slot")?, pointer_at("pointer_mirrored").ok_or("mirrored slot")?];
+        slots.extend(steps_at.0.iter());
+        slots.extend(steps_at.1.iter());
+        rust += &format!("pub const TITLE_POINTER_SLOTS: [usize; {}] = {slots:?};\n", slots.len());
         rust += &format!("pub const TITLE_ORNAMENT_BYTES: usize = {};\n", ornaments.len());
         std::fs::write(root.join("data/menu-ornaments.hk"), &ornaments).map_err(|e| e.to_string())?;
         std::fs::write(root.join("data/menu_ornaments.rs"), rust).map_err(|e| e.to_string())?;

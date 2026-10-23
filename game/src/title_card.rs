@@ -27,9 +27,24 @@ const FADE: u16 = 30;
 const HOLD: u16 = 150;
 #[derive(Clone, Copy, PartialEq)]
 enum Style {
+    /// An area's first visit: the source's large title.
     Area,
+    /// A later visit: its small title (placed as the large one is).
+    Seen,
     Boss,
     Item,
+}
+/// Ticks a card waits, fades in, stays at full strength and fades out (60 Hz). An area's first
+/// visit is the source's `Title Large`: `Area Title Control` waits 0.6 s (Titles Up), then fades it
+/// in over 4 s (the FadeGroup's fadeInTime) while its Fleurs Up state waits 4.75 s, and fades it out
+/// over 1.5 s. A later visit is `Title Small` (1.5 s in and out), held 6 s from its start. Bosses
+/// and item names keep their own timing.
+const fn timing(style: Style) -> (u16, u16, u16, u16) {
+    match style {
+        Style::Area => (36, 240, 45, 90),
+        Style::Seen => (0, 90, 270, 90),
+        Style::Boss | Style::Item => (0, FADE, HOLD, FADE),
+    }
 }
 /// `showing` while an item's name is up rather than a title.
 const ITEM: u8 = NONE - 1;
@@ -121,7 +136,8 @@ pub fn tick(body: [i32; 4]) {
     let s = state();
     if s.showing != NONE {
         s.age += 1;
-        if s.age >= FADE * 2 + HOLD {
+        let (delay, fade_in, hold, fade_out) = timing(s.style);
+        if s.age >= delay + fade_in + hold + fade_out {
             s.showing = NONE;
         }
     }
@@ -145,7 +161,7 @@ pub fn tick(body: [i32; 4]) {
     if area.only_on_revisit && !seen {
         return;
     }
-    show(area.title, Style::Area);
+    show(area.title, if seen { Style::Seen } else { Style::Area });
 }
 /// The horizontal centre of a card's lines: mid-screen for an area or item,
 /// and for a boss the original's lower left, never so far left that a long
@@ -233,12 +249,14 @@ pub fn prepare(paused: bool) {
     if s.showing == NONE || paused {
         return;
     }
-    let level = if s.age < FADE {
-        s.age * 128 / FADE
-    } else if s.age < FADE + HOLD {
+    let (delay, fade_in, hold, fade_out) = timing(s.style);
+    let age = s.age.saturating_sub(delay);
+    let level = if age < fade_in {
+        age * 128 / fade_in
+    } else if age < fade_in + hold {
         128
     } else {
-        (FADE * 2 + HOLD - s.age) * 128 / FADE
+        (fade_in + hold + fade_out - age) * 128 / fade_out
     } as u16;
     let level = level as u8;
     if s.style == Style::Item {
@@ -248,7 +266,7 @@ pub fn prepare(paused: bool) {
     let [sup, main, sub] = TITLES[s.showing as usize];
     // The original's boss card sits at the lower left of the screen; its area
     // card is the one at the top centre.
-    let (y, centre) = if s.style == Style::Area {
+    let (y, centre) = if matches!(s.style, Style::Area | Style::Seen) {
         (46, 160)
     } else {
         (150, BOSS_CENTRE)

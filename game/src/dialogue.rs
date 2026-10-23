@@ -87,6 +87,70 @@ const BACKBOARDS: usize = 12;
 static mut BACKBOARD_COUNT: usize = 0;
 static mut USED: usize = 0;
 static mut BOX_COUNT: usize = 0;
+/// The vblank the panel now up first appeared at, and the vblank of the last frame that drew one.
+static mut OPENED: u32 = 0;
+static mut SEEN: u32 = 0;
+/// Which screen that was, so a change of page (pause list to its controls) starts the sequence again.
+static mut KIND: u8 = 0;
+/// `up_age`'s last answer.
+static mut AGE: u8 = 255;
+/// The page being typed (the address of its lines) and the vblank it began at.
+static mut PAGE: (usize, u32) = (0, 0);
+/// How far the part being drawn has faded in, 0 to 128 (128: as it is), applied to every glyph, art
+/// piece and coin drawn.
+static mut FADE: u8 = 128;
+/// Characters of the page's text to draw, spaces counted; no limit when it is `u16::MAX`.
+static mut TYPED: u16 = u16::MAX;
+/// The arrow or stop waits for the page's last character.
+static mut NO_ICON: bool = false;
+/// Lines of the box drawn last (0: none to fade out), and, while that box fades out after its
+/// panel closed, the vblanks it has been going plus one.
+static mut LAST_ROWS: u8 = 0;
+static mut CLOSE: u8 = 0;
+/// Vblanks the panel on screen has been up, saturating. A frame draws a new panel's first when the
+/// last frame that drew one is more than four vblanks old (a gameplay frame is two).
+fn up_age(kind: u8) -> u8 {
+    let now = psx_rt::interrupts::vblank_count();
+    unsafe {
+        if now.wrapping_sub(SEEN) > 4 || KIND != kind {
+            (OPENED, PAGE.0, KIND) = (now, 0, kind);
+        }
+        SEEN = now;
+        AGE = now.wrapping_sub(OPENED).min(255) as u8;
+        AGE
+    }
+}
+/// The box of a panel that closed fading out, for the 18 vblanks after it. False once it is gone.
+fn closing() -> bool {
+    unsafe {
+        let gone = psx_rt::interrupts::vblank_count().wrapping_sub(SEEN);
+        if LAST_ROWS == 0 || gone > 20 {
+            LAST_ROWS = 0;
+            return false;
+        }
+        // Without the ornaments in this frame's working set the box would be the plain fallback.
+        if !crate::dialogue_art::prepared() {
+            return false;
+        }
+        (CLOSE, NO_ICON) = (gone.min(18) as u8 + 1, true);
+        ornate_frame(LAST_ROWS.into(), Under::Stop, None);
+        (CLOSE, NO_ICON) = (0, false);
+        true
+    }
+}
+/// Vblanks the screen drawn this frame has been up (the charm board times its icons by it).
+pub(crate) fn panel_age() -> u8 {
+    unsafe { AGE }
+}
+/// 0 to 128 over `len` vblanks from `start`.
+#[inline(never)]
+fn ramp(age: u8, start: u8, len: u8) -> u8 {
+    (u16::from(age.saturating_sub(start).min(len)) * 128 / u16::from(len)) as u8
+}
+/// `gain` under the current fade.
+fn faded(gain: u8) -> u8 {
+    (u16::from(gain) * u16::from(unsafe { FADE }) >> 7) as u8
+}
 pub fn upload() {
     // The glyph sheet itself is the title's (menu::restore uploads it from the
     // boot art chunk), and nothing between the title and play writes it over.
@@ -251,14 +315,20 @@ fn text(x: i16, y: i16, text: &str) {
     text_gain(x, y, text, 0x80);
 }
 /// `text` at a brightness: 0x80 draws the glyph ramp as it is, less dims it.
+#[inline(never)]
 fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
     // Semi-transparent, adding: the glyph palette's entries carry the semi-transparency bit, so a
     // glyph's anti-aliased edge brightens what is behind it (host/hk-cook/src/font_strip.rs).
-    let color = 0x6600_0000 | u32::from(gain) * 0x0001_0101;
+    let color = 0x6600_0000 | u32::from(faded(gain)) * 0x0001_0101;
     let mut x = x;
     for b in text.bytes() {
         assert!((32..=126).contains(&b));
         let i = (b - 32) as usize;
+        // The typewriter: the characters not yet reached are not drawn.
+        if unsafe { TYPED } == 0 {
+            break;
+        }
+        unsafe { TYPED -= 1 };
         if b != b' ' {
             unsafe {
                 assert!(USED < CAP);
@@ -292,7 +362,7 @@ fn coin(x: i16, y: i16) {
         let p = &mut GLYPHS[USED];
         USED += 1;
         p.mode = 0xe100_0000 | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0) as u32;
-        p.color = 0x6480_8080;
+        p.color = 0x6400_0000 | u32::from(faded(0x80)) * 0x0001_0101;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         let (col, row) = (COIN_CELL % CAPS_PER_ROW, COIN_CELL / CAPS_PER_ROW);
         p.uv = (GLYPH_U0 + col * CAPS_W) as u32
@@ -315,7 +385,7 @@ pub(crate) fn caps_width(value: &str) -> i16 {
 /// A space between capitals.
 pub(crate) const CAPS_SPACE: i16 = 6;
 pub(crate) fn caps_text(x: i16, y: i16, value: &str, gain: u8) {
-    let color = 0x6600_0000 | u32::from(gain) * 0x0001_0101;
+    let color = 0x6600_0000 | u32::from(faded(gain)) * 0x0001_0101;
     let mut x = x;
     for b in value.bytes() {
         let Some(i) = CAPS_CHARS.iter().position(|&c| c == b.to_ascii_uppercase()) else {
@@ -349,6 +419,15 @@ pub(crate) fn panel_text(x: i16, y: i16, value: &str) {
 }
 pub(crate) fn panel_number(x: i16, y: i16, value: u32) {
     number(x, y, value);
+}
+/// The box's Geo price as the source lays it out (`Geo Text` with its `Geo Sprite` in Text YN, level1):
+/// the number starts 0.47 units left of the box's centre (7 px at the HUD's 14 px a unit) and the
+/// coin sits 0.65 units left of the number's start, with no word. Left-anchored, so a longer price
+/// grows to the right.
+pub(crate) fn panel_price(y: i16, value: u32) {
+    const NUMBER_X: i16 = 153;
+    number(NUMBER_X, y, value);
+    coin(NUMBER_X - 15, y - 1);
 }
 pub(crate) fn panel_width(value: &str) -> i16 {
     width(value)
@@ -385,6 +464,7 @@ pub fn prepare(
         USED = 0;
         BOX_COUNT = 0;
         BACKBOARD_COUNT = 0;
+        FADE = 128;
         let board = pause.is_some_and(|(p, _)| (p.charms.open || p.cheats) && !p.confirm_reset);
         crate::hud::hide(board);
         if !board {
@@ -397,7 +477,7 @@ pub fn prepare(
             // a soft light behind the chosen row, not a box. The charm board keeps its frame.
             let fleurs = crate::dialogue_art::pause_prepared();
             if p.confirm_reset {
-                pause_backdrop(fleurs, LIST_Y + 7 * LIST_PITCH + 3);
+                pause_backdrop(1, fleurs, LIST_Y + 7 * LIST_PITCH + 3);
                 text(160 - width("Reset session?") / 2, 108, "Reset session?");
                 text(
                     160 - width("Back to the new game spawn.") / 2,
@@ -408,7 +488,7 @@ pub fn prepare(
                 crate::charms::panel(&p.charms);
             } else if p.cheats {
                 // Thirteen rows do not leave room for the crest: the dim and the glow only.
-                pause_backdrop(false, 0);
+                pause_backdrop(4, false, 0);
                 caps_text(160 - caps_width("Cheats") / 2, 12, "Cheats", 0x80);
                 // Seventeen rows at the font's size do not fit: a window of eleven follows the cursor.
                 const WINDOW: usize = 11;
@@ -456,7 +536,7 @@ pub fn prepare(
                     text(157, TOP + WINDOW as i16 * CHEAT_PITCH, "v");
                 }
             } else if p.controls {
-                pause_backdrop(fleurs, LIST_Y + 8 * 13 + 3);
+                pause_backdrop(2, fleurs, LIST_Y + 8 * 13 + 3);
                 for (i, line) in [
                     "D-pad / left stick: Move",
                     "X: Jump    Square: Nail    Up: Inspect",
@@ -473,7 +553,7 @@ pub fn prepare(
                     text(160 - width(line) / 2, LIST_Y + i as i16 * 13, line);
                 }
             } else {
-                pause_backdrop(fleurs, LIST_Y + 7 * LIST_PITCH + 3);
+                pause_backdrop(3, fleurs, LIST_Y + 7 * LIST_PITCH + 3);
                 row_glow(LIST_Y + p.row as i16 * LIST_PITCH - 1, LIST_PITCH);
                 for (i, line) in [
                     "Resume",
@@ -507,6 +587,7 @@ pub fn prepare(
             panel(NPC_LINES[id].conversations[CONVO.entry].pages, CONVO.page);
         } else if crate::mapper::prepare(camera, geo) {
         } else if crate::shaman::prepare(camera) {
+        } else if closing() {
         } else if let Some(id) = STATE.prompt {
             prompt_marker(camera, POINTS[id].marker, POINTS[id].label);
         } else if let Some(id) = CONVO.prompt {
@@ -560,9 +641,10 @@ fn save_notice(ui: crate::save_ui::Ui) {
             centered(y + ORNATE_PITCH, "Do not remove the memory card.");
         }
         Ui::Saved(_) => {
-            // Low on the screen, out of the way of the bench.
-            let top = 240 - ornate_height(1, Under::Nothing) - 6;
-            let y = ornate_frame(1, Under::Nothing, Some(top));
+            // The box the Saving notice used, so the one replaces the other in place; the card write
+            // between them stopped the frames, which must not read as the box closing.
+            unsafe { SEEN = psx_rt::interrupts::vblank_count() };
+            let y = ornate_frame(1, Under::Nothing, None);
             centered(y, "Game saved");
         }
         Ui::Failed(fault) => {
@@ -588,7 +670,9 @@ fn save_notice(ui: crate::save_ui::Ui) {
 /// wants its ornaments in the frame's animation working set (`frame.rs`).
 #[inline(never)] // `frame::render` is large enough already.
 pub(crate) fn panel_up(save_ui: crate::save_ui::Ui) -> bool {
-    save_ui != crate::save_ui::Ui::Idle
+    // A box fading out still needs its ornaments (`closing`).
+    (unsafe { LAST_ROWS != 0 && psx_rt::interrupts::vblank_count().wrapping_sub(SEEN) <= 20 })
+        || save_ui != crate::save_ui::Ui::Idle
         || unsafe { STATE.active.is_some() || CONVO.active.is_some() }
         || crate::mapper::open()
         || crate::shaman::open()
@@ -605,6 +689,13 @@ fn panel(pages: &[&'static [&'static str]], page: usize) {
 /// One ornament piece at (`x`, `y`): a textured rectangle per tile, 1:1.
 fn ornament(piece: (usize, usize, u16, u16), x: i16, y: i16) {
     ornament_tint(piece, x, y, 0x80);
+}
+/// A flourish unfurled to `reveal` of 128: the finished piece through a window that widens from its
+/// middle (the source swaps nine sprite frames; one is kept here).
+fn unfurl(piece: (usize, usize, u16, u16), x: i16, y: i16, reveal: u8) {
+    if reveal != 0 {
+        ornament_color(piece, x, y, u32::from(faded(0x80)) * 0x0001_0101, false, reveal);
+    }
 }
 /// One art piece of the charm board, drawn 1:1 at (`x`, `y`) at a brightness: 0x80 as it is.
 pub(crate) fn board_art(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
@@ -628,19 +719,37 @@ pub(crate) fn raw_rect(x: i16, y: i16, tpage: u16, color: u32, uv: u32, wh: u32)
     }
 }
 fn ornament_tint(piece: (usize, usize, u16, u16), x: i16, y: i16, tint: u8) {
-    ornament_color(piece, x, y, u32::from(tint) * 0x0001_0101, false);
+    ornament_color(piece, x, y, u32::from(faded(tint)) * 0x0001_0101, false, 128);
 }
 /// One art piece of the charm board, drawn 1:1 at (`x`, `y`) in a colour (r, g, b): the grey
 /// ramp times it, 0x80 a channel as it is.
 pub(crate) fn board_art_rgb(piece: (usize, usize, u16, u16), x: i16, y: i16, (r, g, b): (u8, u8, u8)) {
-    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), false);
+    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), false, 128);
 }
 /// `add`: the piece is added to what is behind it (semi-transparency mode 1, B+F) instead of drawn
 /// over it, as the soul vessel's glow is.
-fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32, add: bool) {
+fn ornament_color(
+    piece: (usize, usize, u16, u16),
+    x: i16,
+    y: i16,
+    color: u32,
+    add: bool,
+    reveal: u8,
+) {
     let clut = Clut::new(320, 481).uv_clut_word() as u32;
+    // Fading in or out, a piece is added to the view (the palette is semi-transparent) so that it
+    // fades to nothing rather than to black.
+    let add = add || unsafe { FADE } < 128;
+    // The window's edges, left and right of the piece's middle.
+    let half = ((i32::from(piece.2) * i32::from(reveal) + 255) / 256) as i16;
+    let (lo, hi) = (x + piece.2 as i16 / 2 - half, x + piece.2 as i16 / 2 + half);
     for tile in piece.0..piece.0 + piece.1 {
         let (_, w, h, dx) = crate::dialogue_art::DIALOGUE_TILES[tile];
+        let (left, right) = ((x + dx as i16).max(lo), (x + dx as i16 + w as i16).min(hi));
+        if right <= left {
+            continue;
+        }
+        let (w, cut) = ((right - left) as u8, (left - x - dx as i16) as u8);
         let key = crate::dialogue_art::KEY_BASE + tile as u16;
         let (u, v) = crate::render::animation_uv(key);
         unsafe {
@@ -650,8 +759,8 @@ fn ornament_color(piece: (usize, usize, u16, u16), x: i16, y: i16, color: u32, a
             let page = crate::render::animation_tpage_word(key);
             p.mode = 0xe100_0000 | u32::from(if add { page & !0x60 | 0x20 } else { page });
             p.color = if add { 0x6600_0000 } else { 0x6400_0000 } | color;
-            p.xy = (x + dx as i16) as u16 as u32 | ((y as u16 as u32) << 16);
-            p.uv = u32::from(u) | (u32::from(v) << 8) | (clut << 16);
+            p.xy = left as u16 as u32 | ((y as u16 as u32) << 16);
+            p.uv = u32::from(u + cut) | (u32::from(v) << 8) | (clut << 16);
             p.wh = u32::from(w) | (u32::from(h) << 16);
         }
     }
@@ -692,11 +801,23 @@ fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
     let top_h = DIALOGUE_FLEUR_TOP.3 as i16;
     let bottom_h = DIALOGUE_FLEUR_BOTTOM.3 as i16;
     let total = ornate_height(rows, under);
+    // The box fades in over 0.5 s (`FadeGroup` on `DialogueBox`, fadeInTime 0.5); the text does not.
+    let opening = unsafe {
+        if CLOSE != 0 {
+            // Box Down: the box fades out over 0.3 s (`FadeGroup` fadeOutTime), the text is gone at once.
+            128 - ramp(CLOSE - 1, 0, 18)
+        } else {
+            LAST_ROWS = rows as u8;
+            ramp(up_age(0), 0, 30)
+        }
+    };
+    unsafe { FADE = opening };
     let top = top.unwrap_or_else(|| 52.min(240 - total).max(40));
     // A frame whose working set lacks the ornaments (the view behind has claimed the whole
     // cache) gets a plain box of the same size, so the lines sit where they would.
     if !crate::dialogue_art::prepared() {
         panel_frame(10, top - 4, 300, (total + 8) as u16);
+        unsafe { FADE = 128 };
         return top + top_h + ORNATE_GAP;
     }
     let fleur = |piece: (usize, usize, u16, u16)| 160 - piece.2 as i16 / 2;
@@ -708,7 +829,9 @@ fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
         Under::Arrow | Under::Stop => {
             let icon_y = after + 4;
             let icon = if under == Under::Arrow { DIALOGUE_ARROW } else { DIALOGUE_STOP };
-            ornament(icon, 160 - ICON_W / 2 + (ICON_W - icon.2 as i16) / 2, icon_y);
+            if unsafe { !NO_ICON } {
+                ornament(icon, 160 - ICON_W / 2 + (ICON_W - icon.2 as i16) / 2, icon_y);
+            }
             icon_y + ICON_H + 4
         }
     };
@@ -720,11 +843,11 @@ fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
     const RIGHT: i16 = 312;
     const FADE_X: i16 = 24;
     const FADE_Y: i16 = 10;
-    const DARK: u8 = 96;
+    let dark = (96 * u16::from(opening) / 128) as u8;
     let (y0, y1) = (top - 6 - FADE_Y, bottom_y + bottom_h + 6 + FADE_Y);
     let xs = [LEFT, LEFT + FADE_X, RIGHT - FADE_X, RIGHT];
     let ys = [y0, y0 + FADE_Y, y1 - FADE_Y, y1];
-    let node = |i: usize, j: usize| if i % 3 == 0 || j % 3 == 0 { 0 } else { DARK };
+    let node = |i: usize, j: usize| if i % 3 == 0 || j % 3 == 0 { 0 } else { dark };
     for r in 0..3 {
         for c in 0..3 {
             let (a, b, d, e) = (node(c, r), node(c + 1, r), node(c, r + 1), node(c + 1, r + 1));
@@ -737,15 +860,36 @@ fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
             }
         }
     }
-    unsafe { BACKBOARD_COUNT = 9 };
+    unsafe {
+        BACKBOARD_COUNT = 9;
+        FADE = 128;
+    }
     first
 }
 /// The ornate panel with one page of text: the page's lines centred, arrow or stop under them.
 fn ornate(lines: &[&str], more: bool) {
     let rows = lines.len().max(1) as i16;
+    // The typewriter: 65 characters a second (`DialogueBox.revealSpeed`), a page from its first
+    // vblank. The arrow or stop appears with the last character.
+    up_age(0);
+    let page = lines.as_ptr() as usize;
+    let now = psx_rt::interrupts::vblank_count();
+    let typed = unsafe {
+        if PAGE.0 != page {
+            PAGE = (page, now);
+        }
+        (now.wrapping_sub(PAGE.1) * 13 / 12).min(999) as u16
+    };
+    let total: usize = lines.iter().map(|l| l.len()).sum();
+    unsafe { NO_ICON = (typed as usize) < total };
     let first = ornate_frame(rows, if more { Under::Arrow } else { Under::Stop }, None);
+    unsafe { TYPED = typed };
     for (i, line) in lines.iter().enumerate() {
         text(160 - width(line) / 2, first + i as i16 * ORNATE_PITCH, line);
+    }
+    unsafe {
+        TYPED = u16::MAX;
+        NO_ICON = false;
     }
 }
 /// The conversation box for a caller that draws its own `rows` lines (Cornifer's question, the
@@ -774,11 +918,16 @@ pub(crate) fn row_gain(chosen: bool) -> u8 {
 }
 /// The pause screens' backdrop: the whole view darkened and, when the ornaments are in
 /// the frame's working set, the crest above the list and the flourish at `bottom`.
-fn pause_backdrop(fleurs: bool, bottom: i16) {
+fn pause_backdrop(kind: u8, fleurs: bool, bottom: i16) {
+    // GoToPauseMenu: the dimmer fades in over 0.16 s while ShowMenu runs: the crest unfurls from 0.1 s,
+    // the list fades in from 0.2 s and the flourish under it unfurls from 0.2 s.
+    let age = up_age(kind);
     unsafe {
+        LAST_ROWS = 0;
+        let dim = (u16::from(PAUSE_DIM) * u16::from(ramp(age, 0, 10)) / 128) as u8;
         BACKBOARD[0] = QuadGouraudBlended::new(
             [(0, 0), (320, 0), (0, 240), (320, 240)],
-            [(PAUSE_DIM, PAUSE_DIM, PAUSE_DIM); 4],
+            [(dim, dim, dim); 4],
             BlendMode::Subtract,
         );
         BACKBOARD_COUNT = 1;
@@ -786,17 +935,18 @@ fn pause_backdrop(fleurs: bool, bottom: i16) {
     }
     if fleurs {
         use crate::dialogue_art::{DIALOGUE_PAUSE_BOTTOM, DIALOGUE_PAUSE_TOP};
-        ornament(DIALOGUE_PAUSE_TOP, 160 - DIALOGUE_PAUSE_TOP.2 as i16 / 2, FLEUR_Y);
-        ornament(DIALOGUE_PAUSE_BOTTOM, 160 - DIALOGUE_PAUSE_BOTTOM.2 as i16 / 2, bottom);
+        unfurl(DIALOGUE_PAUSE_TOP, 160 - DIALOGUE_PAUSE_TOP.2 as i16 / 2, FLEUR_Y, ramp(age, 6, 16));
+        unfurl(DIALOGUE_PAUSE_BOTTOM, 160 - DIALOGUE_PAUSE_BOTTOM.2 as i16 / 2, bottom, ramp(age, 12, 16));
     }
+    unsafe { FADE = ramp(age, 12, 12) };
 }
 /// A soft light behind the chosen row, brightest in the middle and gone at both ends.
 fn row_glow(y: i16, height: i16) {
-    glow(56, 264, y, height);
+    glow(56, 264, y, height, ROW_GLOW);
 }
-fn glow(left: i16, right: i16, y: i16, height: i16) {
+fn glow(left: i16, right: i16, y: i16, height: i16, level: u8) {
     let mid = (left + right) / 2;
-    let (bright, dark) = ((ROW_GLOW, ROW_GLOW, ROW_GLOW), (0, 0, 0));
+    let (bright, dark) = ((level, level, level), (0, 0, 0));
     unsafe {
         let n = BACKBOARD_COUNT;
         BACKBOARD[n] = QuadGouraudBlended::new(
@@ -821,17 +971,26 @@ pub(crate) fn board_backdrop(left: i16, right: i16, y: i16, height: i16) {
     // Node colours at the four inner corners of the glow's 4x4 node grid; the outer ring is black.
     const XS: [i16; 4] = [0, 60, 180, 320];
     const YS: [i16; 4] = [0, 30, 120, 240];
-    let tone = |i: usize, j: usize| match (i, j) {
-        (1, 1) => (140, 52, 196),
-        (2, 1) => (96, 36, 140),
-        (1, 2) => (84, 30, 124),
-        (2, 2) => (44, 16, 66),
-        _ => (0, 0, 0),
+    // The pane fades in over 0.2 s (FadeGroup on `Charms`).
+    let fade = ramp(up_age(9), 0, 12);
+    unsafe { LAST_ROWS = 0 };
+    let scale = |v: u8| (u16::from(v) * u16::from(fade) / 128) as u8;
+    let tone = |i: usize, j: usize| {
+        let (r, g, b) = match (i, j) {
+            (1, 1) => (140, 52, 196),
+            (2, 1) => (96, 36, 140),
+            (1, 2) => (84, 30, 124),
+            (2, 2) => (44, 16, 66),
+            _ => (0, 0, 0),
+        };
+        (scale(r), scale(g), scale(b))
     };
+    let black = scale(255);
     unsafe {
+        FADE = fade;
         BACKBOARD[0] = QuadGouraudBlended::new(
             [(0, 0), (320, 0), (0, 240), (320, 240)],
-            [(255, 255, 255); 4],
+            [(black, black, black); 4],
             BlendMode::Subtract,
         );
         for r in 0..3 {
@@ -846,7 +1005,10 @@ pub(crate) fn board_backdrop(left: i16, right: i16, y: i16, height: i16) {
         BACKBOARD_COUNT = 10;
         BOX_COUNT = 0;
     }
-    glow(left, right, y, height);
+    // The source's selection cursor breathes (four corner sprites moving 0.5 s out and 0.5 s in,
+    // linear); the glow that stands in for it swells and fades on the same second.
+    let beat = (psx_rt::interrupts::vblank_count() % 60) as u8;
+    glow(left, right, y, height, ROW_GLOW / 2 + (if beat < 30 { beat } else { 60 - beat }) * ROW_GLOW / 60);
 }
 /// A one texel rule, as the source's under its "Collection" label.
 pub(crate) fn board_rule(x: i16, y: i16, w: u16) {
@@ -857,7 +1019,7 @@ pub(crate) fn board_rule(x: i16, y: i16, w: u16) {
 }
 /// A board art piece tinted (r, g, b) and added to what is behind it: the soul vessel's glow.
 pub(crate) fn board_glow_art(piece: (usize, usize, u16, u16), x: i16, y: i16, (r, g, b): (u8, u8, u8)) {
-    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), true);
+    ornament_color(piece, x, y, u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r), true, 128);
 }
 pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
     text_gain(x, y, value, gain);

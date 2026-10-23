@@ -191,59 +191,139 @@ fn ornament(x: i16, y: i16, size: (u8, u8), uv: (u8, u16), gain: u8) {
 /// right at it and its mirror right of the row pointing left. The cooked sprite points left, so the
 /// left leaf is the mirrored half of the strip.
 /// The left leaf alone, for the lists whose rows start at a fixed column.
-fn pointer(x: i16, y: i16, gain: u8) {
-    let (w, h) = (TITLE_POINTER.1, TITLE_POINTER.2);
-    ornament(x, y - 1, (w, h), ((halfwords(w) * 4) as u8, ORN_POINTER), gain);
+fn pointer(x: i16, y: i16, gain: u8, step: u8) {
+    leaf(x, y, gain, step, true);
 }
-fn pointers(left: i16, right: i16, y: i16, gain: u8) {
-    let (w, h) = (TITLE_POINTER.1, TITLE_POINTER.2);
-    ornament(left - w as i16 - 4, y - 1, (w, h), ((halfwords(w) * 4) as u8, ORN_POINTER), gain);
-    ornament(right + 4, y - 1, (w, h), (0, ORN_POINTER), gain);
+fn pointers(left: i16, right: i16, y: i16, gain: u8, step: u8) {
+    leaf(left - TITLE_POINTER.1 as i16 - 4, y, gain, step, true);
+    leaf(right + 4, y, gain, step, false);
 }
-/// The flourishes above and below a page, centred.
-fn flourishes(top: i16, bottom: i16, gain: u8) {
+/// One leaf: the left one (pointing right) or the right one (pointing left).
+fn leaf(x: i16, y: i16, gain: u8, step: u8, left: bool) {
+    if step == HIDDEN {
+        return;
+    }
+    let (w, h) = (TITLE_POINTER.1, TITLE_POINTER.2);
+    ornament(x, y - 1, (w, h), (pointer_u(left, step), ORN_POINTER), gain);
+}
+/// A pointer step for "not shown yet".
+const HIDDEN: u8 = 255;
+/// U of the pointer's frame `step` on the strip: 0 to 4 are the opening frames of the source's
+/// `Menu Fleur Reveal` (every second sprite frame, a 60 Hz screen's share of its 120 fps), 5 and
+/// more the final leaf. The left leaf is the mirrored half, which points right.
+fn pointer_u(left: bool, step: u8) -> u8 {
+    let w = halfwords(TITLE_POINTER.1) * 4;
+    let slot = match (left, step) {
+        (true, 0..=4) => 7 + u16::from(step),
+        (false, 0..=4) => 2 + u16::from(step),
+        (true, _) => 1,
+        (false, _) => 0,
+    };
+    (w * slot) as u8
+}
+/// The flourishes above and below a page, centred, each unfurled to `top` / `bottom` of 128. The
+/// source swaps nine sprite frames for the unfurl (a bud, then the wings spreading, then the long
+/// lines); here the finished flourish is shown through a window that widens from the middle,
+/// which keeps the one frame in video memory.
+fn flourishes(top: i16, bottom: i16, lv: Levels, gain: u8) {
     let (t, b) = (TITLE_FLEUR_TOP, TITLE_FLEUR_BOTTOM);
-    ornament(160 - t.1 as i16 / 2, top, (t.1, t.2), (0, ORN_TOP), gain);
-    ornament(160 - b.1 as i16 / 2, bottom, (b.1, b.2), (0, ORN_BOTTOM), gain);
+    unfurl(top, (t.1, t.2), ORN_TOP, lv.top, gain);
+    unfurl(bottom, (b.1, b.2), ORN_BOTTOM, lv.bottom, gain);
+}
+fn unfurl(y: i16, size: (u8, u8), v: u16, level: u8, gain: u8) {
+    let w = (u16::from(size.0) * u16::from(level) / 128) as u8;
+    if w == 0 {
+        return;
+    }
+    let cut = (size.0 - w) / 2;
+    ornament(160 - i16::from(size.0) / 2 + i16::from(cut), y, (w, size.1), (cut, v), gain);
 }
 pub const SLOT_LABELS: [&str; 4] = ["Slot 1", "Slot 2", "Slot 3", "Slot 4"];
+/// How far each part of a page has come, 0 to 128: the heading, the body, and
+/// the two flourishes (as `UIManager.ShowMenu` and `HideMenu` order them, at 60 frames a second).
+#[derive(Clone, Copy)]
+struct Levels {
+    title: u8,
+    content: u8,
+    top: u8,
+    bottom: u8,
+}
+const FULL: Levels = Levels { title: 128, content: 128, top: 128, bottom: 128 };
+/// 0 to 128 over `len` frames from `start`.
+#[inline(never)]
+fn ramp(age: u16, start: u16, len: u16) -> u8 {
+    (age.saturating_sub(start).min(len) * 128 / len) as u8
+}
+/// The source's page sequence, in frames (its waits are 0.1 s, its fade 0.19 s at 5 a second, a
+/// flourish nine sprites at 30 a second): the heading fades first, the top flourish unfurls from
+/// 0.1 s, the body fades and the bottom flourish unfurls from 0.2 s, and input returns at 0.3 s.
+/// The title page has no flourishes: its buttons fade as one group.
+#[inline(never)]
+fn levels(page: Page, hiding: bool, age: u16) -> Levels {
+    let flip = |v: u8| if hiding { 128 - v } else { v };
+    if page == Page::Main {
+        let g = flip(ramp(age, 0, 12));
+        return Levels { title: g, content: g, top: 0, bottom: 0 };
+    }
+    Levels {
+        title: flip(ramp(age, 0, 12)),
+        content: flip(ramp(age, 12, 12)),
+        top: flip(ramp(age, 6, 16)),
+        bottom: flip(ramp(age, if hiding { 18 } else { 12 }, 16)),
+    }
+}
+/// Frames a page takes to leave, and until it takes input.
+fn hide_frames(page: Page) -> u16 {
+    if page == Page::Main { 12 } else { 34 }
+}
+fn input_at(page: Page) -> u16 {
+    if page == Page::Main { 12 } else { 18 }
+}
 // For size, like `run`: the title is not a gameplay frame, and the resident code
 // budget (docs/BUDGET.md) is what the Options rows would otherwise be spent from.
+/// What a frame shows: page `page` with `row` chosen, `age` frames into its sequence at the levels
+/// `lv`, the pointer at frame `step`, under the screen's overall `gain`.
+#[derive(Clone, Copy)]
+struct View {
+    page: Page,
+    row: usize,
+    lv: Levels,
+    age: u16,
+    gain: u8,
+    step: u8,
+}
 #[cfg_attr(not(test), optimize(size))]
-fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
-    draw(gain);
-    match menu.page {
+fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
+    let View { page, row, lv, step, .. } = v;
+    let scaled = |level: u8| (u16::from(v.gain) * u16::from(level) / 128) as u8;
+    let (gain, title) = (scaled(lv.content), scaled(lv.title));
+    draw(v.gain);
+    match page {
         Page::Main => {
             for (i, label) in state::MAIN_ITEMS.iter().enumerate() {
                 let y = 152 + i as i16 * 18;
-                let g = if i == menu.selected {
-                    gain
-                } else {
-                    gain - gain / 4
-                };
+                let g = if i == row { gain } else { gain - gain / 4 };
                 centered_caps(y, label, g);
-                if i == menu.selected {
+                if i == row {
                     let half = caps_width(label) / 2;
-                    pointers(160 - half, 160 + half, y, gain);
+                    pointers(160 - half, 160 + half, y, gain, step);
                 }
             }
         }
         Page::Profiles => {
             // A page of its own, as the source's Select Game is: no logo behind it.
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
-            flourishes(24, 224, gain);
-            centered_caps(51, "SELECT GAME", gain);
+            flourishes(24, 224, lv, v.gain);
+            centered_caps(51, "SELECT GAME", title);
             for i in 0..crate::save::PROFILES {
                 let y = 80 + i as i16 * 26;
-                let g = if i == menu.selected {
-                    gain
-                } else {
-                    gain - gain / 4
-                };
+                // The slots appear one after another, 0.165 s apart.
+                let shown = scaled(ramp(v.age, 12 + 10 * i as u16, 12));
+                let g = if i == row { shown } else { shown - shown / 4 };
                 caps(78, y, SLOT_LABELS[i], g);
                 text(150, y - 1, slots[i], g);
-                if i == menu.selected {
-                    pointer(52, y, gain);
+                if i == row {
+                    pointer(52, y, shown, step);
                 }
             }
             // The page has no hint row, as the source's has none; a failed read says so here.
@@ -253,15 +333,11 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
         }
         Page::Options => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
-            flourishes(24, 224, gain);
-            centered_caps(51, "OPTIONS", gain);
+            flourishes(24, 224, lv, v.gain);
+            centered_caps(51, "OPTIONS", title);
             for (i, label) in state::OPTION_ITEMS.iter().enumerate() {
                 let y = 70 + i as i16 * 18;
-                let g = if i == menu.selected {
-                    gain
-                } else {
-                    gain - gain / 4
-                };
+                let g = if i == row { gain } else { gain - gain / 4 };
                 caps(70, y, label, g);
                 let mut sign = [0u8; 3];
                 let s = &menu.settings;
@@ -275,15 +351,15 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                 if !value.is_empty() {
                     text(220, y - 1, value, g);
                 }
-                if i == menu.selected {
-                    pointer(46, y, gain);
+                if i == row {
+                    pointer(46, y, gain, step);
                 }
             }
         }
         Page::Controls => {
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
-            flourishes(24, 224, gain);
-            centered_caps(51, "CONTROLS", gain);
+            flourishes(24, 224, lv, v.gain);
+            centered_caps(51, "CONTROLS", title);
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
                 centered(68 + i as i16 * 13, line, gain);
             }
@@ -292,13 +368,13 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
             // The same panel and flourishes as Options: a window of eight rows follows the
             // cursor through the twelve cheats and Back.
             gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
-            flourishes(24, 224, gain);
-            centered_caps(51, "CHEATS", gain);
+            flourishes(24, 224, lv, v.gain);
+            centered_caps(51, "CHEATS", title);
             const WINDOW: usize = 8;
             const TOP: i16 = 68;
             const PITCH: i16 = 14;
             let total = state::CHEAT_ITEMS.len() + 1;
-            let first = menu.selected.saturating_sub(WINDOW / 2).min(total - WINDOW);
+            let first = row.saturating_sub(WINDOW / 2).min(total - WINDOW);
             for (i, label) in state::CHEAT_ITEMS
                 .iter()
                 .chain(["Back"].iter())
@@ -307,11 +383,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                 .take(WINDOW)
             {
                 let y = TOP + (i - first) as i16 * PITCH;
-                let g = if i == menu.selected {
-                    gain
-                } else {
-                    gain - gain / 4
-                };
+                let g = if i == row { gain } else { gain - gain / 4 };
                 text(52, y, label, g);
                 if i < state::CHEAT_ITEMS.len() {
                     text(
@@ -325,8 +397,8 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
                         g,
                     );
                 }
-                if i == menu.selected {
-                    pointer(30, y, gain);
+                if i == row {
+                    pointer(30, y, gain, step);
                 }
             }
             // More rows above or below the window.
@@ -340,7 +412,7 @@ fn draw_menu(menu: &State, gain: u8, slots: &[&str; 4], fault: &str) {
         }
     }
     // BRIGHTNESS over the whole screen, text included (display.rs).
-    crate::display::draw_direct(gain);
+    crate::display::draw_direct(v.gain);
 }
 fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
     // The menu draws through the command port; GP0(1Fh) after it is what lets
@@ -384,9 +456,19 @@ pub fn run(
     // The page starts from what is set now: the title comes back after a session reset.
     menu.settings.brightness = crate::display::brightness();
     (menu.settings.screen_x, menu.settings.screen_y) = crate::display::screen();
+    // What is on screen lags what the buttons chose: a page that is left plays its leaving sequence
+    // (`levels`) and the chosen page then plays its own, as the source does. Input is not held back
+    // meanwhile (the source's is): the recorded routes press again on their own timing.
+    let mut view = View { page: menu.page, row: 0, lv: FULL, age: 60, gain: 0, step: 5 };
+    let mut hiding = false;
+    // Frames since the chosen row changed, for the pointer's opening.
+    let mut moved = 0u16;
     loop {
         gain = gain.saturating_add(8).min(128);
-        draw_menu(&menu, gain, slots, fault);
+        view.gain = gain;
+        view.lv = levels(view.page, hiding, view.age);
+        view.step = if view.age < input_at(view.page) || hiding { HIDDEN } else { moved.min(5) as u8 };
+        draw_menu(&menu, view, slots, fault);
         let mut start = false;
         present_samples(fb, |bits| {
             crate::music::tick();
@@ -444,11 +526,25 @@ pub fn run(
         if start {
             break;
         }
+        view.age = view.age.saturating_add(1);
+        moved = moved.saturating_add(1);
+        if hiding {
+            if view.age >= hide_frames(view.page) {
+                (view.page, view.row, view.age, hiding, moved) = (menu.page, menu.selected, 0, false, 0);
+            }
+        } else if menu.page != view.page {
+            (hiding, view.age) = (true, 0);
+        } else if menu.selected != view.row {
+            (view.row, moved) = (menu.selected, 0);
+        }
     }
+    view.lv = FULL;
+    view.step = 5;
     while gain > 0 {
         gain = gain.saturating_sub(16);
         crate::music::set_fade(gain);
-        draw_menu(&menu, gain, slots, fault);
+        view.gain = gain;
+        draw_menu(&menu, view, slots, fault);
         present_samples(fb, |_| crate::music::tick());
     }
     assert!(crate::music::stop(), "CD music did not release drive");
@@ -549,8 +645,12 @@ fn upload_ornaments(rows: &[u8]) {
     };
     put(TITLE_FLEUR_TOP, ORN_X, ORN_TOP);
     put(TITLE_FLEUR_BOTTOM, ORN_X, ORN_BOTTOM);
-    put(TITLE_POINTER, ORN_X, ORN_POINTER);
-    put(TITLE_POINTER_MIRRORED, ORN_X + halfwords(TITLE_POINTER.1), ORN_POINTER);
+    // The pointer's slots (`pointer_u`): final left leaf and right leaf, then the five opening
+    // frames of each.
+    for (slot, &offset) in TITLE_POINTER_SLOTS.iter().enumerate() {
+        let w = halfwords(TITLE_POINTER.1);
+        put((offset, TITLE_POINTER.1, TITLE_POINTER.2), ORN_X + w * slot as u16, ORN_POINTER);
+    }
 }
 /// The font image's size (Perpetua and the capitals), which the dialogue panels share.
 pub use state::FONT_BYTES;
