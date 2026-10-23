@@ -410,6 +410,11 @@ fn replace_actors(raw: &[u8], actors: &[[u8; 48]], binding: [u8; 32]) -> Result<
         );
         output.extend(section);
     }
+    // The wire format ends on a 4-byte boundary; the u16 index list is the last
+    // section and an odd count leaves the bank two bytes short of it.
+    while output.len() % 4 != 0 {
+        output.push(0);
+    }
     let len = u32::try_from(output.len())?;
     put(&mut output, 52, len);
     Ok(output)
@@ -607,6 +612,22 @@ mod tests {
             .map(|a| word(a, 0).unwrap())
             .collect::<Vec<_>>();
         assert_eq!(ids, (100..140).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn an_odd_index_list_still_ends_on_a_word_boundary() {
+        let (mut raw, actors) = fixture();
+        let index_offset = raw.len() as u32;
+        raw.extend_from_slice(&[7, 0, 0, 0]);
+        put(&mut raw, 64 + 4 * 12, index_offset);
+        put(&mut raw, 68 + 4 * 12, 1);
+        let len = raw.len() as u32;
+        put(&mut raw, 52, len);
+        let out = replace_actors(&raw, &actors, [0; 32]).unwrap();
+        assert_eq!(out.len() % 4, 0);
+        assert_eq!(word(&out, 52).unwrap() as usize, out.len());
+        let at = word(&out, 64 + 4 * 12).unwrap() as usize;
+        assert_eq!(&out[at..at + 2], &[7, 0]);
     }
 
     #[test]
