@@ -84,6 +84,25 @@ pub const KIND_REVEAL_MASK: u16 = 17;
 /// index list of (moving part, draw) pairs and words 1 and 2 the world point
 /// the strike effect spawns at. host/secret_breaks.py, tools/world_metadata.py.
 pub const KIND_SECRET: u16 = 18;
+/// One rigid debris piece of a scene's Breakables, all of them in the bank's
+/// first region (like the camera locks) because a piece belongs to its owner,
+/// not to a view. `source_id` is the part's renderer component id, which seeds
+/// its launch; `state` is the owner's breakable state index (bits 0..6) and the
+/// piece's authored start pose in 1/64 degree (bits 8..22); `flags` hold the spin
+/// as a signed count of halves of the AddTorque(vx * coefficient) coefficient
+/// (bits 0..5), random start rotation (6), finishing (7) and the SimpleRock tint
+/// (8); `bounds` are not a box but four Q16 slots: origin x, origin y, centroid
+/// x, centroid y; the one polygon (3..8 points) is the piece's collider in its
+/// own units; the payload is scale x, scale y (Q16, signed) and the inverse
+/// moment of inertia (Q16). host/effects.py `fragment_geometry`.
+pub const KIND_FRAGMENT: u16 = 19;
+/// Per region: which fragments it can draw. Payload word 0 is an index list of
+/// (fragment object's index in the first region, frame in this region's
+/// animation bank) pairs, so an even count. A fragment with no pair here is
+/// simulated but not drawn in this region.
+pub const KIND_FRAGMENT_FRAMES: u16 = 20;
+/// The most points a fragment's polygon may carry.
+pub const FRAGMENT_MAX_POINTS: usize = 8;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
@@ -242,12 +261,22 @@ impl<'a> WorldMeta<'a> {
             // Index-list spans live in the payload words of list-bearing kinds.
             let lists: &[usize] = match object.kind() {
                 KIND_BREAKABLE => &[0, 1, 2],
-                KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS | KIND_SECRET => &[0],
+                KIND_MASK_FADE
+                | KIND_REMOTE_MASK
+                | KIND_REVEAL_BINDINGS
+                | KIND_SECRET
+                | KIND_FRAGMENT_FRAMES => &[0],
                 _ => &[],
             };
             for &word in lists {
                 let (first, count) = object.index_span(word);
                 self.span(4, first, count)?;
+            }
+            if object.kind() == KIND_FRAGMENT_FRAMES && object.index_span(0).1 % 2 != 0 {
+                return Err(Error::Geometry);
+            }
+            if object.kind() == KIND_FRAGMENT && object.polygon_count() != 1 {
+                return Err(Error::Geometry);
             }
             // A camera lock's single "polygon" is its two limit points.
             let minimum = if object.kind() == KIND_CAMERA_LOCK {
@@ -257,7 +286,12 @@ impl<'a> WorldMeta<'a> {
             };
             for polygon in object.polygons() {
                 let polygon = polygon?;
-                if polygon.count() < minimum || polygon.count() > 16 {
+                let maximum = if object.kind() == KIND_FRAGMENT {
+                    FRAGMENT_MAX_POINTS
+                } else {
+                    16
+                };
+                if polygon.count() < minimum || polygon.count() > maximum {
                     return Err(Error::Geometry);
                 }
                 self.span(3, polygon.first(), polygon.count())?;
@@ -718,6 +752,40 @@ mod tests {
         let at = offset(&b, 0);
         put(&mut b, at, 0);
         assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference));
+    }
+    /// The fixture's one object, retyped; its polygon has three points and its
+    /// payload words 0..2 are 2<<16, 0 and 3.
+    fn retyped(kind: u16) -> Vec<u8> {
+        let mut b = fixture();
+        let at = offset(&b, 1) + 8;
+        b[at..at + 2].copy_from_slice(&kind.to_le_bytes());
+        b
+    }
+    #[test]
+    fn a_fragment_is_one_polygon_of_three_to_eight_points() {
+        assert!(WorldMeta::parse(&retyped(KIND_FRAGMENT)).is_ok());
+        let mut b = retyped(KIND_FRAGMENT);
+        let at = offset(&b, 1) + 32;
+        put(&mut b, at, 0);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Geometry));
+        // Nine points is over the limit whatever the point section holds.
+        let mut b = retyped(KIND_FRAGMENT);
+        let polygon = offset(&b, 2) + 4;
+        put(&mut b, polygon, 9);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Geometry));
+    }
+    #[test]
+    fn a_fragment_frame_map_is_whole_pairs_inside_the_index_section() {
+        // The fixture's object carries a two-index list: one pair.
+        assert!(WorldMeta::parse(&retyped(KIND_FRAGMENT_FRAMES)).is_ok());
+        let mut b = retyped(KIND_FRAGMENT_FRAMES);
+        let at = offset(&b, 1) + 36;
+        put(&mut b, at, 1 << 16);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Geometry), "an odd list is half a pair");
+        let mut b = retyped(KIND_FRAGMENT_FRAMES);
+        let at = offset(&b, 1) + 36;
+        put(&mut b, at, 1 | 2 << 16);
+        assert_eq!(WorldMeta::parse(&b).err(), Some(Error::Reference), "a pair past the last index");
     }
     fn offset(b: &[u8], section: usize) -> usize {
         u32_at(b, 64 + section * 12) as usize

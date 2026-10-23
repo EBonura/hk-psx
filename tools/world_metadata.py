@@ -10,10 +10,7 @@ import hashlib
 import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / 'host'))
-# The one definition of how many debris variants the catalogue may hold,
-# beside the function that produces them. Two copies of this number is what
-# made the last build fail after the other copy had already been raised.
-from effects import DEBRIS_VARIANT_LIMIT
+from effects import FRAGMENT_MAX_POINTS, POSE_STEPS
 # And the one definition of the guest actor pool, beside the pass that dedups a
 # scene's ActorSpecs and hands this encoder the index each placement takes.
 from actors import MAX_SCENE_ACTORS, scene_actor_bank
@@ -30,7 +27,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "fragment": 19, "fragment_frames": 20}
 MAX_REVEAL_CONTROLLERS = 16
 
 
@@ -136,6 +133,31 @@ def encode_scene(scene, rows):
             raise ValueError(f"{name} list exceeds the u16 span")
         return first | (len(values) << 16)
 
+    def add_fragment(piece, local_index=None):
+        """One rigid debris piece (KIND_FRAGMENT); the geometry is already Q16."""
+        owner = bounded(piece["door_state"], BREAKABLES_PER_SCENE, "fragment owner state")
+        pose = bounded(piece["start_pose"], POSE_STEPS, "fragment start pose")
+        spin = piece["spin_half"]
+        if type(spin) is not int or not -32 <= spin <= 31:
+            raise ValueError("fragment spin outside six signed bits")
+        polygon = piece["polygon"]
+        if not 3 <= len(polygon) <= FRAGMENT_MAX_POINTS:
+            raise ValueError(f"fragment polygon outside 3..{FRAGMENT_MAX_POINTS} points")
+        slots = (*piece["origin"], *piece["centroid"])
+        words = (*piece["scale"], piece["inv_inertia"])
+        for value in (*slots, *words):
+            if type(value) is not int or not -2**31 <= value < 2**31:
+                raise ValueError("fragment value outside i32")
+        if words[2] <= 0:
+            raise ValueError("fragment inverse inertia must be positive")
+        first = len(points)
+        points.extend((int(x), int(y)) for x, y in polygon)
+        polygons.append((first, len(polygon)))
+        flags = ((spin & 0x3F) | (64 if piece["random_start"] else 0)
+                 | (128 if piece["finishing"] else 0) | (256 if piece["tint"] else 0))
+        objects.append((source_id(piece["source"]), owner | (pose << 8), KINDS["fragment"], flags,
+                        slots, len(polygons) - 1, 1, words))
+
     def add_object(kind, record, state, flags, bounds, shape_key=None, extra=(0, 0, 0)):
         shape = polygon_list(record, shape_key) if shape_key else []
         polygon_first = len(polygons)
@@ -158,9 +180,34 @@ def encode_scene(scene, rows):
 
     stable_breakables = {}
     stable_grass = {}
-    for row_index, row in enumerate(sorted(rows, key=lambda value: value["chunk_id"])):
+    ordered = sorted(rows, key=lambda value: value["chunk_id"])
+    # The scene's rigid debris pieces, once, at the head of the first region, so
+    # a piece's index in it is its object index there (like the camera locks):
+    # the union over the regions, each piece's geometry the same wherever it is cooked.
+    fragments = {}
+    for row in ordered:
+        for piece in row.get("door_debris", []):
+            kept = fragments.setdefault(piece["source"], piece)
+            geometry = [k for k in ("door_state", "origin", "centroid", "scale", "polygon", "inv_inertia",
+                                    "spin_half", "random_start", "finishing", "tint", "start_pose")]
+            if any(kept[k] != piece[k] for k in geometry):
+                raise ValueError("fragment geometry differs between regions: " + piece["source"])
+    fragment_order = sorted(fragments.values(), key=lambda p: (p["door_state"], source_id(p["source"])))
+    fragment_index = {piece["source"]: n for n, piece in enumerate(fragment_order)}
+    for row_index, row in enumerate(ordered):
         object_first = len(objects)
         region_polygon_first = len(polygons)
+        if row_index == 0:
+            for piece in fragment_order:
+                add_fragment(piece)
+            if len(objects) > 0xFFFF:
+                raise ValueError("fragment index outside u16")
+        pairs = []
+        for piece in row.get("door_debris", []):
+            pairs += [fragment_index[piece["source"]], bounded(piece["frame"], 65536, "fragment frame")]
+        if pairs:
+            add_object("fragment_frames", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
+                       (index_list(pairs, 65536, "fragment frame pair"), 0, 0))
         draw_count = row.get("draws", 0)
         edge_count = row.get("edges", 0)
         for record in row.get("breakables", []):
@@ -350,9 +397,10 @@ def encode_scene(scene, rows):
         statics = row.get("statics")
         if statics is not None:
             # Variant catalogue indices the runtime Region value resolves:
-            # door debris, particle bank (-1 none), grass impact (-1 none).
+            # (word 0 was the door debris variant; the pieces ride in the bank now),
+            # particle bank (-1 none), grass impact (-1 none).
             add_object("region_statics", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
-                       (bounded(statics["door_debris"], DEBRIS_VARIANT_LIMIT, "debris variant"),
+                       (0,
                         statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
                         statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 32, "impact variant")))
         if row_index == 0:

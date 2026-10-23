@@ -392,16 +392,6 @@ def generate(report, out_path=None):
             # A driven controller has no trigger of its own; the rest may have several.
             for polygon in record.get('triggers') or []:
                 if not 3<=len(polygon)<=16 or any(len(point)!=2 for point in polygon):raise ValueError('reveal polygon bound')
-    from effects import generated_debris
-    debris_catalog={}
-    for region in regions:
-        key=generated_debris(region.get('door_debris',[]),region['scene_id'])
-        if key not in debris_catalog:
-            name=f'DOOR_DEBRIS_{len(debris_catalog)}'
-            debris_catalog[key]=name
-            out.append(f'static {name}: &[debris::Spec] = {key};')
-    from effects import DEBRIS_VARIANT_LIMIT
-    if len(debris_catalog)>DEBRIS_VARIANT_LIMIT:raise ValueError('door debris metadata variant budget')
     from particles import generated_style,generated_emitter
     particle_scenes={};particle_banks={}
     for region in regions:
@@ -438,12 +428,9 @@ def generate(report, out_path=None):
         if region.get('particle_effects'):
             scene_emitters[region['scene_id']] = f'PARTICLE_EMITTERS_{region["scene_id"]}'
     out.append('pub static SCENE_EMITTERS: &[&[particles::EmitterSpec]] = &[' + ','.join(scene_emitters.get(scene, '&[]') for scene in range(SCENES)) + '];')
-    out.append('pub static DEBRIS_CATALOG: &[&[debris::Spec]] = &[' + ','.join(debris_catalog.values()) + '];')
     out.append('pub static PARTICLE_BANKS: &[particles::Bank] = &[' + ','.join(particle_banks.values()) + '];')
-    debris_index = {name: i for i, name in enumerate(debris_catalog.values())}
     bank_index = {name: i for i, name in enumerate(particle_banks.values())}
     impact_catalog = []
-    from effects import generated_debris
     for region in regions:
         scene = integer(region['scene_id'], SCENES, 'scene index')
         impact = region.get('grass_impact')
@@ -452,7 +439,6 @@ def generate(report, out_path=None):
             impact_catalog.append(impact_spec)
         particle_data = region.get('particle_effects')
         region['statics'] = {
-            'door_debris': debris_index[debris_catalog[generated_debris(region.get('door_debris', []), scene)]],
             'particle_bank': -1 if not particle_data else bank_index[particle_banks[(scene, repr(particle_data['frames']))]],
             'grass_impact': -1 if impact_spec is None else impact_catalog.index(impact_spec)}
     if len(impact_catalog) > 32:
