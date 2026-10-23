@@ -1771,6 +1771,8 @@ pub fn simulate(
                 game.props.fling(game.geo, at);
             }
             if let Some((slot, index, at)) = props_strike.embedded {
+                // The fallen stalactite is a `Breakable`: its `Break` sends `EnemyKillShake`.
+                camera::request(camera::Shake::Kill);
                 props::stalactite_dust(r.scene, slot, index, 2, at);
             }
             // `Chest Control`'s `Open`: saved at once, and `Spawn Items` flings
