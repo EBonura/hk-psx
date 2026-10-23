@@ -13,6 +13,9 @@ mod charms {
     }
     pub fn grant_all(_: bool) {}
     pub fn on_damage(_: &mut hk_sim::Vitals, _: hk_sim::VitalParams) {}
+    pub fn damage_taken(damage: u16) -> u16 {
+        damage
+    }
 }
 // And the shop's half of PlayerData, which `cheats::params` composes under
 // the charms. The real module `include!`s the cooked stock relative to its own

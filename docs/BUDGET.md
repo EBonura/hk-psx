@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |762,292|
+| Linked code |766,644|
 | Code-to-data alignment |12|
-| Linked data, including menu and HUD |266,456|
-| BSS, including shared scene arena and runtime pools |797,816|
-| Total static span |1,826,584|
+| Linked data, including menu and HUD |274,072|
+| BSS, including shared scene arena and runtime pools |795,916|
+| Total static span |1,836,652|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |155,624|
+| Unallocated gap before reserved stack |145,556|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |53,224|
+| Free RAM below the module pool |43,156|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -34,6 +34,14 @@ The generic native components and the road to Hornet's arena (Fungus1_22, Fungus
 The 2026-10-19 console-fix pass (the bench Save notice, card errors and retries, the card-manager title and icon, the Great Door's per-hit reaction and the break shake; game/src/save_ui.rs, docs/SAVE.md) took linked code from 797,492 to 805,384 bytes (7,892) and linked data from 257,256 to 257,800, so 19,740 bytes are free below the module pool (28,212 before). The two `card-diag` features (card_diag.rs) are not in the ordinary build.
 
 The 2026-10-19 polish pass (the original dialogue box, a crisper font and Geo coin, exact title-card glyphs, and the new game's drop in from King's Pass's top gate) took 6,888 bytes of the 60,260 that were free below the module pool, leaving 53,372: linked code 758,912 to 762,160 (+3,248: the ornate panel's layout and backboard, the animation-cache branch for its tiles, the title card's two glyph paths, the new-game entry), linked data 263,432 to 266,456 (+3,024: 3,568 bytes of dialogue ornaments and their 56-byte tile table, less the title card's glyph arrays halved from 48 to 24 and the removed Geo coin quad), BSS +616. The ornaments (`data/dialogue-art.hk`, host/hk-cook/src/dialogue_art.rs) are the whole of the data cost; they reach VRAM through the animation cache's 64x64 slots on demand, so VRAM, which has 304 spare halfwords, pays nothing. The Geo coin lives in a spare cell of the font strip (boot art chunk, no RAM) and replaced `geo_render::hud_coin`. The opening-movie player is a blob in the boot art chunk (intro/, only for `build --intro`), so it costs no resident data; the `intro` feature adds 1,652 bytes of code (an intro build has 1,652 bytes less free below the pool than this table).
+
+The 2026-10-22 menus pass (the original crest and flourishes on the pause pages and the charm board, a dimmed view and a glow behind the chosen row, the title pointer and flourishes) took 6,576 bytes of the 53,372 that were free below the module pool, leaving 46,796: linked code 762,160 to 763,680 (+1,520), linked data 266,456 to 271,512 (+5,056: the dialogue art blob grows from 3,568 to 8,592 bytes for 12 tiles, the pause crest and flourishes among them). The title ornaments (3,576 bytes) ride the boot art chunk and cost no RAM.
+
+The 2026-10-22 font and charm board pass (the panel font rasterised unhinted at 16 coverage levels and drawn adding, so its strip, advances table and boot chunk stay 7,712 and 95 bytes; the charm board as the source's grid of forty slots with the equipped row and the notch circles, its icons in three 64x64 sheets instead of six slots a page, and the Options and Select Game pages on their own panel) took 1,540 bytes of the 46,796 that were free below the module pool, leaving 45,256: linked code 763,680 to 763,224 (-456), linked data 271,512 to 273,496 (+1,984: the board's 51 icon quads, which are initialised data, replace six, and the dialogue art blob grows from 8,592 to 8,892 bytes for the slot ring and two notch circles), BSS +4. The charm icons stay 5,248 bytes (four palettes of 32 and forty 16x16 icons, now packed sixteen to a sheet).
+
+The 2026-10-22 14 px font pass (Perpetua at 14 px grid fitted, the TrajanPro-Bold capitals for the menu buttons, headings and labels, every menu and panel laid out again for the new sizes) took 2,752 bytes of the 45,256 that were free below the module pool, leaving 42,504: linked code 763,224 to 765,152 (+1,928: the capitals' draw, the cheats window, the larger layout code), linked data 273,496 to 274,328 (+832: the capitals' advances and the layout constants, the charm icon quads and art unchanged), BSS +0. The font image is 12,832 bytes (palette, then 256 x 100 texels: Perpetua's 95 glyphs in 13x14 cells, the capitals and the Geo coin in 13x12 cells) and rides the boot art chunk into VRAM, so it costs no RAM. It sits at x320, y360 (sampled from the texture page at y256, texel rows 104 to 203), which is the third CLUT bank's region: the cooked scenes need 386 of the first bank's 416 palettes (SCENE_TOTAL_PALETTES) and their tightest view 248, so no scene palette moves and none is lost. What the move does cost is the theoretical capacity: scenes are admitted into the first two banks (832 palettes, `SCENE_CLUTS`, pack_scenes.py `MAX_PALETTES`) instead of the first three (1,248; the cooked peak was 569 in an earlier build). Rows 500 to 511 (320 halfwords wide) are free again.
+
+The 2026-10-22 round 5 menus pass (no hint rows anywhere, the conversation box for Cornifer, the Snail Shaman and the bench's notices, the charm board laid out as the source's pane with a purple backdrop, the soul vessel's glow, a right-hand column and a 2x picture, area cards in 40 px Perpetua) moved the free RAM below the module pool from 42,488 (the same tree at the 14 px commit) to 43,248 (the shipping disc; the route-input test disc used for the gates has 56 bytes less): linked code 765,152 to 767,532, linked data 274,344 to 273,160, BSS 797,816 to 795,856. The gains: the glyph packet table is 360 entries instead of 416 (the worst screen, the charm board, counts 357 with spaces; a tablet page is at most 161), the area cards draw through that table instead of their own rectangle and quad arrays, and a charm's description is one newline-joined string instead of a pointer a line. The costs: the card strip (`data/card-font.hk`, 7,680 bytes, boot art chunk, VRAM rows 500 to 511 which were free, no scene palette), a 24x24 orb tile in the dialogue art (9,180 bytes now), the cards' band table (472 bytes of data) and the ornate box, backdrop and board code.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -123,7 +131,9 @@ The 2026-10-19 pass (one terrain reader type for every solver, so Player::step a
 
 The 2026-10-23 scenery trimming policy (`trim_policy::verdict`, a three-frame count where one slow frame used to decide) moved the shipping disc by +132 bytes of linked code, +4 of BSS and 12 of code-to-data alignment: free below the pool 53,372 to 53,224.
 
-Static data ends at `0x801cdf18`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-23 round 6 menus pass and its follow-ups (menu animations after the original's data: page sequences, flourish unfurl, cursor leaf opening, dialogue box fade and typewriter, charm board fade and icon flight, area card timing; the Cornifer price as coin and number; "Game saved" in the Saving box; then the NPCs inert under the first-visit area title, the Listen prompt's flourish, the title screen's particles and the overcharm damage doubling) leave 43,156 bytes free below the module pool, against the 43,248 of round 5 (the trimming policy above took 148 of its own on the way): linked code 766,644, linked data 274,072, BSS 795,916. The glyph routine `text_gain` is no longer inlined at each of the panel's text calls, which returned roughly 8 KB of code and paid for the animations; the title particles, the prompt marker and the page sequences are built out of line (`#[inline(never)]`, the particles for size) so they do not grow their callers. The pointer's five opening frames, the smoke frames and the speck (7,192 bytes in all) ride the boot art chunk and cost no RAM; the prompt flourish is 612 bytes of the dialogue art, whose cooker limit rose from 9,216 to 16,384 bytes.
+
+Static data ends at `0x801d066c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
