@@ -41,7 +41,7 @@ not replace direct frame and polling continuity measurements.
 ```sh
 python3 tools/profile_tape.py \
   --exe dist/hk-psx.exe --map build/hk-psx-normal.map \
-  --cue "$HOME/Downloads/ps1 games/hk-psx.cue" \
+  --cue "$HOME/Downloads/ps1 games/Hollow Knight (hk-psx).cue" \
   --tape .hkpsx/seamless-baseline/recording/latest.pxtape \
   --output .hkpsx/seamless-user --require-seamless
 ```
@@ -151,7 +151,7 @@ Generate the asset-free regression tapes reproducibly with:
 python3 tools/seamless_routes.py --output .hkpsx/seamless-routes
 python3 tools/profile_tape.py --exe dist/hk-psx.exe \
   --map build/hk-psx-normal.map \
-  --cue "$HOME/Downloads/ps1 games/hk-psx.cue" \
+  --cue "$HOME/Downloads/ps1 games/Hollow Knight (hk-psx).cue" \
   --tape .hkpsx/seamless-routes/boundary-jumps.pxtape \
   --output .hkpsx/boundary-jumps-new --require-seamless
 ```

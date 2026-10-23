@@ -1,10 +1,10 @@
 # On a disc built with the `route-input` feature, holding L1 R1 L2 R2 while the profile is chosen starts the new
 # game on the ledge, with no drop: the Knight is never above the ledge height.
 #
-#   psoxide-gate run tools/journeys/new-game-hold-ledge.toml --disc <hk-psx.cue> --no-hw --out <dir>
+#   psoxide-gate run tools/journeys/new-game-hold-ledge.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 name = "new-game-hold-ledge"
 title = "new game: the shoulder hold starts him on the ledge (route-input disc)"
-disc = ["lib-test/hk-psx.cue"]
+disc = ["lib-test/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
 

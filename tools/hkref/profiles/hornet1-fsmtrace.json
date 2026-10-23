@@ -1,7 +1,7 @@
 {
   "name": "hornet1-fsmtrace",
   "port": {
-    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "disc": "~/Downloads/ps1 games/Hollow Knight (hk-psx).cue",
     "map": "build/hk-psx-normal.map",
     "polls": 1,
     "events": "0:left:60,90:cross:3,114:cross:3,138:cross:3,162:cross:3,186:cross:3,210:cross:3,234:cross:3,258:cross:3,282:cross:3,306:cross:3,330:cross:3,354:cross:3,378:cross:3,402:cross:3,426:cross:3,450:cross:3,474:cross:3,498:cross:3,522:cross:3,546:cross:3,570:cross:3,594:cross:3,618:cross:3,642:cross:3,666:cross:3,690:cross:3,714:cross:3,738:cross:3,762:cross:3,786:cross:3,810:cross:3,834:cross:3,858:cross:3,882:cross:3,906:cross:3,930:cross:3,954:cross:3,978:cross:3,1002:cross:3,1026:cross:3,1050:cross:3,1074:cross:3,1098:cross:3,1122:cross:3,1146:cross:3,1170:cross:3,1194:cross:3,1218:cross:3,1242:cross:3,1266:cross:3,1290:cross:3,1314:cross:3,1338:cross:3,1362:cross:3,1386:cross:3,1410:cross:3,1434:cross:3,1458:cross:3,1482:cross:3,1506:cross:3,1530:cross:3,1554:cross:3,1578:cross:3"

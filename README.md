@@ -67,7 +67,7 @@ arena open, carrying one card through four power cycles. It uses the
 Invincibility cheat to travel and turns it off for the fight, and a pin proves
 the kill happened with no cheat on.
 
-The current game is always `~/Downloads/ps1 games/hk-psx.cue`. There are no
+The current game is always `~/Downloads/ps1 games/Hollow Knight (hk-psx).cue`. There are no
 alternate candidate or telemetry discs; every build updates this same entry.
 
 ## Build locally
@@ -118,10 +118,11 @@ written from the published format; its blocks decode to the same bytes as the
 Python lz4 module's but are about 0.8 percent smaller on the real cook files) and `host/hk-cook` (the
 cookers; `props` so far), which the driver runs in-process.
 
-Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/hk-psx.bin` plus
-`~/Downloads/ps1 games/hk-psx.cue`. The PS1 library is the ONLY disc destination;
+Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin` plus
+`~/Downloads/ps1 games/Hollow Knight (hk-psx).cue` (named like `Half-Life (hl-psx)`;
+an install removes a pair left under the old name `hk-psx.bin/.cue`). The PS1 library is the ONLY disc destination;
 temporary and diagnostic discs also stay there, with no repository duplicates.
-Every build updates the single `~/Downloads/ps1 games/hk-psx.bin/.cue` pair.
+Every build updates the single `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin/.cue` pair.
 There are no candidate, baseline or telemetry disc copies. `--telemetry` selects
 an instrumented build at the same path; the legacy `--candidate` flag is an alias
 for a normal build. `.hkpsx/build.json` identifies the currently playable EXE,

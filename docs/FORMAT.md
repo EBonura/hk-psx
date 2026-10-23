@@ -372,7 +372,7 @@ but remaining frame-budget failures. Old five-arena neighbour-loader timings
 are historical and do not describe this implementation.
 
 Raw banks, compression reports and generated manifests are ignored build inputs.
-Only the canonical BIN/CUE is delivered to `~/Downloads/ps1 games/`; temporary
+Only the canonical BIN/CUE (`Hollow Knight (hk-psx).bin/.cue`) is delivered to `~/Downloads/ps1 games/`; temporary
 disc images must also stay in that library. See [STREAMING.md](STREAMING.md) for
 source inventories, historical work and remaining whole-game limitations.
 

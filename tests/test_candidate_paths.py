@@ -17,8 +17,8 @@ spec.loader.exec_module(build_tool)
 
 class CandidatePaths(unittest.TestCase):
     def test_one_playable_destination_for_every_legacy_variant(self):
-        expected={'exe':ROOT/'dist/hk-psx.exe','bin':paths.DISC_LIBRARY/'hk-psx.bin',
-                  'cue':paths.DISC_LIBRARY/'hk-psx.cue'}
+        expected={'exe':ROOT/'dist/hk-psx.exe','bin':paths.DISC_LIBRARY/f'{paths.DISC_NAME}.bin',
+                  'cue':paths.DISC_LIBRARY/f'{paths.DISC_NAME}.cue'}
         for candidate in [False,True]:
             for telemetry in [False,True]:
                 self.assertEqual(paths.artifacts(telemetry,candidate),expected)

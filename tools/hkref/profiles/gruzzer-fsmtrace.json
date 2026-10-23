@@ -1,7 +1,7 @@
 {
   "name": "gruzzer-fsmtrace",
   "port": {
-    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "disc": "~/Downloads/ps1 games/Hollow Knight (hk-psx).cue",
     "map": "build/hk-psx-normal.map",
     "polls": 1,
     "events": "0:left:2"

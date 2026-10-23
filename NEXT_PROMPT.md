@@ -332,7 +332,7 @@ Scene arena354032, scratch948/1024. Linked budgets are not stack high-water.
 ## Mandatory build discipline
 
 Exactly one playable pair, ALWAYS and ONLY in the user's library:
-`/Users/ebonura/Downloads/ps1 games/hk-psx.bin` and `hk-psx.cue`.
+`/Users/ebonura/Downloads/ps1 games/Hollow Knight (hk-psx).bin` and `Hollow Knight (hk-psx).cue`.
 No candidate, baseline, backup or telemetry disc copies. Root alone builds;
 finish every headless reader before replacing the pair. The user opens PSoXide
 themselves. Never control its GUI as part of testing this task.

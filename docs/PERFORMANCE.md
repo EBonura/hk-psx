@@ -683,7 +683,7 @@ Use a fresh output directory for each run:
 python3 tools/profile_tape.py \
   --exe .hkpsx/user-slowdowns-baseline/artifacts/hk-psx.exe \
   --map .hkpsx/user-slowdowns-baseline/artifacts/hk-psx.map \
-  --cue "$HOME/Downloads/ps1 games/hk-psx.cue" \
+  --cue "$HOME/Downloads/ps1 games/Hollow Knight (hk-psx).cue" \
   --tape .hkpsx/user-slowdowns-baseline/recording/latest.pxtape \
   --output .hkpsx/user-slowdowns-comparison
 ```

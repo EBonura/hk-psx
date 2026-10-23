@@ -1,7 +1,7 @@
 {
   "name": "kp-playtest",
   "port": {
-    "disc": "~/Downloads/ps1 games/hk-psx.cue",
+    "disc": "~/Downloads/ps1 games/Hollow Knight (hk-psx).cue",
     "map": "build/hk-psx-normal.map",
     "tape": "tools/tapes/kp-playtest.pxtape",
     "polls": 1500,

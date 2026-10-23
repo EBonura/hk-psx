@@ -1,13 +1,13 @@
 # New Game: the Knight enters King's Pass from the top gate, falls down the shaft and lands on the ledge,
 # and stays on solid ground. Route-split: no pad tape, every wait is on a word the game decides.
 #
-#   psoxide-gate run tools/journeys/new-game-lands.toml --disc <hk-psx.cue> --no-hw --out <dir>
+#   psoxide-gate run tools/journeys/new-game-lands.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
 # from the repository root, with build/hk-psx.map the link map of that disc (`symbols` resolves against the
 # working directory). The disc is the plain one (no opening movies); new-game-lands-intro.toml is the same journey on a disc built with `build --intro`.
 name = "new-game-lands"
 title = "new game: the drop lands and stays"
-disc = ["lib/hk-psx.cue"]
+disc = ["lib/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
 

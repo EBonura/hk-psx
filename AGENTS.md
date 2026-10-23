@@ -38,8 +38,8 @@ skill for guest build, emulator and hardware work.
 
 ## Local inputs and scope
 
-- Keep exactly one playable disc pair: `~/Downloads/ps1 games/hk-psx.bin` and
-  `hk-psx.cue`. The user explicitly rejected candidate, baseline and telemetry
+- Keep exactly one playable disc pair: `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin` and
+  `Hollow Knight (hk-psx).cue` (an install removes a pair left under the old name `hk-psx.*`). The user explicitly rejected candidate, baseline and telemetry
   copies. Update the main pair with the current build; do not leave an older
   version under the main name. Keep diagnostic reports/maps/captures internally.
   An explicit telemetry build replaces this same pair. Report unresolved replay

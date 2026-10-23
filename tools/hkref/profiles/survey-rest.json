@@ -1,6 +1,6 @@
 {
   "name": "survey-rest",
-  "port": {"disc": "~/Downloads/ps1 games/hk-psx.cue", "map": "build/hk-psx-normal.map", "polls": 1},
+  "port": {"disc": "~/Downloads/ps1 games/Hollow Knight (hk-psx).cue", "map": "build/hk-psx-normal.map", "polls": 1},
   "og": {
     "sweep": ["*", "-Crossroads_*", "-Fungus1_*"],
     "sweep_frames": 60,

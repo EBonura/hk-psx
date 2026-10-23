@@ -339,9 +339,27 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
     })
 }
 
+/// The disc's name in the library: `Hollow Knight (hk-psx).bin` and `.cue`, the
+/// way Half-Life's is `Half-Life (hl-psx)`. The cue's FILE line is quoted, so
+/// the spaces and parentheses need no escaping. `host/paths.py` has the same name.
+pub const DISC_NAME: &str = "Hollow Knight (hk-psx)";
+/// The name the pair had before it was renamed; an install removes any pair left under it.
+const LEGACY_DISC_NAME: &str = "hk-psx";
+
+/// The library's data track.
+pub fn disc_bin(library: &Path) -> PathBuf {
+    library.join(format!("{DISC_NAME}.bin"))
+}
+
+/// The library's cue sheet.
+pub fn disc_cue(library: &Path) -> PathBuf {
+    library.join(format!("{DISC_NAME}.cue"))
+}
+
 /// Build the disc image from the staged guest: the pack chunks, the order they
-/// are read in and the songs, into `library/hk-psx.bin` and `.cue`, replacing
-/// the previous pair only once the new one is complete. `work` holds the chunk
+/// are read in and the songs, into `library/Hollow Knight (hk-psx).bin` and
+/// `.cue`, replacing the previous pair only once the new one is complete and
+/// removing a pair left under the old name `hk-psx`. `work` holds the chunk
 /// staging and the order file (the guest build's output directory).
 ///
 /// `intro`: the opening movies, for a game built with the `intro` feature.
@@ -370,7 +388,7 @@ pub fn package(
     let temp = library.join(format!(".hk-psx-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp)?;
-    let staged = temp.join("hk-psx.bin");
+    let staged = temp.join(format!("{DISC_NAME}.bin"));
     let mut command = Command::new("cargo");
     command
         .args(["run", "--locked", "--release", "--manifest-path"])
@@ -401,8 +419,14 @@ pub fn package(
         let _ = std::fs::remove_dir_all(&temp);
         return Err(format!("mkisopsx failed with {status}").into());
     }
-    std::fs::rename(&staged, library.join("hk-psx.bin"))?;
-    std::fs::rename(staged.with_extension("cue"), library.join("hk-psx.cue"))?;
+    std::fs::rename(&staged, disc_bin(library))?;
+    std::fs::rename(staged.with_extension("cue"), disc_cue(library))?;
+    for extension in ["bin", "cue"] {
+        let legacy = library.join(format!("{LEGACY_DISC_NAME}.{extension}"));
+        if legacy.exists() {
+            std::fs::remove_file(&legacy)?;
+        }
+    }
     std::fs::remove_dir_all(&temp)?;
     std::fs::remove_dir_all(&chunks)?;
     Ok(())
@@ -412,6 +436,22 @@ pub fn package(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_library_pair_is_named_like_half_life_and_python_agrees() {
+        let library = Path::new("/library");
+        assert_eq!(
+            disc_bin(library),
+            Path::new("/library/Hollow Knight (hk-psx).bin")
+        );
+        assert_eq!(
+            disc_cue(library),
+            Path::new("/library/Hollow Knight (hk-psx).cue")
+        );
+        let paths = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../paths.py"))
+            .unwrap();
+        assert!(paths.contains(&format!("DISC_NAME = '{DISC_NAME}'")));
+    }
 
     fn plan() -> Plan {
         Plan {

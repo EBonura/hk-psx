@@ -34,7 +34,7 @@ the catalog now reuses cooked regions and derives the scene arena from the
 pack; break-effect art past scene 4 and oversized Geo art are explicit
 omissions until effect art streams per scene. Build 74 and it is validated by the root Cargo driver:
 `cargo hk-build build` cooks with caches, builds the guest, replaces
-`~/Downloads/ps1 games/hk-psx.bin/.cue`, writes the build report and replays
+`~/Downloads/ps1 games/Hollow Knight (hk-psx).bin/.cue`, writes the build report and replays
 the route tapes in `tools/tapes`, failing on any fault. Forgotten
 Crossroads (Crossroads_01) is scene 2: the authored Dirtmouth well gate drops
 the Knight into it and the `town-well` route ends inside Crossroads region 110

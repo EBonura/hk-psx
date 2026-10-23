@@ -2,7 +2,7 @@
 packed by host/hk-build/disc.rs."""
 import os, re, subprocess, shutil, json, hashlib
 from pathlib import Path
-from paths import artifacts, build_directory, link_map_path, hazard_report_path
+from paths import DISC_NAME, artifacts, build_directory, link_map_path, hazard_report_path
 ROOT=Path(__file__).resolve().parents[1]
 # The ADPCM banks the guest streams from the disc, in the order it uploads
 # them (the world bank is read before the title screen, the rest at bootstrap).
@@ -242,7 +242,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         stack_guard(exe,resident_map)
         check_main_frame(exe,link_map.read_text())
         if link_map.resolve()!=(out/'hk-psx.map').resolve():shutil.copy2(link_map,out/'hk-psx.map')
-        outputs={'exe':out/'hk-psx.exe','bin':out/'disc/hk-psx.bin','cue':out/'disc/hk-psx.cue'} if work else artifacts(telemetry,candidate)
+        outputs={'exe':out/'hk-psx.exe','bin':out/f'disc/{DISC_NAME}.bin','cue':out/f'disc/{DISC_NAME}.cue'} if work else artifacts(telemetry,candidate)
         outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(exe,outputs['exe'])
         return outputs
@@ -255,7 +255,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     stack_guard(exe,resident_map)
     check_main_frame(exe,link_map.read_text())
     shutil.copy2(link_map,out/'hk-psx.map')
-    outputs = {'exe':out/'hk-psx.exe','bin':out/'disc/hk-psx.bin','cue':out/'disc/hk-psx.cue'} if work else artifacts(telemetry,candidate)
+    outputs = {'exe':out/'hk-psx.exe','bin':out/f'disc/{DISC_NAME}.bin','cue':out/f'disc/{DISC_NAME}.cue'} if work else artifacts(telemetry,candidate)
     outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
     shutil.copy2(exe,outputs['exe'])
     return outputs

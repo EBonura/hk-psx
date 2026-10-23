@@ -55,8 +55,8 @@ pub(super) fn validate(root: &Path, frontend: &Path, library: &Path, out: &Path)
     if sha256_file(Path::new(map_path))? != map_hash {
         return Err("build map changed since report".into());
     }
-    let cue = library.join("hk-psx.cue");
-    let bin = library.join("hk-psx.bin");
+    let cue = super::disc::disc_cue(library);
+    let bin = super::disc::disc_bin(library);
     let cue_hash = sha256_file(&cue)?;
     let bin_hash = sha256_file(&bin)?;
     let reported_hash = |kind: &str| -> Result<&str> {
@@ -82,7 +82,7 @@ pub(super) fn validate(root: &Path, frontend: &Path, library: &Path, out: &Path)
         .map(str::trim)
         .find(|line| line.starts_with("FILE "))
         .ok_or("selected Focus CUE has no data FILE")?;
-    if data_file != "FILE \"hk-psx.bin\" BINARY" {
+    if data_file != format!("FILE \"{}.bin\" BINARY", super::disc::DISC_NAME) {
         return Err(
             format!("selected Focus CUE points at a different data BIN: {data_file}").into(),
         );

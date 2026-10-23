@@ -515,7 +515,7 @@ pub fn spawn_closed(
         None => None,
     };
     let name = format!("{}-sd", route.name);
-    let cue = library.join("hk-psx.cue");
+    let cue = super::disc::disc_cue(&library);
     let setup = Setup {
         name: &name,
         disc: &cue,

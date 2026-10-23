@@ -56,7 +56,7 @@ remove fixed two-scene metadata storage before scaling the whole world.
 - Windows CrossOver source and original saves are read-only; no macOS fallback.
 - Keep320×240, current framing/layers/effects,48px static cap, approved95% sharing.
 - SDK `6030392e9db9646381ca9a5f4aa0567c0b850274`, nightly2026-03-25; final hazards0.
-- Exactly one playable pair in `~/Downloads/ps1 games/hk-psx.bin/.cue`.
+- Exactly one playable pair in `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin/.cue`.
 - Preserve disc 71 until replacement is requested/authorized; no candidate copies.
 - Headless guest tests; user controls the emulator GUI. No automatic burns.
 - Source-only push to private `EBonura/hk-psx` is authorized. Retail assets and

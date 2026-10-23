@@ -1,10 +1,10 @@
 # The shoulder hold is test input. On a shipping disc (no `route-input` feature) holding L1 R1 L2 R2 while the
 # profile is chosen changes nothing: the Knight still drops in from the top gate. Same checks as new-game-lands.toml.
 #
-#   psoxide-gate run tools/journeys/new-game-hold-ignored.toml --disc <hk-psx.cue> --no-hw --out <dir>
+#   psoxide-gate run tools/journeys/new-game-hold-ignored.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 name = "new-game-hold-ignored"
 title = "new game: the shoulder hold is ignored on a shipping disc"
-disc = ["lib/hk-psx.cue"]
+disc = ["lib/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
 

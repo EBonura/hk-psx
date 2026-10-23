@@ -1007,7 +1007,7 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
         let mut command = Command::new(&frontend);
         command
             .args(["launch", "--path"])
-            .arg(collect.join("disc/hk-psx.cue"))
+            .arg(disc::disc_cue(&collect.join("disc")))
             .args(["--embedded-playtest", "--config-dir"])
             .arg(work.join(format!("emulator-{index}")))
             .args(["--steps", "6000000000", "--input-tape"])
@@ -1327,7 +1327,7 @@ fn replay_command(
         "--frontend".into(),
         frontend.to_path_buf(),
         "--cue".into(),
-        library.join("hk-psx.cue"),
+        disc::disc_cue(library),
     ];
     if let Some(card) = card {
         args.extend(["--memcard".into(), card]);
@@ -1629,7 +1629,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     let frontend = frontend(root, options)?;
     let pinned_route_frontend = sha256_file(&frontend)? == BASELINE_ROUTE_FRONTEND_SHA256;
     let library = selected_library(options);
-    let disc_sha = sha256_file(&library.join("hk-psx.bin"))?;
+    let disc_sha = sha256_file(&disc::disc_bin(&library))?;
     let out = root.join(".hkpsx/validate");
     let _ = std::fs::remove_dir_all(&out);
     std::fs::create_dir_all(&out)?;
@@ -2082,7 +2082,7 @@ fn usage() -> ! {
         "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
-         build     cook (cached), build the guest, replace hk-psx.bin/.cue in --library, report, then validate\n\
+         build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
          pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
          and crossroads-gate), replayed on the emulator pinned in emulator.lock.json (built once\n          \
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
@@ -2511,7 +2511,7 @@ mod tests {
         let cue_arg = args.iter().position(|arg| arg == "--cue").unwrap();
         assert_eq!(
             args[cue_arg + 1],
-            library.join("hk-psx.cue").to_string_lossy()
+            disc::disc_cue(&library).to_string_lossy()
         );
         let python = std::process::Command::new("python3")
             .arg("-c")
@@ -2527,7 +2527,7 @@ mod tests {
         );
         assert_eq!(
             String::from_utf8(python.stdout).unwrap().trim(),
-            library.join("hk-psx.cue").to_string_lossy()
+            disc::disc_cue(&library).to_string_lossy()
         );
         assert!(!library.exists(), "path selection must not write a disc");
     }
