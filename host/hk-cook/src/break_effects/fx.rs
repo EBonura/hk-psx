@@ -740,7 +740,10 @@ fn collect_jar(
                 continue;
             }
             match part_emitter(source, sc, gid, gravity, true, true, None, false, false) {
-                Ok(Found::Emitter(e)) => {
+                Ok(Found::Emitter(mut e)) => {
+                    // One opacity level, a third of the art: the jars' own scene (Crossroads_05)
+                    // had no room for the glass at three.
+                    e.style.opaque = true;
                     push_found(c, scene_id, FX_JAR_GLASS, vec![*e], &name, origin)?;
                 }
                 Ok(_) => {}
