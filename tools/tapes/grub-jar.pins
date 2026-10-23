@@ -1,4 +1,10 @@
-pacing = 26
+pacing = 179
+# Crossroads_05 is GPU-bound on emulator 0e87b3a (texture-cache cost 0b9d577): 136 of the 142 gameplay
+# frames take three vblanks because the GPU needs 1.57 to 1.79 vblanks (median 1.59) for the 296 draws
+# and asks for the flip 422 to 535 lines (median 438) after the frame starts, while the CPU's last kick
+# is at about 204 lines. 137 measured; ceil(1.3 x 137), like the other routes re-blessed on this
+# emulator. The earlier 26 was measured on emulator b3848054, where the same scene was CPU-bound at the
+# edge of two vblanks (38 of 190 late, a CD slice or an SPU refill tipping a frame over).
 card = grub-jar.mcd
 # grub-jar boots from a seeded card (tools/seed_card.py) on the Crossroads_05
 # ledge beside its grub jar, facing it, and swings: the first swing breaks
