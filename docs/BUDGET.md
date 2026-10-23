@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |767,584|
+| Linked code |767,532|
 | Code-to-data alignment |0|
 | Linked data, including menu and HUD |273,160|
-| BSS, including shared scene arena and runtime pools |795,864|
-| Total static span |1,836,616|
+| BSS, including shared scene arena and runtime pools |795,856|
+| Total static span |1,836,560|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |145,592|
+| Unallocated gap before reserved stack |145,648|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |43,192|
+| Free RAM below the module pool |43,248|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -41,7 +41,7 @@ The 2026-10-22 font and charm board pass (the panel font rasterised unhinted at 
 
 The 2026-10-22 14 px font pass (Perpetua at 14 px grid fitted, the TrajanPro-Bold capitals for the menu buttons, headings and labels, every menu and panel laid out again for the new sizes) took 2,752 bytes of the 45,256 that were free below the module pool, leaving 42,504: linked code 763,224 to 765,152 (+1,928: the capitals' draw, the cheats window, the larger layout code), linked data 273,496 to 274,328 (+832: the capitals' advances and the layout constants, the charm icon quads and art unchanged), BSS +0. The font image is 12,832 bytes (palette, then 256 x 100 texels: Perpetua's 95 glyphs in 13x14 cells, the capitals and the Geo coin in 13x12 cells) and rides the boot art chunk into VRAM, so it costs no RAM. It sits at x320, y360 (sampled from the texture page at y256, texel rows 104 to 203), which is the third CLUT bank's region: the cooked scenes need 386 of the first bank's 416 palettes (SCENE_TOTAL_PALETTES) and their tightest view 248, so no scene palette moves and none is lost. What the move does cost is the theoretical capacity: scenes are admitted into the first two banks (832 palettes, `SCENE_CLUTS`, pack_scenes.py `MAX_PALETTES`) instead of the first three (1,248; the cooked peak was 569 in an earlier build). Rows 500 to 511 (320 halfwords wide) are free again.
 
-The 2026-10-22 round 5 menus pass (no hint rows anywhere, the conversation box for Cornifer, the Snail Shaman and the bench's notices, the charm board laid out as the source's pane with a purple backdrop, the soul vessel's glow, a right-hand column and a 2x picture, area cards in 40 px Perpetua) moved the free RAM below the module pool from 42,488 (the same tree at the 14 px commit) to 43,192: linked code 765,152 to 767,584, linked data 274,344 to 273,160, BSS 797,816 to 795,864. The gains: the glyph packet table is 360 entries instead of 416 (the worst screen, the charm board, counts 357 with spaces; a tablet page is at most 161), the area cards draw through that table instead of their own rectangle and quad arrays, and a charm's description is one newline-joined string instead of a pointer a line. The costs: the card strip (`data/card-font.hk`, 7,680 bytes, boot art chunk, VRAM rows 500 to 511 which were free, no scene palette), a 24x24 orb tile in the dialogue art (9,180 bytes now), the cards' band table (472 bytes of data) and the ornate box, backdrop and board code.
+The 2026-10-22 round 5 menus pass (no hint rows anywhere, the conversation box for Cornifer, the Snail Shaman and the bench's notices, the charm board laid out as the source's pane with a purple backdrop, the soul vessel's glow, a right-hand column and a 2x picture, area cards in 40 px Perpetua) moved the free RAM below the module pool from 42,488 (the same tree at the 14 px commit) to 43,248 (the shipping disc; the route-input test disc used for the gates has 56 bytes less): linked code 765,152 to 767,532, linked data 274,344 to 273,160, BSS 797,816 to 795,856. The gains: the glyph packet table is 360 entries instead of 416 (the worst screen, the charm board, counts 357 with spaces; a tablet page is at most 161), the area cards draw through that table instead of their own rectangle and quad arrays, and a charm's description is one newline-joined string instead of a pointer a line. The costs: the card strip (`data/card-font.hk`, 7,680 bytes, boot art chunk, VRAM rows 500 to 511 which were free, no scene palette), a 24x24 orb tile in the dialogue art (9,180 bytes now), the cards' band table (472 bytes of data) and the ornate box, backdrop and board code.
 
 Since rooms stream their enemy code and art (host/code_modules.py), the room
 module pool is carved from the top of the gap below the stack, so the free
@@ -129,7 +129,7 @@ metadata.
 
 The 2026-10-19 pass (one terrain reader type for every solver, so Player::step and the Actor::advance_* family compile once; the route lock and its 256-byte load log) took linked code from 805,384 to 754,836 bytes, data from 257,800 to 258,536 and BSS from 796,868 to 797,132, so 69,284 bytes are free below the module pool (19,740 before).
 
-Static data ends at `0x801d0648`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d0610`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
