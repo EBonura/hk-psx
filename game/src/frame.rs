@@ -1623,7 +1623,8 @@ pub fn simulate(
             game.state.refresh_edges(r, room);
         }
         presentation::checkpoint();
-        let blue = game.life.tick(
+        let blue = lifeblood::tick(
+            game.life,
             r.scene,
             game.player.x,
             r.collision_bounds,
