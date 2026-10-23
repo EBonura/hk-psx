@@ -49,10 +49,14 @@ pub struct Kinds {
     pub door: bool,
     pub cocoon: bool,
     pub jar: bool,
+    /// A Geo Rock stands here: its hits raise dust and chips like the door's.
+    pub rocks: bool,
+    /// A Breakable stands here: its hits raise dust.
+    pub breakables: bool,
 }
 impl Kinds {
     pub fn any(self) -> bool {
-        self.door || self.cocoon || self.jar
+        self.door || self.cocoon || self.jar || self.rocks || self.breakables
     }
 }
 
@@ -61,9 +65,11 @@ pub fn detect(sc: &Scene) -> Kinds {
     for o in &sc.objects {
         match o.typename.as_str() {
             "HealthCocoon" => k.cocoon = true,
+            "Breakable" => k.breakables = true,
             "GameObject" => match o.tree.get("m_Name").and_then(Value::str).as_deref() {
                 Some("Hallownest_Main_Gate") => k.door = true,
                 Some("Grub Bottle") => k.jar = true,
+                Some(name) if name.starts_with("Geo Rock") => k.rocks = true,
                 _ => {}
             },
             _ => {}
@@ -96,7 +102,7 @@ struct Burst {
     radius: f64,
     /// (cell, ticks, quarter-scale): a piece that lands turns into this cell for this long.
     splash: Option<(u8, u8, u8)>,
-    /// Alpha curve: fully opaque until this fraction of the life, then fading out.
+    /// Full size until this fraction of the life, then shrinking away.
     fade_from: f64,
 }
 
@@ -132,14 +138,16 @@ fn curve(fade_from: f64) -> Vec<Sample> {
     (0..33)
         .map(|n| {
             let t = n as f64 / 32.0;
-            let a = if t <= fade_from {
+            // Fully opaque, and shrinking away over the last part of its life as a rigid
+            // piece's FinishingRigidBody does.
+            let s = if t <= fade_from {
                 1.0
             } else {
                 ((1.0 - t) / (1.0 - fade_from)).clamp(0.0, 1.0)
             };
             Sample {
-                size: [65536, 65536],
-                alpha: [py_round(a * 255.0), py_round(a * 255.0)],
+                size: [py_round(s * 65536.0), py_round(s * 65536.0)],
+                alpha: [255, 255],
                 spin: [0, 0],
             }
         })
@@ -196,9 +204,12 @@ fn burst_style(b: &Burst, side: f64, gravity: f64, cells: i64, texture: &str) ->
         life_loss: q(b.life_loss)?,
         kill_speed: 0,
         radius_scale: q(b.radius)?,
-        splash: b.splash.map_or(0, |(cell, ticks, quarters)| {
-            i64::from(ticks) | i64::from(cell) << 8 | i64::from(quarters) << 12
-        }),
+        opaque: true,
+        // Landing splash (ticks, cell, quarters), and always flying on outside the coverage.
+        splash: 0x8000
+            | b.splash.map_or(0, |(cell, ticks, quarters)| {
+                i64::from(ticks) | i64::from(cell) << 8 | i64::from(quarters) << 12
+            }),
         samples: curve(b.fade_from)
             .into_iter()
             .map(|mut s| {
@@ -402,6 +413,9 @@ pub fn collect(
     gravity: f64,
     c: &mut Collected,
 ) -> Result<()> {
+    if kinds.door || kinds.rocks || kinds.breakables {
+        collect_hits(source, scene_id, gravity, kinds.door || kinds.rocks, c)?;
+    }
     if kinds.door {
         collect_door(source, sc, scene_id, gravity, c)?;
     }
@@ -435,6 +449,57 @@ fn rock_frames(source: &Source) -> Result<Vec<(hk_pil::Image, [f64; 4])>> {
     )
 }
 
+/// What a nail hit raises where it lands (the door's `Hit`, a Geo Rock's `Hit`): `Dust Hit Med` at
+/// the nail (euler 180, 90, 270) and `Particle Rock Small` 3..5 at the nail, speed 15..20, angle 100..140.
+fn collect_hits(
+    source: &Source,
+    scene_id: i64,
+    gravity: f64,
+    chips: bool,
+    c: &mut Collected,
+) -> Result<()> {
+    prefab_owner(
+        source,
+        c,
+        scene_id,
+        FX_HIT_DUST,
+        "sharedassets6.assets",
+        500,
+        gravity,
+        [0.0; 3],
+        Some([180.0, 90.0, 270.0]),
+        "Dust Hit Med",
+    )?;
+    if !chips {
+        return Ok(());
+    }
+    push_burst(
+        c,
+        scene_id,
+        FX_HIT_CHIPS,
+        &Burst {
+            count: 4,
+            life: [90, 150],
+            speed: [15.0, 20.0],
+            angle: [100.0, 140.0],
+            spread: [0.0, 0.0],
+            gravity_scale: 1.0,
+            bounce: 0.5,
+            life_loss: 0.0,
+            spin: 300.0,
+            size: [1.25, 2.0],
+            radius: 0.45,
+            splash: None,
+            fade_from: 0.8,
+        },
+        &rock_frames(source)?,
+        gravity,
+        [0.0; 3],
+        "rocks",
+        "Particle Rock Small, 3..5 at the nail",
+    )
+}
+
 fn collect_door(
     source: &Source,
     sc: &Scene,
@@ -458,19 +523,6 @@ fn collect_door(
         Some([1.0, 0.0, -180.0]),
         "Door_dust",
     )?;
-    // `Hit`: Dust Hit Med at the nail, euler (180, 90, 270): cooked at the origin, raised at the hit.
-    prefab_owner(
-        source,
-        c,
-        scene_id,
-        FX_HIT_DUST,
-        "sharedassets6.assets",
-        500,
-        gravity,
-        [0.0; 3],
-        Some([180.0, 90.0, 270.0]),
-        "Dust Hit Med",
-    )?;
     // `Break 1` and `Break 2`: Rubble Fall Short at the fixed world point (185, 75, 0.1), euler (90, -180, 0).
     prefab_owner(
         source,
@@ -485,32 +537,6 @@ fn collect_door(
         "Rubble Fall Short",
     )?;
     let rocks = rock_frames(source)?;
-    // `Hit`: SpawnRandomObjects Particle Rock Small 3..5 at the nail, speed 15..20, angle 100..140.
-    push_burst(
-        c,
-        scene_id,
-        FX_HIT_CHIPS,
-        &Burst {
-            count: 4,
-            life: [90, 150],
-            speed: [15.0, 20.0],
-            angle: [100.0, 140.0],
-            spread: [0.0, 0.0],
-            gravity_scale: 1.0,
-            bounce: 0.5,
-            life_loss: 0.0,
-            spin: 300.0,
-            size: [1.25, 2.0],
-            radius: 0.45,
-            splash: None,
-            fade_from: 0.8,
-        },
-        &rocks,
-        gravity,
-        [0.0; 3],
-        "rocks",
-        "Particle Rock Small, 3..5 at the nail",
-    )?;
     // `Hit`: SpawnRandomObjectsV2 Particle Rock Small Transient 10..12 over the door's height,
     // speed 15..25, angle 100..140, origin spread (0.5, 4.5) about the door.
     push_burst(
@@ -570,7 +596,7 @@ fn collect_cocoon(
             size: [1.15, 1.35],
             radius: 0.3,
             splash: Some((1, 12, 4)),
-            fade_from: 0.7,
+            fade_from: 0.8,
         },
         &spatter,
         gravity,
@@ -633,7 +659,7 @@ fn collect_cocoon(
                     gravity_scale: 1.0,
                     bounce: 0.3,
                     life_loss: 0.0,
-                    spin: 400.0,
+                    spin: 300.0,
                     size: [1.0, 1.0],
                     radius: 0.4,
                     splash: None,
@@ -705,7 +731,7 @@ mod tests {
             size: [1.15, 1.35],
             radius: 0.3,
             splash: Some((1, 12, 4)),
-            fade_from: 0.7,
+            fade_from: 0.8,
         }
     }
 
@@ -717,8 +743,8 @@ mod tests {
         assert_eq!(s.speed, [5 * 65536, 20 * 65536]);
         assert_eq!(s.force[1], [-60 * 65536; 2]);
         assert!(s.count <= POOL_CAPACITY && s.rate > 0 && s.life[0] > 0);
-        // ticks 12, cell 1, quarters 4.
-        assert_eq!(s.splash, 12 | 1 << 8 | 4 << 12);
+        // free flight, ticks 12, cell 1, quarters 4.
+        assert_eq!(s.splash, 0x8000 | 12 | 1 << 8 | 4 << 12);
         assert!(s.splash >> 8 & 15 > 0, "the splash is another cell, never the flying one");
     }
 

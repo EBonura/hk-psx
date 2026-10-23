@@ -159,6 +159,8 @@ pub struct Strike {
     pub hits: u32,
     pub depleted: u32,
     pub payout: u32,
+    /// The last rock this swing hit: where it stands and its hit box.
+    pub at: Option<([i32; 2], [i32; 4])>,
 }
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Tick {
@@ -395,6 +397,7 @@ impl World {
                 ..state
             });
             event.hits += 1;
+            event.at = Some(([spec.x, spec.y], spec.bounds));
             event.payout += count as u32;
             if left == 0 {
                 event.depleted += 1;

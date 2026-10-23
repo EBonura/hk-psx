@@ -1145,6 +1145,25 @@ impl State {
                 && self.break_object(id, object.fade_ticks())
             {
                 particles::pool().spawn_break(region.scene, id, nail.kind as u8, player.facing);
+                // `Breakable.Hit`: the nail's impact at the mid-point between it and the object,
+                // and Dust Hit Med there.
+                let ob = object.bounds();
+                let mid = |a: usize, b: usize| {
+                    Wide::of(bounds[a]).plus(bounds[b]).plus(ob[a]).plus(ob[b]).div_pow2(2).low()
+                };
+                let sign = if Wide::of(ob[0]).plus(ob[2]).div_pow2(1).cmp_i32(player.x).is_ge() {
+                    1
+                } else {
+                    -1
+                };
+                if region.grass_impact.is_some() {
+                    let _ = self.impacts.spawn(region.scene, id, ob, bounds, sign);
+                }
+                particles::pool().spawn_break_at(
+                    region.scene,
+                    particles::HIT_DUST_OWNER,
+                    [mid(0, 2), mid(1, 3)],
+                );
                 self.debris.spawn(
                     region.scene,
                     region.door_debris,
