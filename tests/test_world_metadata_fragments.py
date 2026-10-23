@@ -56,10 +56,10 @@ class FragmentBankTests(unittest.TestCase):
         found = [o for o in objects(sample_bank()) if o[2] == wm.KINDS['fragment']]
         self.assertEqual([o[0] for o in found], [4, 5], 'sorted by owner state, then source id')
         # The head of the first region: object indexes 0 and 1.
-        self.assertEqual([o[2] for o in objects(sample_bank())[:2]], [19, 19])
+        self.assertEqual([o[2] for o in objects(sample_bank())[:2]], [wm.KINDS['fragment']] * 2)
 
     def test_a_piece_packs_owner_pose_spin_flags_slots_and_payload(self):
-        plain, rock = [o for o in objects(sample_bank()) if o[2] == 19]
+        plain, rock = [o for o in objects(sample_bank()) if o[2] == wm.KINDS['fragment']]
         source, state, kind, flags, *rest = rock
         bounds, polygon_first, polygon_count, extra = rest[:4], rest[4], rest[5], rest[6:9]
         self.assertEqual((source, state & 0xFF, state >> 8), (5, 3, 64 * 123))
