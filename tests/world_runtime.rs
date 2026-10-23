@@ -11,10 +11,14 @@ mod render {
     use std::sync::Mutex;
     pub static GAINS: Mutex<Vec<(usize, u8)>> = Mutex::new(Vec::new());
     pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+    pub static VISIBLE: Mutex<Vec<(usize, bool)>> = Mutex::new(Vec::new());
     pub fn reset_visibility() {
         GAINS.lock().unwrap().clear();
+        VISIBLE.lock().unwrap().clear();
     }
-    pub fn set_visible(_: usize, _: bool) {}
+    pub fn set_visible(draw: usize, visible: bool) {
+        VISIBLE.lock().unwrap().push((draw, visible));
+    }
     pub fn set_gain(draw: usize, gain: u8) {
         GAINS.lock().unwrap().push((draw, gain));
     }
@@ -714,15 +718,16 @@ fn scoped_edge_reader_matches_direct_queries_across_mutations_sources_and_fallba
     let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
     let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
     let r=region();let mut state=State::new();
-    let check=|state:&State,room:&hk_format::Room| {
+    let check=|state:&mut State,room:&hk_format::Room| {
+        let direct:Vec<[i32;4]>=(0..room.counts[5]).map(|i|state.edge(&r,room,i)).collect();
         let read=state.edge_reader(&r,room);
-        for i in 0..room.counts[5]{assert_eq!(read(i),state.edge(&r,room,i));}
+        for (i,want) in direct.into_iter().enumerate(){assert_eq!(read(i),want);}
     };
-    check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);check(&state,&b);
-    state.break_object(0,60);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
-    state.set_geo_edges(&[0]);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
+    check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);check(&mut state,&b);
+    state.break_object(0,60);check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);
+    state.set_geo_edges(&[0]);check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);
     let big=edge_room_bytes(&vec![[101,102,103,102];129]);
-    let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&state,&big);
+    let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&mut state,&big);
 }
 
 #[test]
@@ -832,4 +837,53 @@ fn every_breakable_on_every_disc_bank_can_be_struck_open() {
     for u in &unreachable { eprintln!("  never breaks: {u:?}"); }
     assert!(objects > 0);
     assert!(unreachable.is_empty(), "{unreachable:?}");
+}
+
+/// Every remote binding (KIND_REMOTE_ART) of every scene 0 view: the state of an
+/// object another view lists reaches the draws and the colliders this view holds.
+#[test]
+fn remote_art_follows_scene_state_in_every_scene0_view() {
+    use hk_format::world_meta::KIND_REMOTE_ART;
+    let _lock = render::TEST_LOCK.lock().unwrap();
+    use_bank(SCENE0_BANK);
+    let mut checked = [0usize; 3];
+    for (index, region) in scene0_regions() {
+        let bank = world::bank_region(&region).unwrap();
+        let path = format!("{}/../data/regions/chunk_{}.hk", env!("CARGO_MANIFEST_DIR"), index + 1);
+        let bytes = std::fs::read(path).unwrap();
+        let room = hk_format::Room::parse(&bytes).unwrap();
+        for object in bank.objects().flatten().filter(|o| o.kind() == KIND_REMOTE_ART) {
+            let id = object.state_id() as usize;
+            let grass = object.flags() & 1 != 0;
+            let off: Vec<usize> = object.indices(0).map(|d| d as usize).collect();
+            let on: Vec<usize> = object.indices(1).map(|d| d as usize).collect();
+            let edges: Vec<usize> = object.indices(2).map(|e| e as usize).collect();
+            assert!(grass || id < 128 * 1024, "breakable state id {id}");
+            let mut state = State::new();
+            state.apply(&region);
+            let authored = render::VISIBLE.lock().unwrap().clone();
+            assert!(!authored.iter().any(|&(d, v)| off.contains(&d) && !v), "authored art stays");
+            if grass {
+                state.cut_grass(id);
+            } else {
+                state.break_object(id, 0);
+            }
+            state.apply(&region);
+            let seen = render::VISIBLE.lock().unwrap().clone();
+            for &d in &off {
+                assert_eq!(seen.iter().rev().find(|x| x.0 == d), Some(&(d, false)),
+                    "view {} object {id}: its authored art must hide", region.global_id);
+            }
+            for &d in &on {
+                assert_eq!(seen.iter().rev().find(|x| x.0 == d), Some(&(d, true)));
+            }
+            for &e in &edges {
+                assert_eq!(state.edge(&region, &room, e), [0; 4]);
+            }
+            checked[0] += off.len();
+            checked[1] += on.len();
+            checked[2] += edges.len();
+        }
+    }
+    assert!(checked[0] > 0 && checked[2] > 0, "scene 0 has remote art ({checked:?})");
 }

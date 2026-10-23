@@ -185,6 +185,14 @@ pub fn mutable_draws(metadata: &J, geo: &J, life: &J) -> Result<Vec<HashSet<i64>
             ids.extend(list(&b["fade"], "draw_indices")?);
         }
         for b in row
+            .get("remote_art_bindings")
+            .and_then(J::as_array)
+            .unwrap_or(empty())
+        {
+            ids.extend(list(b, "off_draws")?);
+            ids.extend(list(b, "on_draws")?);
+        }
+        for b in row
             .get("reveal_mask_bindings")
             .and_then(J::as_array)
             .unwrap_or(empty())
@@ -840,11 +848,12 @@ mod tests {
             "grass": [{"off_draw": 0, "on_draw": 1}],
             "breakables": [{"off_draws": [2], "on_draws": [3], "mask_fades": [{"draw_indices": [4]}]}],
             "remote_mask_bindings": [{"fade": {"draw_indices": [5]}}],
+            "remote_art_bindings": [{"off_draws": [9], "on_draws": [10], "edge_indices": []}],
             "reveal_mask_bindings": [{"draw": 6}],
         });
         let geo = serde_json::json!({"bindings": [[{"off": [7]}]]});
         let life = serde_json::json!({"bindings": [{"off": [8]}]});
-        let expected: HashSet<i64> = (0..9).collect();
+        let expected: HashSet<i64> = (0..11).collect();
         assert_eq!(
             mutable_draws(&serde_json::json!({"regions": [row.clone()]}), &geo, &life).unwrap(),
             vec![expected]

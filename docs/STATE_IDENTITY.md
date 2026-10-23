@@ -60,3 +60,32 @@ spawned slots, sorted mutations, overflow/capacity, duplicate rewards, every
 reset class, snapshot reload and the exact structure sizes above. This defines
 state behavior; P05 moves metadata to scene banks and P13 implements the
 memory-card encoding and retail persistence flow.
+
+## One state, every view that draws or holds it
+
+An object's state is scene-wide (the `broken` and `grass` tables of
+`world::State`, keyed by the stable scene state id), but its art and its
+colliders are cooked per view, and a view lists the objects inside its
+activation window (grass and breakables: +2 units; colliders are kept +3). A
+view draws every sprite the camera can reach, about 11 units beyond that. So a
+patch or stone that only the neighbouring view lists was drawn by this view
+without anything to hide it: cut grass and broken stones showed their authored
+art again as soon as the camera's view changed (King's Pass, the tablet room:
+the grass right of the tablet comes back while the Knight stands left of it),
+and 17 broken breakables kept a solid collider in the 1-unit band where a view
+holds the collider but not the owner (Tute Doors 2, 6 and 7, the Shaman Temple
+planks).
+
+`host/world.py postpack_remote_art` binds each such object into every view
+that has its art or its collider and does not list it, as one `KIND_REMOTE_ART`
+bank object (flag 1 grass; state id; off draws, on draws, edge indices), no hit
+shape: the same shape as `remote_mask_bindings`. `State::apply` hides or shows
+those draws from the scene table, and `fill_edges` / `broken_edge` blank the
+edges of a broken one. The bound draws join the mutable-draw set the opaque
+tile cook excludes (`hk-cook opaque_tiles::mutable_draws`) and the textures
+similarity dedup protects. A Geo rock already followed this rule (`bind_regions`
+lists a rock wherever a view has its draws or edges).
+
+The cut-stub art of a grass patch, and a broken pole's remnant, are only drawn
+by the views that list the object (the cook forces them there): a remote view
+hides the authored art and shows no stub.

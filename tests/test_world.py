@@ -94,6 +94,34 @@ class WorldMetadata(unittest.TestCase):
         distant['remote_mask_bindings'][0]['state_index']=128
         with self.assertRaisesRegex(ValueError,'mask owner state'):self.bank(data)
 
+    def test_remote_art_follows_state_into_views_that_draw_without_listing(self):
+        data=report();row=data['regions'][0]
+        row['grass']=[{'source':'level6:20','state_index':5,'off':30,'on':31,'bounds':[1,1,2,2],'off_draw':0,'on_draw':1}]
+        row['edge_sources']=['level6:50']
+        row['breakables'][0].update(off_renderer_sources=['level6:60'],on_renderer_sources=['level6:61'],
+                                    disabled_collider_sources=['level6:50'])
+        near=copy.deepcopy(row);near.update(chunk_id=2,activation_bounds=[10,0,20,10],grass=[],breakables=[],
+                                            edge_sources=['level6:9','level6:50'],draws=3,edges=2)
+        far=copy.deepcopy(near);far.update(chunk_id=3,edge_sources=[],draws=1)
+        data['regions']+= [near,far]
+        sources={1:['a','b'],2:['level6:61','level6:30','level6:60'],3:['unrelated']}
+        world.postpack_masks(data,sources)
+        self.assertEqual(row['remote_art_bindings'],[])
+        self.assertEqual(far['remote_art_bindings'],[])
+        bound={b['kind']:b for b in near['remote_art_bindings']}
+        self.assertEqual((bound['grass']['state_index'],bound['grass']['off_draws'],bound['grass']['on_draws']),(5,[1],[]))
+        self.assertEqual((bound['breakable']['state_index'],bound['breakable']['off_draws'],
+                          bound['breakable']['on_draws'],bound['breakable']['edge_indices']),(3,[2],[0],[1]))
+        remote=[o for o in self.bank(data) if o['kind']==19]
+        grass=next(o for o in remote if o['flags']&1);poles=next(o for o in remote if not o['flags']&1)
+        self.assertEqual((grass['state'],grass['lists']),(5,[[1],[],[]]))
+        self.assertEqual((poles['state'],poles['lists']),(3,[[2],[0],[1]]))
+        before=copy.deepcopy(data)
+        world.postpack_masks(data,sources)
+        self.assertEqual(data,before)
+        near['remote_art_bindings'][0]['edge_indices']=[9]
+        with self.assertRaisesRegex(ValueError,'edge index'):self.bank(data)
+
     def test_collision_coverage_is_distinct_from_activation(self):
         import struct
         from world_metadata import encode_scene

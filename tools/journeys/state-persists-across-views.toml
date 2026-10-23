@@ -1,0 +1,97 @@
+# Cut grass stays cut in every view that draws it. In King's Pass the grass right of the tablet
+# (x 113..120) belongs to view 32 (x 108..120); view 31 (x 96..108) draws it from the left, up to 10.8
+# units beyond its own window, without listing it. The climb tape cuts those patches on its way along the
+# tablet platform. From view 31 their art must be hidden (HK_REMOTE_ART_HIDDEN counts the draws a view
+# hid for state another view lists; a disc without the remote art bindings, world bank KIND_REMOTE_ART,
+# has no such word and draws them as authored), also after a walk into view 32 and back.
+#
+#   psoxide-gate run tools/journeys/state-persists-across-views.toml --disc <route-input disc cue> --no-hw --out <dir>
+#
+# from the repository root; `symbols` resolves against the working directory (build/hk-psx.map of that disc).
+# kings-tablet.pxtape is the first 4,440 polls of tools/tapes/kings-climb.pxtape: new game, the cheat that
+# survives the Crawlers, the climb to the tablet platform (x 101, y 31.4, view 31).
+name = "state-persists-across-views"
+title = "grass cut from one view stays cut in the view that only draws it (route-input disc)"
+disc = ["lib-test/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "the climb to the tablet platform"
+tape = "tools/journeys/kings-tablet.pxtape"
+timeout = 60000
+
+[[step]]
+label = "to x 105.5"
+press = ["right"]
+timeout = 3000
+[step.hold_until]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "ge"
+value = 6914048
+
+[[step]]
+label = "first: view 31 at x 105.5"
+wait = 180
+checkpoint = "first"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_VIEW_ID"
+op = "eq"
+value = 31
+[[step.assert]]
+kind = "ram"
+sym = "HK_REMOTE_ART_HIDDEN"
+op = "ge"
+value = 2
+note = "the patches at x 113.5 and 116.5 (view 32's) were cut on the way up and view 31 hides their art"
+
+[[step]]
+label = "into view 32 (x 116)"
+press = ["right"]
+timeout = 3000
+[step.hold_until]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "ge"
+value = 7602176
+
+[[step]]
+label = "view 32 draws and lists the same patches"
+wait = 60
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "eq"
+value = 32
+
+[[step]]
+label = "back to x 105.5"
+press = ["left"]
+timeout = 3000
+[step.hold_until]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "le"
+value = 6914048
+
+[[step]]
+label = "second: view 31 at x 105.5"
+wait = 180
+checkpoint = "second"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_VIEW_ID"
+op = "eq"
+value = 31
+[[step.assert]]
+kind = "ram"
+sym = "HK_REMOTE_ART_HIDDEN"
+op = "ge"
+value = 2
+note = "the patches at x 113.5 and 116.5 (view 32's) were cut on the way up and view 31 hides their art"

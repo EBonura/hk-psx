@@ -30,7 +30,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19}
 MAX_REVEAL_CONTROLLERS = 16
 
 
@@ -240,6 +240,21 @@ def encode_scene(scene, rows):
             add_object("remote_mask", {"source": binding["owner_source"]},
                        scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, row["activation_bounds"], None,
                        (index_list(binding["fade"]["draw_indices"], draw_count, "remote mask draw"), ticks, total))
+        # Grass and breakables a view draws or holds without listing them: their
+        # art and colliders follow the scene-wide state (flag 1 says grass).
+        for binding in row.get("remote_art_bindings", []):
+            grass = binding["kind"] == "grass"
+            if not grass and binding["kind"] != "breakable":
+                raise ValueError("remote art binding kind")
+            per_scene = GRASS_PER_SCENE if grass else BREAKABLES_PER_SCENE
+            state = bounded(binding["state_index"], per_scene, "remote art state")
+            if grass and binding["edge_indices"]:
+                raise ValueError("remote grass binding has no collider")
+            add_object("remote_art", {"source": binding["owner_source"]},
+                       scene["scene_id"] * per_scene + state, 1 if grass else 0, row["activation_bounds"], None,
+                       (index_list(binding["off_draws"], draw_count, "remote art off draw"),
+                        index_list(binding["on_draws"], draw_count, "remote art on draw"),
+                        index_list(binding["edge_indices"], edge_count, "remote art edge index")))
         for record in row.get("grass", []):
             state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")
             if stable_grass.setdefault(state, record["source"]) != record["source"]:

@@ -84,6 +84,9 @@ pub const KIND_REVEAL_MASK: u16 = 17;
 /// index list of (moving part, draw) pairs and words 1 and 2 the world point
 /// the strike effect spawns at. host/secret_breaks.py, tools/world_metadata.py.
 pub const KIND_SECRET: u16 = 18;
+/// A grass patch or breakable that a region draws or holds without listing it
+/// (no hit shape): flag 1 grass, state id, off draws, on draws, edge indices.
+pub const KIND_REMOTE_ART: u16 = 19;
 
 #[derive(Clone, Copy)]
 pub struct WorldMeta<'a> {
@@ -241,7 +244,7 @@ impl<'a> WorldMeta<'a> {
             }
             // Index-list spans live in the payload words of list-bearing kinds.
             let lists: &[usize] = match object.kind() {
-                KIND_BREAKABLE => &[0, 1, 2],
+                KIND_BREAKABLE | KIND_REMOTE_ART => &[0, 1, 2],
                 KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS | KIND_SECRET => &[0],
                 _ => &[],
             };

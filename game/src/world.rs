@@ -21,12 +21,16 @@ pub fn take_scripted_terrain_changed() -> bool {
 pub mod particles;
 use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
 
+/// Route telemetry: draws the last `State::apply` hid for state another view lists
+/// (`KIND_REMOTE_ART`): a cut patch or broken stone seen from a view that only draws it.
+#[no_mangle]
+pub static mut HK_REMOTE_ART_HIDDEN: u32 = 0;
 pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
 use hk_format::world_meta::{
     self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE,
     KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS,
-    KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM,
+    KIND_REMOTE_ART, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM,
 };
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
@@ -539,7 +543,10 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
         let Some(object) = bank.object(local) else {
             continue;
         };
-        if object.kind() != KIND_BREAKABLE {
+        // A remote binding (a breakable another view lists) holds its edges too.
+        if !(object.kind() == KIND_BREAKABLE
+            || object.kind() == KIND_REMOTE_ART && object.flags() & 1 == 0)
+        {
             continue;
         }
         let id = object.state_id() as usize;
@@ -784,6 +791,19 @@ fn fill_edges(
     }) {
         for i in b.edges() {
             blank(i);
+        }
+    }
+    if let Some(bank) = bank_region(region) {
+        for object in bank.objects().flatten() {
+            let id = object.state_id() as usize;
+            if object.kind() == KIND_REMOTE_ART
+                && object.flags() & 1 == 0
+                && broken[id / 32] & (1 << (id % 32)) != 0
+            {
+                for i in object.indices(2) {
+                    blank(i);
+                }
+            }
         }
     }
 }
@@ -1296,6 +1316,7 @@ impl State {
         };
         let mut index = 0;
         let mut owner = (0usize, 0u16);
+        let mut remote_hidden = 0u32;
         while let Some(object) = bank.object(index) {
             index += 1;
             match object.kind() {
@@ -1325,6 +1346,21 @@ impl State {
                         }
                     }
                 }
+                KIND_REMOTE_ART => {
+                    let id = object.state_id() as usize;
+                    let changed = if object.flags() & 1 != 0 {
+                        self.cut(id)
+                    } else {
+                        self.broken(id)
+                    };
+                    for draw in object.indices(0) {
+                        crate::render::set_visible(draw as usize, !changed);
+                        remote_hidden += u32::from(changed);
+                    }
+                    for draw in object.indices(1) {
+                        crate::render::set_visible(draw as usize, changed);
+                    }
+                }
                 KIND_MASK_FADE => self.apply_mask(owner.0, owner.1, MaskFade { object }),
                 KIND_REMOTE_MASK => self.apply_mask(
                     object.state_id() as usize,
@@ -1333,6 +1369,10 @@ impl State {
                 ),
                 _ => {}
             }
+        }
+        // SAFETY: single-threaded telemetry word, written only here.
+        unsafe {
+            HK_REMOTE_ART_HIDDEN = remote_hidden;
         }
     }
     fn apply_mask(&self, owner: usize, total_ticks: u16, fade: MaskFade) {
@@ -2171,8 +2211,25 @@ mod broken_edge_tests {
                 let Some(region) = resident(bank_region.global_id() as usize - 1) else {
                     continue;
                 };
+                // Remote breakable bindings hold edges too (KIND_REMOTE_ART, flag 0).
+                let remote_edges = |index: usize, broken: &[u32]| {
+                    bank_region.objects().flatten().any(|o| {
+                        let id = o.state_id() as usize;
+                        o.kind() == KIND_REMOTE_ART
+                            && o.flags() & 1 == 0
+                            && broken[id / 32] & (1 << (id % 32)) != 0
+                            && o.indices(2).any(|e| e as usize == index)
+                    })
+                };
                 let top = breakables(bank_region)
                     .flat_map(|b| b.edges())
+                    .chain(
+                        bank_region
+                            .objects()
+                            .flatten()
+                            .filter(|o| o.kind() == KIND_REMOTE_ART)
+                            .flat_map(|o| o.indices(2)),
+                    )
                     .max()
                     .map_or(4, |e| e as usize + 2);
                 for pattern in 0..3u32 {
@@ -2188,7 +2245,7 @@ mod broken_edge_tests {
                             let id = b.id();
                             broken[id / 32] & (1 << (id % 32)) != 0
                                 && b.edges().any(|e| e as usize == index)
-                        });
+                        }) || remote_edges(index, &broken);
                         assert_eq!(
                             broken_edge(&broken, &region, index),
                             want,

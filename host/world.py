@@ -212,10 +212,70 @@ def postpack_masks(report, draw_sources=None):
                     bindings.append({'owner_source':source,'state_index':owner['state_index'],
                         'owner_fade_ticks':total_ticks,'fade':dict(fade,draw_indices=indices)})
         region['remote_mask_bindings'] = bindings
+    postpack_remote_art(report, draw_sources)
     report['mask_binding_policy'] = {
         'source_owners':len(owners),
         'remote_bindings':sum(len(r['remote_mask_bindings']) for r in report['regions']),
         'scope':'Authored Breakable HIT fades follow renderer residency; source hit shapes and collider ownership remain local',
+    }
+
+
+def postpack_remote_art(report, draw_sources=None):
+    """Bind grass and breakable art and collision wherever a view draws or holds it.
+
+    A region lists the grass and breakables inside its activation window (plus a
+    margin), but draws every sprite inside the camera's reach and keeps every
+    collider inside its collision window. State is one scene-wide bit per object, so
+    an object listed only by the neighbouring region was bound to the draws of
+    that region alone: in this one its authored art (an uncut patch, an intact
+    pole) showed through and its collider stayed solid after the break. A remote
+    binding carries the draw and edge indices of one such object for this
+    region and nothing else (no hit shape), the way `remote_mask_bindings` does
+    for a breakable's mask fades. The bank cooks it as KIND_REMOTE_ART.
+    """
+    owners = {}
+    for region in report['regions']:
+        scene = region['scene_id']
+        for record in region.get('grass', []):
+            prefix = record['source'].rsplit(':', 1)[0]
+            value = {'kind': 'grass', 'owner_source': record['source'], 'state_index': record['state_index'],
+                     'off_sources': [f"{prefix}:{record['off']}"], 'on_sources': [f"{prefix}:{record['on']}"],
+                     'collider_sources': []}
+            key = (scene, 'grass', record['source'])
+            if owners.setdefault(key, value) != value:
+                raise ValueError('inconsistent grass owner metadata')
+        for record in region.get('breakables', []):
+            value = {'kind': 'breakable', 'owner_source': record['source'], 'state_index': record['state_index'],
+                     'off_sources': list(record.get('off_renderer_sources', [])),
+                     'on_sources': list(record.get('on_renderer_sources', [])),
+                     'collider_sources': list(record.get('disabled_collider_sources', []))}
+            key = (scene, 'breakable', record['source'])
+            if owners.setdefault(key, value) != value:
+                raise ValueError('inconsistent breakable owner metadata')
+    for region in report['regions']:
+        chunk = region['chunk_id']
+        if draw_sources is None:
+            path = ROOT / f'data/regions/region-{chunk:03}/scene.json'
+            sources = [d['source'] for d in json.loads(path.read_text())['draws']]
+        else:
+            sources = draw_sources[chunk]
+        edge_sources = [e if isinstance(e, str) else e.get('source') for e in region.get('edge_sources', [])]
+        local = ({b['source'] for b in region.get('breakables', [])}
+                 | {g['source'] for g in region.get('grass', [])}
+                 | {b['source'] for b in region.get('secrets', [])})
+        bindings = []
+        for (scene, kind, source), owner in sorted(owners.items()):
+            if scene != region['scene_id'] or source in local:continue
+            off = [i for i, sid in enumerate(sources) if sid in owner['off_sources']]
+            on = [i for i, sid in enumerate(sources) if sid in owner['on_sources']]
+            edges = [i for i, sid in enumerate(edge_sources) if sid in owner['collider_sources']]
+            if off or on or edges:
+                bindings.append({'kind': kind, 'owner_source': source, 'state_index': owner['state_index'],
+                                 'off_draws': off, 'on_draws': on, 'edge_indices': edges})
+        region['remote_art_bindings'] = bindings
+    report['remote_art_policy'] = {
+        'bindings': sum(len(r['remote_art_bindings']) for r in report['regions']),
+        'scope': 'Grass and Breakable art and colliders follow the scene-wide state bit into every view that draws or holds them',
     }
 
 
