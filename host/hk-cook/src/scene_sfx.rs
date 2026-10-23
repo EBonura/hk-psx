@@ -486,7 +486,7 @@ pub const EVENTS: &[Event] = &[
         102,
         "breakable_wall_death",
         4000,
-        &["secret_breaks"],
+        &["wall_deaths"],
         41,
         None,
     ),
@@ -693,8 +693,8 @@ pub const EVENTS: &[Event] = &[
     // A grub jar's `Bottle Control` Shatter plays one of `crystal_break_1` and `_2` (the port keeps
     // the first), and the freed grub's `Grub Control` Leave one of `grub_free_1` and `_2`. The
     // eight jars' scenes, late rows like the stalactites'. 5512 Hz like the bank's other short
-    // percussive clips, not measured per clip. The Great Door's stage hits (4, 8 and 13) play
-    // `breakable_wall_death` (2.65 s), at the same rate.
+    // percussive clips, not measured per clip. (The Great Door's stage hits, 4, 8 and 13, play
+    // `breakable_wall_death`, whose row above reaches King's Pass through `wall_deaths`.)
     ev(
         "crystal_break_1",
         "resources.assets",
@@ -733,16 +733,6 @@ pub const EVENTS: &[Event] = &[
             "Fungus1_21",
         ],
         63,
-        None,
-    ),
-    ev(
-        "breakable_wall_death",
-        "sharedassets6.assets",
-        102,
-        "breakable_wall_death",
-        5512,
-        &["scene", "Tutorial_01"],
-        64,
         None,
     ),
     // Myla (the `Miner` NPC of Crossroads_45): her AudioSource loops `Miner_idle_hum` from the
@@ -1393,6 +1383,12 @@ fn scene_needs(
         })
         .map(scene_of)
         .collect();
+    // The Great Door's `Break 1`, `Break 2` and `Break` play `breakable_wall_death` as a secret wall does.
+    let door_scenes: HashSet<i64> = regions
+        .iter()
+        .filter(|r| !r["great_door"].is_null())
+        .map(scene_of)
+        .collect();
     let arena_scenes: HashSet<i64> = gates.iter().filter_map(|g| g["scene"].as_i64()).collect();
     let totems_path = root.join(".hkpsx/soul-totems.json");
     let totems: HashSet<i64> = if totems_path.is_file() {
@@ -1456,6 +1452,11 @@ fn scene_needs(
             "secrets" => secrets.clone(),
             "secret_walls" => walls.clone(),
             "secret_breaks" => walls.union(&floors).copied().collect(),
+            "wall_deaths" => walls
+                .union(&floors)
+                .chain(door_scenes.iter())
+                .copied()
+                .collect(),
             "secret_floors" => floors.clone(),
             "totems" => totems.clone(),
             "chests" => chests.clone(),
