@@ -510,9 +510,23 @@ fn bind(m: usize, address: Option<u32>) {
         }
     }
 }
+/// Flush the instruction cache with no DMA channel running. A `cache_control`
+/// write that changes the bus bits while a list walk is live makes the next
+/// instruction fetch return the DMA's word on silicon (the Quake PSX freeze of
+/// 2026-10-22), and module eviction and installation run mid-frame, where the
+/// previous frame's walk can still own the channel when its textures miss the
+/// texture cache. Waiting takes only the pad polls that fall due, never a
+/// service, so it cannot re-enter the caller.
+fn flush_instruction_cache_idle() {
+    #[cfg(target_arch = "mips")]
+    while crate::render::dma_pending() {
+        crate::input::poll_only();
+    }
+    psx_rt::cache::flush_i_cache();
+}
 fn evict(m: usize) {
     bind(m, None);
-    psx_rt::cache::flush_i_cache();
+    flush_instruction_cache_idle();
     unsafe {
         HK_MODULE_RESIDENT &= !(1 << m);
         HK_MODULE_POOL_USED -= slots()[m].bytes;
@@ -575,7 +589,7 @@ impl Install {
             return Ok(false);
         }
         bind(self.module, Some(address));
-        psx_rt::cache::flush_i_cache();
+        flush_instruction_cache_idle();
         unsafe {
             CLOCK += 1;
             slots()[self.module] = Slot {
