@@ -905,7 +905,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     from effects import append_grass_impact_art,append_door_debris_art
     grass_impact=append_grass_impact_art(s,sc,atlas,frames,clips)
     door_refusals=[]
-    door_debris=append_door_debris_art(s,sc,atlas,frames,door_refusals)
+    door_debris=append_door_debris_art(s,sc,atlas,frames,door_refusals,region.get('interaction_bounds',region['activation_bounds']))
+    if door_refusals:print('debris parts refused in',region.get('scene_name','?'),dict(__import__('collections').Counter(x['reason']for x in door_refusals)),flush=True)
     from particles import append_particle_art
     particle_effects=append_particle_art(s,sc,atlas,frames)
     # Extract only the verified scalar HeroController prefix; full schema has a
