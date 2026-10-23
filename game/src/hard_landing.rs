@@ -34,6 +34,10 @@ const KINGS_PASS: usize = 0;
 pub static mut HK_HARD_LANDINGS: u32 = 0;
 #[no_mangle]
 pub static mut HK_HARD_LOCK_TICKS: u32 = 0;
+/// Ticks of the lock still to run, after this tick: a route that cuts its tape at a landing waits on
+/// this reaching zero (tools/tapes/*.cuts), which is the tick control returns.
+#[no_mangle]
+pub static mut HK_HARD_LAND_LEFT: u32 = 0;
 /// Opening crashes played (zero or one a new game).
 #[no_mangle]
 pub static mut HK_OPENING_CRASHES: u32 = 0;
@@ -80,6 +84,9 @@ pub fn landed(scene: usize, player: &mut Player) {
 
 /// Call once per consumed tick, after the Knight's lock was stepped.
 pub fn tick(player: &Player) {
+    unsafe {
+        HK_HARD_LAND_LEFT = u32::from(player.hard_land);
+    }
     if player.hard_landing() {
         unsafe {
             HK_HARD_LOCK_TICKS = HK_HARD_LOCK_TICKS.wrapping_add(1);
