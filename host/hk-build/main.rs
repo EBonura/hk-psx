@@ -2087,7 +2087,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2103,6 +2103,7 @@ fn usage() -> ! {
          cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
          --tape NAME with two or more scene loads (HK_CUTS_MIN=1 lets a one-load route have a cut list, for a wait)\n\
          tape-hold NAME FIRST LAST BUTTON  hold BUTTON over polls FIRST..LAST of tools/tapes/NAME.pxtape\n\
+         tape-stall NAME POLL TICKS  repeat sample POLL of tools/tapes/NAME.pxtape TICKS more times (a hard landing's lock)\n\
          card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
          gate-receipt  check one baseline-qualified scene-gate replay at --work\n\
@@ -2146,6 +2147,26 @@ fn main() {
             let path = root().join(format!("tools/tapes/{name}.pxtape"));
             std::fs::write(&path, routes::hold_buttons(&std::fs::read(&path)?, first, last, mask)?)?;
             println!("{name}: {button} held over polls {first}..{last}");
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "tape-stall" {
+        // tape-stall NAME POLL TICKS: repeat sample POLL of tools/tapes/NAME.pxtape TICKS more times.
+        let (name, poll, ticks) = (args.next(), args.next(), args.next());
+        let (Some(name), Some(Ok(poll)), Some(Ok(ticks))) =
+            (name, poll.map(|v| v.parse::<usize>()), ticks.map(|v| v.parse::<usize>()))
+        else {
+            usage()
+        };
+        let result = (|| -> Result<()> {
+            let path = root().join(format!("tools/tapes/{name}.pxtape"));
+            std::fs::write(&path, routes::stall_sample(&std::fs::read(&path)?, poll, ticks)?)?;
+            println!("{name}: {ticks} ticks added after poll {poll}");
             Ok(())
         })();
         if let Err(error) = result {

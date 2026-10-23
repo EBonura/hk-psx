@@ -639,6 +639,23 @@ pub fn hold_buttons(tape: &[u8], first: usize, last: usize, mask: u16) -> Result
     Ok(out)
 }
 
+/// `tape` with `ticks` more copies of sample `poll` right after it: the Knight is locked for those
+/// ticks (a hard landing), so the recorded walk resumes where it would have after a soft landing.
+pub fn stall_sample(tape: &[u8], poll: usize, ticks: usize) -> Result<Vec<u8>> {
+    let parsed = Tape::parse(tape)?;
+    if poll >= parsed.len() {
+        return Err(format!("poll {poll} is outside the tape ({} polls)", parsed.len()).into());
+    }
+    let at = 16 + poll * 6;
+    let mut out = tape[..at + 6].to_vec();
+    for _ in 0..ticks {
+        out.extend_from_slice(&tape[at..at + 6]);
+    }
+    out.extend_from_slice(&tape[at + 6..]);
+    out[8..12].copy_from_slice(&((parsed.len() + ticks) as u32).to_le_bytes());
+    Ok(out)
+}
+
 /// `cargo hk-build cuts`: write `NAME.cuts` for every route whose baseline replay in `from`
 /// (a `validate` output directory) loaded at least `minimum` scenes after the first.
 pub fn write_cuts(root: &Path, from: &Path, names: &[String], minimum: usize) -> Result<()> {
@@ -741,6 +758,20 @@ mod tests {
         let tape = Tape::parse(&hold_buttons(&bytes, 1, 3, 4).unwrap()).unwrap();
         assert_eq!((0..3).map(|i| tape.mask(i)).collect::<Vec<_>>(), vec![0, 0xc, 4]);
         assert!(hold_buttons(&bytes, 2, 4, 4).is_err());
+    }
+
+    #[test]
+    fn a_stall_repeats_one_sample_and_keeps_the_rest_in_order() {
+        let mut bytes = b"PXITAPE2".to_vec();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        for mask in [1u16, 2, 3] {
+            bytes.extend_from_slice(&mask.to_le_bytes());
+            bytes.extend_from_slice(&[0x80; 4]);
+        }
+        let tape = Tape::parse(&stall_sample(&bytes, 1, 2).unwrap()).unwrap();
+        assert_eq!((0..tape.len()).map(|i| tape.mask(i)).collect::<Vec<_>>(), vec![1, 2, 2, 2, 3]);
+        assert!(stall_sample(&bytes, 3, 2).is_err());
     }
 
     #[test]

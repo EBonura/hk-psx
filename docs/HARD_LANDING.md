@@ -37,3 +37,7 @@ A fall of 1.1 s from rest is about 17.8 world units: gravity is 47.4 units/s squ
 * `NoHardLanding` and acid: no cooked scene carries one (the Fungus2 scenes are not cooked), so `allowed` only excludes gate drop-ins. The cooker lists any such component as unsupported when Fungal Wastes is cooked.
 * `ForceHardLanding` (called from PlayMaker FSMs) and the `FailSafeChecks` timeout.
 * A dash held through the lock is read as a new press when control returns (the dash input is gated, not buffered).
+
+## Routes
+
+A recorded tape is bit-exact input per poll, so a long fall in it now stops the Knight for 48 ticks while the tape walks on. Only `journey-kings` (the King's Pass drop, landing at poll 10033, x 28.72) and `boss-fight` land hard; the other routes' fresh-save runs begin with the opening crash and are held on the ledge by the route-input shoulder hold. `cargo hk-build tape-stall journey-kings 10033 48` repeats the landing sample for the lock's 48 ticks, so the walk resumes where a soft landing would have left it (the open-loop chain through the Great Door, the bench save and the three later journeys works again, closed loop included). `boss-fight` still passes its pins unshifted.
