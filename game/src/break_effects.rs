@@ -39,6 +39,9 @@ pub struct Style {
     pub life_loss: i32,
     pub kill_speed: i32,
     pub radius_scale: i32,
+    /// A particle that lands turns into a splash: bits 0..7 its ticks, 8..11 the style's frame
+    /// it shows, 12..15 its size in quarters (0 for no splash).
+    pub splash: u16,
     pub samples: &'static [Sample],
     pub frames: &'static [[u16; 3]],
 }
@@ -88,13 +91,13 @@ pub static PARTICLE_TRACKS: &[[[u32; 2]; 33]] = &[];
 #[cfg(test)]
 pub static EMITTER_TRACK_BASES: &[u16] = &[];
 #[cfg(test)]
-pub const FX_MAX_STYLES: usize = 18;
+pub const FX_MAX_STYLES: usize = 28;
 #[cfg(test)]
-pub const FX_MAX_EMITTERS: usize = 100;
+pub const FX_MAX_EMITTERS: usize = 128;
 #[cfg(test)]
-pub const FX_MAX_ART: usize = 48;
+pub const FX_MAX_ART: usize = 64;
 #[cfg(test)]
-pub const FX_MAX_UPLOADS: usize = 48;
+pub const FX_MAX_UPLOADS: usize = 64;
 #[cfg(test)]
 pub const FX_MAX_FRAMES: usize = 96;
 
@@ -160,6 +163,7 @@ const EMPTY_STYLE: Style = Style {
     life_loss: 0,
     kill_speed: 0,
     radius_scale: 0,
+    splash: 0,
     samples: &[],
     frames: &[],
 };
@@ -394,6 +398,7 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             life_loss: i32_at(b, 148),
             kill_speed: i32_at(b, 152),
             radius_scale: i32_at(b, 156),
+            splash: u16_at(b, 166),
             samples: CURVES[curve],
             frames: frame_pool,
         };
@@ -778,7 +783,15 @@ fn spawn_specs_with_bases(
                     let ticks = psx_math::WideU::mul((i as u32 + 1) * 60, ONE as u32) - psx_math::WideU::of(1);
                     ticks.div_rem_u32(s.rate as u32).0.saturate_u32().min(255) as u8
                 },
-                cell: (super::random(&mut rng) % s.frames.len() as u32) as u8,
+                // A style with a splash flies its first frame and lands in another.
+                cell: {
+                    let random = (super::random(&mut rng) % s.frames.len() as u32) as u8;
+                    if s.splash != 0 {
+                        0
+                    } else {
+                        random
+                    }
+                },
                 gradient,
                 color,
                 start_alpha,
@@ -973,6 +986,31 @@ fn tick_specs_with_tracks(
                     );
                 }
                 p.position = next;
+                if (normal[0] | normal[1]) != 0 && s.splash != 0 && p.cell == 0 {
+                    // Lands: stops where it hit and shows its splash, turned to the surface.
+                    p.cell = ((s.splash >> 8) & 15) as u8;
+                    p.velocity = [0; 3];
+                    p.force = 0;
+                    let quarters = (s.splash >> 12) as i32;
+                    if quarters != 0 {
+                        p.size = mulq(p.size, quarters * (ONE / 4));
+                    }
+                    p.life = super::NonZeroU16::new((s.splash & 0xff).max(1))
+                        .expect("positive splash lifetime");
+                    p.age = 0;
+                    p.angle = if normal[1].abs() >= normal[0].abs() {
+                        if normal[1] > 0 {
+                            0
+                        } else {
+                            180 * ONE
+                        }
+                    } else if normal[0] > 0 {
+                        270 * ONE
+                    } else {
+                        90 * ONE
+                    };
+                    continue;
+                }
                 if (normal[0] | normal[1]) != 0 {
                     let unit = if normal[0] == 0 {
                         [0, normal[1].signum() * ONE]
@@ -1369,6 +1407,7 @@ mod tests {
         life_loss: 0,
         kill_speed: 0,
         radius_scale: ONE,
+        splash: 0,
         samples: &CURVE,
         frames: &FRAMES,
     };
@@ -1558,6 +1597,7 @@ mod tests {
                 collision: true,
                 kill_speed: ONE,
                 radius_scale: 41288,
+                splash: 0,
                 samples: &SPIN_CURVE,
                 ..STYLE
             },
@@ -1582,6 +1622,7 @@ mod tests {
                 life_loss: 19661,
                 kill_speed: ONE,
                 radius_scale: 41288,
+                splash: 0,
                 samples: &SPIN_CURVE,
                 ..STYLE
             },
@@ -1756,6 +1797,7 @@ mod tests {
                 collision: true,
                 force: [[0; 2]; 3],
                 radius_scale: 41288,
+                splash: 0,
                 samples: &CURVE,
                 ..STYLE
             },
@@ -1868,6 +1910,39 @@ mod tests {
             tick_specs(&mut floor, 0, &[s], COVER, 0, |_| [0; 4]);
         }
         assert!(floor.particles[0].unwrap().position[1] < last);
+    }
+    #[test]
+    fn a_landing_particle_stops_and_turns_into_its_splash() {
+        // Splash: 12 ticks, frame 1, drawn at twice its size.
+        let s = Style {
+            count: 1,
+            force: [[0, 0], [-60 * ONE; 2], [0, 0]],
+            collision: true,
+            life: [600; 2],
+            splash: 12 | 1 << 8 | 8 << 12,
+            ..STYLE
+        };
+        let mut pool = Pool::new();
+        spawn_specs(&mut pool, 0, 7, 0, 1, &[EMITTER], &[s]);
+        assert_eq!(pool.particles[0].unwrap().cell, 0, "flies its first frame");
+        let mut landed = None;
+        for tick in 0..120 {
+            tick_specs(&mut pool, 0, &[s], COVER, 1, |_| [-10 * ONE, 0, 10 * ONE, 0]);
+            let Some(p) = pool.particles[0] else {
+                break;
+            };
+            if p.cell != 0 && landed.is_none() {
+                landed = Some(tick);
+                assert_eq!(p.velocity, [0; 3]);
+                assert_eq!(p.force, 0);
+                assert_eq!(p.size, 2 * ONE);
+                assert_eq!((p.age, p.life.get()), (0, 12));
+                assert_eq!(p.angle, 0, "floor: upright");
+            }
+        }
+        assert!(landed.is_some(), "it lands");
+        let at = pool.particles[0];
+        assert!(at.is_none(), "the splash is over after its 12 ticks");
     }
     #[test]
     fn cached_active_count_tracks_mixed_families_scenes_delays_drops_and_reuse() {
@@ -2007,6 +2082,7 @@ mod tests {
                 kill_speed: if life_loss == 0 { i32::MAX } else { 0 },
                 life_loss,
                 radius_scale: ONE,
+                splash: 0,
                 ..STYLE
             };
             spawn_specs(&mut pool, 0, 7, 0, 1, &[EMITTER], &[style]);

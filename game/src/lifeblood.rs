@@ -374,6 +374,11 @@ impl Bug {
             }
     }
 }
+/// The cocoon's own position: where its bursts and impacts are raised.
+#[cfg(not(test))]
+pub fn origin() -> [i32; 2] {
+    LIFE_SPEC.origin
+}
 #[cfg(not(test))]
 impl World {
     pub fn strike(&mut self, scene: usize, polygon: &[[i32; 2]]) -> Strike {

@@ -215,10 +215,14 @@ pub struct Tick {
     /// A stalactite that embedded: its slot in the scene, its STALACTITES
     /// index and the point it hit.
     pub landed: Option<(u8, u16, [i32; 2])>,
+    /// A freed grub that began to leave: where it stands (`Leave` plays `grub_free`).
+    pub left: Option<[i32; 2]>,
 }
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct Strike {
     pub freed: u8,
+    /// Where the last jar a nail broke stands: its glass and shatter effects go here.
+    pub jar: Option<[i32; 2]>,
     pub broken: u8,
     pub batted: u8,
     /// The last struck stalactite's box, where its `Strike Nail R` spawns.
@@ -619,6 +623,7 @@ impl World {
                 GrubPhase::Freed(left) => {
                     g.phase = if left == 0 {
                         g.ticks = 0;
+                        out.left = Some(spec.grub);
                         GrubPhase::Leaving(0)
                     } else {
                         GrubPhase::Freed(left - 1)
@@ -711,6 +716,7 @@ impl World {
                 g.phase = GrubPhase::Freed(GRUB_FREE_TICKS);
                 g.ticks = 0;
                 out.freed += 1;
+                out.jar = Some(spec.jar);
                 freed_local(spec.local as usize);
                 unsafe {
                     HK_GRUBS_FREED = HK_GRUBS_FREED.wrapping_add(1);
