@@ -1,7 +1,10 @@
-//! Original door fragments and source ObjectBounce lifecycle.
+//! Original rigid Breakable fragments and the source ObjectBounce lifecycle.
+//! A fragment is one object of the scene's metadata bank (KIND_FRAGMENT) decoded
+//! where it is used; the 28-slot pool holds whichever are live, whatever their scene.
 //! Uniform polygon inertia and implicit angular damping approximate native Box2D.
 //! Contact impulses approximate native Box2D; source bounce cache/threshold and
 //! sleep tolerances remain explicit and no visual lifetime is invented.
+use hk_format::world_meta::{Object, KIND_FRAGMENT};
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::ONE;
 use psx_math::{Wide, WideU};
@@ -14,6 +17,15 @@ pub static mut HK_DEBRIS_DRAWN: u32 = 0;
 pub static mut HK_DEBRIS_BOUNCES: u32 = 0;
 #[no_mangle]
 pub static mut HK_DEBRIS_ASLEEP: u32 = 0;
+/// Pieces a full pool made room for by retiring its longest-stopped piece.
+#[no_mangle]
+pub static mut HK_DEBRIS_EVICTED: u32 = 0;
+/// Pieces a full pool of moving pieces could not take.
+#[no_mangle]
+pub static mut HK_DEBRIS_DROPPED: u32 = 0;
+/// Finishing pieces that shrank away (asleep eight seconds) or sat off screen ten draws.
+#[no_mangle]
+pub static mut HK_DEBRIS_FINISHED: u32 = 0;
 fn publish_active(value: usize) {
     #[cfg(target_arch = "mips")]
     unsafe {
@@ -30,19 +42,98 @@ fn publish_drawn(value: u32) {
     #[cfg(not(target_arch = "mips"))]
     let _ = value;
 }
+/// Points a fragment's polygon may carry (host/effects.py FRAGMENT_MAX_POINTS).
+pub const MAX_POINTS: usize = 8;
+/// FinishingRigidBody, measured on every part that has one: asleep this long it
+/// shrinks for the next, then is deactivated (60 Hz ticks).
+pub const FINISH_WAIT: u16 = 8 * 60;
+pub const FINISH_SHRINK: u16 = 60;
+/// Consecutive draws off screen after which a finishing piece is deactivated.
+pub const FINISH_OFF_SCREEN: u8 = 10;
+/// Q16 degrees per source torque step at one inverse moment, per half of the
+/// spin coefficient: (1/2) / 50 * (180 / pi).
+const SPIN_UNIT: i32 = 37549;
+/// SimpleRock's constant tint, the source (0.489, 0.51, 0.559) in the GPU's 128 = 1.0.
+const TINT: (u8, u8, u8) = (63, 65, 72);
 #[derive(Clone, Copy, Debug)]
 pub struct Spec {
-    pub id: u8,
-    pub door: u16,
-    pub frame: u16,
+    /// The piece's object index in the scene bank's first region; its identity in the pool.
+    pub index: u16,
+    /// Its owner Breakable's state index in the scene.
+    pub owner: u8,
     pub source: u32,
     pub origin: [i32; 2],
     pub centroid: [i32; 2],
     pub scale: [i32; 2],
-    pub polygon: &'static [[i32; 2]],
-    /// Q16 degrees/sec increment per unit/sec of vx, for one source torque step.
+    /// The collider's points in the piece's own units, `len` of them.
+    pub points: [[i32; 2]; MAX_POINTS],
+    pub len: u8,
+    /// Q16 degrees/sec increment per unit/sec of vx, for one source torque step. Signed.
     pub torque: i32,
+    /// The inverse moment of inertia (Q16) of the polygon at its scale, mass one.
+    pub inv_i: i32,
+    /// The authored start rotation (Q16 degrees); unused when `random_start`.
+    pub start_pose: i32,
+    pub random_start: bool,
+    pub finishing: bool,
+    pub tint: bool,
     pub angle_offset: i16,
+}
+impl Spec {
+    pub fn polygon(&self) -> &[[i32; 2]] {
+        &self.points[..self.len as usize]
+    }
+    /// This spec with `polygon` as its collider (3..=MAX_POINTS points).
+    pub const fn with_polygon(mut self, polygon: &[[i32; 2]]) -> Self {
+        assert!(polygon.len() >= 3 && polygon.len() <= MAX_POINTS);
+        let mut i = 0;
+        while i < polygon.len() {
+            self.points[i] = polygon[i];
+            i += 1;
+        }
+        self.len = polygon.len() as u8;
+        self
+    }
+    /// The source's constant fling angle offset, mirrored by the nail's side.
+    pub const ANGLE_OFFSET: i16 = -60;
+}
+/// The piece a KIND_FRAGMENT object of the scene bank describes, `index` being that
+/// object's index in the bank's first region. None for anything else or a malformed polygon.
+pub fn decode(object: &Object<'_>, index: u16) -> Option<Spec> {
+    if object.kind() != KIND_FRAGMENT {
+        return None;
+    }
+    let (state, flags, slots) = (object.state_id(), object.flags(), object.bounds());
+    let mut points = [[0; 2]; MAX_POINTS];
+    let mut len = 0;
+    for p in object.polygons().next()?.ok()?.points() {
+        *points.get_mut(len)? = p.ok()?;
+        len += 1;
+    }
+    if len < 3 {
+        return None;
+    }
+    // Six signed bits: halves of the AddTorque(vx * coefficient) coefficient.
+    let spin_half = ((i32::from(flags) & 0x3F) << 26) >> 26;
+    let inv_i = object.extra(2);
+    Some(Spec {
+        index,
+        owner: (state & 0x7F) as u8,
+        source: object.source_id(),
+        origin: [slots[0], slots[1]],
+        centroid: [slots[2], slots[3]],
+        scale: [object.extra(0), object.extra(1)],
+        points,
+        len: len as u8,
+        torque: mulq(inv_i, spin_half * SPIN_UNIT),
+        inv_i,
+        // 1/64 degree to Q16 degrees.
+        start_pose: ((state >> 8) as i32) << 10,
+        random_start: flags & 64 != 0,
+        finishing: flags & 128 != 0,
+        tint: flags & 256 != 0,
+        angle_offset: Spec::ANGLE_OFFSET,
+    })
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Body {
@@ -92,7 +183,14 @@ impl Body {
         } else {
             spec.angle_offset as i32 * facing
         };
-        let rotation = (((random(&mut seed) % 360) as i32 + offset).rem_euclid(360)) * ONE;
+        let random_turn = (random(&mut seed) % 360) as i32;
+        // SpinSelf and SimpleRock overwrite the pose in their Start; the others keep the
+        // authored one, turned by the break's offset.
+        let rotation = if spec.random_start {
+            (random_turn + offset).rem_euclid(360) * ONE
+        } else {
+            (spec.start_pose + offset * ONE).rem_euclid(360 * ONE)
+        };
         let com = scaled(rotate(spec.centroid, rotation), spec.scale);
         Self {
             center: [spec.origin[0] + com[0], spec.origin[1] + com[1]],
@@ -185,13 +283,12 @@ impl Body {
         let mut fraction = ONE;
         let mut hit = None;
         let mut contact_present = false;
-        assert!(spec.polygon.len() <= 16);
-        let mut before = [[0; 2]; 16];
+                let mut before = [[0; 2]; 16];
         let mut after = [[0; 2]; 16];
         let mut swept = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
         let old_rotation = Rotation::new(old.angle);
         let next_rotation = Rotation::new(self.angle);
-        for (index, &p) in spec.polygon.iter().enumerate() {
+        for (index, &p) in spec.polygon().iter().enumerate() {
             before[index] = old.point_rotated(p, spec.centroid, spec.scale, old_rotation);
             after[index] = self.point_rotated(p, spec.centroid, spec.scale, next_rotation);
             for q in [before[index], after[index]] {
@@ -214,7 +311,7 @@ impl Body {
             {
                 continue;
             }
-            for j in 0..spec.polygon.len() {
+            for j in 0..spec.polygon().len() {
                 if let Some(t) = crossing(before[j], after[j], [e[0], e[1]], [e[2], e[3]]) {
                     if t < fraction {
                         fraction = t;
@@ -233,7 +330,7 @@ impl Body {
                 n = [-n[0], -n[1]];
             }
             let mut nearest = None;
-            for j in 0..spec.polygon.len() {
+            for j in 0..spec.polygon().len() {
                 let q = after[j];
                 let d = dot([q[0] - e[0], q[1] - e[1]], n);
                 if d.abs() <= 655
@@ -272,7 +369,7 @@ impl Body {
             // order and all eight sequential velocity iterations exactly.
             let contact_rotation = Rotation::new(self.angle);
             let mut contacts = 0;
-            for &v in spec.polygon {
+            for &v in spec.polygon() {
                 let q = self.point_rotated(v, spec.centroid, spec.scale, contact_rotation);
                 if dot([q[0] - edge[0], q[1] - edge[1]], normal).abs() <= 655 {
                     after[contacts] = q;
@@ -313,7 +410,7 @@ impl Body {
             // manifold/decomposition and multi-contact iterations are unported.
             let mut penetration = 0;
             let resolved_rotation = Rotation::new(self.angle);
-            for &v in spec.polygon {
+            for &v in spec.polygon() {
                 let p = self.point_rotated(v, spec.centroid, spec.scale, resolved_rotation);
                 penetration = penetration.min(dot([p[0] - edge[0], p[1] - edge[1]], normal));
             }
@@ -379,9 +476,7 @@ impl Body {
     }
     fn contact_impulse(&mut self, spec: Spec, point: [i32; 2], normal: [i32; 2]) {
         let lever = [point[0] - self.center[0], point[1] - self.center[1]];
-        // Recover inverse moment from the existing authored torque coefficient:
-        // torque = invI * (4/50) * degrees_per_radian.
-        let inverse_inertia = mulq(spec.torque, 14298);
+        let inverse_inertia = spec.inv_i;
         let angular = mulq(self.omega, 1144); // Q16 radians/sec (pi/180).
         let contact_velocity = [
             self.velocity[0] - mulq(angular, lever[1]),
@@ -439,7 +534,7 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
     let mut lo = i32::MAX;
     let mut hi = i32::MIN;
     let rotation = Rotation::new(body.angle);
-    for &v in spec.polygon {
+    for &v in spec.polygon() {
         let q = body.point_rotated(v, spec.centroid, spec.scale, rotation);
         if dot([q[0] - e[0], q[1] - e[1]], normal).abs() <= 655 {
             let t = dot([q[0] - body.center[0], q[1] - body.center[1]], tangent);
@@ -451,7 +546,7 @@ fn supports(body: Body, spec: Spec, e: [i32; 4]) -> bool {
 }
 fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> Wide {
     let radians = mulq(omega, 1144);
-    let inv_i = mulq(spec.torque, 14298).max(1);
+    let inv_i = spec.inv_i.max(1);
     // inv_i >= 1, and radians * radians * ONE is nonnegative.
     let rotation = Wide::mul(radians, radians).shl_by(16).unsigned_abs().div_rem_u32(inv_i as u32).0;
     hk_sim::fixed::sum_sq(v[0], v[1]).add_w(rotation.cast_signed())
@@ -546,31 +641,89 @@ fn sin(angle: i32) -> i32 {
 #[derive(Clone, Copy)]
 struct Piece {
     scene: u8,
+    /// The piece's `Spec::index` in that scene's bank.
+    index: u16,
+    finishing: bool,
+    /// Consecutive draws entirely off screen.
+    off_screen: u8,
+    /// 60 Hz ticks since the body fell asleep.
+    rest: u16,
     body: Body,
+}
+/// How much of its size a finishing piece keeps, in Q16: whole until it has
+/// slept `FINISH_WAIT`, then linearly gone over `FINISH_SHRINK`.
+fn keep(piece: &Piece) -> i32 {
+    if !piece.finishing || piece.rest <= FINISH_WAIT {
+        return ONE;
+    }
+    let left = (FINISH_WAIT + FINISH_SHRINK).saturating_sub(piece.rest);
+    psx_math::int32::mul_div_i32(ONE, i32::from(left), i32::from(FINISH_SHRINK))
 }
 pub struct Pool {
     pieces: [Option<Piece>; CAPACITY],
     phase: u8,
+    pub evicted: u32,
+    pub dropped: u32,
+    pub finished: u32,
 }
 impl Pool {
     pub const fn new() -> Self {
         Self {
             pieces: [None; CAPACITY],
             phase: 0,
+            evicted: 0,
+            dropped: 0,
+            finished: 0,
         }
     }
-    pub fn spawn(&mut self, scene: usize, specs: &[Spec], door: usize, kind: u8, facing: i32) {
+    /// Launch `specs`' pieces (those of one owner that just broke). A piece already
+    /// live keeps its flight. A full pool retires its longest-stopped piece for a new
+    /// one; when every piece is still moving the newcomer is dropped and counted.
+    pub fn spawn(&mut self, scene: usize, specs: impl Iterator<Item = Spec>, kind: u8, facing: i32) {
         assert!(scene < 256);
-        for &s in specs.iter().filter(|s| s.door as usize == door) {
-            let slot = &mut self.pieces[s.id as usize];
-            if slot.is_none() {
-                *slot = Some(Piece {
-                    scene: scene as u8,
-                    body: Body::launch(s, kind, facing),
-                });
+        for spec in specs {
+            if self
+                .pieces
+                .iter()
+                .flatten()
+                .any(|p| p.scene as usize == scene && p.index == spec.index)
+            {
+                continue;
+            }
+            let slot = match self.pieces.iter().position(|p| p.is_none()) {
+                Some(free) => free,
+                None => match self.longest_stopped() {
+                    Some(old) => {
+                        self.evicted = self.evicted.saturating_add(1);
+                        old
+                    }
+                    None => {
+                        self.dropped = self.dropped.saturating_add(1);
+                        continue;
+                    }
+                },
+            };
+            self.pieces[slot] = Some(Piece {
+                scene: scene as u8,
+                index: spec.index,
+                finishing: spec.finishing,
+                off_screen: 0,
+                rest: 0,
+                body: Body::launch(spec, kind, facing),
+            });
+        }
+        self.publish();
+    }
+    fn longest_stopped(&self) -> Option<usize> {
+        let mut best: Option<(usize, u16)> = None;
+        for (i, p) in self.pieces.iter().enumerate() {
+            if let Some(p) = p.filter(|p| p.body.stopped) {
+                if best.is_none_or(|(_, rest)| p.rest > rest) {
+                    best = Some((i, p.rest));
+                }
             }
         }
-        publish_active(self.active());
+        best.map(|(i, _)| i)
     }
     pub fn clear_scene(&mut self, scene: usize) {
         for p in &mut self.pieces {
@@ -578,70 +731,117 @@ impl Pool {
                 *p = None;
             }
         }
-        publish_active(self.active());
+        self.publish();
     }
-    pub fn body(&self, id: usize) -> Option<Body> {
-        self.pieces[id].map(|p| p.body)
+    /// The body of the live piece with this index (in any scene).
+    pub fn body(&self, index: u16) -> Option<Body> {
+        self.pieces.iter().flatten().find(|p| p.index == index).map(|p| p.body)
     }
     pub fn active(&self) -> usize {
         self.pieces.iter().flatten().count()
     }
+    fn publish(&self) {
+        publish_active(self.active());
+        #[cfg(target_arch = "mips")]
+        unsafe {
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(HK_DEBRIS_EVICTED), self.evicted);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(HK_DEBRIS_DROPPED), self.dropped);
+            core::ptr::write_volatile(core::ptr::addr_of_mut!(HK_DEBRIS_FINISHED), self.finished);
+        }
+    }
+    /// One 60 Hz tick. `spec_of` resolves a piece's index in the resident bank.
     pub fn tick(
         &mut self,
         scene: usize,
-        specs: &[Spec],
+        spec_of: impl Fn(u16) -> Option<Spec>,
         bounds: [i32; 4],
         count: usize,
         mut edge: impl FnMut(usize) -> [i32; 4],
     ) {
+        // FinishingRigidBody: asleep for its wait, then its shrink, then gone.
+        let mut freed = false;
+        for slot in &mut self.pieces {
+            let Some(p) = slot else {
+                continue;
+            };
+            if p.scene as usize != scene || !p.body.stopped {
+                continue;
+            }
+            p.rest = p.rest.saturating_add(1);
+            if p.finishing && p.rest >= FINISH_WAIT + FINISH_SHRINK {
+                *slot = None;
+                self.finished = self.finished.saturating_add(1);
+                freed = true;
+            }
+        }
+        if freed {
+            self.publish();
+        }
         self.phase += 50;
         if self.phase < 60 {
             return;
         }
         self.phase -= 60;
-        for s in specs {
-            if let Some(p) = &mut self.pieces[s.id as usize] {
-                if p.scene as usize != scene || p.body.stopped {
-                    continue;
-                }
-                #[cfg(target_arch = "mips")]
-                crate::input::checkpoint();
-                // Check resolved poses against actual resident coverage. A
-                // floor on the apron edge can bounce a candidate that would
-                // otherwise leave coverage; absent floors cannot advance it.
-                let covered = |body: &Body| {
-                    let rotation = Rotation::new(body.angle);
-                    s.polygon.iter().all(|&v| {
-                        let q = body.point_rotated(v, s.centroid, s.scale, rotation);
-                        q[0] >= bounds[0]
-                            && q[0] <= bounds[2]
-                            && q[1] >= bounds[1]
-                            && q[1] <= bounds[3]
-                    })
-                };
-                if covered(&p.body) {
-                    let mut next = p.body;
-                    next.step(*s, count, &mut edge);
-                    if covered(&next) {
-                        p.body = next;
-                    }
+        for slot in &mut self.pieces {
+            let Some(p) = slot else {
+                continue;
+            };
+            if p.scene as usize != scene || p.body.stopped {
+                continue;
+            }
+            let Some(s) = spec_of(p.index) else {
+                continue;
+            };
+            #[cfg(target_arch = "mips")]
+            crate::input::checkpoint();
+            // Check resolved poses against actual resident coverage. A
+            // floor on the apron edge can bounce a candidate that would
+            // otherwise leave coverage; absent floors cannot advance it.
+            let covered = |body: &Body| {
+                let rotation = Rotation::new(body.angle);
+                s.polygon().iter().all(|&v| {
+                    let q = body.point_rotated(v, s.centroid, s.scale, rotation);
+                    q[0] >= bounds[0] && q[0] <= bounds[2] && q[1] >= bounds[1] && q[1] <= bounds[3]
+                })
+            };
+            if covered(&p.body) {
+                let mut next = p.body;
+                next.step(s, count, &mut edge);
+                if covered(&next) {
+                    p.body = next;
                 }
             }
         }
     }
-    pub fn draw(&self, scene: usize, specs: &[Spec], room: &Room, camera: (i32, i32)) -> u32 {
+    /// Draw the pieces of `scene` this region has a frame for (`frame_of` gives a piece's
+    /// frame in the drawn region's animation bank). A finishing piece that stays off screen
+    /// for `FINISH_OFF_SCREEN` draws is deactivated, as the source does.
+    pub fn draw(
+        &mut self,
+        scene: usize,
+        spec_of: impl Fn(u16) -> Option<Spec>,
+        frame_of: impl Fn(u16) -> Option<u16>,
+        room: &Room,
+        camera: (i32, i32),
+    ) -> u32 {
         let mut count = 0;
-        for &s in specs {
-            let Some(p) = &self.pieces[s.id as usize] else {
+        let mut freed = false;
+        for slot in &mut self.pieces {
+            let Some(p) = slot else {
                 continue;
             };
             if p.scene as usize != scene {
                 continue;
             }
-            let f = room.frame(s.frame as usize);
+            let (Some(s), Some(frame)) = (spec_of(p.index), frame_of(p.index)) else {
+                continue;
+            };
+            let f = room.frame(frame as usize);
             let texture = u32_at(f, 0) as usize;
             assert!(!room.texture(texture).is_streamed());
             let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
+            let kept = keep(p);
+            let scale = [mulq(s.scale[0], kept), mulq(s.scale[1], kept)];
             let mut verts = [(0i16, 0i16); 4];
             let rotation = Rotation::new(p.body.angle);
             for (v, local) in
@@ -649,7 +849,7 @@ impl Pool {
                     .iter_mut()
                     .zip([[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]])
             {
-                let q = p.body.point_rotated(local, s.centroid, s.scale, rotation);
+                let q = p.body.point_rotated(local, s.centroid, scale, rotation);
                 *v = (
                     (160 + psx_math::int32::mul_shr_i32((q[0] - camera.0) >> 8, crate::KNIGHT_SCALE as i32, 20))
                         as i16,
@@ -662,10 +862,23 @@ impl Pool {
                 || verts.iter().all(|v| v.1 < 0)
                 || verts.iter().all(|v| v.1 >= 240)
             {
+                if p.finishing {
+                    p.off_screen = p.off_screen.saturating_add(1);
+                    if p.off_screen >= FINISH_OFF_SCREEN {
+                        *slot = None;
+                        self.finished = self.finished.saturating_add(1);
+                        freed = true;
+                    }
+                }
                 continue;
             }
-            crate::render::texture(texture, verts, (128, 128, 128));
+            p.off_screen = 0;
+            let colour = if s.tint { TINT } else { (128, 128, 128) };
+            crate::render::texture(texture, verts, colour);
             count += 1;
+        }
+        if freed {
+            self.publish();
         }
         #[cfg(target_arch = "mips")]
         unsafe {
@@ -688,6 +901,75 @@ impl Pool {
         }
         publish_drawn(count);
         count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn piece(index: u16, stopped: bool, rest: u16) -> Option<Piece> {
+        let spec = Spec {
+            index,
+            owner: 0,
+            source: 1,
+            origin: [0; 2],
+            centroid: [0; 2],
+            scale: [ONE; 2],
+            points: [[0; 2]; MAX_POINTS],
+            len: 0,
+            torque: 0,
+            inv_i: ONE,
+            start_pose: 0,
+            random_start: true,
+            finishing: false,
+            tint: false,
+            angle_offset: Spec::ANGLE_OFFSET,
+        }
+        .with_polygon(&[[0, 0], [ONE, 0], [0, ONE]]);
+        let mut body = Body::launch(spec, 0, 1);
+        body.stopped = stopped;
+        Some(Piece {
+            scene: 0,
+            index,
+            finishing: false,
+            off_screen: 0,
+            rest,
+            body,
+        })
+    }
+
+    #[test]
+    fn the_piece_retired_for_a_newcomer_is_the_one_stopped_longest() {
+        let mut pool = Pool::new();
+        pool.pieces[0] = piece(0, true, 20);
+        pool.pieces[1] = piece(1, false, 500);
+        pool.pieces[2] = piece(2, true, 50);
+        pool.pieces[3] = piece(3, true, 5);
+        assert_eq!(pool.longest_stopped(), Some(2), "a moving piece's count is not rest");
+        pool.pieces[2] = None;
+        assert_eq!(pool.longest_stopped(), Some(0));
+        let mut moving = Pool::new();
+        moving.pieces[0] = piece(0, false, 0);
+        assert_eq!(moving.longest_stopped(), None);
+    }
+
+    #[test]
+    fn a_finishing_piece_keeps_its_size_until_the_wait_is_over_then_loses_it_in_a_second() {
+        let mut p = piece(0, true, 0).unwrap();
+        p.finishing = true;
+        for (rest, kept) in [
+            (0, ONE),
+            (FINISH_WAIT, ONE),
+            (FINISH_WAIT + FINISH_SHRINK / 2, ONE / 2),
+            (FINISH_WAIT + FINISH_SHRINK, 0),
+        ] {
+            p.rest = rest;
+            assert_eq!(keep(&p), kept, "rest {rest}");
+        }
+        p.finishing = false;
+        p.rest = FINISH_WAIT + FINISH_SHRINK;
+        assert_eq!(keep(&p), ONE);
     }
 }
 

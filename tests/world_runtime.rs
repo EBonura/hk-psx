@@ -71,15 +71,17 @@ const SQUARE: &[[i32; 2]] = &[[100, 0], [200, 0], [200, 100], [100, 100]];
 // fade draws [5] for 60 ticks) and breakable 1 (SQUARE, no fade), both
 // persistent door-sound objects with off [1], on [2], edges [1]; region 2 is empty.
 fn region() -> Region {
+    region_with(1)
+}
+fn region_with(global_id: usize) -> Region {
     use_bank(FIXTURE_BANK);
     Region {
-        global_id: 1,
+        global_id,
         scene: 0,
         bounds: [0, 0, 1000, 1000],
         collision_bounds: [0, 0, 1000, 1000],
         camera: [0, 0, 1000, 1000],
         grass_impact:None,
-    door_debris:&[],
     particle_bank:None,
     grass_emitters:&[],
     }
@@ -891,4 +893,25 @@ fn remote_art_follows_scene_state_in_every_scene0_view() {
         }
     }
     assert!(checked[0] > 0 && checked[2] > 0, "scene 0 has remote art ({checked:?})");
+}
+
+#[test]
+fn a_break_launches_its_owners_pieces_and_a_region_draws_them_as_its_own_frames() {
+    // FIXTURE_BANK (tools/test_world.py): pieces 0 (owner 0) and 1, 2 (owner 1) at the head of
+    // region 1; region 1 maps 0 to frame 3, 1 to 4, 2 to 5; region 2 maps only 1, to 9.
+    let (one, two) = (region_with(1), region_with(2));
+    assert_eq!(world::fragment_spec(1).map(|s| (s.owner, s.index)), Some((1, 1)));
+    assert!(world::fragment_spec(3).is_none(), "the fourth object is no piece");
+    assert_eq!([0, 1, 2].map(|i| world::fragment_frame(&one, i)), [Some(3), Some(4), Some(5)]);
+    assert_eq!([0, 1, 2].map(|i| world::fragment_frame(&two, i)), [None, Some(9), None]);
+    let mut state = State::new();
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 2;
+    let player = Player::spawn(0, 0);
+    let attack = &[[-185, 80], [-180, 80], [-180, 85], [-185, 85]][..];
+    // The triangle's hit polygon rejects the box swing; the square (owner 1) breaks and launches two pieces.
+    state.strike(&one, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    assert!(state.broken(1) && !state.broken(0));
+    assert_eq!(state.debris_active(), 2);
 }
