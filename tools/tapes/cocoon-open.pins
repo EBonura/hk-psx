@@ -1,11 +1,11 @@
 card = cocoon-open.mcd
-# cocoon-open boots from a seeded card (tools/seed_card.py from secret-c04.mcd: scene 0, region 43, x 57.15,
+# cocoon-open boots from a seeded card (tools/seed_card.py from secret-c04.mcd: scene 0, region index 43 (HK_REGION_ID counts from 1: 44), x 57.15,
 # y 58.39, facing right) under King's Pass's Lifeblood cocoon, jumps and strikes up once: the cocoon opens
 # and answers with its spatters, globs and cap (the break-effect pool), the Kill shake and its two bugs.
 # Seeded, so it proves the cocoon's reaction, not the way to it. The tape is 380 polls long
 # (mktape: 9:start:1,12:cross:1,260:cross:30,278:up+square:3).
 HK_LIFEBLOOD_OPENED = 1
-HK_REGION_ID = 43
+HK_REGION_ID = 44
 HK_SAVE_LOADED = 1
 HK_DEATHS = 0
 # 50 spatters and 9 globs (the cap, where the scene's effect art has room for it, adds one).
