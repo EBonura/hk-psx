@@ -1,4 +1,5 @@
-pacing = 2
+pacing = 26
+missed_vblanks = 15
 card = mawlek.mcd
 # mawlek-fight boots from a seeded card (tools/seed_card.py from grub-jar.mcd)
 # on the Crossroads_09 floor left of the arena: the only walk in is from

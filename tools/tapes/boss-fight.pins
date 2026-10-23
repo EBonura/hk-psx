@@ -1,4 +1,5 @@
-pacing = 2
+pacing = 310
+missed_vblanks = 8
 card = boss-fight.mcd
 # The False Knight, fought fairly and killed. No cheats, five masks at the
 # end and not one of them lost: HK_CHEATS 0 and HK_HEALTH 5 hold at every

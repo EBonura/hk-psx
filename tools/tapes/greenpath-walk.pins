@@ -1,4 +1,5 @@
 pacing = 968
+missed_vblanks = 2
 card = greenpath.mcd
 scene_gate = true
 # Greenpath, walked rather than cooked. The Knight boots from a seeded card

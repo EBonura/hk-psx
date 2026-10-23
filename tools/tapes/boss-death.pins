@@ -1,3 +1,5 @@
+pacing = 2
+missed_vblanks = 7
 card = boss-fight.mcd
 art_late = 44
 # Losing to the False Knight, and walking back in for a second go.

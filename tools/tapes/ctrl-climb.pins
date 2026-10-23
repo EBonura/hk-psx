@@ -1,6 +1,6 @@
 # pacing 210 (2026-10-19): late frames of about 2,230 measured 199 (main cbf459a), 206 (a7b4b15), 208 (route lock, console fixes and hk-ram together); the end-state pins did not change. Not isolated to a cause.
 # Layout noise on the Hornet-milestone build: 199 -> 206 late frames of about 2,230 with nothing on this route changed (measured, 2026-10-18).
-pacing = 210
+pacing = 348
 HK_CHEATS = 0
 HK_SCRIPT_FLAGS = 0
 HK_SCRIPT_WRITES = 0

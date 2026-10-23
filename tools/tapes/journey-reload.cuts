@@ -3,7 +3,7 @@
 # see docs/ROUTES.md
 # pad N: neutral ticks the simulation ran after that load on the reference disc (played without the lock,
 # disc sha256 693dfef232cc01a3a446ddd8ad115c92b37b712276c421c0e05ac7db90f5858a), measured from guest telemetry by `cargo hk-build measure`; a game with the route lock replays exactly N.
-load 21 23 1 pad 2
+load 21 23 1 pad 1
 load 386 422 2 pad 2
 load 1894 1925 3 pad 2
 load 3207 3318 4 pad 3

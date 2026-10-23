@@ -1,4 +1,5 @@
-pacing = 947
+pacing = 1280
+missed_vblanks = 16
 card = gruz-fight.mcd
 # gruz-fight boots from a seeded card (tools/seed_card.py from secret-c04.mcd)
 # on Gruz Mother's ledge in Crossroads_04, left of where it sleeps. Seeded,

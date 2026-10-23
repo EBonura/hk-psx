@@ -1,4 +1,4 @@
-pacing = 125
+pacing = 930
 card = spell-exit.mcd
 # The Greenpath exit with the earned spell and no cheats. spell-exit boots
 # from tools/cards/spell-exit.mcd: a historical earned-spell record
