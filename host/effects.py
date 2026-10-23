@@ -636,9 +636,12 @@ def fragment_records(source,scene,atlas,frames,refusals=None):
     return sorted(records,key=lambda p:(-p['z'],p['layer'],p['order'],p['source']))
 
 
-def append_door_debris_art(source,scene,atlas,frames):
-    """Cooked rigid fragments for this scene; see fragment_records."""
-    return fragment_records(source,scene,atlas,frames)
+def append_door_debris_art(source,scene,atlas,frames,refusals=None):
+    """Cooked rigid fragments for this scene; see fragment_records.
+
+    `refusals` receives one {owner, part, reason} per part left out, so a caller
+    can report them rather than let a refused part look never authored."""
+    return fragment_records(source,scene,atlas,frames,refusals)
 
 # How many distinct door-debris variants the catalogue may hold. Not a format
 # limit: the world bank carries the index as a full i32 payload word and the
