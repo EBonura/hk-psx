@@ -416,6 +416,9 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             frames: frame_pool,
         };
         r.additive[i] = b[43] != 0;
+        if r.styles[i].lands() && ((r.styles[i].splash >> 8) & 15) as usize >= count {
+            return false;
+        }
         if r.styles[i].count == 0
             || r.styles[i].count as usize > super::CAPACITY
             || r.styles[i].rate <= 0
@@ -660,6 +663,7 @@ pub fn spawn_specs(
         styles,
         &[],
         [0; 2],
+        0,
     );
 }
 /// `spawn_specs` with every emitter moved by `offset`: an effect cooked at one
@@ -672,7 +676,20 @@ pub fn spawn_specs_at(
     styles: &[Style],
     offset: [i32; 2],
 ) {
-    spawn_specs_with_bases(pool, scene, owner, 2, 1, emitters, styles, &[], offset);
+    spawn_specs_with_bases(pool, scene, owner, 2, 1, emitters, styles, &[], offset, 0);
+}
+/// `spawn_specs_at` with `salt` mixed into every emitter's random stream: a set piece raised
+/// again (a door hit, a rock's next chip burst) is not a copy of the last time.
+pub fn spawn_specs_salted(
+    pool: &mut Pool,
+    scene: usize,
+    owner: usize,
+    emitters: &[Emitter],
+    styles: &[Style],
+    offset: [i32; 2],
+    salt: u32,
+) {
+    spawn_specs_with_bases(pool, scene, owner, 2, 1, emitters, styles, &[], offset, salt);
 }
 #[inline(never)]
 fn spawn_specs_with_bases(
@@ -685,6 +702,7 @@ fn spawn_specs_with_bases(
     styles: &[Style],
     bases: &[u16],
     shift: [i32; 2],
+    salt: u32,
 ) {
     for (emitter_index, e) in emitters
         .iter()
@@ -698,7 +716,7 @@ fn spawn_specs_with_bases(
                 && s.count as usize <= super::CAPACITY
                 && s.life[0] > 0
         );
-        let mut rng = e.source ^ 0xd1b54a35;
+        let mut rng = e.source ^ 0xd1b54a35 ^ salt;
         let mut search = 0;
         for i in 0..s.count {
             checkpoint();

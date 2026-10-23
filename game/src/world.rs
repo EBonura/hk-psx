@@ -1211,7 +1211,7 @@ impl State {
                 if region.grass_impact.is_some() {
                     let _ = self.impacts.spawn(region.scene, id, ob, bounds, sign);
                 }
-                particles::pool().spawn_break_at(
+                particles::pool().spawn_break_salted(
                     region.scene,
                     particles::HIT_DUST_OWNER,
                     [mid(0, 2), mid(1, 3)],
