@@ -27,7 +27,9 @@ def world_banks(output):
     # the tests read that catalogue out of this bank, so supply it the same way.
     controllers = report.get('reveal_mask_scenes', {}).get('0', {}).get('controllers', [])
     scene0 = dict(scene0, reveal_mask_controllers=controllers, reveal_controllers=len(controllers))
-    payload, _ = encode_scene(scene0, [r for r in report['regions'] if r['scene_id'] == 0])
+    # The tests read breakables and gates out of this bank, not rigid debris, and the
+    # region report on disk may predate the piece fields the encoder now requires.
+    payload, _ = encode_scene(scene0, [dict(r, door_debris=[]) for r in report['regions'] if r['scene_id'] == 0])
     (output/'scene0.hkwm').write_bytes(payload)
     triangle = [[100, 0], [200, 0], [100, 100]]
     square = [[100, 0], [200, 0], [200, 100], [100, 100]]
@@ -40,12 +42,19 @@ def world_banks(output):
                 'audio': {'options': [{'name': 'breakable_wall_hit_1'}]},
                 'mask_fades': [{'ticks_60hz': 60, 'target_alpha': 0, 'ease': 'linear',
                                 'renderers': [{'initial_alpha': 1}], 'draw_indices': [5]}] if fades else []}
-    def row(chunk, breakables):
+    def fragment(source, owner, frame):
+        # An unspun, unfinishing box; the owner it breaks with and the frame it draws as are the point.
+        return {'source': f'test:{source}', 'door_state': owner, 'frame': frame, 'origin': [0, 0], 'centroid': [0, 0],
+                'scale': [Q, Q], 'polygon': [[-Q // 2, -Q // 2], [Q // 2, -Q // 2], [Q // 2, Q // 2], [-Q // 2, Q // 2]],
+                'inv_inertia': 6 * Q, 'spin_half': 8, 'random_start': True, 'finishing': False, 'tint': False, 'start_pose': 0}
+    def row(chunk, breakables, pieces=()):
         bounds = [v / Q for v in [0, 0, 1000, 1000]]
         return {'chunk_id': chunk, 'scene_id': 0, 'activation_bounds': bounds, 'camera_bounds': bounds,
-                'draws': 8, 'edges': 8, 'breakables': breakables}
+                'draws': 8, 'edges': 8, 'breakables': breakables, 'door_debris': list(pieces)}
+    # Pieces 0 (owner 0), 1 and 2 (owner 1); region 1 draws all three, region 2 only piece 1, as another frame.
+    pieces = [fragment(7, 0, 3), fragment(8, 1, 4), fragment(9, 1, 5)]
     payload, _ = encode_scene({'scene_id': 0, 'scene_name': 'Fixture', 'file': 'fixture'},
-                              [row(1, [prop(0, triangle, True), prop(1, square, False)]), row(2, [])])
+                              [row(1, [prop(0, triangle, True), prop(1, square, False)], pieces), row(2, [], [dict(pieces[1], frame=9)])])
     (output/'fixture.hkwm').write_bytes(payload)
     return {'HK_TEST_SCENE0_BANK': str(output/'scene0.hkwm'), 'HK_TEST_FIXTURE_BANK': str(output/'fixture.hkwm')}
 
