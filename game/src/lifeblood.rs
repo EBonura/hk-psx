@@ -634,4 +634,60 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{append_hud, apply, draw, upload};
+pub use presentation::{append_hud, upload};
+
+/// The cocoon's code is the `lifeblood` room module (host/code_modules.py): resident only while
+/// Tutorial_01 is. Elsewhere there is no cocoon to show, strike or tick.
+#[cfg(not(test))]
+#[inline(always)]
+fn here() -> bool {
+    crate::modules::loaded(crate::modules::LIFEBLOOD)
+}
+/// `presentation::apply` where the cocoon's room is resident; anywhere else it only clears the
+/// scripted edges the cocoon owns.
+#[cfg(not(test))]
+#[inline(always)]
+pub fn apply(life: &World, state: &mut crate::world::State, region: usize, view: usize) {
+    if here() {
+        presentation::apply(life, state, region, view);
+    } else {
+        state.set_lifeblood_edges(&[]);
+    }
+}
+/// `presentation::draw` where the cocoon's room is resident, else nothing drawn.
+#[cfg(not(test))]
+#[inline(always)]
+pub fn draw(life: &World, region: usize, camera: (i32, i32)) -> u32 {
+    if here() {
+        presentation::draw(life, region, camera)
+    } else {
+        0
+    }
+}
+/// `World::tick` where the cocoon's room is resident, else no Scuttler heals.
+#[cfg(not(test))]
+#[inline(always)]
+pub fn tick(
+    life: &mut World,
+    scene: usize,
+    hero_x: i32,
+    coverage: [i32; 4],
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+) -> u16 {
+    if here() {
+        life.tick(scene, hero_x, coverage, count, edge)
+    } else {
+        0
+    }
+}
+/// `World::strike` where the cocoon's room is resident, else no strike.
+#[cfg(not(test))]
+#[inline(always)]
+pub fn strike(life: &mut World, scene: usize, polygon: &[[i32; 2]]) -> Strike {
+    if here() {
+        life.strike(scene, polygon)
+    } else {
+        Strike::default()
+    }
+}

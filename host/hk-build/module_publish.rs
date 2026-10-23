@@ -86,6 +86,11 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                     ]
                     .iter()
                     .any(|p| caller.name.contains(p))
+                        // The loop that owns the frame (game/src/main.rs `main`) binds the cocoon's view.
+                        && caller.name != "main"
+                        && !["16strike_lifeblood", "5State6strike", "5State12draw_impacts", "5State11tick_debris"]
+                            .iter()
+                            .any(|p| caller.name.contains(p))
                     {
                         return Err(format!("unapproved caller {}", caller.name).into());
                     }
