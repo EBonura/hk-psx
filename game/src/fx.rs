@@ -5,7 +5,8 @@
 //! raised where the anchor is now. A scene whose effect art did not fit has no emitter for an
 //! owner, and raising it spawns nothing.
 
-pub const HIT_DUST: usize = 0xD001;
+/// The nail's hit dust, the one owner `world.rs` raises on its own.
+pub const HIT_DUST: usize = crate::world::particles::HIT_DUST_OWNER;
 pub const DOOR_DUST: usize = 0xD010;
 pub const DOOR_RUBBLE: usize = 0xD011;
 pub const DOOR_CHIPS: usize = 0xD012;

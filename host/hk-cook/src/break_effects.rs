@@ -2639,10 +2639,12 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
     let mut mapping: Vec<(usize, usize, i64, i64)> = Vec::new();
     for (level, alpha) in ALPHAS.into_iter().enumerate() {
         let qz = quantize_alpha_coverage(&sheet, alpha)?;
-        if !palettes.contains(&qz.palette) {
+        // A level only opaque cells would use stores nothing, palette included.
+        let used = (0..cells.len()).any(|n| !(opaque_cells[n] && level + 1 < ALPHAS.len()));
+        if used && !palettes.contains(&qz.palette) {
             palettes.push(qz.palette);
         }
-        let pal = palettes.iter().position(|p| *p == qz.palette).unwrap();
+        let pal = palettes.iter().position(|p| *p == qz.palette).unwrap_or(0);
         for (n, c) in cells.iter().enumerate() {
             if opaque_cells[n] && level + 1 < ALPHAS.len() {
                 // Filled in from the densest level below.

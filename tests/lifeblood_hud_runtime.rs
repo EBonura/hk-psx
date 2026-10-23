@@ -18,6 +18,9 @@ pub mod prim {
   pub const fn new(x:i16,y:i16,w:u16,h:u16,uv:(u8,u8),clut:u16,_:u8,_:u8,_:u8)->Self{Self{x,y,w,h,uv,clut}}
   pub fn with_material(x:i16,y:i16,w:u16,h:u16,uv:(u8,u8),mat:TextureMaterial)->Self{Self{x,y,w,h,uv,clut:mat.clut}}
  }
+ pub trait Quadlike{fn as_quad(&self)->QuadTextured;}
+ impl Quadlike for QuadTextured{fn as_quad(&self)->QuadTextured{*self}}
+ impl Quadlike for Sprite{fn as_quad(&self)->QuadTextured{let(x1,y1)=(self.x+self.w as i16,self.y+self.h as i16);QuadTextured{v:[(self.x,self.y),(x1,self.y),(self.x,y1),(x1,y1)],uv:[self.uv;4],clut:self.clut}}}
  #[derive(Clone,Copy,Debug)]pub struct QuadTextured{pub v:[(i16,i16);4],pub uv:[(u8,u8);4],pub clut:u16}
  impl QuadTextured{
   pub const WORDS:usize=9;
@@ -30,11 +33,11 @@ pub mod prim {
  }
 }
 pub mod ot {
- use super::prim::QuadTextured;
+ use super::prim::{QuadTextured,Quadlike};
  pub struct OrderingTable<const N:usize>{pub sprites:Vec<QuadTextured>}
- impl<const N:usize> OrderingTable<N>{pub fn add(&mut self,_:usize,p:&mut QuadTextured,_:usize){self.sprites.push(*p);}}
+ impl<const N:usize> OrderingTable<N>{pub fn add<P:Quadlike>(&mut self,_:usize,p:&mut P,_:usize){self.sprites.push(p.as_quad());}}
 }
-mod display{pub unsafe fn ot_add<const N:usize>(ot:&mut crate::ot::OrderingTable<N>,z:usize,p:&mut crate::prim::QuadTextured,w:usize){ot.add(z,p,w);}}
+mod display{pub unsafe fn ot_add<const N:usize,P:crate::prim::Quadlike>(ot:&mut crate::ot::OrderingTable<N>,z:usize,p:&mut P,w:usize){ot.add(z,p,w);}}
 pub struct VramRect{pub x:u16,pub y:u16,pub w:u16,pub h:u16}
 impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{Self{x,y,w,h}}}
 static UPLOADS:Mutex<Vec<(u16,u16,u16,u16)>>=Mutex::new(Vec::new());
