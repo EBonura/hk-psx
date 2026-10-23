@@ -13,6 +13,8 @@ mod perspective;
 /// source emitter authored above it. The pool is static, so each slot costs
 /// linked RAM rather than main's stack frame.
 pub const CAPACITY: usize = 224;
+/// The break-effect owner of `Dust Hit Med` raised at a nail hit (host/hk-cook break_effects/fx.rs).
+pub const HIT_DUST_OWNER: usize = 0xD001;
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {
     pub size: i32,

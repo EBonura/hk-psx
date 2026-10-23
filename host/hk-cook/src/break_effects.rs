@@ -59,7 +59,7 @@ const FX_MAGIC: &[u8] = b"HKFX0001";
 const FX_LIMITS: [(&str, usize); 5] = [
     ("styles", 28),
     ("emitters", 128),
-    ("art", 64),
+    ("art", 96),
     ("uploads", 64),
     ("frames", 96),
 ];
@@ -263,6 +263,9 @@ struct Style {
     life_loss: i64,
     kill_speed: i64,
     radius_scale: i64,
+    /// The art needs no opacity levels (a fully opaque sprite that shrinks instead of fading):
+    /// only the densest of the three variants is stored and the other two point at it.
+    opaque: bool,
     /// A landing particle's splash (guest `Style::splash`): ticks, frame and quarter-scale, 0 for none.
     splash: i64,
     samples: Vec<Sample>,
@@ -753,6 +756,7 @@ fn style(
         kill_speed: q(f(collision, "minKillSpeed")?)?,
         radius_scale: q(f(collision, "radiusScale")?)?,
         splash: 0,
+        opaque: false,
         samples,
         cells,
         texture: String::new(),
@@ -2591,6 +2595,7 @@ const MAX_CELL: i64 = 32;
 /// first-use order) at its projected size, one joint palette per opacity level.
 fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank> {
     let mut cells: Vec<Image> = Vec::new();
+    let mut opaque_cells: Vec<bool> = Vec::new();
     let mut families: Vec<(String, usize, usize)> = Vec::new();
     for (sid, im) in textures {
         let group: Vec<&Style> = styles.iter().filter(|s| &s.texture == sid).collect();
@@ -2609,6 +2614,8 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
         let target = target_size(biggest as f64) as usize;
         let (w, h) = (im.width, im.height / count);
         let start = cells.len();
+        let opaque = group.iter().all(|s| s.opaque);
+        opaque_cells.extend(std::iter::repeat(opaque).take(count));
         for n in 0..count {
             let cell = im.crop_int(
                 0,
@@ -2630,13 +2637,18 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
     let mut palettes: Vec<[u8; 32]> = Vec::new();
     let mut planes: Vec<(i64, i64, Vec<u8>)> = Vec::new();
     let mut mapping: Vec<(usize, usize, i64, i64)> = Vec::new();
-    for alpha in ALPHAS {
+    for (level, alpha) in ALPHAS.into_iter().enumerate() {
         let qz = quantize_alpha_coverage(&sheet, alpha)?;
         if !palettes.contains(&qz.palette) {
             palettes.push(qz.palette);
         }
         let pal = palettes.iter().position(|p| *p == qz.palette).unwrap();
         for (n, c) in cells.iter().enumerate() {
+            if opaque_cells[n] && level + 1 < ALPHAS.len() {
+                // Filled in from the densest level below.
+                mapping.push((usize::MAX, 0, c.width as i64, c.height as i64));
+                continue;
+            }
             let stride = c.width.div_ceil(4) * 2;
             let mut data = vec![0u8; stride * c.height];
             for y in 0..c.height {
@@ -2653,6 +2665,14 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             }
             let plane = planes.iter().position(|p| *p == item).unwrap();
             mapping.push((plane, pal, c.width as i64, c.height as i64));
+        }
+    }
+    let total_cells = cells.len();
+    for level in 0..ALPHAS.len() - 1 {
+        for n in 0..total_cells {
+            if mapping[level * total_cells + n].0 == usize::MAX {
+                mapping[level * total_cells + n] = mapping[(ALPHAS.len() - 1) * total_cells + n];
+            }
         }
     }
     let mut items: Vec<(String, i64, i64, i64)> = (0..palettes.len())
@@ -2714,7 +2734,7 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
 
 fn style_art_cost(st: &Style) -> i64 {
     let target = target_size(st.size[0].max(st.size[1]).max(1) as f64);
-    st.cells * target * target
+    st.cells * target * target / if st.opaque { 3 } else { 1 }
 }
 
 struct SceneArt {
@@ -3359,6 +3379,7 @@ mod tests {
             kill_speed: 0,
             radius_scale: 0,
             splash: 0,
+            opaque: false,
             samples: Vec::new(),
             cells,
             texture: texture.into(),

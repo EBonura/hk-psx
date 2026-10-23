@@ -1410,6 +1410,19 @@ pub fn simulate(
         if mining.hits > 0 {
             geo_audio::hit();
         }
+        // `Geo Rock`'s `Hit`: Strike Nail R, Dust Hit Med and three to five chips at the rock; the
+        // last hit adds `EnemyKillShake` and the rest of the chips.
+        if let Some((at, bounds)) = mining.at {
+            game.state
+                .hit_impact(r, game.attacks as usize, bounds, game.player.x);
+            fx::raise(r.scene, fx::HIT_DUST, at);
+            fx::raise(r.scene, fx::HIT_CHIPS, at);
+            if mining.depleted > 0 {
+                camera::request(camera::Shake::Kill);
+                fx::raise(r.scene, fx::HIT_CHIPS, at);
+                fx::raise(r.scene, fx::HIT_CHIPS, at);
+            }
+        }
         if mining.depleted > 0 {
             geo_audio::break_rock();
             geo_render::apply(game.geo, &mut game.state, game.region_id, game.view);
