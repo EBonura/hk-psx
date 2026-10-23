@@ -142,6 +142,15 @@ pub fn play_shared(event: u8) {
         crate::audio::shared_clip(address, rate, gain, pitch);
     }
 }
+/// The scene-bank event that is the break clip of the ordinary Breakable `id` (scene * 128 + state),
+/// for the families whose clip is not the resident wall hit (barrels, poles, wagons).
+pub fn break_sound(id: usize) -> Option<u8> {
+    let id = u16::try_from(id).ok()?;
+    BREAK_SOUNDS
+        .binary_search_by_key(&id, |&(owner, _)| owner)
+        .ok()
+        .map(|at| BREAK_SOUNDS[at].1)
+}
 /// Whether the resident bank holds `event`, without counting a miss.
 pub fn resident(event: u8) -> bool {
     let current = unsafe { CURRENT };

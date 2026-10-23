@@ -1574,6 +1574,12 @@ pub fn simulate(
         if strike.door_sounds > 0 {
             audio::door();
         }
+        // Barrels, poles and wagons break with their own clip where the scene bank has room.
+        if let Some(event) = strike.last_broken.and_then(scene_sfx::break_sound) {
+            if scene_sfx::resident(event) {
+                scene_sfx::play(event);
+            }
+        }
         let mining = strike_geo(game.geo, r.scene, &game.nail, &game.player);
         if mining.hits > 0 {
             geo_audio::hit();

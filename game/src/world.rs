@@ -705,6 +705,8 @@ const _: () = assert!(
 pub struct Strike {
     pub broken: u16,
     pub door_sounds: u16,
+    /// The scene-qualified state id of the last ordinary Breakable this swing broke.
+    pub last_broken: Option<usize>,
     pub grass_cut: u16,
     pub impact_dropped: u16,
     /// A hidden wall or cracked floor this swing hit or broke.
@@ -1217,6 +1219,7 @@ impl State {
                 self.debris
                     .spawn(region.scene, owner_fragments(id), nail.kind as u8, player.facing);
                 result.broken += 1;
+                result.last_broken = Some(id);
                 result.door_sounds += u16::from(object.door_sound());
             }
         }
