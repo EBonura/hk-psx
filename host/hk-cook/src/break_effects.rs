@@ -3032,7 +3032,7 @@ struct Chunk {
     raw_sha256: String,
 }
 
-fn generate(curves: &[String], manifest: &[Chunk]) -> Result<String> {
+fn generate(curves: &[String], manifest: &[Chunk], widest: [usize; 5]) -> Result<String> {
     let mut out = vec![
         "// Generated from Windows source; source IDs/hashes in ignored break-effects report."
             .to_string(),
@@ -3070,9 +3070,9 @@ fn generate(curves: &[String], manifest: &[Chunk]) -> Result<String> {
             .collect::<Vec<_>>()
             .join(",")
     ));
-    for (name, limit) in FX_LIMITS {
+    for ((name, _), widest) in FX_LIMITS.iter().zip(widest) {
         out.push(format!(
-            "pub const FX_MAX_{}:usize={limit};",
+            "pub const FX_MAX_{}:usize={widest};",
             name.to_uppercase()
         ));
     }
@@ -3225,8 +3225,14 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
             }
         }
     }
+    // The guest's resident tables are sized to the largest scene's own counts (the limits above
+    // only bound what a scene may be given), as host/pack_scenes.py sizes the arena.
+    let mut widest = [1usize; 5];
     for (scene, data) in arts {
         let raw = pack_scene_effects(&data, &mut curves)?;
+        for (k, w) in widest.iter_mut().enumerate() {
+            *w = (*w).max(u32::from_le_bytes(raw[8 + 4 * k..12 + 4 * k].try_into().unwrap()) as usize);
+        }
         let stored = compressed(&raw);
         let name = format!("scene_{scene}.hkfx.z");
         std::fs::write(dest.join(&name), &stored).map_err(|e| e.to_string())?;
@@ -3244,7 +3250,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         }
         scene_rows.push((scene, data));
     }
-    let code = generate(&curves, &manifest)?;
+    let code = generate(&curves, &manifest, widest)?;
     std::fs::write(root.join("data/break_effects.rs"), &code).map_err(|e| e.to_string())?;
     let mut files: Vec<String> = Vec::new();
     for s in scenes {

@@ -99,6 +99,7 @@ impl Spec {
 }
 /// The piece a KIND_FRAGMENT object of the scene bank describes, `index` being that
 /// object's index in the bank's first region. None for anything else or a malformed polygon.
+#[cfg_attr(not(test), optimize(size))]
 pub fn decode(object: &Object<'_>, index: u16) -> Option<Spec> {
     if object.kind() != KIND_FRAGMENT {
         return None;
