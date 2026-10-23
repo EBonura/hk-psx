@@ -43,6 +43,9 @@ pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
 const COCOON_BODY: [f64; 3] = [0.388, 0.668, 0.0];
 const COCOON_CAP: [f64; 3] = [0.28, 2.31, 0.01];
 
+/// Smoke emitters cooked with half their authored puffs (see `prefab_owner`).
+const THIN_SMOKE: [i64; 2] = [FX_DOOR_DUST, FX_HIT_DUST];
+
 /// What a scene carries, found while the first pass has it open.
 #[derive(Clone, Copy, Default)]
 pub struct Kinds {
@@ -393,7 +396,18 @@ fn prefab_owner(
 ) -> Result<()> {
     let prefab = prefab_obj(source, file, id)?;
     match prefab_emitters_obj(source, &prefab, gravity, origin, rotation, true) {
-        Ok(found) => push_found(c, scene_id, owner, found, what, [0.0; 3]),
+        Ok(mut found) => {
+            // The smoke is drawn by the soft path (a quarter of its light), which is faint on a
+            // dark room and costs the same fill as an opaque piece: half of the authored puffs
+            // keep the cloud and the frame time (measured: the door's hits took a third of its
+            // presented frames with all of them).
+            if THIN_SMOKE.contains(&owner) {
+                for e in &mut found {
+                    e.style.count = (e.style.count + 1) / 2;
+                }
+            }
+            push_found(c, scene_id, owner, found, what, [0.0; 3])
+        }
         Err(e) => {
             c.ignored.push(ignore(
                 Json::Str(format!("fx {owner:#x}")),
