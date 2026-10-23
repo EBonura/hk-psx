@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |762,160|
-| Code-to-data alignment |0|
+| Linked code |762,292|
+| Code-to-data alignment |12|
 | Linked data, including menu and HUD |266,456|
-| BSS, including shared scene arena and runtime pools |797,812|
-| Total static span |1,826,436|
+| BSS, including shared scene arena and runtime pools |797,816|
+| Total static span |1,826,584|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |155,772|
+| Unallocated gap before reserved stack |155,624|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |53,372|
+| Free RAM below the module pool |53,224|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -121,7 +121,9 @@ metadata.
 
 The 2026-10-19 pass (one terrain reader type for every solver, so Player::step and the Actor::advance_* family compile once; the route lock and its 256-byte load log) took linked code from 805,384 to 754,836 bytes, data from 257,800 to 258,536 and BSS from 796,868 to 797,132, so 69,284 bytes are free below the module pool (19,740 before).
 
-Static data ends at `0x801cde84`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-23 scenery trimming policy (`trim_policy::verdict`, a three-frame count where one slow frame used to decide) moved the shipping disc by +132 bytes of linked code, +4 of BSS and 12 of code-to-data alignment: free below the pool 53,372 to 53,224.
+
+Static data ends at `0x801cdf18`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
