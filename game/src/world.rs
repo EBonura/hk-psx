@@ -29,8 +29,9 @@ pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
 use hk_format::world_meta::{
     self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE,
-    KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC, KIND_POGO, KIND_REGION_STATICS,
-    KIND_REMOTE_ART, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS, KIND_REVEAL_MASK, KIND_SHROOM,
+    KIND_FRAGMENT, KIND_FRAGMENT_FRAMES, KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC,
+    KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_ART, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS,
+    KIND_REVEAL_MASK, KIND_SHROOM,
 };
 
 /// The admitted scene bank. Its bytes are immutable until the next exclusive
@@ -592,7 +593,6 @@ pub struct Region {
     pub grass_impact: Option<crate::impact::Spec>,
     pub particle_bank: Option<particles::Bank>,
     pub grass_emitters: &'static [particles::EmitterSpec],
-    pub door_debris: &'static [debris::Spec],
 }
 /// The scene the False Knight is placed in, for carrying an HKS4 save's won
 /// arena into the SceneData store.
@@ -633,8 +633,50 @@ pub fn resident(region_id: usize) -> Option<Region> {
         grass_impact: catalogue(statics.extra(2), IMPACT_CATALOG.len()).map(|i| IMPACT_CATALOG[i]),
         particle_bank: catalogue(statics.extra(1), PARTICLE_BANKS.len()).map(|i| PARTICLE_BANKS[i]),
         grass_emitters: SCENE_EMITTERS[scene],
-        door_debris: DEBRIS_CATALOG[statics.extra(0) as usize],
     })
+}
+/// A rigid debris piece of the admitted scene by its object index in the bank's
+/// first region, where every piece of the scene sits at the head of the list.
+#[inline(never)]
+pub fn fragment_spec(local: u16) -> Option<debris::Spec> {
+    let object = admitted_bank()?.region(0)?.object(local as usize)?;
+    debris::decode(&object, local)
+}
+/// The pieces of the scene's Breakable `owner` (a scene-qualified state id), which
+/// a break launches.
+#[inline(never)]
+fn owner_fragments(owner: usize) -> impl Iterator<Item = debris::Spec> {
+    let state = (owner % BREAKABLES_PER_SCENE) as u8;
+    let region = admitted_bank().and_then(|bank| bank.region(0));
+    (0..u16::MAX)
+        .map_while(move |local| region?.object(local as usize).map(|object| (local, object)))
+        .take_while(|(_, object)| object.kind() == KIND_FRAGMENT)
+        .filter_map(|(local, object)| debris::decode(&object, local))
+        .filter(move |spec| spec.owner == state)
+}
+/// The frame the piece `local` has in `region`'s animation bank; None where the
+/// region cannot draw it (its owner is not one the region breaks). A region's map
+/// is its first object that is not a piece: the pieces head only the first region.
+#[inline(never)]
+pub fn fragment_frame(region: &Region, local: u16) -> Option<u16> {
+    let bank = bank_region(region)?;
+    for at in 0..bank.object_count() {
+        let object = bank.object(at)?;
+        match object.kind() {
+            KIND_FRAGMENT => continue,
+            KIND_FRAGMENT_FRAMES => {
+                let mut pairs = object.indices(0);
+                while let (Some(piece), Some(frame)) = (pairs.next(), pairs.next()) {
+                    if piece == local {
+                        return Some(frame);
+                    }
+                }
+                return None;
+            }
+            _ => return None,
+        }
+    }
+    None
 }
 #[derive(Clone, Copy)]
 pub struct Gate {
@@ -964,14 +1006,22 @@ impl State {
     }
     /// One call per 60 Hz simulation tick, including GPU-wait VBlanks.
     pub fn draw_impacts(&mut self, region: &Region, room: &Room, camera: (i32, i32)) -> u32 {
-        let debris = self
-            .debris
-            .draw(region.scene, region.door_debris, room, camera);
+        let debris = self.debris.draw(
+            region.scene,
+            fragment_spec,
+            |piece| fragment_frame(region, piece),
+            room,
+            camera,
+        );
         let (impacts, skipped) =
             self.impacts
                 .draw_limited(region.scene, region.grass_impact, room, camera, 32 - debris);
         self.effect_draw_dropped = self.effect_draw_dropped.saturating_add(skipped);
         debris + impacts + particles::pool().draw(region.scene, region.particle_bank, room, camera)
+    }
+    /// Rigid debris pieces in flight or at rest.
+    pub fn debris_active(&self) -> usize {
+        self.debris.active()
     }
     #[inline(never)]
     pub fn tick_debris(&mut self, region: &Region, room: &Room) {
@@ -982,7 +1032,7 @@ impl State {
         particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
         self.debris.tick(
             region.scene,
-            region.door_debris,
+            fragment_spec,
             region.collision_bounds,
             count,
             edge,
@@ -1164,13 +1214,8 @@ impl State {
                     particles::HIT_DUST_OWNER,
                     [mid(0, 2), mid(1, 3)],
                 );
-                self.debris.spawn(
-                    region.scene,
-                    region.door_debris,
-                    id,
-                    nail.kind as u8,
-                    player.facing,
-                );
+                self.debris
+                    .spawn(region.scene, owner_fragments(id), nail.kind as u8, player.facing);
                 result.broken += 1;
                 result.door_sounds += u16::from(object.door_sound());
             }
