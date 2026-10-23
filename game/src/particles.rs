@@ -189,6 +189,20 @@ impl Pool {
             offset,
         );
     }
+    /// `spawn_break_at` for a set piece that is raised again and again (a nail hit's dust, a door's
+    /// chips): the particles already spawned seed the stream, so no two raises are the same.
+    pub fn spawn_break_salted(&mut self, scene: usize, owner: usize, offset: [i32; 2]) {
+        let salt = self.spawned.wrapping_mul(0x9e37_79b9);
+        break_effects::spawn_specs_salted(
+            self,
+            scene,
+            owner,
+            break_effects::scene_emitters(scene),
+            break_effects::scene_styles(scene),
+            offset,
+            salt,
+        );
+    }
     pub fn tick_break(
         &mut self,
         scene: usize,
