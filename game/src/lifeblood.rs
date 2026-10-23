@@ -405,7 +405,7 @@ mod presentation {
     use psx_gpu::{
         material::{BlendMode, TextureMaterial},
         ot::OrderingTable,
-        prim::QuadTextured,
+        prim::{QuadTextured, Sprite},
     };
     use psx_vram::{upload_bytes, VramRect};
     #[no_mangle]
@@ -534,6 +534,9 @@ mod presentation {
     }
     static mut BLUE: [QuadTextured; 22] =
         [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; 22];
+    /// A settled mask is the 1:1 blit it always was; only a mask that is moving uses a quad.
+    static mut SETTLED: [Sprite; 22] =
+        [const { Sprite::new(0, 0, 0, 0, (0, 0), 0, 128, 128, 128) }; 22];
     static mut BREAKS: [QuadTextured; 22] =
         [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; 22];
     /// The vblank each blue mask appeared at and each broken slot's mask broke at (0: none).
@@ -600,9 +603,21 @@ mod presentation {
                 let slot = i as usize;
                 let (x, y) = crate::hud::mask_position(max_health + i);
                 if i < blue_health {
-                    let scale = appear_scale(now.wrapping_sub(BORN[slot]));
-                    BLUE[slot] = mask_quad(art, x, y, scale, 128);
-                    crate::display::ot_add(ot, 0, &mut BLUE[slot], QuadTextured::WORDS);
+                    let age = now.wrapping_sub(BORN[slot]);
+                    if age >= APPEAR_VBLANKS {
+                        SETTLED[slot] = Sprite::with_material(
+                            x,
+                            y,
+                            u16::from(art.w),
+                            u16::from(art.h),
+                            (art.u, art.v),
+                            material(art),
+                        );
+                        crate::display::ot_add(ot, 0, &mut SETTLED[slot], Sprite::WORDS);
+                    } else {
+                        BLUE[slot] = mask_quad(art, x, y, appear_scale(age), 128);
+                        crate::display::ot_add(ot, 0, &mut BLUE[slot], QuadTextured::WORDS);
+                    }
                 } else if BROKE[slot] != 0 {
                     let age = now.wrapping_sub(BROKE[slot]);
                     if age >= BREAK_VBLANKS {
