@@ -1,0 +1,119 @@
+# New Game: the first fall ends in King's Pass's opening crash (Tutorial_01 `Initial Fall Impact`).
+# He lands on the ledge, lies there while right is held (pinned for 265 ticks: the 0.75 s and 3.25 s waits and the
+# 5 frame get-up clip), and walks only after control returns. Route-split: no pad tape.
+#
+#   psoxide-gate run tools/journeys/new-game-opening-crash.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc. Plain disc or route-input disc (no shoulder hold).
+name = "new-game-opening-crash"
+title = "new game: the first landing is the opening crash and holds him"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+# The title's page sequence opens input a few ticks after 200 (menu.rs input_at); 240 leaves a margin.
+wait = 240
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "the Knight drops in (region 79 = the top view of the shaft)"
+timeout = 7200
+[step.wait_until]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "eq"
+value = 79
+
+[[step]]
+label = "the Knight is at the top of the shaft"
+timeout = 600
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000
+
+[[step]]
+label = "he lands and the crash begins"
+timeout = 900
+[step.wait_until]
+kind = "ram"
+sym = "HK_OPENING_CRASHES"
+op = "eq"
+value = 1
+
+[[step]]
+label = "right held through most of the crash: he does not move"
+press = ["right"]
+hold = 200
+checkpoint = "crash"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "eq"
+value = 2_260_992
+note = "the top gate's x (34.5), where he fell: no steering since the landing"
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+note = "on the ledge (y 11.37)"
+[[step.assert]]
+kind = "ram"
+sym = "HK_HARD_LANDINGS"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_HARD_LOCK_TICKS"
+op = "between"
+value = 190
+value_hi = 264
+note = "still locked"
+
+[[step]]
+label = "right held on after control returns: he walks"
+press = ["right"]
+hold = 120
+checkpoint = "free"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_HARD_LOCK_TICKS"
+op = "eq"
+value = 265
+note = "the crash held him for 265 ticks: 45 + 195 + the 25 tick get-up clip"
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "gt"
+value = 2_600_000
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0
+[[step.assert]]
+kind = "ram"
+sym = "HK_HEALTH"
+op = "ge"
+value = 5
