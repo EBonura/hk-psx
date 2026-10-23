@@ -18,6 +18,7 @@ scene_gate = true            also run the resident-scene verifier on the open-lo
 journey = 2                  segment 2 of the save journey: boots from the card segment 1 wrote
 pacing = 303                 late frames (over two vblanks) the route may still show
 art_late = 44                frames the route may still show late art for
+missed_vblanks = 12          pad polls the route may still miss (a CD Pause that blocks the game for several VBlanks)
 HK_REGION_ID = 150           final telemetry that must be exactly this
 HK_HEALTH >= 2               final telemetry that must be at least this
 ```
@@ -84,6 +85,16 @@ Not proven: the unlanded seamless-gates branch; open-loop routes that cross load
 A new game enters King's Pass the way the source does, from the `top1` gate at the top of the shaft, and falls to the ledge (about 250 polls). The recorded routes were made from the ledge spawn and are bit-exact through fights and jumps, and the drop's frame timing, title card and region binds cannot be made to match the ones they were recorded in (a tape delayed by the fall tracked the recorded Knight to within 0.6 units for 6,600 polls and then missed a jump). So a tape that starts a new game holds L1, R1, L2 and R2 together across the load, polls 12 up to the first gameplay poll plus six, and the disc it plays reads them at the press that chooses the save slot and starts on the ledge (R3 would be nicer, but a digital pad, which is what the frontend replays, has none). `cargo hk-build tape-hold NAME FIRST LAST l1+r1+l2+r2` adds the hold to a tape; journey-kings carries it in its route string (`12:l1:18,12:r1:18,12:l2:18,12:r2:18`).
 
 The hold is test input and exists only in a disc built with the `route-input` guest feature: `HK_GUEST_FEATURES=route-input` when building the disc that `validate` and `routes` play. A shipping disc (no feature) never reads the four buttons, so a player who holds them still gets the drop. The drop itself is `tools/journeys/new-game-lands.toml` (plain disc) and `new-game-lands-intro.toml` (disc built with `--intro`), which press no shoulder buttons; `new-game-hold-ignored.toml` (shipping disc: the hold changes nothing) and `new-game-hold-ledge.toml` (route-input disc: the hold starts him on the ledge) prove the gate.
+
+## The replay emulator is 0e87b3a (2026-10-23)
+
+`emulator.lock.json` pins PSoXide-emulator 0e87b3a. From 0b9d577 the emulator charges a textured triangle or quad for the texels that outgrow the texture cache (costs measured on a console by hwtest v2.4: 14.7k to 45k clocks where it used to read 9,959). Hollow Knight draws about 300 large 4-bit textured quads a frame, so its busy scenes cost about twice what they did and 40 of 63 routes passed their old pacing ceilings no more. That is the console's cost, now visible; the game is to be made cheaper in a later pass (the brief is `docs/TEXTURE_CACHE.md`), and the ceilings were re-measured on this emulator at the measured count plus 30 percent, rounded up (the rule of `docs/KNOWN-ISSUE-INPUT-GAP.md`). Only the routes that exceeded their ceiling moved; `grub-jar` stays at its old ceiling and stays red.
+
+Three things come with it:
+
+* `missed_vblanks = N` in a pin file is the number of pad polls the route may miss, judged by `tools/replay_cue.py` (any other fault stays fatal). Four boss routes miss between 5 and 11: music stopping calls the SDK's blocking CD Pause, which waits several VBlanks when the drive is mid-read, and the polls that fall due are lost. The old timing happened to put that Pause where the drive was idle. `greenpath-walk` misses one poll while a scene loads.
+* A module eviction or install flushes the instruction cache, and a `cache_control` write with a DMA channel running makes the next instruction fetch return the DMA's word on silicon. The slower GPU walks were still running at that point and the gate's `PSOXIDE_CHECK_CC_DMA` stopped `journey-crossroads`. `modules.rs` now waits for the GPU channel to idle (taking only pad polls) before the flush.
+* `hornet-road` and `hornet-road-defeated` have cut lists. Pads (`pad N`) are the neutral ticks the baseline recording ran, so they are measured with `cargo hk-build measure` on the environment the tapes were recorded in (a gate built before 0b9d577); measured on the new emulator's own timing they are different numbers and the stretch does not replay.
 
 ## Limits
 

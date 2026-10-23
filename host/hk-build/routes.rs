@@ -12,6 +12,7 @@
 //! journey = 2                  segment 2 of the save journey: boots from the card segment 1 wrote
 //! pacing = 303                 late frames (over two vblanks) the route may still show
 //! art_late = 44                frames the route may still show late art for
+//! missed_vblanks = 12          pad polls the route may still miss (read by tools/replay_cue.py)
 //! HK_REGION_ID = 150           final telemetry that must be exactly this
 //! HK_HEALTH >= 2               final telemetry that must be at least this
 //! ```
@@ -44,6 +45,8 @@ pub struct Route {
     pub journey: Option<u32>,
     pub pacing: u64,
     pub art_late: u64,
+    /// Pad polls the route may miss; the replay itself judges it (tools/replay_cue.py).
+    pub missed_vblanks: u64,
     pub pins: Vec<Pin>,
     /// Scene loads found in the baseline replay; empty when the route has no cut list.
     pub cuts: Option<Cuts>,
@@ -75,6 +78,7 @@ pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
                 "journey" => route.journey = Some(number(value)? as u32),
                 "pacing" => route.pacing = number(value)?,
                 "art_late" => route.art_late = number(value)?,
+                "missed_vblanks" => route.missed_vblanks = number(value)?,
                 k if k.starts_with("HK_") || k.starts_with("__") => route.pins.push(Pin {
                     symbol: k.to_string(),
                     at_least: false,
@@ -689,12 +693,12 @@ mod tests {
     fn pin_files_parse() {
         let r = parse_pins(
             "x",
-            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nart_late = 3\nHK_A = 7\nHK_B >= 2\n",
+            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nart_late = 3\nmissed_vblanks = 7\nHK_A = 7\nHK_B >= 2\n",
         )
         .unwrap();
         assert_eq!(r.card.as_deref(), Some("a.mcd"));
         assert!(r.scene_gate);
-        assert_eq!((r.journey, r.pacing, r.art_late), (Some(2), 5, 3));
+        assert_eq!((r.journey, r.pacing, r.art_late, r.missed_vblanks), (Some(2), 5, 3, 7));
         assert_eq!(r.pins.len(), 2);
         assert!(!r.pins[0].at_least && r.pins[0].value == 7);
         assert!(r.pins[1].at_least && r.pins[1].value == 2);

@@ -91,6 +91,14 @@ WATCHES+='HK_GZ_WOKEN HK_GZ_CHARGES HK_GZ_SLAMS HK_GZ_HITS HK_GZ_DEATHS HK_GZ_KI
 WATCHES+='HK_MW_X HK_MW_Y HK_MW_SPRAYS HK_MW_LEAPS HK_MW_SWIPES HK_MW_PARRIES HK_MW_HEAD_SHOTS HK_MW_HITS HK_MW_SHOT_HITS HK_MUSIC_BOSS_TRACK'.split()
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
+def missed_vblanks_allowed(tape):
+    """`missed_vblanks = N` in the route's pin file: pad polls the route may still miss (a ceiling like `pacing`)."""
+    pins=tape.with_suffix('.pins')
+    if not pins.exists():return 0
+    for line in pins.read_text().splitlines():
+        key,sep,value=line.partition('=')
+        if sep and key.strip()=='missed_vblanks':return int(value.strip())
+    return 0
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--tape',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
@@ -136,8 +144,10 @@ def main():
     report['maximum_observed']={n:max([int(row['ram_'+addr[2:]])for row in rows]+[report['final_ram'][n]])for n,addr in watches.items()}
     report['stop']=re.findall(r'route-ticks=(\d+)\s+port1-polls=(\d+)',(out/'replay.log').read_text())
     report['completed']=bool(report['stop'])and int(report['stop'][-1][1])==start+count
-    faults=[n for n in ('HK_ROOM_LOAD_ERROR','HK_CD_STREAM_ERROR','__psx_rt_fault_count','HK_SCENERY_REPAIR_FAILURES','HK_INPUT_FAULT','HK_INPUT_MISSED_VBLANKS','HK_INPUT_DROPPED_SAMPLES','HK_INPUT_SKIPPED_TICKS','HK_AUDIO_STREAM_UNDERRUNS','HK_MUSIC_ERROR','HK_FLIP_TIMEOUTS')if report['maximum_observed'].get(n,0)!=0]
+    allowed=missed_vblanks_allowed(tape)
+    faults=[n for n in ('HK_ROOM_LOAD_ERROR','HK_CD_STREAM_ERROR','__psx_rt_fault_count','HK_SCENERY_REPAIR_FAILURES','HK_INPUT_FAULT','HK_INPUT_MISSED_VBLANKS','HK_INPUT_DROPPED_SAMPLES','HK_INPUT_SKIPPED_TICKS','HK_AUDIO_STREAM_UNDERRUNS','HK_MUSIC_ERROR','HK_FLIP_TIMEOUTS')if report['maximum_observed'].get(n,0)>(allowed if n=='HK_INPUT_MISSED_VBLANKS' else 0)]
     report['faults']=faults
+    report['missed_vblanks_allowed']=allowed
     (out/'command.json').write_text(json.dumps(report,indent=2)+'\n')
     print(json.dumps({k:report[k]for k in ('completed','exit_code','faults','final_ram')},indent=2))
     if result.returncode or not report['completed']or not report['inputs_unchanged']or faults:raise SystemExit(1)
