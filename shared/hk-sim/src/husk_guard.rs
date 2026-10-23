@@ -13,11 +13,12 @@
 //! PlayMaker resolves an event sent on state entry.
 //!
 //! `facing` is the FSM's `Facing Right` (+1) or not (-1). The FSM gives that
-//! the transform's +1 scale, while the art, the `Swipe` polygon and the run
-//! dust all put the front at -x and `Slam Origin`/`Burst Rocks Club` at +x.
-//! The port takes the one reading where the body moves the way it looks: the
-//! front is `facing`, the art is drawn mirrored when facing right, and the
-//! Swipe box (cooked in the art's frame) is mirrored with it.
+//! the transform's +1 scale, and the original at +1 draws the sprite facing
+//! right (hkref frames with the hero on each side), so the cooked art, which is
+//! the sprite as authored at +1, faces +x and the guest draws it with minus the
+//! facing. The `Swipe` polygon is cooked with its front at -x and `Slam
+//! Origin`/`Burst Rocks Club` at +x; the Swipe box is mirrored with `facing`
+//! so that the front is where the guard faces.
 //!
 //! `Stomp Cooldown` waits 0.4 s with `WAIT` but only has a `FINISHED`
 //! transition, so read literally the FSM would leave the guard standing after

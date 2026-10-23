@@ -6281,7 +6281,7 @@ impl EnemyWorld {
                                 // The Husk Guard's corpse is never flung: it
                                 // stands where the guard stood, facing as it did.
                                 if actor.husk_guard().is_some() {
-                                    corpse.facing = actor.walk.direction;
+                                    corpse.facing = -actor.walk.direction;
                                 }
                                 actor.corpse = Some(corpse);
                             }
@@ -6723,11 +6723,15 @@ impl EnemyWorld {
                     shield.controller.facing(),
                 )
             } else if let Some(guard) = actor.husk_guard() {
+                // The FSM's `Facing Right` is localScale +1, and the cooked art is
+                // the sprite as authored at +1, which faces right in the original
+                // (hkref frames, hero on each side). This draw path expresses +1
+                // as -1, so the sprite takes minus the facing.
                 (
                     guard.clip(spec),
                     guard.animation_tick,
                     (actor.x, actor.y),
-                    guard.controller.facing(),
+                    -guard.controller.facing(),
                 )
             } else if let Some(blocker) = actor.blocker() {
                 // The Blocker never turns: the sprite keeps the mirror the cook
