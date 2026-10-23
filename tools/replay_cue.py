@@ -40,6 +40,7 @@ WATCHES+='HK_SAVE_UI HK_CARD_FAULT HK_CARD_FAULT_EXCHANGE HK_CARD_RETRIES HK_CAR
 WATCHES+=['HK_ABILITY_DRAWN']
 # The Knight's look clips and the gate arrivals' fall from the end of the walk-in to the ground.
 WATCHES+='HK_LOOK_UP_TICKS HK_LOOK_DOWN_TICKS HK_LOOK_ENDS HK_GATE_ENTRIES HK_GATE_ENTRY_DROP_MAX'.split()
+WATCHES+='HK_HARD_LANDINGS HK_HARD_LOCK_TICKS HK_OPENING_CRASHES'.split()
 # A queued display flip the GPU never released (no GP0(1Fh) reached it) and
 # the present loop wrote by hand after its timeout: a frame missing its close.
 WATCHES+=['HK_FLIP_TIMEOUTS']

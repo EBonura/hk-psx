@@ -1555,6 +1555,14 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
     }
     let hard_ticks = (big_fall * 60.0).floor() as i64 + 1;
     text += &format!("pub const HARD_FALL_MIN_TICKS:u16={hard_ticks};\n");
+    // HeroController.Update leaves `hard_landing` at the first update where hardLandingTimer exceeds
+    // HARD_LANDING_TIME, so the updates that are still locked number floor(time * 60).
+    let hard_landing = jfloat(&constants, "HARD_LANDING_TIME")?;
+    if (hard_landing - 0.8).abs() > 1e-6 {
+        return err("hard landing recovery time changed");
+    }
+    let locked_ticks = (hard_landing * 60.0 + 1e-6).floor() as i64;
+    text += &format!("pub const HARD_LANDING_TICKS:u16={locked_ticks};\n");
     write("data/sfx.rs", text.as_bytes())?;
 
     // The original death FSM starts both layers together. Preserve full clips
@@ -1828,18 +1836,20 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             jobj(vec![
                 ("hard_fall_min_ticks", Json::Int(hard_ticks)),
                 ("hard_fall_seconds", Json::Float(big_fall)),
+                ("hard_landing_ticks", Json::Int(locked_ticks)),
+                ("hard_landing_seconds", Json::Float(hard_landing)),
                 ("simulation_hz", Json::Int(60)),
                 ("short_sfx_rate", js("SDK allocator per clip (see events)")),
                 ("long_movement_rate", Json::Int(11025)),
                 (
                     "methods",
-                    Json::List(["HeroController.FallCheck", "HeroController.ShouldHardLand", "HeroController.DoHardLanding", "HeroAudioController.PlaySound"].iter().map(|s| js(s)).collect()),
+                    Json::List(["HeroController.FallCheck", "HeroController.ShouldHardLand", "HeroController.DoHardLanding", "HeroController.Update", "HeroController.FixedUpdate", "HardLandEffect.OnEnable", "HeroAudioController.PlaySound"].iter().map(|s| js(s)).collect()),
                 ),
                 (
                     "limitations",
                     Json::List(
                         [
-                            "Hard landing audio only; original0.8s recovery/animation not introduced here",
+                            "Hard landing lock, HardLand clip, camera shake and sound are ported; the dust and rocks of HardLandEffect are a placeholder; the fall rumble (RumblingFall, a 0.015 unit looping shake and audio 12) is not",
                             "Running Dust sequence only; walk-zone and other environment sequences remain unsupported",
                             "AudioSource isPlaying resampled to bounded60Hz clip-duration counters",
                             "Pause stops/restarts the footstep sequence rather than resuming its exact sample cursor",

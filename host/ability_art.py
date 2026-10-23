@@ -56,6 +56,13 @@ EFFECT_CLIPS = (('Focus Effect', 'Lines Anim', 6629), ('Focus Effect End', 'Line
 # `LookUpEnd` / `LookDownEnd` before Idle). Appended last so no earlier clip index moves. The two
 # look clips loop from frame 1 (tk2d loopStart), the two ends play once.
 LOOK_CLIPS = ('LookUp', 'LookDown', 'LookUpEnd', 'LookDownEnd')
+# The crouch of a hard landing (HeroAnimationController.UpdateAnimation: `HardLand` while the actor
+# state is hard_landing). Ten frames of five sprites at 12.5 fps, played once: 0.8 s, which is
+# HeroController.HARD_LANDING_TIME to the frame. Appended after the look clips so no index moves.
+HARD_LAND_CLIP = 'HardLand'
+# King's Pass's opening crash (the `Initial Fall Impact` FSM `Control`, Tutorial_01): `Super Hard Land`
+# (four frames at 12 fps, held on its last) when he lands, `Collect Normal 3` (five frames) to get up.
+CRASH_CLIPS = ('Super Hard Land', 'Collect Normal 3')
 
 def knight_animation(source):
     """The Knight's own tk2d animation table, found by the clips it carries."""
@@ -191,7 +198,7 @@ def cook():
     source = Source()
     anim_obj, table = knight_animation(source)
     by_name = {c['name']: c for c in table['clips']}
-    missing = [n for n in ORDER + LOOK_CLIPS if n not in by_name]
+    missing = [n for n in ORDER + LOOK_CLIPS + (HARD_LAND_CLIP,) + CRASH_CLIPS if n not in by_name]
     assert not missing, f'the Knight animation lost {missing}'
     resources = source.file('resources.assets')
     scale = FOCAL / -CAM_Z
@@ -265,6 +272,24 @@ def cook():
             assert clip['wrapMode'] == 1 and clip['loopStart'] == 1, f'{name} no longer loops from frame 1'
         else:
             assert clip['wrapMode'] == 2, f'{name} no longer plays once'
+
+    hard_land = by_name[HARD_LAND_CLIP]
+    start = len(images)
+    for frame in hard_land['frames']:
+        sprite(frame['spriteCollection'], frame['spriteId'])
+    assert hard_land['wrapMode'] == 2, 'HardLand no longer plays once'
+    assert len(hard_land['frames']) * 60 / hard_land['fps'] == 48, 'HardLand no longer lasts HARD_LANDING_TIME'
+    clips.append(dict(name=HARD_LAND_CLIP, start=start, count=len(hard_land['frames']),
+                      fps=int(hard_land['fps']), wrap=hard_land['wrapMode'], loop=int(hard_land.get('loopStart', 0))))
+
+    for name in CRASH_CLIPS:
+        clip = by_name[name]
+        start = len(images)
+        for frame in clip['frames']:
+            sprite(frame['spriteCollection'], frame['spriteId'])
+        assert clip['wrapMode'] == 2 and clip['fps'] == 12, f'{name} no longer plays once at 12 fps'
+        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
 
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
