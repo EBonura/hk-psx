@@ -345,6 +345,8 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
 pub const DISC_NAME: &str = "Hollow Knight (hk-psx)";
 /// The name the pair had before it was renamed; an install removes any pair left under it.
 const LEGACY_DISC_NAME: &str = "hk-psx";
+/// The GitHub repository recorded in the installed provenance.
+const REPOSITORY: &str = "EBonura/hk-psx";
 
 /// The library's data track.
 pub fn disc_bin(library: &Path) -> PathBuf {
@@ -358,9 +360,10 @@ pub fn disc_cue(library: &Path) -> PathBuf {
 
 /// Build the disc image from the staged guest: the pack chunks, the order they
 /// are read in and the songs, into `library/Hollow Knight (hk-psx).bin` and
-/// `.cue`, replacing the previous pair only once the new one is complete and
-/// removing a pair left under the old name `hk-psx`. `work` holds the chunk
-/// staging and the order file (the guest build's output directory).
+/// `.cue` and `Hollow Knight (hk-psx).provenance.json`, replacing the previous
+/// files only once the new ones are complete and removing a pair left under the
+/// old name `hk-psx` (the shared `psx-library` install). `work` holds the chunk
+/// staging, the order file and the disc staging (the guest build's output directory).
 ///
 /// `intro`: the opening movies, for a game built with the `intro` feature.
 pub fn package(
@@ -384,8 +387,7 @@ pub fn package(
             .map(|i| format!("{i}\n"))
             .collect::<String>(),
     )?;
-    std::fs::create_dir_all(library)?;
-    let temp = library.join(format!(".hk-psx-{}", std::process::id()));
+    let temp = work.join("disc-stage");
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp)?;
     let staged = temp.join(format!("{DISC_NAME}.bin"));
@@ -419,16 +421,51 @@ pub fn package(
         let _ = std::fs::remove_dir_all(&temp);
         return Err(format!("mkisopsx failed with {status}").into());
     }
-    std::fs::rename(&staged, disc_bin(library))?;
-    std::fs::rename(staged.with_extension("cue"), disc_cue(library))?;
-    for extension in ["bin", "cue"] {
-        let legacy = library.join(format!("{LEGACY_DISC_NAME}.{extension}"));
-        if legacy.exists() {
-            std::fs::remove_file(&legacy)?;
-        }
-    }
+    install_staged(
+        &staged.with_extension("cue"),
+        library,
+        psx_library::Source::from_git(root, REPOSITORY)?,
+        &pins(root)?,
+    )?;
     std::fs::remove_dir_all(&temp)?;
     std::fs::remove_dir_all(&chunks)?;
+    Ok(())
+}
+
+/// The component revisions the disc was built with, for the provenance record: the guest SDK,
+/// the emulator the routes replay on and the XA encoder's SDK, from the lock files.
+fn pins(root: &Path) -> Result<Value> {
+    let mut pins = serde_json::Map::new();
+    for (key, file) in [
+        ("sdk", "sdk.lock.json"),
+        ("emulator", "emulator.lock.json"),
+        ("xa_encoder", "xa-encoder.lock.json"),
+    ] {
+        pins.insert(
+            key.into(),
+            field(&json(&root.join(file))?, "revision")?.clone(),
+        );
+    }
+    Ok(serde_json::json!({ "pins": pins }))
+}
+
+/// Publish the staged pair (`cue` and the bin beside it) into `library` as `DISC_NAME`, with
+/// the provenance record, removing a pair left under the old name.
+fn install_staged(
+    cue: &Path,
+    library: &Path,
+    source: psx_library::Source,
+    provenance_base: &Value,
+) -> Result<()> {
+    let installed = psx_library::install(
+        &psx_library::Request::new(cue, library, DISC_NAME, source)
+            .with_legacy_stem(LEGACY_DISC_NAME)
+            .with_provenance_base(provenance_base),
+    )?;
+    for path in &installed.removed {
+        println!("REMOVED stale {}", path.display());
+    }
+    println!("INSTALLED -> {}", installed.cue.display());
     Ok(())
 }
 
@@ -451,6 +488,56 @@ mod tests {
         let paths = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../paths.py"))
             .unwrap();
         assert!(paths.contains(&format!("DISC_NAME = '{DISC_NAME}'")));
+    }
+
+    #[test]
+    fn a_staged_disc_is_installed_with_a_record_and_the_old_pair_is_removed() {
+        let scratch = std::env::temp_dir().join(format!("hk-disc-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let (stage, library) = (scratch.join("stage"), scratch.join("library"));
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::create_dir_all(&library).unwrap();
+        std::fs::write(stage.join("Hollow Knight (hk-psx).bin"), b"disc").unwrap();
+        std::fs::write(
+            stage.join("Hollow Knight (hk-psx).cue"),
+            "FILE \"Hollow Knight (hk-psx).bin\" BINARY\n  TRACK 01 MODE2/2352\n",
+        )
+        .unwrap();
+        std::fs::write(library.join("hk-psx.bin"), b"disc").unwrap();
+        std::fs::write(library.join("hk-psx.cue"), "FILE hk-psx.bin BINARY\n").unwrap();
+        let source =
+            psx_library::Source::from_git(Path::new(env!("CARGO_MANIFEST_DIR")), REPOSITORY)
+                .expect("the tests run in a git checkout");
+        install_staged(
+            &stage.join("Hollow Knight (hk-psx).cue"),
+            &library,
+            source,
+            &json!({"pins": {"sdk": "x"}}),
+        )
+        .unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(&library)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            [
+                "Hollow Knight (hk-psx).bin",
+                "Hollow Knight (hk-psx).cue",
+                "Hollow Knight (hk-psx).provenance.json",
+            ]
+        );
+        let record: Value = serde_json::from_slice(
+            &std::fs::read(library.join("Hollow Knight (hk-psx).provenance.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["pins"]["sdk"], "x");
+        assert_eq!(
+            record["artifacts"]["bin"]["sha256"],
+            sha256(&disc_bin(&library)).unwrap()
+        );
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     fn plan() -> Plan {

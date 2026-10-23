@@ -120,7 +120,8 @@ cookers; `props` so far), which the driver runs in-process.
 
 Outputs: dist/hk-psx.exe and `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin` plus
 `~/Downloads/ps1 games/Hollow Knight (hk-psx).cue` (named like `Half-Life (hl-psx)`;
-an install removes a pair left under the old name `hk-psx.bin/.cue`). The PS1 library is the ONLY disc destination;
+an install removes a pair left under the old name `hk-psx.bin/.cue`, and writes
+`Hollow Knight (hk-psx).provenance.json` beside the pair through the shared `psx-library` crate). The PS1 library is the ONLY disc destination;
 temporary and diagnostic discs also stay there, with no repository duplicates.
 Every build updates the single `~/Downloads/ps1 games/Hollow Knight (hk-psx).bin/.cue` pair.
 There are no candidate, baseline or telemetry disc copies. `--telemetry` selects

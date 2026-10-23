@@ -193,6 +193,7 @@ dependencies = [
  "hk-cook",
  "hk-fsm-cook",
  "psoxide-hazard",
+ "psx-library",
  "psx-residency",
  "serde_json",
  "sha2",
@@ -303,6 +304,15 @@ name = "psx-io"
 version = "0.1.0"
 dependencies = [
  "psx-hw",
+]
+
+[[package]]
+name = "psx-library"
+version = "0.1.0"
+source = "git+https://github.com/EBonura/PSoXide.git?rev=7528f3e36e5f4ba21cb126302977d24834179e5d#7528f3e36e5f4ba21cb126302977d24834179e5d"
+dependencies = [
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
