@@ -1,0 +1,23 @@
+//! Effects of objects the Breakable cook does not own, raised through the break-effect pool.
+//!
+//! The owners are the cooker's (host/hk-cook/src/break_effects/fx.rs): emitters cooked in place
+//! (the Great Door's dust) take no offset; the others are cooked at their anchor's origin and
+//! raised where the anchor is now. A scene whose effect art did not fit has no emitter for an
+//! owner, and raising it spawns nothing.
+
+pub const HIT_DUST: usize = 0xD001;
+pub const DOOR_DUST: usize = 0xD010;
+pub const DOOR_RUBBLE: usize = 0xD011;
+pub const DOOR_CHIPS: usize = 0xD012;
+pub const HIT_CHIPS: usize = 0xD013;
+pub const COCOON: usize = 0xD020;
+pub const COCOON_CAP_RIGHT: usize = 0xD021;
+pub const COCOON_CAP_LEFT: usize = 0xD022;
+pub const JAR_GLASS: usize = 0xD030;
+
+/// Raise `owner`'s emitters, moved by `at` (world, Q16).
+#[cfg(not(test))]
+#[inline(never)]
+pub fn raise(scene: usize, owner: usize, at: [i32; 2]) {
+    crate::world::particles::pool().spawn_break_at(scene, owner, at);
+}

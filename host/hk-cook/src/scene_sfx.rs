@@ -690,6 +690,61 @@ pub const EVENTS: &[Event] = &[
         57,
         None,
     ),
+    // A grub jar's `Bottle Control` Shatter plays one of `crystal_break_1` and `_2` (the port keeps
+    // the first), and the freed grub's `Grub Control` Leave one of `grub_free_1` and `_2`. The
+    // eight jars' scenes, late rows like the stalactites'. 5512 Hz like the bank's other short
+    // percussive clips, not measured per clip. The Great Door's stage hits (4, 8 and 13) play
+    // `breakable_wall_death` (2.65 s), at the same rate.
+    ev(
+        "crystal_break_1",
+        "resources.assets",
+        1168,
+        "crystal_break_1",
+        5512,
+        &[
+            "scene",
+            "Crossroads_03",
+            "Crossroads_05",
+            "Crossroads_31",
+            "Crossroads_35",
+            "Crossroads_48",
+            "Fungus1_06",
+            "Fungus1_07",
+            "Fungus1_21",
+        ],
+        62,
+        None,
+    ),
+    ev(
+        "grub_free_1",
+        "sharedassets39.assets",
+        16,
+        "grub_free_1",
+        5512,
+        &[
+            "scene",
+            "Crossroads_03",
+            "Crossroads_05",
+            "Crossroads_31",
+            "Crossroads_35",
+            "Crossroads_48",
+            "Fungus1_06",
+            "Fungus1_07",
+            "Fungus1_21",
+        ],
+        63,
+        None,
+    ),
+    ev(
+        "breakable_wall_death",
+        "sharedassets6.assets",
+        102,
+        "breakable_wall_death",
+        5512,
+        &["scene", "Tutorial_01"],
+        64,
+        None,
+    ),
     // Myla (the `Miner` NPC of Crossroads_45): her AudioSource loops `Miner_idle_hum` from the
     // start of the scene (PlayOnAwake, volume 0.854, rolloff 39 to 56.3 from the camera), and
     // `Miner FX` plays one of the two pickaxe clips whenever her sprite reaches frame 20 (the
