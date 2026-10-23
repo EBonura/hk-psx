@@ -7,4 +7,4 @@ load 21 24 1 pad 3
 load 9280 9374 2 pad 1
 # The King's Pass drop to the ledge ends in a hard landing (docs/HARD_LANDING.md): the stretch ends just after the
 # landing and the next one is released when the Knight can act again. HK_HARD_LAND_LEFT is the lock ticks still to run.
-wait 10045 HK_HARD_LAND_LEFT eq 0
+wait 10035 HK_HARD_LAND_LEFT eq 0
