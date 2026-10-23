@@ -181,6 +181,15 @@ pub fn tick() {
         }
     }
 }
+/// Stop the title's song for a data read and say whether there was one to stop (`begin` starts it
+/// again, from the top).
+pub fn suspend() -> bool {
+    let playing = unsafe { ENABLED };
+    if playing {
+        stop();
+    }
+    playing
+}
 /// Release the drive before any room/data command; Pause completion keeps its
 /// motor spinning. Never confuse an accepted Stop with completed hardware stop.
 pub fn stop() -> bool {

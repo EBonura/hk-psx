@@ -511,7 +511,8 @@ fn menu_cached(root: &Path, force: bool) -> Result<()> {
         "font-metrics.json".into(),
         Value::String(sha256_file(&root.join("data/font-metrics.json"))?),
     );
-    for (style, _, _) in hk_cook::title_style::SHIPPED {
+    for def in hk_cook::title_style::STYLES {
+        let style = def.object;
         code.insert(
             format!("title-style:{style}"),
             Value::String(sha256_file(&root.join(".hkpsx/title-styles").join(format!("{style}.png")))?),

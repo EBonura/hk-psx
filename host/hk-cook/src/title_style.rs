@@ -28,9 +28,9 @@ pub const HEIGHT: usize = 240;
 const CAMERA_PATH: &str = "_GameCameras/CameraParent/tk2dCamera";
 
 /// A 4x4 matrix, row-major, acting on column vectors.
-type Mat = [[f64; 4]; 4];
+pub(crate) type Mat = [[f64; 4]; 4];
 
-fn identity() -> Mat {
+pub(crate) fn identity() -> Mat {
     let mut m = [[0.0; 4]; 4];
     for (i, row) in m.iter_mut().enumerate() {
         row[i] = 1.0;
@@ -38,7 +38,7 @@ fn identity() -> Mat {
     m
 }
 
-fn mul(a: &Mat, b: &Mat) -> Mat {
+pub(crate) fn mul(a: &Mat, b: &Mat) -> Mat {
     let mut m = [[0.0; 4]; 4];
     for i in 0..4 {
         for j in 0..4 {
@@ -48,7 +48,7 @@ fn mul(a: &Mat, b: &Mat) -> Mat {
     m
 }
 
-fn trs(position: [f64; 3], q: [f64; 4], scale: [f64; 3]) -> Mat {
+pub(crate) fn trs(position: [f64; 3], q: [f64; 4], scale: [f64; 3]) -> Mat {
     let [x, y, z, w] = q;
     let n = (x * x + y * y + z * z + w * w).sqrt().max(1e-12);
     let (x, y, z, w) = (x / n, y / n, z / n, w / n);
@@ -67,7 +67,7 @@ fn trs(position: [f64; 3], q: [f64; 4], scale: [f64; 3]) -> Mat {
     m
 }
 
-fn apply(m: &Mat, p: [f64; 3]) -> [f64; 3] {
+pub(crate) fn apply(m: &Mat, p: [f64; 3]) -> [f64; 3] {
     let mut o = [0.0; 3];
     for i in 0..3 {
         o[i] = m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2] + m[i][3];
@@ -75,17 +75,17 @@ fn apply(m: &Mat, p: [f64; 3]) -> [f64; 3] {
     o
 }
 
-fn vec3(v: Option<&Value>) -> [f64; 3] {
+pub(crate) fn vec3(v: Option<&Value>) -> [f64; 3] {
     let f = |k: &str| v.and_then(|v| v.get(k)).and_then(Value::float).unwrap_or(0.0);
     [f("x"), f("y"), f("z")]
 }
 
-fn quat(v: Option<&Value>) -> [f64; 4] {
+pub(crate) fn quat(v: Option<&Value>) -> [f64; 4] {
     let f = |k: &str, d: f64| v.and_then(|v| v.get(k)).and_then(Value::float).unwrap_or(d);
     [f("x", 0.0), f("y", 0.0), f("z", 0.0), f("w", 1.0)]
 }
 
-fn pptr(v: &Value, key: &str) -> i64 {
+pub(crate) fn pptr(v: &Value, key: &str) -> i64 {
     v.get(key).and_then(|f| f.get("m_PathID")).and_then(Value::int).unwrap_or(0)
 }
 
@@ -100,9 +100,94 @@ pub struct Layer {
     pub depth: f64,
 }
 
-/// What the scene says about the camera's grade.
+/// What the scene says about the camera's grade (`MenuStyles.styles[..].cameraColorCorrection`: the
+/// curves of each channel, then the saturation, as Unity's `ColorCorrectionCurves` applies them).
 pub struct Grade {
     pub saturation: f64,
+    pub curves: [Vec<crate::title_particles::Key>; 3],
+}
+
+impl Grade {
+    /// No curves and no desaturation.
+    pub fn plain() -> Self {
+        Self { saturation: 1.0, curves: [Vec::new(), Vec::new(), Vec::new()] }
+    }
+    /// A colour through the curves, then the saturation about its luminance.
+    pub fn apply(&self, rgb: [f64; 3]) -> [f64; 3] {
+        let mut c = rgb;
+        for (k, curve) in self.curves.iter().enumerate() {
+            if !curve.is_empty() {
+                c[k] = crate::title_particles::eval_curve(curve, c[k].clamp(0.0, 1.0)).clamp(0.0, 1.0);
+            }
+        }
+        let luma = 0.22 * c[0] + 0.707 * c[1] + 0.071 * c[2];
+        [0, 1, 2].map(|k| (luma + (c[k] - luma) * self.saturation).clamp(0.0, 1.0))
+    }
+}
+
+/// The grade of each style of `MenuStyles.styles`, in list order.
+pub fn grades(scene: &Scene) -> Result<Vec<Grade>> {
+    use crate::title_particles::Key;
+    let styles = scene
+        .objects
+        .iter()
+        .find_map(|o| o.tree.get("styles").and_then(Value::list).filter(|l| l.first().is_some_and(|s| s.get("displayName").is_some())))
+        .ok_or("no MenuStyles component")?;
+    let f = |v: Option<&Value>| v.and_then(Value::float).unwrap_or(0.0);
+    let curve = |c: Option<&Value>| -> Vec<Key> {
+        c.and_then(|c| c.get("m_Curve"))
+            .and_then(Value::list)
+            .unwrap_or(&[])
+            .iter()
+            .map(|k| Key { time: f(k.get("time")), value: f(k.get("value")), in_slope: f(k.get("inSlope")), out_slope: f(k.get("outSlope")) })
+            .collect()
+    };
+    Ok(styles
+        .iter()
+        .map(|s| {
+            let g = s.get("cameraColorCorrection");
+            Grade {
+                saturation: f(g.and_then(|g| g.get("saturation"))),
+                curves: [curve(g.and_then(|g| g.get("redChannel"))), curve(g.and_then(|g| g.get("greenChannel"))), curve(g.and_then(|g| g.get("blueChannel")))],
+            }
+        })
+        .collect())
+}
+
+/// The camera's world position and focal length in pixels.
+pub fn camera(scene: &Scene) -> Result<([f64; 3], f64)> {
+    let (_, cam, focal) = camera_pose(scene)?;
+    Ok((cam, focal))
+}
+
+fn camera_pose(scene: &Scene) -> Result<(i64, [f64; 3], f64)> {
+    let paths = paths(scene);
+    let mut go_tr: HashMap<i64, i64> = HashMap::new();
+    for o in &scene.objects {
+        if o.typename == "Transform" || o.typename == "RectTransform" {
+            go_tr.insert(pptr(&o.tree, "m_GameObject"), o.id);
+        }
+    }
+    let camera_go = paths.iter().find(|(_, p)| p.as_str() == CAMERA_PATH).map(|(id, _)| *id).ok_or("no title camera")?;
+    let mut chain = Vec::new();
+    let mut t = go_tr.get(&camera_go).copied().unwrap_or(0);
+    while t != 0 {
+        let Some(tr) = scene.object(t) else { break };
+        chain.push(trs(vec3(tr.tree.get("m_LocalPosition")), quat(tr.tree.get("m_LocalRotation")), vec3(tr.tree.get("m_LocalScale"))));
+        t = pptr(&tr.tree, "m_Father");
+    }
+    let mut m = identity();
+    for local in chain.iter().rev() {
+        m = mul(&m, local);
+    }
+    let fov = scene
+        .objects
+        .iter()
+        .find(|o| o.typename == "Camera" && pptr(&o.tree, "m_GameObject") == camera_go)
+        .and_then(|o| o.tree.get("field of view").or_else(|| o.tree.get("m_FieldOfView")))
+        .and_then(Value::float)
+        .unwrap_or(24.0);
+    Ok((camera_go, apply(&m, [0.0, 0.0, 0.0]), crate::title_particles::focal(fov)))
 }
 
 /// The names of the styles under `Menu_Styles`.
@@ -125,7 +210,7 @@ pub fn style_names(scene: &Scene) -> Vec<String> {
     out
 }
 
-fn paths(scene: &Scene) -> HashMap<i64, String> {
+pub(crate) fn paths(scene: &Scene) -> HashMap<i64, String> {
     let mut go_tr: HashMap<i64, i64> = HashMap::new();
     for o in &scene.objects {
         if o.typename == "Transform" || o.typename == "RectTransform" {
@@ -160,12 +245,12 @@ fn paths(scene: &Scene) -> HashMap<i64, String> {
 }
 
 /// The layers of `style` (its active SpriteRenderers, with their activeness below the style's own
-/// object), their sprites' images and the camera's grade.
+/// object) and their sprites' images.
 pub fn layers(
     source: &Source,
     scene: &Scene,
     style: &str,
-) -> Result<(Vec<(Layer, Image)>, Grade)> {
+) -> Result<Vec<(Layer, Image)>> {
     let paths = paths(scene);
     let mut go_tr: HashMap<i64, i64> = HashMap::new();
     for o in &scene.objects {
@@ -304,12 +389,12 @@ pub fn layers(
     }
     // Far to near; sprites share sorting order 0 in these styles.
     out.sort_by(|a, b| b.0.depth.partial_cmp(&a.0.depth).unwrap());
-    Ok((out, Grade { saturation: 0.8 }))
+    Ok(out)
 }
 
 /// Solve for the homography taking the unit square (u right, v down) to `corners`, returning its inverse
 /// as 9 coefficients so a screen point maps back to (u, v).
-fn inverse_homography(c: &[[f64; 2]; 4]) -> Option<[f64; 9]> {
+pub(crate) fn inverse_homography(c: &[[f64; 2]; 4]) -> Option<[f64; 9]> {
     // Forward: x = (a u + b v + c0) / (g u + h v + 1), y = (d u + e v + f) / (g u + h v + 1).
     let uv = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]];
     let mut a = [[0.0f64; 9]; 8];
@@ -385,9 +470,12 @@ fn sample(image: &Image, u: f64, v: f64) -> [f64; 4] {
 }
 
 /// The composition of the layers on black, graded.
-pub fn compose(layers: &[(Layer, Image)], grade: &Grade) -> Vec<[f64; 3]> {
+pub fn compose(layers: &[(Layer, Image)], grade: &Grade, skip: &dyn Fn(&Layer) -> bool) -> Vec<[f64; 3]> {
     let mut canvas = vec![[0.0f64; 3]; WIDTH * HEIGHT];
     for (layer, image) in layers {
+        if skip(layer) {
+            continue;
+        }
         let c = &layer.corners;
         // Bring the sprite near its on-screen size first, so the sampling is not aliased.
         let on_x = ((c[1][0] - c[0][0]).hypot(c[1][1] - c[0][1])).max(1.0);
@@ -432,10 +520,7 @@ pub fn compose(layers: &[(Layer, Image)], grade: &Grade) -> Vec<[f64; 3]> {
         }
     }
     for p in canvas.iter_mut() {
-        let luma = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
-        for k in 0..3 {
-            p[k] = (luma + (p[k] - luma) * grade.saturation).clamp(0.0, 1.0);
-        }
+        *p = grade.apply(*p);
     }
     canvas
 }
@@ -452,12 +537,35 @@ pub fn to_image(canvas: &[[f64; 3]]) -> Image {
     image
 }
 
-/// The styles the PS1 title carries, in the order the options list them: the scene's object name, the
-/// logo sprite its `LogoTitle` shows (sharedassets1.assets: `title`, or `vheart_title` for
-/// `MenuStyles.styles[..].titleIndex` 0) and its path id.
-pub const SHIPPED: [(&str, &str, i64); 2] =
-    [("Modern_Style", "title", 121), ("VHeart_menu_Style", "vheart_title", 110)];
-/// The logo's width on screen for the first style's sprite (1274 px wide), in pixels; every logo keeps the
+/// A style of `MenuStyles.styles`, in the order the options list them (and `MenuStyles.StyleDefault`
+/// index 9 is Modern): the scene's object name, the name the options row prints, the logo it shows
+/// (`MenuStyleTitle`: 1 is `vheart_title` for Voidheart, 0 the common `title`) and the unlock key it
+/// waits for (0 none, else the bit it takes in the profile's unlock mask: 1 `infectedMenu`, 2
+/// `shadeMenu`, 4 `steelSoulMenu`, 8 `eternalOrdealMenu`).
+pub struct Def {
+    pub object: &'static str,
+    pub name: &'static str,
+    pub logo: usize,
+    pub key: u8,
+}
+
+pub const STYLES: [Def; 10] = [
+    Def { object: "Classic_Style", name: "Classic", logo: 0, key: 0 },
+    Def { object: "HD_Style", name: "HD", logo: 0, key: 0 },
+    Def { object: "Grimm_Style", name: "Grimm", logo: 0, key: 0 },
+    Def { object: "GG_Style", name: "GG", logo: 0, key: 0 },
+    Def { object: "Infected_Style", name: "Infected", logo: 0, key: 1 },
+    Def { object: "Shade_Style", name: "Shade", logo: 0, key: 2 },
+    Def { object: "Steel_Style", name: "Steel", logo: 0, key: 4 },
+    Def { object: "Brilliant_Style", name: "Eternal", logo: 0, key: 8 },
+    Def { object: "VHeart_menu_Style", name: "Voidheart", logo: 1, key: 0 },
+    Def { object: "Modern_Style", name: "Modern", logo: 0, key: 0 },
+];
+/// The index of the style the title starts on (`MenuStyles.StyleDefault`).
+pub const DEFAULT_STYLE: usize = 9;
+/// The logos (sharedassets1.assets sprites): `title` and `vheart_title`, by path id.
+const LOGOS: [(&str, i64); 2] = [("title", 121), ("vheart_title", 110)];
+/// The logo's width on screen for the first logo's sprite (1274 px wide), in pixels; every logo keeps the
 /// same pixels per sprite pixel.
 const LOGO_WIDTH: usize = 278;
 const LOGO_REFERENCE: usize = 1274;
@@ -482,17 +590,24 @@ fn logo(source: &Source, id: i64) -> std::result::Result<[(usize, usize, Vec<u8>
     Ok([half(0, left), half(left, w - left)])
 }
 
-/// `hk-cook title-style [style ...] [--source DIR]`: compose the named styles (the two the title carries
-/// when none is named; `all` for every style in the scene, as previews) into `.hkpsx/title-styles/`, and
-/// cook the carried styles' logos into `data/menu-logos.hk` and `data/menu_logos.rs`.
+/// `hk-cook title-style [style ...] [--source DIR]`: compose the styles (all ten when none is named; or the
+/// scene objects named, `all` for every style object in the scene) into `.hkpsx/title-styles/`:
+/// `<object>.png` is the baked picture the title uploads, `<object>_live.png` the same with the style's
+/// particles and animated sprites drawn at two moments, for review. With no names it also cooks the logos
+/// (`data/menu-logos.hk`, `data/menu_logos.rs`) and each style's extras (`data/menu-x-<index>.hk`).
 pub fn main(root: &Path, source: Option<&Path>, names: &[String]) -> std::result::Result<(), String> {
     let source = match source {
         Some(directory) => Source::new(directory).map_err(|e| e.to_string())?,
         None => Source::from_doctor(root).map_err(|e| e.to_string())?,
     };
     let scene = Scene::open(&source, "level1", false).map_err(|e| e.to_string())?;
-    let wanted: Vec<String> = if names.is_empty() {
-        SHIPPED.iter().map(|s| s.0.to_string()).collect()
+    let grades = grades(&scene)?;
+    if grades.len() != STYLES.len() {
+        return err(format!("the scene lists {} styles, the cooker {}", grades.len(), STYLES.len()));
+    }
+    let build_all = names.is_empty();
+    let wanted: Vec<String> = if build_all {
+        STYLES.iter().map(|s| s.object.to_string()).collect()
     } else if names == ["all"] {
         style_names(&scene)
     } else {
@@ -500,12 +615,16 @@ pub fn main(root: &Path, source: Option<&Path>, names: &[String]) -> std::result
     };
     let dir = root.join(".hkpsx/title-styles");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut report = String::new();
     for style in wanted {
-        let (layers, grade) = layers(&source, &scene, &style)?;
+        let index = STYLES.iter().position(|s| s.object == style);
+        let layers = layers(&source, &scene, &style)?;
+        let plain = Grade::plain();
+        let grade = index.map_or(&plain, |i| &grades[i]);
         if std::env::var_os("HK_TITLE_STYLE_VERBOSE").is_some() {
             for (layer, _) in &layers {
                 eprintln!(
-                    "{style}: {} [{}{}] colour ({:.2},{:.2},{:.2},{:.2}) depth {:.1}",
+                    "{style}: {} [{}{}] colour ({:.2},{:.2},{:.2},{:.2}) depth {:.1} corners {:?}",
                     layer.name,
                     layer.sprite,
                     if layer.screen_blend { ", screen" } else { "" },
@@ -513,29 +632,54 @@ pub fn main(root: &Path, source: Option<&Path>, names: &[String]) -> std::result
                     layer.colour[1],
                     layer.colour[2],
                     layer.colour[3],
-                    layer.depth
+                    layer.depth,
+                    layer.corners.map(|c| [c[0].round(), c[1].round()])
                 );
             }
         }
-        let canvas = compose(&layers, &grade);
+        // The animated layers are drawn live (the disc's pulse starts from what is baked).
+        let live = |l: &Layer| crate::title_extra::live_kind(&style, l).is_some_and(|k| k != crate::title_extra::Live::Pulse);
+        let canvas = compose(&layers, grade, &live);
         save_rgba(&dir.join(format!("{style}.png")), &to_image(&canvas))?;
+        let Some(index) = index else { continue };
+        let extra = crate::title_extra::build(&source, &scene, &style, index, &layers, &canvas)?;
+        if build_all {
+            std::fs::write(root.join(format!("data/menu-x-{index}.hk")), &extra.blob).map_err(|e| e.to_string())?;
+        }
+        report += &format!("{} ({style}): extras {} bytes, VRAM {} bytes\n", STYLES[index].name, extra.blob.len(), extra.vram_bytes);
+        for line in &extra.report {
+            report += &format!("    {line}\n");
+        }
+        let mut shown: Vec<Vec<[f64; 3]>> = Vec::new();
+        for now in [200u32, 530] {
+            let mut frame = canvas.clone();
+            crate::title_extra::play(&extra.blob, &mut frame, now);
+            shown.push(frame);
+        }
+        save_rgba(&dir.join(format!("{style}_live.png")), &to_image(&shown[0]))?;
+        save_rgba(&dir.join(format!("{style}_live2.png")), &to_image(&shown[1]))?;
     }
-    if names.is_empty() {
+    std::fs::write(dir.join("report.txt"), &report).map_err(|e| e.to_string())?;
+    if build_all {
         let mut blob: Vec<u8> = Vec::new();
         let mut rust = String::from("// Generated by hk-cook title-style (host/hk-cook/src/title_style.rs).\n");
-        rust += "/// Per style, the logo's two halves: offset into data/menu-logos.hk, width and height in pixels.\n";
-        rust += &format!("pub const LOGOS: [[(usize, u8, u8); 2]; {}] = [\n", SHIPPED.len());
-        for (style, sprite, id) in SHIPPED {
+        rust += "/// Per logo, the two halves: offset into data/menu-logos.hk, width and height in pixels.\n";
+        rust += &format!("pub const LOGOS: [[(usize, u8, u8); 2]; {}] = [\n", LOGOS.len());
+        for (sprite, id) in LOGOS {
             let halves = logo(&source, id)?;
             rust += "    [";
             for (width, height, rows) in &halves {
                 rust += &format!("({}, {width}, {height}), ", blob.len());
                 blob.extend_from_slice(rows);
             }
-            rust += &format!("], // {style}: {sprite}\n");
+            rust += &format!("], // {sprite}\n");
         }
         rust += "];\n";
         rust += &format!("pub const LOGO_BYTES: usize = {};\n", blob.len());
+        rust += "/// Per style, in the options' order: which logo it shows, and the name the options row prints (menu.rs checks them against state::STYLE_NAMES).\n";
+        rust += &format!("pub const STYLE_LOGO: [u8; {}] = {:?};\n", STYLES.len(), STYLES.map(|s| s.logo as u8));
+        rust += &format!("pub const COOKED_NAMES: [&str; {}] = {:?};\n", STYLES.len(), STYLES.map(|s| s.name));
+        rust += &format!("pub const DEFAULT_STYLE: u8 = {DEFAULT_STYLE};\n");
         std::fs::write(root.join("data/menu-logos.hk"), &blob).map_err(|e| e.to_string())?;
         std::fs::write(root.join("data/menu_logos.rs"), rust).map_err(|e| e.to_string())?;
     }
@@ -581,12 +725,14 @@ mod tests {
             corners,
             depth: 1.0,
         };
-        let grade = Grade { saturation: 1.0 };
-        let base = compose(&[(layer(false, [0.5, 0.5, 0.5, 1.0]), image.clone())], &grade);
+        let grade = Grade::plain();
+        let none = |_: &Layer| false;
+        let base = compose(&[(layer(false, [0.5, 0.5, 0.5, 1.0]), image.clone())], &grade, &none);
         assert!((base[1000][0] - 0.5).abs() < 1e-9);
         let both = compose(
             &[(layer(false, [0.5, 0.5, 0.5, 1.0]), image.clone()), (layer(true, [0.5, 0.0, 0.0, 1.0]), image)],
             &grade,
+            &none,
         );
         // 1 - (1 - 0.5)(1 - 0.5) = 0.75 on red; the other channels stay.
         assert!((both[1000][0] - 0.75).abs() < 1e-9 && (both[1000][1] - 0.5).abs() < 1e-9);

@@ -30,9 +30,27 @@ pub static mut HK_MENU_MUSIC: u32 = 10;
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu.rs"));
 // The styles' logos (host/hk-cook/src/title_style.rs): per style two halves of 4bpp coverage.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu_logos.rs"));
+const _: () = {
+    // The cooker's table of styles is the one the options page lists.
+    let mut i = 0;
+    while i < state::STYLE_NAMES.len() {
+        let (a, b) = (state::STYLE_NAMES[i].as_bytes(), COOKED_NAMES[i].as_bytes());
+        assert!(a.len() == b.len());
+        let mut k = 0;
+        while k < a.len() {
+            assert!(a[k] == b[k]);
+            k += 1;
+        }
+        i += 1;
+    }
+    assert!(state::DEFAULT_STYLE == DEFAULT_STYLE);
+};
 /// The style the title shows (`MenuStyles.currentSettings.styleIndex`): kept across visits to the
 /// title in a session. The options page changes it (`state::STYLE_NAMES`).
-static mut STYLE: u8 = 0;
+pub static mut STYLE: u8 = DEFAULT_STYLE;
+/// The extras (particles, animated sprites) of the style on screen: its blob in the scene arena
+/// (host/hk-cook/src/title_extra.rs), empty when the title is not up.
+static mut EXTRA: &[u8] = &[];
 /// Where the halves of the logo sit in VRAM: two 4bpp pages of their own beside the title strip,
 /// free while the title is up and overwritten by the scenes after it.
 const LOGO_X: [u16; 2] = [640, 704];
@@ -74,14 +92,11 @@ const ORN_X: u16 = 576;
 const ORN_TOP: u16 = 64;
 const ORN_BOTTOM: u16 = ORN_TOP + TITLE_FLEUR_TOP.2 as u16 + 2;
 const ORN_POINTER: u16 = ORN_BOTTOM + TITLE_FLEUR_BOTTOM.2 as u16 + 2;
-/// The background particles' smoke frames and soft dot, under the pointer's row.
-const ORN_SMOKE: u16 = ORN_POINTER + TITLE_POINTER.2 as u16 + 2;
-const ORN_DOT: u16 = ORN_SMOKE + TITLE_SMOKE.2 as u16 + 2;
 const fn halfwords(width: u8) -> u16 {
     (width as u16).div_ceil(4)
 }
 const _: () = assert!(halfwords(TITLE_FLEUR_TOP.1) <= 64);
-const _: () = assert!(ORN_DOT as usize + TITLE_DOT.2 as usize <= 256);
+const _: () = assert!(ORN_POINTER as usize + TITLE_POINTER.2 as usize <= 256);
 const LEVELS: [&str; 11] = [
     "0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%",
 ];
@@ -213,7 +228,7 @@ fn logo(gain: u8) {
     if gain == 0 || !unsafe { ART } {
         return;
     }
-    let halves = LOGOS[unsafe { STYLE } as usize];
+    let halves = LOGOS[usize::from(STYLE_LOGO[unsafe { STYLE } as usize])];
     let total = i16::from(halves[0].1) + i16::from(halves[1].1);
     let mut x = 160 - total / 2;
     for (half, &page_x) in halves.iter().zip(&LOGO_X) {
@@ -254,8 +269,6 @@ fn leaf(x: i16, y: i16, gain: u8, step: u8, left: bool) {
 }
 /// A pointer step for "not shown yet".
 const HIDDEN: u8 = 255;
-/// A smoke frame's side in texels.
-const SMOKE_FRAME_PX: u8 = 48;
 /// U of the pointer's frame `step` on the strip: 0 to 4 are the opening frames of the source's
 /// `Menu Fleur Reveal` (every second sprite frame, a 60 Hz screen's share of its 120 fps), 5 and
 /// more the final leaf. The left leaf is the mirrored half, which points right.
@@ -274,109 +287,110 @@ fn mix(a: u32, b: u32) -> u32 {
     let h = (a.wrapping_mul(0x9e37_79b1) ^ b.wrapping_mul(0x85eb_ca6b)).wrapping_mul(0x2c1b_3c6d);
     h ^ (h >> 13)
 }
-/// One particle slot's moment: how far into its life (frames), its life, and its random word. A slot
-/// is born again as soon as it dies with a new word, so nothing is kept between frames.
-fn moment(slot: u32, base: u32, step: u32, now: u32) -> (i32, i32, u32) {
-    let life = base + slot * step;
-    let t = now + slot * 37;
-    ((t % life) as i32, life as i32, mix(slot, t / life))
-}
-/// Strength 0 to 256 over a life: up over the first `rise` of 256, down over the last after `fall`.
-fn envelope(age: i32, life: i32, rise: i32, fall: i32) -> i32 {
-    let a = age * 256 / life;
-    if a < rise {
-        a * 256 / rise
-    } else if a > fall {
-        (256 - a) * 256 / (256 - fall)
-    } else {
-        256
-    }
-}
-/// One soft blob of the particle strip taken away from the picture: a `w` by `h` quad whose texture
-/// is `size` texels from (`u`, `v`), `gain` of 128 strong.
-#[inline(never)]
-fn blob(x: i32, y: i32, w: i32, h: i32, uv: (u8, u8), size: (u8, u8), gain: i32) {
-    if gain <= 0 || w <= 0 || h <= 0 || x + w <= 0 || x >= 320 || y + h <= 0 || y >= 240 {
-        return;
-    }
-    let g = gain.min(255) as u8;
-    let (x0, y0, x1, y1) = (x as i16, y as i16, (x + w) as i16, (y + h) as i16);
-    let (u0, v0) = uv;
-    let (u1, v1) = (u0 + size.0 - 1, v0 + size.1 - 1);
-    gpu::draw_quad_textured_material(
-        [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
-        [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
-        TextureMaterial::blended(
-            Clut::new(320, 481).uv_clut_word(),
-            Tpage::new(ORN_X, 0, TexDepth::Bit4).uv_tpage_word(0),
-            (g, g, g),
-            BlendMode::Subtract,
-        ),
-    );
-}
-/// The Voidheart title's background (level1 Menu_Styles/VHeart_menu_Style/abyss particles), through the
-/// camera at (13.99, 11.86, -38.1) with a 24 degree field: `wispy smoke` (8 puffs of 2 to 5 s, 8 to 24
-/// units wide, black smoke whose frame advances over its life, rising from below the screen and
-/// drifting left at 0.3 to 4 units a second, faded in over the first eighth and out over the last
-/// sixth), `FG` (32 specks of 2 to 4 s, 0.2 to 0.6 units, rising on a gravity of -0.05 near the
-/// bottom centre) and `immediate_BG` (46 specks 2 px across further back). Black and Multiply in the
-/// source, here subtracted from the picture in proportion to their coverage. Positions follow from
-/// the projection (5.5 px a unit at the smoke's depth, 14 at the FG's, 5.3 at the BG's) and each slot
-/// is stateless (`moment`).
+/// The style's particles and animated sprites over its picture, `gain` of 128 strong. The blob is
+/// laid out and explained in host/hk-cook/src/title_extra.rs, whose `play` does the same on a
+/// canvas. Everything is stateless: a particle slot's track and age follow from the vblank count.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
-fn particles(gain: u8) {
+fn extras(gain: u8) {
+    let x: &[u8] = unsafe { EXTRA };
+    if x.len() < 8 || gain == 0 {
+        return;
+    }
     let now = psx_rt::interrupts::vblank_count();
-    let strength = |level: i32, base: i32| level * base * i32::from(gain) / (256 * 128);
-    // The wispy smoke.
-    for i in 0..8u32 {
-        let (age, life, h) = moment(i, 150, 20, now);
-        let r = |shift: u32| ((h >> shift) & 255) as i32;
-        // Depth: 0.77 to 1.43 of the screen's scale at the emitter's.
-        let f = 197 + r(8) * 169 / 256;
-        let size = (44 + r(0) * 89 / 256) * f >> 8;
-        let speed = (6 + r(24) * 88 / 256) * f >> 8;
-        let x = 160 + ((10 + (r(16) - 128) * 20 / 128) * f >> 8) - (speed * age >> 8);
-        let y = 120 + (135 * f >> 8);
-        let frame = (age * 5 / life) as u8;
-        blob(
-            x - size / 2,
-            y - size / 2,
-            size,
-            size,
-            (frame * SMOKE_FRAME_PX, ORN_SMOKE as u8),
-            (SMOKE_FRAME_PX, SMOKE_FRAME_PX),
-            strength(envelope(age, life, 31, 215), 80),
-        );
+    let mut at = 8 + usize::from(x[4]) * 12;
+    for _ in 0..x[5] {
+        at = emitter(x, at, now, gain);
     }
-    // The specks: the foreground ones (`FG`) and the back ones (`immediate_BG`), both on the source's
-    // size and strength curves. Per group: first slot, count, life step, then the start point and its
-    // spread in x and y, the sideways speed (1/256 px a frame), the rise (1/65536 px a frame squared)
-    // and the size in px (least, spread; 0 spread is a fixed 2 px fleck).
-    const SPECKS: [[i32; 11]; 2] = [
-        [8, 32, 4, 150, 30, 252, 18, 12, 63, 3, 6],
-        [40, 46, 3, 147, 11, 189, 7, 0, 14, 2, 0],
-    ];
-    for [first, count, step, x0, xr, y0, yr, vx, rise, least, spread] in SPECKS {
-        for i in 0..count as u32 {
-            let (age, life, h) = moment(i + first as u32, 120, step as u32, now);
-            let r = |shift: u32| ((h >> shift) & 255) as i32 - 128;
-            let a = age * 256 / life;
-            let grow = if spread == 0 {
-                256
-            } else if a < 36 {
-                a * 256 / 36
-            } else if a > 230 {
-                (256 - a) * 256 / 26
-            } else {
-                256
-            };
-            let size = (least + (r(24) + 128) * spread / 256) * grow >> 8;
-            let x = x0 + r(0) * xr / 128 + (r(8) * vx / 128 * age >> 8);
-            let y = y0 + r(16) * yr / 128 - (age * age * rise >> 16);
-            blob(x - size / 2, y - size / 2, size, size, (0, ORN_DOT as u8), (8, 8), strength(envelope(age, life, 20, 240), 96));
+    for _ in 0..x[6] {
+        at = layer(x, at, now, gain);
+    }
+}
+fn rd(x: &[u8], at: usize) -> i32 {
+    i32::from(i16::from_le_bytes([x[at], x[at + 1]]))
+}
+/// A nine-point lookup at `u` of 0 to 255.
+fn lerp9(lut: &[u8], u: i32) -> i32 {
+    let (i, f) = ((u >> 5).min(7) as usize, u & 31);
+    (i32::from(lut[i]) * (32 - f) + i32::from(lut[i + 1]) * f) >> 5
+}
+/// How a piece meets the picture: added to it, taken away from it, or opaque (its own palette).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Meet {
+    Add,
+    Take,
+    Opaque,
+}
+/// A quad showing the `(u, v, w, h)` window of a texture page of the title's extras (`page` 0 and 1 are
+/// 4bpp coverage tinted by `tint`, 2 is 8bpp with its palette), `gain` of 128 strong.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn piece(corners: [(i16, i16); 4], (u, v, w, h): (i32, i32, i32, i32), page: i32, meet: Meet, tint: (u8, u8, u8)) {
+    let eight = page == 2;
+    let tpage = Tpage::new(768 + 64 * page as u16, 0, if eight { TexDepth::Bit8 } else { TexDepth::Bit4 }).uv_tpage_word(0);
+    let material = match meet {
+        Meet::Opaque => TextureMaterial::opaque(Clut::new(768, 479).uv_clut_word(), tpage, tint),
+        Meet::Take => TextureMaterial::blended(Clut::new(320, 481).uv_clut_word(), tpage, tint, BlendMode::Subtract),
+        Meet::Add => TextureMaterial::blended(Clut::new(320, 481).uv_clut_word(), tpage, tint, BlendMode::Add),
+    };
+    let (u1, v1) = ((u + w - 1) as u8, (v + h - 1) as u8);
+    gpu::draw_quad_textured_material(corners, [(u as u8, v as u8), (u1, v as u8), (u as u8, v1), (u1, v1)], material);
+}
+/// One emitter: its slots, each playing one of four tracks per life. Returns where the next record starts.
+fn emitter(x: &[u8], at: usize, now: u32, gain: u8) -> usize {
+    let h: &[u8; 28] = x[at..at + 28].try_into().unwrap();
+    let slots = usize::from(h[7]);
+    let (w, hh, frames, cols) = (i32::from(h[3]), i32::from(h[4]), i32::from(h[5]).max(1), i32::from(h[26]).max(1));
+    let meet = if h[6] != 0 { Meet::Take } else { Meet::Add };
+    for i in 0..slots {
+        let s = at + 28 + i * 65;
+        let slot: &[u8; 65] = x[s..s + 65].try_into().unwrap();
+        let life = i32::from(slot[0]) * 2;
+        let t = now.wrapping_add(i as u32 * 37) as i32;
+        let (cycle, age) = (t / life, t % life);
+        let k = 1 + (mix(i as u32, cycle as u32) & 3) as usize * 16;
+        let tr: &[u8; 16] = slot[k..k + 16].try_into().unwrap();
+        let u = age * 256 / life;
+        let word = |p: usize| i32::from(i16::from_le_bytes([tr[p], tr[p + 1]]));
+        let at_u = |p: usize| (word(p) + ((word(p + 4) * u) >> 8) + ((((word(p + 8) * u) >> 8) * u) >> 8)) >> 2;
+        let (px, py) = (at_u(0), at_u(2));
+        let size = (i32::from(tr[12]) * lerp9(&h[17..26], u)) >> 8;
+        let alpha = lerp9(&h[8..17], u);
+        if size <= 0 || px + size < 0 || px - size > 320 || py + size < 0 || py - size > 240 {
+            continue;
         }
+        let g = |c: usize| ((i32::from(tr[13 + c]) * alpha >> 8) * i32::from(gain) >> 7).min(255) as u8;
+        let tint = (g(0), g(1), g(2));
+        // Under two of 128 a tinted piece changes nothing the display can show.
+        if tint.0.max(tint.1).max(tint.2) < 2 {
+            continue;
+        }
+        let frame = ((u * frames) >> 8).min(frames - 1);
+        let (u0, v0) = (i32::from(h[1]) + frame % cols * w, i32::from(h[2]) + frame / cols * hh);
+        let (x0, y0) = ((px - size / 2) as i16, (py - size / 2) as i16);
+        let (x1, y1) = (x0 + size as i16, y0 + size as i16);
+        piece([(x0, y0), (x1, y0), (x0, y1), (x1, y1)], (u0, v0, w, hh), i32::from(h[0]), meet, tint);
     }
+    at + 28 + slots * 65
+}
+/// One animated layer: a quad whose frame, strength and offset follow its table of samples.
+fn layer(x: &[u8], at: usize, now: u32, gain: u8) -> usize {
+    let h: &[u8; 32] = x[at..at + 32].try_into().unwrap();
+    let samples = usize::from(u16::from_le_bytes([h[28], h[29]]));
+    let k = at + 32 + ((now / u32::from(h[30].max(1))) as usize % samples) * 4;
+    let sample: &[u8; 4] = x[k..k + 4].try_into().unwrap();
+    let (frame, strength, dx, dy) = (i32::from(sample[0]), i32::from(sample[1]), i32::from(sample[2] as i8), i32::from(sample[3] as i8));
+    if strength != 0 {
+        let (w, hh, cols, per) = (i32::from(h[4]), i32::from(h[5]), i32::from(h[6]).max(1), i32::from(h[7]));
+        let (page, i) = if per > 0 { (i32::from(h[0]) + frame / per, frame % per) } else { (i32::from(h[0]), frame) };
+        let (u0, v0) = (i32::from(h[2]) + i % cols * w, i32::from(h[3]) + i / cols * hh);
+        let c = |n: usize| (i32::from(h[24 + n]) * strength * i32::from(gain) >> 14).min(255) as u8;
+        let meet = [Meet::Add, Meet::Take, Meet::Add, Meet::Opaque][usize::from(h[1] & 3)];
+        let tint = if meet == Meet::Opaque { (gain, gain, gain) } else { (c(0), c(1), c(2)) };
+        let p = |n: usize| ((rd(h, 8 + n * 4) + dx) as i16, (rd(h, 10 + n * 4) + dy) as i16);
+        piece([p(0), p(1), p(2), p(3)], (u0, v0, w, hh), page, meet, tint);
+    }
+    at + 32 + samples * 4
 }
 /// The flourishes above and below a page, centred, each unfurled to `top` / `bottom` of 128. The
 /// source swaps nine sprite frames for the unfurl (a bud, then the wings spreading, then the long
@@ -460,9 +474,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
     let (gain, title) = (scaled(lv.content), scaled(lv.title));
     let bg = (u16::from(v.gain) * u16::from(v.bg) / 128) as u8;
     draw(bg);
-    if unsafe { STYLE } == 1 {
-        particles(bg);
-    }
+    extras(bg);
     match page {
         Page::Main => {
             // The logo is the style's own sprite, fading with the page's heading.
@@ -537,11 +549,11 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             const WINDOW: usize = 8;
             const TOP: i16 = 68;
             const PITCH: i16 = 14;
-            let total = state::CHEAT_ITEMS.len() + 1;
+            let total = state::CHEAT_BACK + 1;
             let first = row.saturating_sub(WINDOW / 2).min(total - WINDOW);
             for (i, label) in state::CHEAT_ITEMS
                 .iter()
-                .chain(["Back"].iter())
+                .chain(["Unlock all menu styles", "Back"].iter())
                 .enumerate()
                 .skip(first)
                 .take(WINDOW)
@@ -560,6 +572,9 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
                         },
                         g,
                     );
+                } else if i == state::UNLOCK_ROW {
+                    // The action's state: every style key set, on the card for the next visit.
+                    text(248, y, if menu.settings.unlocked == state::ALL_STYLE_KEYS { "DONE" } else { "" }, g);
                 }
                 if i == row {
                     pointer(30, y, gain, step);
@@ -572,7 +587,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             if first + WINDOW < total {
                 text(288, TOP + (WINDOW as i16 - 1) * PITCH, "v", gain);
             }
-            centered(194, "Session only. More in Pause > Cheats", gain);
+            centered(194, "Toggles last the session. More in Pause > Cheats", gain);
         }
     }
     // BRIGHTNESS over the whole screen, text included (display.rs).
@@ -621,6 +636,7 @@ pub fn run(
     menu.settings.brightness = crate::display::brightness();
     (menu.settings.screen_x, menu.settings.screen_y) = crate::display::screen();
     menu.settings.style = unsafe { STYLE };
+    menu.settings.unlocked = crate::save::unlocked_styles();
     // What is on screen lags what the buttons chose: a page that is left plays its leaving sequence
     // (`levels`) and the chosen page then plays its own, as the source does. Input is not held back
     // meanwhile (the source's is): the recorded routes press again on their own timing.
@@ -637,11 +653,18 @@ pub fn run(
         view.gain = gain;
         view.bg = match pending {
             Some(next) if view.bg == 0 => {
+                let before = unsafe { STYLE };
                 unsafe {
                     STYLE = next;
                 }
                 if let Some(data) = art {
-                    upload_style(data);
+                    // A style the disc cannot give leaves the one on screen, as it was.
+                    if !upload_style(data) {
+                        unsafe {
+                            STYLE = before;
+                        }
+                        menu.settings.style = before;
+                    }
                 }
                 pending = None;
                 9
@@ -689,6 +712,10 @@ pub fn run(
             if old.style != menu.settings.style {
                 pending = Some(menu.settings.style);
             }
+            // The Cheats page's unlock: onto the card, and the selector sees the styles at once.
+            if old.unlocked != menu.settings.unlocked {
+                crate::save::unlock_styles(menu.settings.unlocked);
+            }
             if old.brightness != menu.settings.brightness {
                 crate::display::set_brightness(menu.settings.brightness);
             }
@@ -734,6 +761,10 @@ pub fn run(
         present_samples(fb, |_| crate::music::tick());
     }
     assert!(crate::music::stop(), "CD music did not release drive");
+    // The arena is the next scene's now.
+    unsafe {
+        EXTRA = &[];
+    }
     // Consume the activating hold so Cross cannot also cause a gameplay jump.
     while poll_bits() & (button::START | button::CROSS) != 0 {
         psx_rt::interrupts::wait_vblank();
@@ -801,17 +832,44 @@ pub fn restore(art: Option<&[u8]>) {
     let (at, len) = crate::boot_art::CARD_FONT;
     assert_eq!(len, state::CARD_BYTES);
     upload_bytes(VramRect::new(0, 500, 320, 12), &data[at..at + len]);
-    upload_style(data);
+    if !upload_style(data) {
+        // The style asked for cannot be read: the default one is in this chunk.
+        unsafe {
+            STYLE = DEFAULT_STYLE;
+        }
+        upload_style(data);
+    }
 }
-/// The chosen style's background pages, palette and loading prompts, and its logo.
+/// The style `STYLE` names: its background pages, palette and loading prompts, its logo and its extras.
+/// The default style rides the boot chunk; any other is read from the disc into the arena after it,
+/// with the title's song stopped for the read (the drive cannot do both). Returns false, changing
+/// nothing in video memory, when that read fails.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
-fn upload_style(chunk: &[u8]) {
+fn upload_style(chunk: &[u8]) -> bool {
     let style = unsafe { STYLE } as usize;
-    let at = crate::boot_art::STYLE_ART[style];
+    let (start, extra_at, extra_len, _) = crate::boot_art::STYLE_ART[style];
+    let (start, extra_at, extra_len) = (start as usize, extra_at as usize, extra_len as usize);
+    let own;
+    let (data, extra): (&[u8], &[u8]) = if style == usize::from(DEFAULT_STYLE) {
+        (&chunk[..MENU_BYTES], &chunk[extra_at..extra_at + extra_len])
+    } else {
+        let resume = crate::music::suspend();
+        let read = crate::disc::style_art(style);
+        if resume {
+            crate::music::begin();
+        }
+        let Some(read) = read else {
+            unsafe {
+                EXTRA = &[];
+            }
+            return false;
+        };
+        own = read;
+        (&own[..MENU_BYTES], &own[extra_at - start..extra_at - start + extra_len])
+    };
     // The chunk's checksum was verified when it was read and the blob's size is `MENU_BYTES` (a const
     // check above); the header and the glyph advances are checked by the cooker and the tests.
-    let data = &chunk[at..at + MENU_BYTES];
     assert!(&data[..8] == b"HKMENU03");
     upload_bytes(
         VramRect::new(768, 480, 256, 1),
@@ -824,13 +882,27 @@ fn upload_style(chunk: &[u8]) {
     let (logos, len) = crate::boot_art::LOGO_ART;
     assert_eq!(len, LOGO_BYTES);
     let logos = &chunk[logos..logos + len];
-    for (half, &x) in LOGOS[style].iter().zip(&LOGO_X) {
+    for (half, &x) in LOGOS[usize::from(STYLE_LOGO[style])].iter().zip(&LOGO_X) {
         let (offset, w, h) = *half;
         let w = halfwords(w);
         upload_bytes(VramRect::new(x, 0, w, u16::from(h)), &logos[offset..offset + w as usize * h as usize * 2]);
     }
+    // The extras' pieces (host/hk-cook/src/title_extra.rs): a table of rectangles, then their rows.
+    assert!(&extra[..4] == b"HKX1");
+    for k in 0..usize::from(extra[4]) {
+        let e = 8 + k * 12;
+        let (x, y, w, h) = (rd(extra, e) as u16, rd(extra, e + 2) as u16, rd(extra, e + 4) as u16, rd(extra, e + 6) as u16);
+        let at = u32::from_le_bytes([extra[e + 8], extra[e + 9], extra[e + 10], extra[e + 11]]) as usize;
+        upload_bytes(VramRect::new(x, y, w, h), &extra[at..at + usize::from(w) * usize::from(h) * 2]);
+    }
+    // SAFETY: the extras live in the boot chunk or the arena behind it, which nothing writes while
+    // the title is up; `run` clears this before the arena is the next scene's.
+    unsafe {
+        EXTRA = core::slice::from_raw_parts(extra.as_ptr(), extra.len());
+    }
     // GP0(01h): the texture and palette caches still hold the previous style's texels and colours.
     psx_io::gpu::write_command(0x0100_0000);
+    true
 }
 fn upload_ornaments(rows: &[u8]) {
     let mut put = |piece: (usize, u8, u8), x: u16, y: u16| {
@@ -841,8 +913,6 @@ fn upload_ornaments(rows: &[u8]) {
     };
     put(TITLE_FLEUR_TOP, ORN_X, ORN_TOP);
     put(TITLE_FLEUR_BOTTOM, ORN_X, ORN_BOTTOM);
-    put(TITLE_SMOKE, ORN_X, ORN_SMOKE);
-    put(TITLE_DOT, ORN_X, ORN_DOT);
     // The pointer's slots (`pointer_u`): final left leaf and right leaf, then the five opening
     // frames of each.
     for (slot, &offset) in TITLE_POINTER_SLOTS.iter().enumerate() {

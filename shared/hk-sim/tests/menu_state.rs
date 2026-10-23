@@ -261,20 +261,43 @@ fn brightness_and_screen_position_step_within_their_limits_and_print_signed() {
 }
 
 #[test]
-fn the_style_row_cycles_through_the_styles_and_wraps() {
+fn the_style_row_cycles_through_the_available_styles_and_wraps() {
     assert_eq!(OPTION_ITEMS[STYLE_ROW], "Menu style");
     assert_eq!(STYLE_ROW + 1, OPTION_BACK);
-    // Modern first: the source's 1.5.0 default (`MenuStyles.StyleDefault`).
+    // Modern first: the source's 1.5.0 default (`MenuStyles.StyleDefault`, the last of the list).
     let mut s = Settings::new();
     assert_eq!(STYLE_NAMES[usize::from(s.style)], "Modern");
+    assert_eq!(usize::from(DEFAULT_STYLE), STYLE_NAMES.len() - 1);
+    // The list wraps both ways, one step a press however far the delta reaches.
+    assert!(s.adjust(STYLE_ROW, 1));
+    assert_eq!(STYLE_NAMES[usize::from(s.style)], "Classic");
+    assert!(s.adjust(STYLE_ROW, -100));
+    assert_eq!(STYLE_NAMES[usize::from(s.style)], "Modern");
+    assert!(!s.adjust(STYLE_ROW, 0));
+    // The four styles with unlock keys are skipped until their keys are set (`MenuStyle.IsAvailable`).
+    for locked in ["Infected", "Shade", "Steel", "Eternal"] {
+        let i = STYLE_NAMES.iter().position(|n| *n == locked).unwrap();
+        assert!(!s.available(i), "{locked}");
+    }
+    s.style = 3;
     assert!(s.adjust(STYLE_ROW, 1));
     assert_eq!(STYLE_NAMES[usize::from(s.style)], "Voidheart");
-    // The list wraps both ways, one step a press however far the delta reaches.
-    assert!(s.adjust(STYLE_ROW, 100));
-    assert_eq!(s.style, 0);
-    assert!(s.adjust(STYLE_ROW, -1));
-    assert_eq!(usize::from(s.style), STYLE_NAMES.len() - 1);
-    assert!(!s.adjust(STYLE_ROW, 0));
+    for (keys, name) in [(1, "Infected"), (2, "Shade"), (4, "Steel"), (8, "Eternal")] {
+        let mut t = Settings::new();
+        t.unlocked = keys;
+        t.style = 3;
+        assert!(t.adjust(STYLE_ROW, 1));
+        assert_eq!(STYLE_NAMES[usize::from(t.style)], name);
+    }
+    // The ten styles are all the options row can reach once every key is set.
+    s.unlocked = ALL_STYLE_KEYS;
+    s.style = 0;
+    let mut seen = vec![STYLE_NAMES[0]];
+    for _ in 1..STYLE_NAMES.len() {
+        assert!(s.adjust(STYLE_ROW, 1));
+        seen.push(STYLE_NAMES[usize::from(s.style)]);
+    }
+    assert_eq!(seen, STYLE_NAMES);
     // Nothing else moved.
     assert_eq!((s.sfx, s.ambience, s.music, s.brightness), (10, 10, 10, 0));
     // Through the page: Cross on the row steps to the next style, Left and Right step either way.
@@ -287,10 +310,33 @@ fn the_style_row_cycles_through_the_styles_and_wraps() {
     }
     assert_eq!(m.selected, STYLE_ROW);
     tap(&mut m, CROSS);
-    assert_eq!(m.settings.style, 1);
+    assert_eq!(m.settings.style, 0);
     assert_eq!(m.page, Page::Options);
     tap(&mut m, LEFT);
-    assert_eq!(m.settings.style, 0);
+    assert_eq!(m.settings.style, 9);
     tap(&mut m, RIGHT);
-    assert_eq!(m.settings.style, 1);
+    assert_eq!(m.settings.style, 0);
+}
+
+#[test]
+fn the_cheats_page_ends_with_the_unlock_action_and_back() {
+    assert_eq!(UNLOCK_ROW, CHEAT_ITEMS.len());
+    assert_eq!(CHEAT_BACK, UNLOCK_ROW + 1);
+    let mut m = State::new();
+    // Up from the first row wraps to Cheats; into the page; Up wraps to Back, Up again to the action.
+    tap(&mut m, UP);
+    tap(&mut m, CROSS);
+    assert_eq!((m.page, m.selected), (Page::Cheats, 0));
+    tap(&mut m, UP);
+    assert_eq!(m.selected, CHEAT_BACK);
+    tap(&mut m, UP);
+    assert_eq!(m.selected, UNLOCK_ROW);
+    assert_eq!(m.settings.unlocked, 0);
+    tap(&mut m, CROSS);
+    assert_eq!(m.settings.unlocked, ALL_STYLE_KEYS);
+    // It toggles nothing: the cheat bits stay as they were.
+    assert_eq!(m.settings.cheats.bits(), 0);
+    tap(&mut m, DOWN);
+    tap(&mut m, CROSS);
+    assert_eq!((m.page, m.selected), (Page::Main, 3));
 }

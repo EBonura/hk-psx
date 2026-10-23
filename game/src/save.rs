@@ -63,6 +63,58 @@ pub const SHOP_COUNTERS: usize = 6;
 /// cooker refuses a bank that needs more, which is a build failure rather than a
 /// record that quietly holds some of the fields.
 pub const SCRIPT_FIELD_SLOTS: usize = 16;
+/// The profile-wide record (the original's roaming shared data): which title styles the endings and the
+/// Mighty Zote fight have unlocked, one bit each (`menu_state::STYLE_KEY`). Its own file, so no slot owns
+/// it; a missing or damaged one reads as nothing unlocked. docs/SAVE.md.
+const SHARED_NAME: &str = "BASLUS-00000HKPSXMS";
+const SHARED_MAGIC: [u8; 4] = *b"HKU1";
+/// Magic, the unlock mask, three zero bytes, then the checksum of those eight.
+const SHARED_LEN: usize = 12;
+static mut UNLOCKED: u8 = 0;
+/// The unlock mask the card gave at boot, plus what this session unlocked.
+pub fn unlocked_styles() -> u8 {
+    unsafe { UNLOCKED }
+}
+fn read_shared<B: Block>(card: &mut Card<B>) {
+    let buf = buf();
+    if let Ok(len) = card.read(SHARED_NAME, buf) {
+        let b = &buf[..len.min(MAX_LEN)];
+        if b.len() >= SHARED_LEN
+            && b[..4] == SHARED_MAGIC
+            && fnv(&b[..8]).to_le_bytes() == b[8..12]
+        {
+            unsafe { UNLOCKED = b[4] & 0xF }
+        }
+    }
+}
+/// Set the keys in `mask` (an ending, the Mighty Zote fight, or the Cheats page) and write the record.
+/// The keys hold for the session whatever the card does: a card that is missing, unformatted or full
+/// is left alone (an unformatted one is never formatted unasked) and the record is written again at
+/// the next unlock. A full card keeps its blocks: the record needs one of its own.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+pub fn unlock_styles(mask: u8) {
+    let mask = unsafe {
+        UNLOCKED |= mask & 0xF;
+        UNLOCKED
+    };
+    let out = buf();
+    out[..4].copy_from_slice(&SHARED_MAGIC);
+    out[4..8].copy_from_slice(&[mask, 0, 0, 0]);
+    let sum = fnv(&out[..8]);
+    out[8..12].copy_from_slice(&sum.to_le_bytes());
+    let mut card = Card::new(SlotOne::new(false));
+    if !matches!(card.is_formatted(), Ok(true)) {
+        return;
+    }
+    let result = card.write_with_icon(SHARED_NAME, TITLE, &out[..SHARED_LEN], &ICON);
+    unsafe {
+        match result {
+            Ok(()) => HK_SAVE_WRITES = HK_SAVE_WRITES.saturating_add(1),
+            Err(_) => HK_SAVE_ERRORS = HK_SAVE_ERRORS.saturating_add(1),
+        }
+    }
+}
 /// Per profile: the copy the next write goes to, and the newest sequence seen.
 static mut NEXT_COPY: [usize; PROFILES] = [0; PROFILES];
 static mut LAST_SEQUENCE: [u32; PROFILES] = [0; PROFILES];
@@ -670,6 +722,9 @@ pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
                 }
             }
         }
+    }
+    if gate.is_none() {
+        read_shared(&mut card);
     }
     unsafe {
         HK_SAVE_LOADED = u32::from(slots.iter().any(|s| matches!(s, Slot::Used(_))));

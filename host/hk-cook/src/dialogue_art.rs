@@ -113,16 +113,7 @@ pub(crate) fn level(alpha: u8, luma: u8) -> u8 {
 /// The pieces the title draws whole, in the order its VRAM strip keeps them, and the menu
 /// pointer's source sprite and size.
 const TITLE_PIECES: [&str; 2] = ["fleur_top", "fleur_bottom"];
-const TITLE_ORDER: [&str; 6] =
-    ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored", "smoke", "dot"];
-/// The title's background particles (the Voidheart style's `abyss particles`, level1
-/// `Menu_Styles/VHeart_menu_Style`): the wispy smoke's five 102x102 frames (resources.assets
-/// Texture2D 367, black smoke whose alpha is its shape) and the soft dot of its specks (Texture2D
-/// 420). Both become coverage ramps for a subtractive draw.
-const SMOKE_TEXTURE: i64 = 367;
-const DOT_TEXTURE: i64 = 420;
-const SMOKE_FRAME: usize = 48;
-const DOT_PX: usize = 8;
+const TITLE_ORDER: [&str; 4] = ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored"];
 const POINTER_SPRITE: i64 = 101;
 /// The frames of `Menu Fleur Reveal` (sharedassets0.assets clip 58) the pointer shows while it
 /// opens, sampled as a 60 Hz screen does: the clip runs at 120 frames a second, so each presented
@@ -340,37 +331,6 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             save_rgba(&preview_dir.join(format!("{name}.png")), &shown)?;
             title.push((name, POINTER_W, POINTER_H, whole_rows(&grey, POINTER_W, POINTER_H)));
         }
-    }
-    // The particles' textures.
-    {
-        let level_of = |a: u8| ((u32::from(a) * 15 + 127) / 255) as u8;
-        let texture = |id: i64| -> Result<Image> {
-            let object = source.object(&resources, id).map_err(|e| e.to_string())?;
-            Ok(hk_unity::texture::texture_image(&source, &object, false)
-                .map_err(|e| e.to_string())?
-                .to_rgba())
-        };
-        let smoke = texture(SMOKE_TEXTURE)?;
-        let frame_h = smoke.height as f64 / 5.0;
-        let mut strip = vec![0u8; SMOKE_FRAME * 5 * SMOKE_FRAME];
-        for k in 0..5usize {
-            let y0 = (k as f64 * frame_h).round() as i64;
-            let frame = smoke
-                .crop_int(0, y0, smoke.width as i64, y0 + frame_h.round() as i64)
-                .resize(SMOKE_FRAME, SMOKE_FRAME, Filter::Lanczos);
-            for y in 0..SMOKE_FRAME {
-                for x in 0..SMOKE_FRAME {
-                    strip[y * SMOKE_FRAME * 5 + k * SMOKE_FRAME + x] =
-                        level_of(frame.pixel(x, y)[3]);
-                }
-            }
-        }
-        title.push(("smoke", SMOKE_FRAME * 5, SMOKE_FRAME, whole_rows(&strip, SMOKE_FRAME * 5, SMOKE_FRAME)));
-        let dot = texture(DOT_TEXTURE)?.resize(DOT_PX, DOT_PX, Filter::Lanczos);
-        let grey: Vec<u8> = (0..DOT_PX * DOT_PX)
-            .map(|i| level_of(dot.pixel(i % DOT_PX, i / DOT_PX)[3]))
-            .collect();
-        title.push(("dot", DOT_PX, DOT_PX, whole_rows(&grey, DOT_PX, DOT_PX)));
     }
     {
         let mut ornaments: Vec<u8> = Vec::new();

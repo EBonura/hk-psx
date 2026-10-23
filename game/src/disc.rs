@@ -449,10 +449,12 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
             crate::scene_sfx::chunk(SCENE_MANIFEST[index - SCENE_SFX_INDEX].scene_id as usize);
         (len, fnv, SCENE_ARENA_BYTES)
     } else if index == MENU_INDEX {
+        // The chunk holds the nine other title styles after the part the boot reads (`menu_art`), so
+        // it is larger than the arena; only the common part and one style are ever staged at once.
         (
             crate::boot_art::BOOT_ART_BYTES,
             crate::boot_art::BOOT_ART_CHECKSUM,
-            SCENE_ARENA_BYTES,
+            usize::MAX,
         )
     } else if index < PACK_CHUNKS {
         let (len, fnv) = crate::modules::disc_spec(index - CODE_INDEX);
@@ -460,6 +462,24 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
     } else {
         return None;
     })
+}
+/// FNV-1a over `bytes`, servicing the pad between blocks (the title's art chunks are 100 KB and more).
+fn fnv(bytes: &[u8]) -> u32 {
+    let mut hash = 0x811c9dc5u32;
+    for block in bytes.chunks(1024) {
+        crate::input::checkpoint();
+        for &byte in block {
+            hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
+        }
+    }
+    hash
+}
+/// A title style other than the default (host/build_guest.py `boot_art`), or `None` when the disc does not
+/// give it. The options page calls this with the title's song stopped.
+pub fn style_art(style: usize) -> Option<&'static [u8]> {
+    let cache = unsafe { &mut *(&raw mut crate::ROOM_CACHE) };
+    // SAFETY of the lifetime: the bytes live in the scene arena, which nothing else touches while the title is up.
+    cache.style_art(style).ok().map(|b| unsafe { core::slice::from_raw_parts(b.as_ptr(), b.len()) })
 }
 pub struct Cache {
     /// Sector offset of the first chunk of each disc group (see `member`), taken
@@ -1589,10 +1609,24 @@ impl Cache {
         }
         Ok(())
     }
-    /// The title art, staged in the arena front: before the title (nothing
+    /// The title art's common part, staged in the arena front: before the title (nothing
     /// else owns the drive or the arena then) and on a failed load's retry
-    /// screen. The caller uploads it to VRAM before the arena is used again.
+    /// screen. The caller uploads it to VRAM before the arena is used again. The rest of the
+    /// chunk is the other title styles (`style_art`).
     pub fn menu_art(&mut self) -> Result<&[u8], LoadError> {
+        self.stage_menu(0, crate::boot_art::BOOT_COMMON_BYTES, 0, crate::boot_art::BOOT_COMMON_CHECKSUM)
+    }
+    /// One of the other title styles, read from its sectors of the title chunk into the arena after
+    /// the common part (which stays in place): its background and its extras, from the
+    /// background's first byte. Only before the first scene is loaded, and with the title's song stopped.
+    #[inline(never)]
+    pub fn style_art(&mut self, style: usize) -> Result<&[u8], LoadError> {
+        let (start, extra_at, extra_len, checksum) = crate::boot_art::STYLE_ART[style];
+        self.stage_menu(start as usize, (extra_at + extra_len) as usize, crate::boot_art::BOOT_COMMON_BYTES, checksum)
+    }
+    /// Bytes `from..to` of the title chunk (`from` on a sector boundary), staged `at` bytes into the arena and
+    /// checked against `checksum`.
+    fn stage_menu(&mut self, from: usize, to: usize, at: usize, checksum: u32) -> Result<&[u8], LoadError> {
         self.init()?;
         if self.loaded_scenes != 0 {
             return Err(LoadError::Ambience);
@@ -1601,18 +1635,17 @@ impl Cache {
         if entry.byte_size as usize != crate::boot_art::BOOT_ART_BYTES {
             return Err(LoadError::RoomMismatch);
         }
-        self.read(entry, 0)?;
-        let bytes = unsafe {
-            core::slice::from_raw_parts(
-                (&raw const BUFFERS.words).cast::<u8>(),
-                crate::boot_art::BOOT_ART_BYTES,
-            )
+        let first = from / SECTOR_BYTES;
+        let part = PackEntry {
+            sector_offset: entry.sector_offset + first as u32,
+            sector_count: (to.div_ceil(SECTOR_BYTES) - first) as u32,
+            ..entry
         };
-        let mut hash = 0x811c9dc5u32;
-        for &byte in bytes {
-            hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
-        }
-        if hash != crate::boot_art::BOOT_ART_CHECKSUM {
+        self.read(part, at)?;
+        let bytes = unsafe {
+            core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(at), to - from)
+        };
+        if fnv(bytes) != checksum {
             return Err(LoadError::Checksum);
         }
         Ok(bytes)

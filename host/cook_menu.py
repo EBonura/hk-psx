@@ -28,7 +28,10 @@ def named(source, filename, kind, name):
 
 # The title styles the guest carries (hk-cook title-style: `title_style::SHIPPED`, in the order the
 # options list them): the composed background of each, and the blob it becomes.
-STYLES = [('Modern_Style', 'menu.hk'), ('VHeart_menu_Style', 'menu-voidheart.hk')]
+STYLES = [('Classic_Style', 'menu-bg-0.hk'), ('HD_Style', 'menu-bg-1.hk'), ('Grimm_Style', 'menu-bg-2.hk'),
+          ('GG_Style', 'menu-bg-3.hk'), ('Infected_Style', 'menu-bg-4.hk'), ('Shade_Style', 'menu-bg-5.hk'),
+          ('Steel_Style', 'menu-bg-6.hk'), ('Brilliant_Style', 'menu-bg-7.hk'),
+          ('VHeart_menu_Style', 'menu-bg-8.hk'), ('Modern_Style', 'menu.hk')]
 
 
 def style_blob(canvas, font, advances):
@@ -88,7 +91,9 @@ def cook():
         (ROOT / 'data').mkdir(exist_ok=True)
         (ROOT / 'data' / filename).write_bytes(blob)
         blobs.append((style, filename, blob))
-    blob = blobs[0][2]
+    # The default style (the last, `title_style::DEFAULT_STYLE`) is data/menu.hk: it rides the boot chunk's
+    # first part, the others are read when the options page picks them.
+    blob = blobs[-1][2]
     if any(len(b) != len(blob) for _, _, b in blobs):raise ValueError('every style blob must have the same size')
     # The blobs are disc chunks read before the title, not linked RAM; the guest keeps only their
     # size and checksum (to verify the read) and the glyph advances, which the in-game text layout

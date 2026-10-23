@@ -28,6 +28,9 @@ pub struct Settings {
     /// Row 6: the title style (`MenuStyles.currentSettings.styleIndex`, as an index into
     /// `STYLE_NAMES`).
     pub style: u8,
+    /// The profile-wide unlock keys the endings and the Mighty Zote fight have set (`STYLE_KEY` bits),
+    /// which the Cheats page's last action sets all at once.
+    pub unlocked: u8,
 }
 impl Settings {
     pub const fn new() -> Self {
@@ -39,11 +42,18 @@ impl Settings {
             brightness: 0,
             screen_x: 0,
             screen_y: 0,
-            style: 0,
+            style: DEFAULT_STYLE,
+            unlocked: 0,
         }
+    }
+    /// Whether style `i` can be chosen: it has no unlock key, or its key is set (`MenuStyle.IsAvailable`).
+    pub fn available(&self, i: usize) -> bool {
+        STYLE_KEY[i] == 0 || self.unlocked & STYLE_KEY[i] != 0
     }
     /// Rows 0/1/2 adjust sound effects/ambience/music (0 to 10), rows 3/4/5 brightness and the screen
     /// position. Returns whether the value changed.
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn adjust(&mut self, row: usize, delta: i8) -> bool {
         let (value, low, high) = match row {
             0 => (&mut self.sfx, 0, 10),
@@ -52,11 +62,18 @@ impl Settings {
             3 => return step(&mut self.brightness, delta, BRIGHT_STEPS),
             4 => return step(&mut self.screen_x, delta, SCREEN_RANGE),
             5 => return step(&mut self.screen_y, delta, SCREEN_RANGE),
-            // The style list wraps (`MenuStyleSetting.OnMove`).
+            // The style list wraps and skips the styles still locked (`MenuStyleSetting.OnMove`).
             6 => {
-                let next = (i16::from(self.style) + i16::from(delta.signum())).rem_euclid(STYLE_NAMES.len() as i16) as u8;
-                let changed = next != self.style;
-                self.style = next;
+                let (n, dir) = (STYLE_NAMES.len() as i16, i16::from(delta.signum()));
+                let mut next = i16::from(self.style);
+                for _ in 0..if dir == 0 { 0 } else { n } {
+                    next = (next + dir).rem_euclid(n);
+                    if self.available(next as usize) {
+                        break;
+                    }
+                }
+                let changed = next as u8 != self.style;
+                self.style = next as u8;
                 return changed;
             }
             _ => return false,
@@ -105,6 +122,9 @@ pub enum Page {
 }
 pub const MAIN_ITEMS: [&str; 4] = ["Start", "Options", "Controls", "Cheats"];
 const _: () = assert!(CHEAT_ITEMS.len() == crate::cheats::CHEAT_ROWS);
+/// The title's Cheats page after the toggles: the action that unlocks every menu style, then Back.
+pub const UNLOCK_ROW: usize = CHEAT_ITEMS.len();
+pub const CHEAT_BACK: usize = UNLOCK_ROW + 1;
 pub const CHEAT_ITEMS: [&str; 12] = [
     "Invincibility",
     "Pure Nail (21 damage)",
@@ -131,11 +151,19 @@ pub const OPTION_ITEMS: [&str; 8] = [
 ];
 /// The options row that picks the title style.
 pub const STYLE_ROW: usize = 6;
-/// The title styles the port carries, in the order of `MenuStyles.styles` they come from: Modern
-/// (`UI_MENU_STYLE_MODERN`, the 1.5.0 default) and Voidheart (`UI_MENUSTYLE_VOIDHEART`). Both are
-/// available from the start, as in the source (no unlock key). The others (docs/MENU_STYLES.md) wait
-/// for their unlocks and art.
-pub const STYLE_NAMES: [&str; 2] = ["Modern", "Voidheart"];
+/// The title styles, in the order of `MenuStyles.styles` (docs/MENU_STYLES.md): the names the options row
+/// prints. Modern is the 1.5.0 default (`MenuStyles.StyleDefault`).
+pub const STYLE_NAMES: [&str; 10] = [
+    "Classic", "HD", "Grimm", "GG", "Infected", "Shade", "Steel", "Eternal", "Voidheart", "Modern",
+];
+/// The style the title starts on.
+pub const DEFAULT_STYLE: u8 = 9;
+/// The unlock key each style waits for, as a bit of `Settings::unlocked` (0: available from the start):
+/// 1 `infectedMenu` (the endings A and B), 2 `shadeMenu` (ending C), 4 `steelSoulMenu` (an ending in
+/// Steel Soul mode), 8 `eternalOrdealMenu` (the Mighty Zote fight).
+pub const STYLE_KEY: [u8; 10] = [0, 0, 0, 0, 1, 2, 4, 8, 0, 0];
+/// Every key at once, what the Cheats page's last action unlocks (`unlockAllMenuStyles`).
+pub const ALL_STYLE_KEYS: u8 = 15;
 /// The row that leaves the options page.
 pub const OPTION_BACK: usize = OPTION_ITEMS.len() - 1;
 pub const CONTROL_LINES: [&str; 10] = [
@@ -247,9 +275,11 @@ impl State {
                     self.selected = 2;
                 }
                 Page::Cheats => {
-                    if self.selected == CHEAT_ITEMS.len() {
+                    if self.selected == CHEAT_BACK {
                         self.page = Page::Main;
                         self.selected = 3;
+                    } else if self.selected == UNLOCK_ROW {
+                        self.settings.unlocked = ALL_STYLE_KEYS;
                     } else {
                         let delta = if self.settings.cheats.enabled(self.selected) {
                             -1
@@ -266,7 +296,7 @@ impl State {
             return false;
         }
         let count = match self.page {
-            Page::Cheats => CHEAT_ITEMS.len() + 1,
+            Page::Cheats => CHEAT_BACK + 1,
             Page::Profiles => crate::save::PROFILES,
             Page::Options => OPTION_ITEMS.len(),
             _ => 4,

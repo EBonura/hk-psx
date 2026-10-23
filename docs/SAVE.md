@@ -28,6 +28,25 @@ error, and for an absent card on reads (the first frame after a chain-load is th
 launcher left it); when a replacement does not fit, the older copy of that profile is deleted first and the
 newer one stays; the SC title frame is written in double-width Shift-JIS and the icon is the Knight's mask.
 
+## The profile record (menu style unlocks)
+
+Besides the profiles, the card holds one small file that no slot owns, `BASLUS-00000HKPSXMS`, the port's
+counterpart of the original's roaming shared data. It carries the title style unlocks: one bit each for
+`infectedMenu` (1), `shadeMenu` (2), `steelSoulMenu` (4) and `eternalOrdealMenu` (8), which the endings
+and the Mighty Zote fight set in the original (`MenuStyleUnlock`, `MenuStyleUnlockAction`;
+docs/MENU_STYLES.md). Twelve bytes: `HKU1`, the mask, three zero bytes, and the FNV-1a of those eight. It uses one
+card block (the profiles' eight, so nine of fifteen), with the same title and icon as the saves. A missing, damaged or
+unreadable record reads as nothing unlocked, and a card that is missing, unformatted (never formatted
+unasked) or full leaves the keys held for the session only.
+
+- `save::survey` reads it with the profiles, before the title; the title's options row skips the styles whose key is
+  clear, exactly as `MenuStyle.IsAvailable` does.
+- `save::unlock_styles(mask)` sets keys and writes the record: the Cheats page's last action (`Unlock all menu
+  styles`, the port's `unlockAllMenuStyles`) calls it with all four, and the endings and the fight will call it
+  with theirs once the port has them. The selector sees the styles at once, and so does the next boot.
+- A card that holds only an older save set (no record) is untouched until something unlocks; the layout check
+  (`card-check`) lists the record as one more block of the same title.
+
 ## Layout check
 
 PSoXide cannot run a BIOS (its HLE BIOS has no card manager), so the console's listing is checked against
