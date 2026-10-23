@@ -64,11 +64,14 @@ const ORN_X: u16 = 576;
 const ORN_TOP: u16 = 64;
 const ORN_BOTTOM: u16 = ORN_TOP + TITLE_FLEUR_TOP.2 as u16 + 2;
 const ORN_POINTER: u16 = ORN_BOTTOM + TITLE_FLEUR_BOTTOM.2 as u16 + 2;
+/// The background particles' smoke frames and soft dot, under the pointer's row.
+const ORN_SMOKE: u16 = ORN_POINTER + TITLE_POINTER.2 as u16 + 2;
+const ORN_DOT: u16 = ORN_SMOKE + TITLE_SMOKE.2 as u16 + 2;
 const fn halfwords(width: u8) -> u16 {
     (width as u16).div_ceil(4)
 }
 const _: () = assert!(halfwords(TITLE_FLEUR_TOP.1) <= 64);
-const _: () = assert!(ORN_POINTER as usize + TITLE_POINTER.2 as usize <= 256);
+const _: () = assert!(ORN_DOT as usize + TITLE_DOT.2 as usize <= 256);
 const LEVELS: [&str; 11] = [
     "0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%",
 ];
@@ -97,6 +100,7 @@ fn text_width(value: &str) -> i16 {
         .map(|b| MENU_METRICS[(b - 32) as usize] as i16)
         .sum()
 }
+#[inline(never)]
 fn text(x: i16, y: i16, value: &str, gain: u8) {
     let mut x = x;
     for b in value.bytes() {
@@ -124,6 +128,7 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
         x += MENU_METRICS[i] as i16;
     }
 }
+#[inline(never)]
 fn centered(y: i16, value: &str, gain: u8) {
     text(160 - text_width(value) / 2, y, value, gain);
 }
@@ -141,6 +146,7 @@ fn caps_width(value: &str) -> i16 {
 }
 /// `value` upper cased in the capitals; the cell is 12 texels tall and its cap line sits where a
 /// 14 texel body glyph's does when drawn one row higher.
+#[inline(never)]
 fn caps(x: i16, y: i16, value: &str, gain: u8) {
     let mut x = x;
     for b in value.bytes() {
@@ -168,11 +174,13 @@ fn caps(x: i16, y: i16, value: &str, gain: u8) {
         x += state::CAPS_ADVANCES[i] as i16;
     }
 }
+#[inline(never)]
 fn centered_caps(y: i16, value: &str, gain: u8) {
     caps(160 - caps_width(value) / 2, y, value, gain);
 }
 /// One ornament from the strip, drawn 1:1 at (`x`, `y`): `u`, `v` are its texel position on
 /// the strip's 4bpp page.
+#[inline(never)]
 fn ornament(x: i16, y: i16, size: (u8, u8), uv: (u8, u16), gain: u8) {
     gpu::draw_sprite_material(
         x,
@@ -199,6 +207,7 @@ fn pointers(left: i16, right: i16, y: i16, gain: u8, step: u8) {
     leaf(right + 4, y, gain, step, false);
 }
 /// One leaf: the left one (pointing right) or the right one (pointing left).
+#[inline(never)]
 fn leaf(x: i16, y: i16, gain: u8, step: u8, left: bool) {
     if step == HIDDEN {
         return;
@@ -208,6 +217,8 @@ fn leaf(x: i16, y: i16, gain: u8, step: u8, left: bool) {
 }
 /// A pointer step for "not shown yet".
 const HIDDEN: u8 = 255;
+/// A smoke frame's side in texels.
+const SMOKE_FRAME_PX: u8 = 48;
 /// U of the pointer's frame `step` on the strip: 0 to 4 are the opening frames of the source's
 /// `Menu Fleur Reveal` (every second sprite frame, a 60 Hz screen's share of its 120 fps), 5 and
 /// more the final leaf. The left leaf is the mirrored half, which points right.
@@ -221,6 +232,115 @@ fn pointer_u(left: bool, step: u8) -> u8 {
     };
     (w * slot) as u8
 }
+/// A well mixed word of two.
+fn mix(a: u32, b: u32) -> u32 {
+    let h = (a.wrapping_mul(0x9e37_79b1) ^ b.wrapping_mul(0x85eb_ca6b)).wrapping_mul(0x2c1b_3c6d);
+    h ^ (h >> 13)
+}
+/// One particle slot's moment: how far into its life (frames), its life, and its random word. A slot
+/// is born again as soon as it dies with a new word, so nothing is kept between frames.
+fn moment(slot: u32, base: u32, step: u32, now: u32) -> (i32, i32, u32) {
+    let life = base + slot * step;
+    let t = now + slot * 37;
+    ((t % life) as i32, life as i32, mix(slot, t / life))
+}
+/// Strength 0 to 256 over a life: up over the first `rise` of 256, down over the last after `fall`.
+fn envelope(age: i32, life: i32, rise: i32, fall: i32) -> i32 {
+    let a = age * 256 / life;
+    if a < rise {
+        a * 256 / rise
+    } else if a > fall {
+        (256 - a) * 256 / (256 - fall)
+    } else {
+        256
+    }
+}
+/// One soft blob of the particle strip taken away from the picture: a `w` by `h` quad whose texture
+/// is `size` texels from (`u`, `v`), `gain` of 128 strong.
+#[inline(never)]
+fn blob(x: i32, y: i32, w: i32, h: i32, uv: (u8, u8), size: (u8, u8), gain: i32) {
+    if gain <= 0 || w <= 0 || h <= 0 || x + w <= 0 || x >= 320 || y + h <= 0 || y >= 240 {
+        return;
+    }
+    let g = gain.min(255) as u8;
+    let (x0, y0, x1, y1) = (x as i16, y as i16, (x + w) as i16, (y + h) as i16);
+    let (u0, v0) = uv;
+    let (u1, v1) = (u0 + size.0 - 1, v0 + size.1 - 1);
+    gpu::draw_quad_textured_material(
+        [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+        [(u0, v0), (u1, v0), (u0, v1), (u1, v1)],
+        TextureMaterial::blended(
+            Clut::new(320, 481).uv_clut_word(),
+            Tpage::new(ORN_X, 0, TexDepth::Bit4).uv_tpage_word(0),
+            (g, g, g),
+            BlendMode::Subtract,
+        ),
+    );
+}
+/// The Voidheart title's background (level1 Menu_Styles/VHeart_menu_Style/abyss particles), through the
+/// camera at (13.99, 11.86, -38.1) with a 24 degree field: `wispy smoke` (8 puffs of 2 to 5 s, 8 to 24
+/// units wide, black smoke whose frame advances over its life, rising from below the screen and
+/// drifting left at 0.3 to 4 units a second, faded in over the first eighth and out over the last
+/// sixth), `FG` (32 specks of 2 to 4 s, 0.2 to 0.6 units, rising on a gravity of -0.05 near the
+/// bottom centre) and `immediate_BG` (46 specks 2 px across further back). Black and Multiply in the
+/// source, here subtracted from the picture in proportion to their coverage. Positions follow from
+/// the projection (5.5 px a unit at the smoke's depth, 14 at the FG's, 5.3 at the BG's) and each slot
+/// is stateless (`moment`).
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn particles(gain: u8) {
+    let now = psx_rt::interrupts::vblank_count();
+    let strength = |level: i32, base: i32| level * base * i32::from(gain) / (256 * 128);
+    // The wispy smoke.
+    for i in 0..8u32 {
+        let (age, life, h) = moment(i, 150, 20, now);
+        let r = |shift: u32| ((h >> shift) & 255) as i32;
+        // Depth: 0.77 to 1.43 of the screen's scale at the emitter's.
+        let f = 197 + r(8) * 169 / 256;
+        let size = (44 + r(0) * 89 / 256) * f >> 8;
+        let speed = (6 + r(24) * 88 / 256) * f >> 8;
+        let x = 160 + ((10 + (r(16) - 128) * 20 / 128) * f >> 8) - (speed * age >> 8);
+        let y = 120 + (135 * f >> 8);
+        let frame = (age * 5 / life) as u8;
+        blob(
+            x - size / 2,
+            y - size / 2,
+            size,
+            size,
+            (frame * SMOKE_FRAME_PX, ORN_SMOKE as u8),
+            (SMOKE_FRAME_PX, SMOKE_FRAME_PX),
+            strength(envelope(age, life, 31, 215), 80),
+        );
+    }
+    // The specks: the foreground ones (`FG`) and the back ones (`immediate_BG`), both on the source's
+    // size and strength curves. Per group: first slot, count, life step, then the start point and its
+    // spread in x and y, the sideways speed (1/256 px a frame), the rise (1/65536 px a frame squared)
+    // and the size in px (least, spread; 0 spread is a fixed 2 px fleck).
+    const SPECKS: [[i32; 11]; 2] = [
+        [8, 32, 4, 150, 30, 252, 18, 12, 63, 3, 6],
+        [40, 46, 3, 147, 11, 189, 7, 0, 14, 2, 0],
+    ];
+    for [first, count, step, x0, xr, y0, yr, vx, rise, least, spread] in SPECKS {
+        for i in 0..count as u32 {
+            let (age, life, h) = moment(i + first as u32, 120, step as u32, now);
+            let r = |shift: u32| ((h >> shift) & 255) as i32 - 128;
+            let a = age * 256 / life;
+            let grow = if spread == 0 {
+                256
+            } else if a < 36 {
+                a * 256 / 36
+            } else if a > 230 {
+                (256 - a) * 256 / 26
+            } else {
+                256
+            };
+            let size = (least + (r(24) + 128) * spread / 256) * grow >> 8;
+            let x = x0 + r(0) * xr / 128 + (r(8) * vx / 128 * age >> 8);
+            let y = y0 + r(16) * yr / 128 - (age * age * rise >> 16);
+            blob(x - size / 2, y - size / 2, size, size, (0, ORN_DOT as u8), (8, 8), strength(envelope(age, life, 20, 240), 96));
+        }
+    }
+}
 /// The flourishes above and below a page, centred, each unfurled to `top` / `bottom` of 128. The
 /// source swaps nine sprite frames for the unfurl (a bud, then the wings spreading, then the long
 /// lines); here the finished flourish is shown through a window that widens from the middle,
@@ -230,6 +350,7 @@ fn flourishes(top: i16, bottom: i16, lv: Levels, gain: u8) {
     unfurl(top, (t.1, t.2), ORN_TOP, lv.top, gain);
     unfurl(bottom, (b.1, b.2), ORN_BOTTOM, lv.bottom, gain);
 }
+#[inline(never)]
 fn unfurl(y: i16, size: (u8, u8), v: u16, level: u8, gain: u8) {
     let w = (u16::from(size.0) * u16::from(level) / 128) as u8;
     if w == 0 {
@@ -298,6 +419,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
     let scaled = |level: u8| (u16::from(v.gain) * u16::from(level) / 128) as u8;
     let (gain, title) = (scaled(lv.content), scaled(lv.title));
     draw(v.gain);
+    particles(v.gain);
     match page {
         Page::Main => {
             for (i, label) in state::MAIN_ITEMS.iter().enumerate() {
@@ -645,6 +767,8 @@ fn upload_ornaments(rows: &[u8]) {
     };
     put(TITLE_FLEUR_TOP, ORN_X, ORN_TOP);
     put(TITLE_FLEUR_BOTTOM, ORN_X, ORN_BOTTOM);
+    put(TITLE_SMOKE, ORN_X, ORN_SMOKE);
+    put(TITLE_DOT, ORN_X, ORN_DOT);
     // The pointer's slots (`pointer_u`): final left leaf and right leaf, then the five opening
     // frames of each.
     for (slot, &offset) in TITLE_POINTER_SLOTS.iter().enumerate() {

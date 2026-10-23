@@ -228,6 +228,10 @@ mod live {
     /// The open step, for routes: 0 closed, 1 pages, 2 yes/no, 3 first-map prompt.
     #[no_mangle]
     pub static mut HK_CORNIFER_STEP: u32 = 0;
+    /// Cornifer's prompt is up.
+    pub fn prompting() -> bool {
+        unsafe { (*(&raw const CONVO)).prompt }
+    }
     pub fn open() -> bool {
         unsafe { CONVO.open() }
     }

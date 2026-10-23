@@ -46,6 +46,8 @@ enum Origin {
     Tk(usize),
     /// A Unity `Sprite` of resources.assets, by path id.
     Sprite(i64),
+    /// A frame of another tk2d collection of resources.assets: (collection path id, frame).
+    TkIn(i64, usize),
     /// No source art: a soft disc, solid at the middle and fading to nothing at the rim (the
     /// glow behind the charm board's soul vessel).
     Orb,
@@ -56,7 +58,7 @@ enum Origin {
 /// stop are drawn larger than their share of the fleur so that they read at
 /// 320x240. The pause screen's two fleurs are the final frames of their
 /// animations (`pause_top_fleur0008`, `bottom_fleur0008`).
-const PIECES: [(&str, Origin, usize, usize); 10] = [
+const PIECES: [(&str, Origin, usize, usize); 11] = [
     ("fleur_top", Origin::Tk(35), 192, 25),
     ("fleur_bottom", Origin::Tk(44), 128, 14),
     ("arrow", Origin::Tk(11), 15, 17),
@@ -73,6 +75,11 @@ const PIECES: [(&str, Origin, usize, usize); 10] = [
     // The soul vessel's glow on the board: the source's is a pink disc about 70 of 960 canvas texels
     // across, 23 texels at this screen's width. The guest tints it pink and adds it.
     ("board_orb", Origin::Orb, 24, 24),
+    // The prompt marker's flourish (`Arrow Prompt New` of the `Prompts Cln` collection, resources.assets
+    // 22054, frame 89 = prompt_idle0000): curls above, a chevron below, the label between. It spans about
+    // 2.4 by 2.2 world units, which are 14.8 px each on this screen. After the board's pieces: the guest
+    // asks for it alone.
+    ("prompt", Origin::TkIn(22054, 89), 36, 34),
 ];
 
 /// The orb: coverage 1 out to a third of the radius, then a smoothstep to nothing at the rim.
@@ -106,7 +113,16 @@ fn level(alpha: u8, luma: u8) -> u8 {
 /// The pieces the title draws whole, in the order its VRAM strip keeps them, and the menu
 /// pointer's source sprite and size.
 const TITLE_PIECES: [&str; 2] = ["fleur_top", "fleur_bottom"];
-const TITLE_ORDER: [&str; 4] = ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored"];
+const TITLE_ORDER: [&str; 6] =
+    ["fleur_top", "fleur_bottom", "pointer", "pointer_mirrored", "smoke", "dot"];
+/// The title's background particles (the Voidheart style's `abyss particles`, level1
+/// `Menu_Styles/VHeart_menu_Style`): the wispy smoke's five 102x102 frames (resources.assets
+/// Texture2D 367, black smoke whose alpha is its shape) and the soft dot of its specks (Texture2D
+/// 420). Both become coverage ramps for a subtractive draw.
+const SMOKE_TEXTURE: i64 = 367;
+const DOT_TEXTURE: i64 = 420;
+const SMOKE_FRAME: usize = 48;
+const DOT_PX: usize = 8;
 const POINTER_SPRITE: i64 = 101;
 /// The frames of `Menu Fleur Reveal` (sharedassets0.assets clip 58) the pointer shows while it
 /// opens, sampled as a 60 Hz screen does: the clip runs at 120 frames a second, so each presented
@@ -221,6 +237,16 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
                 tk_sprite(&source, &resources, &collection, id, &mut textures)?.0,
                 format!("resources.assets:{COLLECTION} sprite {id}"),
             ),
+            Origin::TkIn(collection_id, frame) => {
+                let object = source
+                    .object(&resources, collection_id)
+                    .map_err(|e| e.to_string())?;
+                let other = source.read(&object).map_err(|e| e.to_string())?;
+                (
+                    tk_sprite(&source, &resources, &other, frame, &mut textures)?.0,
+                    format!("resources.assets:{collection_id} sprite {frame}"),
+                )
+            }
             Origin::Sprite(id) => {
                 let object = source.object(&resources, id).map_err(|e| e.to_string())?;
                 (
@@ -314,6 +340,37 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             save_rgba(&preview_dir.join(format!("{name}.png")), &shown)?;
             title.push((name, POINTER_W, POINTER_H, whole_rows(&grey, POINTER_W, POINTER_H)));
         }
+    }
+    // The particles' textures.
+    {
+        let level_of = |a: u8| ((u32::from(a) * 15 + 127) / 255) as u8;
+        let texture = |id: i64| -> Result<Image> {
+            let object = source.object(&resources, id).map_err(|e| e.to_string())?;
+            Ok(hk_unity::texture::texture_image(&source, &object, false)
+                .map_err(|e| e.to_string())?
+                .to_rgba())
+        };
+        let smoke = texture(SMOKE_TEXTURE)?;
+        let frame_h = smoke.height as f64 / 5.0;
+        let mut strip = vec![0u8; SMOKE_FRAME * 5 * SMOKE_FRAME];
+        for k in 0..5usize {
+            let y0 = (k as f64 * frame_h).round() as i64;
+            let frame = smoke
+                .crop_int(0, y0, smoke.width as i64, y0 + frame_h.round() as i64)
+                .resize(SMOKE_FRAME, SMOKE_FRAME, Filter::Lanczos);
+            for y in 0..SMOKE_FRAME {
+                for x in 0..SMOKE_FRAME {
+                    strip[y * SMOKE_FRAME * 5 + k * SMOKE_FRAME + x] =
+                        level_of(frame.pixel(x, y)[3]);
+                }
+            }
+        }
+        title.push(("smoke", SMOKE_FRAME * 5, SMOKE_FRAME, whole_rows(&strip, SMOKE_FRAME * 5, SMOKE_FRAME)));
+        let dot = texture(DOT_TEXTURE)?.resize(DOT_PX, DOT_PX, Filter::Lanczos);
+        let grey: Vec<u8> = (0..DOT_PX * DOT_PX)
+            .map(|i| level_of(dot.pixel(i % DOT_PX, i / DOT_PX)[3]))
+            .collect();
+        title.push(("dot", DOT_PX, DOT_PX, whole_rows(&grey, DOT_PX, DOT_PX)));
     }
     {
         let mut ornaments: Vec<u8> = Vec::new();
@@ -461,9 +518,9 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         save_rgba(&preview_dir.join("font.png"), &shown)?;
         println!("Font image: {} bytes", strip.blob.len());
     }
-    if blob.len() > 9216 {
+    if blob.len() > 16384 {
         return err(format!(
-            "dialogue art is {} bytes, the resident budget is 9216",
+            "dialogue art is {} bytes, the resident budget is 16384",
             blob.len()
         ));
     }

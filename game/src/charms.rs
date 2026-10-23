@@ -140,6 +140,15 @@ impl State {
     pub fn overcharmed(&self) -> bool {
         self.filled() > self.notches
     }
+    /// What a hit takes: `HeroController::TakeDamage` hands `PlayerData.TakeHealth` twice the damage while
+    /// `overcharmed` is set (more notches spent than the board has), blue health first as for any hit.
+    pub fn damage_taken(&self, damage: u16) -> u16 {
+        if self.overcharmed() {
+            damage.saturating_mul(2)
+        } else {
+            damage
+        }
+    }
     fn refuse(&self, charm: usize) -> Option<Refusal> {
         let c = Self::charm(charm);
         if !self.owns(charm) {
@@ -352,6 +361,10 @@ fn compose(s: &State, mut base: VitalParams) -> VitalParams {
     base
 }
 /// `HeroController::TakeDamageCharmEffects`, called after a hit that landed.
+/// A hit's damage at the board's present state (doubled while overcharmed).
+pub fn damage_taken(damage: u16) -> u16 {
+    state().damage_taken(damage)
+}
 pub fn on_damage(vitals: &mut Vitals, params: VitalParams) {
     charge_on_damage(state(), vitals, params);
 }
@@ -810,6 +823,25 @@ mod tests {
         assert_eq!(s.toggle(SOUL_CATCHER), Ok(false));
         assert_eq!(s.filled(), 1);
         assert!(s.equipped(GRUBSONG) && !s.equipped(SOUL_CATCHER));
+    }
+    #[test]
+    fn an_overcharmed_knight_takes_double_damage_until_a_charm_comes_off() {
+        // `HeroController::TakeDamage`: TakeHealth(damage * 2) while `overcharmed`, which
+        // `GameManager::RefreshOvercharm` sets when more notches are spent than the board has.
+        let mut s = owning(&[GRUBSONG, SOUL_EATER]);
+        s.can_overcharm = true;
+        assert_eq!(s.toggle(GRUBSONG), Ok(true));
+        assert_eq!(s.damage_taken(1), 1, "within the board a hit takes its own damage");
+        // One free notch is enough to start: Grubsong spent 1 of 3, Soul Eater costs 4.
+        assert_eq!(s.toggle(SOUL_EATER), Ok(true));
+        assert!(s.overcharmed());
+        assert_eq!((s.damage_taken(1), s.damage_taken(2)), (2, 4));
+        assert_eq!(s.damage_taken(0), 0);
+        assert_eq!(s.damage_taken(u16::MAX), u16::MAX, "saturating");
+        // Unequipping puts the spend back within the board and the hit back to one.
+        assert_eq!(s.toggle(SOUL_EATER), Ok(false));
+        assert!(!s.overcharmed());
+        assert_eq!(s.damage_taken(1), 1);
     }
     #[test]
     fn a_full_board_refuses_before_overcharm_is_considered() {

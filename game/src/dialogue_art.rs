@@ -11,7 +11,9 @@
 //! asks the cache for nothing.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/dialogue_art.rs"));
 #[cfg(not(test))]
-pub use presentation::{append_needed, board_prepared, pause_prepared, prepared, texels, Art, KEY_BASE};
+pub use presentation::{
+    append_needed, board_prepared, pause_prepared, prepared, prompt_prepared, texels, Art, KEY_BASE,
+};
 
 /// Pixels between the arrow or stop and the bottom fleur, and the width of the
 /// panel's backboard on either side of the fleur: layout shared with the
@@ -31,7 +33,7 @@ mod presentation {
     const _: () = assert!(KEY_BASE as usize + DIALOGUE_TILE_COUNT <= hk_cache::MAX_KEYS);
     const _: () = assert!(ART.len() == DIALOGUE_ART_BYTES);
     // A tile is one slot upload, and a slot is 64x64 4bpp.
-    const _: () = assert!(DIALOGUE_ART_BYTES <= 9216);
+    const _: () = assert!(DIALOGUE_ART_BYTES <= 16384);
     /// The text panel's tiles come first, the pause screen's fleurs after them, the charm
     /// board's slot and notch circles last.
     const PANEL_TILES: usize = DIALOGUE_PAUSE_TOP.0;
@@ -45,6 +47,8 @@ mod presentation {
         Pause,
         /// The charm board: the empty slot's ring and the notch circles.
         Board,
+        /// An NPC's prompt marker: its one flourish.
+        Prompt,
     }
     /// What this frame's working set carries. A screen draws ornaments only for the
     /// kind its frame asked for, so one that opened after the set was fixed draws
@@ -63,7 +67,8 @@ mod presentation {
             Art::None => return,
             Art::Panel => 0..PANEL_TILES,
             Art::Pause => PANEL_TILES..DIALOGUE_BOARD_SLOT.0,
-            Art::Board => DIALOGUE_BOARD_SLOT.0..DIALOGUE_TILE_COUNT,
+            Art::Board => DIALOGUE_BOARD_SLOT.0..DIALOGUE_PROMPT.0,
+            Art::Prompt => DIALOGUE_PROMPT.0..DIALOGUE_TILE_COUNT,
         };
         if *len + tiles.len() > needed.len() {
             unsafe { HK_DIALOGUE_ART_CROWDED = HK_DIALOGUE_ART_CROWDED.saturating_add(1) };
@@ -80,6 +85,9 @@ mod presentation {
     }
     pub fn pause_prepared() -> bool {
         unsafe { PREPARED == Art::Pause }
+    }
+    pub fn prompt_prepared() -> bool {
+        unsafe { PREPARED == Art::Prompt }
     }
     pub fn board_prepared() -> bool {
         unsafe { PREPARED == Art::Board }

@@ -179,7 +179,8 @@ impl Settings {
         }
         if !self.invincible {
             let p = self.params(base);
-            let hurt = v.hurt(p, damage, direction, hazard);
+            // An overcharmed Knight takes twice the damage (`HeroController::TakeDamage`).
+            let hurt = v.hurt(p, crate::charms::damage_taken(damage), direction, hazard);
             // HeroController::TakeDamage runs TakeDamageCharmEffects only for a
             // hit that actually landed, so an ignored hit charges no SOUL.
             if hurt != Hurt::Ignored {

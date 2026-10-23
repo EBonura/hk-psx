@@ -10,6 +10,17 @@ mod charms {
     }
     pub fn grant_all(_: bool) {}
     pub fn on_damage(_: &mut hk_sim::Vitals, _: hk_sim::VitalParams) {}
+    thread_local! {
+        /// The board's overcharm state for this test thread, set by a test.
+        pub static OVERCHARMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    pub fn damage_taken(damage: u16) -> u16 {
+        if OVERCHARMED.with(|o| o.get()) {
+            damage * 2
+        } else {
+            damage
+        }
+    }
 }
 // And the shop's half of PlayerData, which `cheats::params` composes under
 // the charms. The real module `include!`s the cooked stock relative to its own
@@ -37,6 +48,26 @@ const P: VitalParams = VitalParams {
     death_ticks: 171,
     recoil_speed: 15 * 65536,
 };
+#[test]
+fn an_overcharmed_hit_takes_twice_the_damage() {
+    // cheats::Settings::hurt asks the charm board what a hit costs (HeroController::TakeDamage doubles it
+    // while overcharmed); the board's own rule is tested in game/src/charms.rs.
+    let settings = Settings::new();
+    let mut v = Vitals::new(P);
+    charms::OVERCHARMED.with(|o| o.set(false));
+    assert_eq!(settings.hurt(&mut v, P, 1, 1, false, false), Hurt::Recoiling);
+    assert_eq!(v.health, 4);
+    let mut v = Vitals::new(P);
+    charms::OVERCHARMED.with(|o| o.set(true));
+    assert_eq!(settings.hurt(&mut v, P, 1, 1, false, false), Hurt::Recoiling);
+    assert_eq!(v.health, 3, "one mask of damage took two");
+    // Blue health is spent first, on the doubled amount.
+    let mut v = Vitals::new(P);
+    v.add_blue_health(1);
+    assert_eq!(settings.hurt(&mut v, P, 1, 1, false, false), Hurt::Recoiling);
+    assert_eq!((v.blue_health, v.health), (0, 4));
+    charms::OVERCHARMED.with(|o| o.set(false));
+}
 #[test]
 fn default_settings_match_normal_vitals_and_damage_for_every_small_state() {
     let s = Settings::new();

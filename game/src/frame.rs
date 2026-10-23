@@ -338,6 +338,8 @@ pub fn render(
         if !game.paused {
             if crate::dialogue::panel_up(game.save_ui) {
                 crate::dialogue_art::Art::Panel
+            } else if crate::dialogue::prompt_up() {
+                crate::dialogue_art::Art::Prompt
             } else {
                 crate::dialogue_art::Art::None
             }
@@ -560,7 +562,8 @@ pub fn interact(
     let paid = dialogue::npc_tick(
         r.scene,
         npc_in_range,
-        can_inspect,
+        // `Inert` while the first-visit area title is up (title_card::npcs_inert).
+        can_inspect && !title_card::npcs_inert(),
         pad.bits(),
         game.geo.wallet(),
     );

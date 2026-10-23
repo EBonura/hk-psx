@@ -15,7 +15,7 @@ pub mod framebuf{
 }
 pub mod material{
  pub struct TextureMaterial;
- #[derive(Clone,Copy)]pub enum BlendMode{Opaque,Add}
+ #[derive(Clone,Copy)]pub enum BlendMode{Opaque,Add,Subtract}
  impl TextureMaterial{pub fn opaque(_:u16,_:u16,tint:(u8,u8,u8))->Self{assert!(tint.0<=128&&tint.1<=128&&tint.2<=128);Self}
   pub fn blended(_:u16,_:u16,tint:(u8,u8,u8),_:BlendMode)->Self{assert!(tint.0<=128&&tint.1<=128&&tint.2<=128);Self}}
 }
@@ -25,6 +25,7 @@ pub struct Clut;impl Clut{pub fn new(x:u16,y:u16)->Self{assert!(x%16==0&&y<512);
 pub enum TexDepth{Bit4,Bit8}pub struct Tpage;impl Tpage{pub fn new(x:u16,y:u16,_:TexDepth)->Self{assert!(x%64==0&&y%256==0);Self}pub fn uv_tpage_word(&self,_:u16)->u16{0}}
 pub fn upload_bytes(rect:VramRect,data:&[u8]){assert_eq!(rect.w as usize*rect.h as usize*2,data.len());TRACE.with(|t|t.borrow_mut().uploads.push((rect,data.len())));}
 pub fn draw_sprite_material(x:i16,y:i16,w:u16,h:u16,_:(u8,u8),_:material::TextureMaterial){assert!(x>=0&&y>=0&&x as u16+w<=320&&y as u16+h<=240);TRACE.with(|t|t.borrow_mut().sprites+=1);}
+pub fn draw_quad_textured_material(_:[(i16,i16);4],_:[(u8,u8);4],_:material::TextureMaterial){}
 pub fn draw_rect_flat(x:i16,y:i16,w:u16,h:u16,_:u8,_:u8,_:u8){assert!(x>=0&&y>=0&&x as u16+w<=320&&y as u16+h<=240);}
 pub mod button{pub const START:u16=1<<3;pub const CROSS:u16=1<<14;}
 pub struct Buttons(u16);impl Buttons{pub fn bits(&self)->u16{self.0}pub fn is_held(&self,b:u16)->bool{self.0&b!=0}}
@@ -40,6 +41,7 @@ mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic
 pub mod interrupts{
  pub fn queue_gp1_at_vblank(_:u32){super::TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.signalled,"flip queued with no GP0(1Fh) after the arm: it would never apply");t.signalled=false;t.pending=true;});}
  pub fn gp1_queue_pending()->bool{super::TRACE.with(|t|t.borrow().pending)}
+ pub fn vblank_count()->u32{super::TRACE.with(|t|t.borrow().polls as u32)}
  pub fn wait_vblank(){super::TRACE.with(|t|t.borrow_mut().pending=false);}
 }
 pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((0,v)));}
@@ -68,6 +70,7 @@ mod charms{
  pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
  pub fn grant_all(_:bool){}
  pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
+ pub fn damage_taken(d:u16)->u16{d}
 }
 // And the shop's half of PlayerData sits under the charms in the same stack,
 // for the same reason: the real module links the cooked stock. Its own
@@ -82,7 +85,7 @@ const EMPTY:[&str;4]=["Empty","Empty","Empty","Empty"];
 /// The title art the disc would hand `run` and `restore` (tests/test_menu.py writes it).
 static ART:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/menu.hk"));
 // The boot art chunk's layout the title reads: its ornaments follow the title art (89,712 bytes) and the glyph sheet (7,712).
-mod boot_art{pub const TITLE_ORNAMENTS:(usize,usize)=(89712+12832,4976);pub const CARD_FONT:(usize,usize)=(89712+12832+4976,7680);}
+mod boot_art{pub const TITLE_ORNAMENTS:(usize,usize)=(89712+12832,10768);pub const CARD_FONT:(usize,usize)=(89712+12832+10768,7680);}
 #[path="../game/src/menu.rs"]mod menu;
 fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{samples:bits.into_iter().collect(),..Trace::default()});}
 #[test]fn start_opens_the_save_screen_and_the_first_slot_keeps_the_defaults(){
@@ -92,7 +95,7 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  for b in [button::START,button::CROSS]{
   let mut samples=vec![0;8];samples.push(b);samples.push(0);samples.push(button::CROSS);samples.extend([0;40]);feed(samples);
   let (s,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings::new());assert_eq!(p,0);
-  TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),21);});
+  TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),23);});
  }
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
@@ -105,7 +108,7 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  let _guard=LOCK.lock().unwrap();feed([button::START,button::START,0,button::CROSS]);menu::restore(Some(ART));menu::retry(&mut framebuf::FrameBuffer);
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.polls,4);// `restore` uploads the glyphs ahead of the art now; find the patches by place.
   let patch=t.uploads.iter().find(|v|v.0.x==544).expect("the status patches");assert_eq!(patch.0.h,64);assert_eq!(patch.1,12288);
-  assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+12832+4976+7680);// art, glyphs, the title ornaments, then the card glyphs
+  assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+12832+10768+7680);// art, glyphs, the title ornaments, then the card glyphs
  });
  feed([0]);menu::loading(&mut framebuf::FrameBuffer);TRACE.with(|t|assert_eq!(t.borrow().polls,1));
 }

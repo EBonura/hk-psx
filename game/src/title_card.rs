@@ -57,7 +57,17 @@ struct State {
     showing: u8,
     style: Style,
     age: u16,
+    /// The tick a revisit's small card began its quick fade-out at (0: none), and how strong it was.
+    cut: u16,
+    cut_level: u8,
 }
+/// Ticks after an area's first-visit card has faded that `Area Title Control` keeps its Titles Down wait
+/// (2 s against the 1.5 s fade): the NPCs are inert until it ends (`npcs_inert`).
+const AREA_TAIL: u16 = 30;
+/// A small card's quick fade-out, in ticks: `Title Small`'s fadeOutTimeFast, 0.5 s. The source runs it
+/// when an NPC conversation starts (`Area Title Control`: Visited Appear, NPC CONVO START, Quick
+/// Disappear). The first-visit card has no such transition: it stays up through a conversation.
+const QUICK: u16 = 30;
 static mut STATE: State = State {
     last: NONE,
     armed: None,
@@ -66,6 +76,8 @@ static mut STATE: State = State {
     showing: NONE,
     style: Style::Area,
     age: 0,
+    cut: 0,
+    cut_level: 0,
 };
 /// Cards shown, and the title index (plus one) of the last.
 #[no_mangle]
@@ -84,6 +96,7 @@ fn show(title: u8, style: Style) {
     s.showing = title;
     s.style = style;
     s.age = 0;
+    s.cut = 0;
     unsafe {
         HK_TITLE_CARDS = HK_TITLE_CARDS.saturating_add(1);
         HK_TITLE_CARD = title as u32 + 1;
@@ -129,7 +142,23 @@ pub fn reset() {
         showing: NONE,
         style: Style::Area,
         age: 0,
+        cut: 0,
+        cut_level: 0,
     };
+}
+/// While an area's first-visit title is up, the NPCs do not answer: `Area Title Control` sends
+/// `BIG TITLE START` when its Fleurs Up state begins (0.6 s in) and `BIG TITLE END` when Titles Down
+/// ends, and every `npc_control` goes to its `Inert` state in between (no prompt, no talking). The
+/// revisit title sends neither.
+#[inline(never)]
+pub fn npcs_inert() -> bool {
+    let s = state();
+    s.showing != NONE && s.style == Style::Area && s.age >= timing(Style::Area).0
+}
+/// The inventory opened (`INVENTORY OPENED`): every state of `Area Title Control` ends, so the card
+/// that is up is gone for good.
+pub fn dismiss() {
+    state().showing = NONE;
 }
 /// One simulation tick; `body` is the Knight's box.
 pub fn tick(body: [i32; 4]) {
@@ -137,7 +166,11 @@ pub fn tick(body: [i32; 4]) {
     if s.showing != NONE {
         s.age += 1;
         let (delay, fade_in, hold, fade_out) = timing(s.style);
-        if s.age >= delay + fade_in + hold + fade_out {
+        if s.cut == 0 && s.style == Style::Seen && crate::dialogue::npc_speaking().is_some() {
+            (s.cut, s.cut_level) = (s.age, level(s));
+        }
+        let tail = if s.style == Style::Area { AREA_TAIL } else { 0 };
+        if s.age >= delay + fade_in + hold + fade_out + tail || (s.cut != 0 && s.age - s.cut >= QUICK) {
             s.showing = NONE;
         }
     }
@@ -241,6 +274,21 @@ fn big_line(text: &str, y: i16, level: u8, centre: i16) {
         x += CARD_ADVANCES[i] as i16;
     }
 }
+/// How strong the card is now, 0 to 128.
+fn level(s: &State) -> u8 {
+    if s.cut != 0 {
+        return (u16::from(s.cut_level) * (QUICK - (s.age - s.cut).min(QUICK)) / QUICK) as u8;
+    }
+    let (delay, fade_in, hold, fade_out) = timing(s.style);
+    let age = s.age.saturating_sub(delay);
+    (if age < fade_in {
+        age * 128 / fade_in
+    } else if age < fade_in + hold {
+        128
+    } else {
+        (fade_in + hold + fade_out).saturating_sub(age) * 128 / fade_out
+    }) as u8
+}
 /// Compose this frame's card, if any, into the panels' packet table: call after `dialogue::prepare`,
 /// which empties it. A paused game shows none: its clock is stopped, and the
 /// pause pages are drawn over the view rather than in an opaque box that used to hide the card.
@@ -249,16 +297,10 @@ pub fn prepare(paused: bool) {
     if s.showing == NONE || paused {
         return;
     }
-    let (delay, fade_in, hold, fade_out) = timing(s.style);
-    let age = s.age.saturating_sub(delay);
-    let level = if age < fade_in {
-        age * 128 / fade_in
-    } else if age < fade_in + hold {
-        128
-    } else {
-        (fade_in + hold + fade_out - age) * 128 / fade_out
-    } as u16;
-    let level = level as u8;
+    let level = level(s);
+    if level == 0 {
+        return;
+    }
     if s.style == Style::Item {
         line(unsafe { ITEM_NAME }, 104, level, 160);
         return;

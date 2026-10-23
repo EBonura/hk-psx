@@ -434,7 +434,7 @@ pub(crate) fn panel_width(value: &str) -> i16 {
 }
 /// The shop counter raises the same marker over the same world point an NPC
 /// does, so it borrows the marker rather than keeping a second copy of it.
-pub(crate) fn panel_prompt(camera: (i32, i32), p: [i32; 2], label: &str) {
+pub(crate) fn panel_prompt(camera: (i32, i32), p: [i32; 2], label: &'static str) {
     prompt_marker(camera, p, label);
 }
 pub(crate) fn panel_pages(pages: &[&'static [&'static str]], page: usize) {
@@ -467,6 +467,10 @@ pub fn prepare(
         FADE = 128;
         let board = pause.is_some_and(|(p, _)| (p.charms.open || p.cheats) && !p.confirm_reset);
         crate::hud::hide(board);
+        if pause.is_some_and(|(p, _)| p.charms.open) {
+            // The inventory is open: the area title ends (`INVENTORY OPENED`).
+            crate::title_card::dismiss();
+        }
         if !board {
             let geo_y = crate::hud::geo_y(total_masks);
             number(GEO_NUMBER_X, geo_y, geo);
@@ -592,6 +596,8 @@ pub fn prepare(
             prompt_marker(camera, POINTS[id].marker, POINTS[id].label);
         } else if let Some(id) = CONVO.prompt {
             prompt_marker(camera, NPC_LINES[id].marker, NPC_LINES[id].label);
+        } else {
+            prompt_fade_out(camera);
         }
         #[cfg(feature = "card-diag")]
         crate::card_diag::overlay();
@@ -1024,13 +1030,71 @@ pub(crate) fn board_glow_art(piece: (usize, usize, u16, u16), x: i16, y: i16, (r
 pub(crate) fn panel_text_gain(x: i16, y: i16, value: &str, gain: u8) {
     text_gain(x, y, value, gain);
 }
-/// The source prompt marker's label, over the marker's own world point.
-fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &str) {
+/// The prompt marker last drawn: its world point, label, the vblank it first appeared at and the
+/// vblank of the last frame that drew it.
+static mut PROMPT: ([i32; 2], &'static str, u32, u32) = ([0; 2], "", 0, 0);
+/// Vblanks a prompt takes to fade out (`FadeGroup` fadeOutTime 0.233).
+const PROMPT_OUT: u32 = 14;
+/// Whether this frame needs the prompt's art: one is up, or one has just gone.
+#[inline(never)]
+pub(crate) fn prompt_up() -> bool {
+    unsafe {
+        STATE.prompt.is_some()
+            || CONVO.prompt.is_some()
+            || crate::mapper::prompting()
+            || (!PROMPT.1.is_empty()
+                && psx_rt::interrupts::vblank_count().wrapping_sub(PROMPT.3) <= PROMPT_OUT + 2)
+    }
+}
+/// The source prompt marker over the marker's own world point (`ShowPromptMarker`: the spawned
+/// `Arrow Prompt New` at the NPC's `Prompt Marker` child): the label in small capitals between a
+/// curled flourish above and a chevron below, fading in over 0.4 s (its `FadeGroup`) as the flourish
+/// opens, and out over 0.233 s once the prompt is gone (`HidePromptMarker`).
+#[inline(never)]
+fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &'static str) {
+    let now = psx_rt::interrupts::vblank_count();
+    let age = unsafe {
+        if now.wrapping_sub(PROMPT.3) > 4 || PROMPT.0 != p {
+            PROMPT.2 = now;
+        }
+        PROMPT = (p, label, PROMPT.2, now);
+        now.wrapping_sub(PROMPT.2)
+    };
+    draw_prompt(camera, p, label, ramp(age.min(255) as u8, 0, 24), ramp(age.min(255) as u8, 0, 14), age);
+}
+/// A prompt that was drawn a moment ago and is not any more.
+#[inline(never)]
+fn prompt_fade_out(camera: (i32, i32)) {
+    let (p, label, gone) = unsafe {
+        let gone = psx_rt::interrupts::vblank_count().wrapping_sub(PROMPT.3);
+        (PROMPT.0, PROMPT.1, gone)
+    };
+    if !label.is_empty() && (1..=PROMPT_OUT).contains(&gone) {
+        draw_prompt(camera, p, label, 128 - ramp(gone as u8, 0, PROMPT_OUT as u8), 128, 255);
+    }
+}
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn draw_prompt(camera: (i32, i32), p: [i32; 2], label: &'static str, fade: u8, open: u8, age: u32) {
+    use crate::dialogue_art::DIALOGUE_PROMPT;
     let x = 160 + psx_math::int32::mul_shr_i32((p[0] - camera.0) >> 8, crate::KNIGHT_SCALE as i32, 20);
     let y = 120 - psx_math::int32::mul_shr_i32((p[1] - camera.1) >> 8, crate::KNIGHT_SCALE as i32, 20);
+    let y = y.clamp(32, 220) as i16;
+    if crate::dialogue_art::prompt_prepared() {
+        let x = x.clamp(24, 296) as i16;
+        unsafe { FADE = fade };
+        unfurl(DIALOGUE_PROMPT, x - DIALOGUE_PROMPT.2 as i16 / 2, y - DIALOGUE_PROMPT.3 as i16 / 2, open);
+        // Trajan capitals advance about 8 px.
+        caps_text(x - label.len() as i16 * 4, y - 10, label, 0x80);
+        unsafe { FADE = 128 };
+        return;
+    }
+    // Without the art in this frame's working set: the label in a box, once it has stayed a while.
+    if age < 4 {
+        return;
+    }
     let w = width(label);
     let x = (x - w as i32 / 2).clamp(4, 316 - w as i32) as i16;
-    let y = y.clamp(32, 220) as i16;
     unsafe {
         BOXES[0] = RectFlat::new(x - 3, y - 2, w as u16 + 6, 18, 0, 0, 0);
         BOX_COUNT = 1;
