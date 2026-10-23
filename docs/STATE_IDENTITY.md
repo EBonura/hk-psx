@@ -76,12 +76,15 @@ and 17 broken breakables kept a solid collider in the 1-unit band where a view
 holds the collider but not the owner (Tute Doors 2, 6 and 7, the Shaman Temple
 planks).
 
-`host/world.py postpack_remote_art` binds each such object into every view
-that has its art or its collider and does not list it, as one `KIND_REMOTE_ART`
-bank object (flag 1 grass; state id; off draws, on draws, edge indices), no hit
-shape: the same shape as `remote_mask_bindings`. `State::apply` hides or shows
-those draws from the scene table, and `fill_edges` / `broken_edge` blank the
-edges of a broken one. The bound draws join the mutable-draw set the opaque
+`host/world.py postpack_remote_art` finds, for every view, each such object
+that has its art or its collider there and is not listed there. The bank cooks
+them as one `KIND_REMOTE_ART` carrier per view: a u16 stream in the index
+section with one entry per object (header with the grass flag and the three
+list lengths, the scene-local state index, then off draws, on draws and edge
+indices), 4 bytes plus 2 per index, where one 48-byte object record each cost
+12.8 KB of scene arena (4,294 bindings over the game). `State::apply` hides or
+shows those draws from the scene table, and `fill_edges` / `broken_edge` blank
+the edges of a broken one. The bound draws join the mutable-draw set the opaque
 tile cook excludes (`hk-cook opaque_tiles::mutable_draws`) and the textures
 similarity dedup protects. A Geo rock already followed this rule (`bind_regions`
 lists a rock wherever a view has its draws or edges).

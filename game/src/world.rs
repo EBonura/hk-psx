@@ -543,16 +543,28 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
         let Some(object) = bank.object(local) else {
             continue;
         };
-        // A remote binding (a breakable another view lists) holds its edges too.
-        if !(object.kind() == KIND_BREAKABLE
-            || object.kind() == KIND_REMOTE_ART && object.flags() & 1 == 0)
-        {
-            continue;
-        }
         let id = object.state_id() as usize;
-        if broken[id / 32] & (1 << (id % 32)) != 0 && object.indices(2).any(|e| e as usize == index)
-        {
-            return true;
+        match object.kind() {
+            KIND_BREAKABLE => {
+                if broken[id / 32] & (1 << (id % 32)) != 0
+                    && object.indices(2).any(|e| e as usize == index)
+                {
+                    return true;
+                }
+            }
+            // A remote binding (a breakable another view lists) holds its edges too.
+            KIND_REMOTE_ART => {
+                for entry in object.remote_art() {
+                    let id = id + entry.state as usize;
+                    if !entry.grass
+                        && broken[id / 32] & (1 << (id % 32)) != 0
+                        && entry.edges.into_iter().any(|e| e as usize == index)
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
         }
     }
     false
@@ -795,13 +807,15 @@ fn fill_edges(
     }
     if let Some(bank) = bank_region(region) {
         for object in bank.objects().flatten() {
-            let id = object.state_id() as usize;
-            if object.kind() == KIND_REMOTE_ART
-                && object.flags() & 1 == 0
-                && broken[id / 32] & (1 << (id % 32)) != 0
-            {
-                for i in object.indices(2) {
-                    blank(i);
+            if object.kind() != KIND_REMOTE_ART {
+                continue;
+            }
+            for entry in object.remote_art() {
+                let id = object.state_id() as usize + entry.state as usize;
+                if !entry.grass && broken[id / 32] & (1 << (id % 32)) != 0 {
+                    for i in entry.edges {
+                        blank(i);
+                    }
                 }
             }
         }
@@ -1347,18 +1361,19 @@ impl State {
                     }
                 }
                 KIND_REMOTE_ART => {
-                    let id = object.state_id() as usize;
-                    let changed = if object.flags() & 1 != 0 {
-                        self.cut(id)
-                    } else {
-                        self.broken(id)
-                    };
-                    for draw in object.indices(0) {
-                        crate::render::set_visible(draw as usize, !changed);
-                        remote_hidden += u32::from(changed);
-                    }
-                    for draw in object.indices(1) {
-                        crate::render::set_visible(draw as usize, changed);
+                    for entry in object.remote_art() {
+                        let changed = if entry.grass {
+                            self.cut(entry.state as usize)
+                        } else {
+                            self.broken(object.state_id() as usize + entry.state as usize)
+                        };
+                        for draw in entry.off {
+                            crate::render::set_visible(draw as usize, !changed);
+                            remote_hidden += u32::from(changed);
+                        }
+                        for draw in entry.on {
+                            crate::render::set_visible(draw as usize, changed);
+                        }
                     }
                 }
                 KIND_MASK_FADE => self.apply_mask(owner.0, owner.1, MaskFade { object }),
@@ -2211,15 +2226,20 @@ mod broken_edge_tests {
                 let Some(region) = resident(bank_region.global_id() as usize - 1) else {
                     continue;
                 };
-                // Remote breakable bindings hold edges too (KIND_REMOTE_ART, flag 0).
+                // Remote breakable bindings hold edges too (KIND_REMOTE_ART).
                 let remote_edges = |index: usize, broken: &[u32]| {
-                    bank_region.objects().flatten().any(|o| {
-                        let id = o.state_id() as usize;
-                        o.kind() == KIND_REMOTE_ART
-                            && o.flags() & 1 == 0
-                            && broken[id / 32] & (1 << (id % 32)) != 0
-                            && o.indices(2).any(|e| e as usize == index)
-                    })
+                    bank_region
+                        .objects()
+                        .flatten()
+                        .filter(|o| o.kind() == KIND_REMOTE_ART)
+                        .any(|o| {
+                            o.remote_art().any(|entry| {
+                                let id = o.state_id() as usize + entry.state as usize;
+                                !entry.grass
+                                    && broken[id / 32] & (1 << (id % 32)) != 0
+                                    && entry.edges.into_iter().any(|e| e as usize == index)
+                            })
+                        })
                 };
                 let top = breakables(bank_region)
                     .flat_map(|b| b.edges())
@@ -2228,7 +2248,7 @@ mod broken_edge_tests {
                             .objects()
                             .flatten()
                             .filter(|o| o.kind() == KIND_REMOTE_ART)
-                            .flat_map(|o| o.indices(2)),
+                            .flat_map(|o| o.remote_art().flat_map(|entry| entry.edges)),
                     )
                     .max()
                     .map_or(4, |e| e as usize + 2);

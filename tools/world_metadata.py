@@ -241,7 +241,10 @@ def encode_scene(scene, rows):
                        scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, row["activation_bounds"], None,
                        (index_list(binding["fade"]["draw_indices"], draw_count, "remote mask draw"), ticks, total))
         # Grass and breakables a view draws or holds without listing them: their
-        # art and colliders follow the scene-wide state (flag 1 says grass).
+        # art and colliders follow the scene-wide state. One carrier per region
+        # spans a u16 stream (header, state, off draws, on draws, edges per
+        # entry; see KIND_REMOTE_ART) instead of a 48-byte object per binding.
+        stream = []
         for binding in row.get("remote_art_bindings", []):
             grass = binding["kind"] == "grass"
             if not grass and binding["kind"] != "breakable":
@@ -250,11 +253,24 @@ def encode_scene(scene, rows):
             state = bounded(binding["state_index"], per_scene, "remote art state")
             if grass and binding["edge_indices"]:
                 raise ValueError("remote grass binding has no collider")
-            add_object("remote_art", {"source": binding["owner_source"]},
-                       scene["scene_id"] * per_scene + state, 1 if grass else 0, row["activation_bounds"], None,
-                       (index_list(binding["off_draws"], draw_count, "remote art off draw"),
-                        index_list(binding["on_draws"], draw_count, "remote art on draw"),
-                        index_list(binding["edge_indices"], edge_count, "remote art edge index")))
+            lists = [[bounded(v, draw_count, "remote art off draw") for v in binding["off_draws"]],
+                     [bounded(v, draw_count, "remote art on draw") for v in binding["on_draws"]],
+                     [bounded(v, edge_count, "remote art edge index") for v in binding["edge_indices"]]]
+            while any(lists):
+                part = [chunk[:31] for chunk in lists]
+                lists = [chunk[31:] for chunk in lists]
+                stream.append((0x8000 if grass else 0) | len(part[0]) << 10 | len(part[1]) << 5 | len(part[2]))
+                stream.append(state)
+                for chunk in part:
+                    stream.extend(chunk)
+        if stream:
+            first = len(indices)
+            indices.extend(bounded(v, 0x10000, "remote art stream word") for v in stream)
+            if first > 0xFFFF or len(stream) > 0xFFFF:
+                raise ValueError("remote art stream exceeds the u16 span")
+            add_object("remote_art", {"source": f"remote_art:{row['chunk_id']}"},
+                       scene["scene_id"] * BREAKABLES_PER_SCENE, 0, row["activation_bounds"], None,
+                       (first | len(stream) << 16, 0, 0))
         for record in row.get("grass", []):
             state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")
             if stable_grass.setdefault(state, record["source"]) != record["source"]:

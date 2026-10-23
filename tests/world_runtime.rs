@@ -852,12 +852,17 @@ fn remote_art_follows_scene_state_in_every_scene0_view() {
         let path = format!("{}/../data/regions/chunk_{}.hk", env!("CARGO_MANIFEST_DIR"), index + 1);
         let bytes = std::fs::read(path).unwrap();
         let room = hk_format::Room::parse(&bytes).unwrap();
-        for object in bank.objects().flatten().filter(|o| o.kind() == KIND_REMOTE_ART) {
-            let id = object.state_id() as usize;
-            let grass = object.flags() & 1 != 0;
-            let off: Vec<usize> = object.indices(0).map(|d| d as usize).collect();
-            let on: Vec<usize> = object.indices(1).map(|d| d as usize).collect();
-            let edges: Vec<usize> = object.indices(2).map(|e| e as usize).collect();
+        for (object, entry) in bank
+            .objects()
+            .flatten()
+            .filter(|o| o.kind() == KIND_REMOTE_ART)
+            .flat_map(|o| o.remote_art().map(move |entry| (o, entry)))
+        {
+            let grass = entry.grass;
+            let id = if grass { entry.state as usize } else { object.state_id() as usize + entry.state as usize };
+            let off: Vec<usize> = entry.off.map(|d| d as usize).collect();
+            let on: Vec<usize> = entry.on.map(|d| d as usize).collect();
+            let edges: Vec<usize> = entry.edges.map(|e| e as usize).collect();
             assert!(grass || id < 128 * 1024, "breakable state id {id}");
             let mut state = State::new();
             state.apply(&region);

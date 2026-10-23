@@ -84,8 +84,13 @@ pub const KIND_REVEAL_MASK: u16 = 17;
 /// index list of (moving part, draw) pairs and words 1 and 2 the world point
 /// the strike effect spawns at. host/secret_breaks.py, tools/world_metadata.py.
 pub const KIND_SECRET: u16 = 18;
-/// A grass patch or breakable that a region draws or holds without listing it
-/// (no hit shape): flag 1 grass, state id, off draws, on draws, edge indices.
+/// One per region that draws or holds grass patches and breakables it does not
+/// list (no hit shape). State id: the scene's first breakable id. Payload word 0
+/// spans a u16 stream in the index section, one entry per object: a header
+/// (bit 15 grass, bits 10..14 off-draw count, 5..9 on-draw count, 0..4 edge
+/// count), the object's scene-local state index, then its off draws, on draws
+/// and edge indices. An object with longer lists takes several entries.
+/// See `Object::remote_art` and tools/world_metadata.py.
 pub const KIND_REMOTE_ART: u16 = 19;
 
 #[derive(Clone, Copy)]
@@ -244,13 +249,25 @@ impl<'a> WorldMeta<'a> {
             }
             // Index-list spans live in the payload words of list-bearing kinds.
             let lists: &[usize] = match object.kind() {
-                KIND_BREAKABLE | KIND_REMOTE_ART => &[0, 1, 2],
-                KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS | KIND_SECRET => &[0],
+                KIND_BREAKABLE => &[0, 1, 2],
+                KIND_MASK_FADE | KIND_REMOTE_MASK | KIND_REVEAL_BINDINGS | KIND_SECRET
+                | KIND_REMOTE_ART => &[0],
                 _ => &[],
             };
             for &word in lists {
                 let (first, count) = object.index_span(word);
                 self.span(4, first, count)?;
+            }
+            if object.kind() == KIND_REMOTE_ART {
+                // Every entry must lie inside the stream that holds it.
+                let (_, count) = object.index_span(0);
+                let mut used = 0;
+                for entry in object.remote_art() {
+                    used += 2 + entry.off.count + entry.on.count + entry.edges.count;
+                }
+                if used != count {
+                    return Err(Error::Reference);
+                }
             }
             // A camera lock's single "polygon" is its two limit points.
             let minimum = if object.kind() == KIND_CAMERA_LOCK {
@@ -507,6 +524,16 @@ impl<'a> Object<'a> {
         let value = self.extra(word) as u32;
         ((value & 0xFFFF) as usize, (value >> 16) as usize)
     }
+    /// The grass and breakables a `KIND_REMOTE_ART` object binds, in stream
+    /// order; admission checked that the entries fill the stream exactly.
+    pub fn remote_art(&self) -> RemoteArtEntries<'a> {
+        let (first, count) = self.index_span(0);
+        RemoteArtEntries {
+            meta: self.meta,
+            at: first,
+            end: first + count,
+        }
+    }
     /// The u16 list a payload word spans; admission checked the span.
     pub fn indices(&self, word: usize) -> Indices<'a> {
         let (first, count) = self.index_span(word);
@@ -516,6 +543,58 @@ impl<'a> Object<'a> {
             index: 0,
             count,
         }
+    }
+}
+
+/// One grass patch or breakable bound into a region (see `KIND_REMOTE_ART`).
+pub struct RemoteArt<'a> {
+    pub grass: bool,
+    /// Scene-local state index; a breakable's id is the carrier's state id plus this.
+    pub state: u16,
+    pub off: Indices<'a>,
+    pub on: Indices<'a>,
+    pub edges: Indices<'a>,
+}
+
+pub struct RemoteArtEntries<'a> {
+    meta: WorldMeta<'a>,
+    at: usize,
+    end: usize,
+}
+impl<'a> Iterator for RemoteArtEntries<'a> {
+    type Item = RemoteArt<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.at + 2 > self.end || self.end > self.meta.counts[4] {
+            return None;
+        }
+        let word = |i: usize| u16_at(self.meta.bytes, self.meta.offsets[4] + i * INDEX_STRIDE);
+        let header = word(self.at);
+        let state = word(self.at + 1);
+        let counts = [
+            (header >> 10 & 31) as usize,
+            (header >> 5 & 31) as usize,
+            (header & 31) as usize,
+        ];
+        let first = self.at + 2;
+        if first + counts[0] + counts[1] + counts[2] > self.end {
+            self.at = self.end;
+            return None;
+        }
+        let list = |first: usize, count: usize| Indices {
+            meta: self.meta,
+            first,
+            index: 0,
+            count,
+        };
+        let entry = RemoteArt {
+            grass: header & 0x8000 != 0,
+            state,
+            off: list(first, counts[0]),
+            on: list(first + counts[0], counts[1]),
+            edges: list(first + counts[0] + counts[1], counts[2]),
+        };
+        self.at = first + counts[0] + counts[1] + counts[2];
+        Some(entry)
     }
 }
 

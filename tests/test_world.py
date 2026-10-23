@@ -112,10 +112,17 @@ class WorldMetadata(unittest.TestCase):
         self.assertEqual((bound['grass']['state_index'],bound['grass']['off_draws'],bound['grass']['on_draws']),(5,[1],[]))
         self.assertEqual((bound['breakable']['state_index'],bound['breakable']['off_draws'],
                           bound['breakable']['on_draws'],bound['breakable']['edge_indices']),(3,[2],[0],[1]))
-        remote=[o for o in self.bank(data) if o['kind']==19]
-        grass=next(o for o in remote if o['flags']&1);poles=next(o for o in remote if not o['flags']&1)
-        self.assertEqual((grass['state'],grass['lists']),(5,[[1],[],[]]))
-        self.assertEqual((poles['state'],poles['lists']),(3,[[2],[0],[1]]))
+        # One carrier per region spans a u16 stream: header, state, off, on, edges per object.
+        carriers=[o for o in self.bank(data) if o['kind']==19]
+        self.assertEqual(len(carriers),1)
+        self.assertEqual(carriers[0]['state'],0)
+        stream=carriers[0]['lists'][0];entries=[];at=0
+        while at<len(stream):
+            head,state=stream[at],stream[at+1];n=[head>>10&31,head>>5&31,head&31];at+=2
+            lists=[]
+            for count in n:lists.append(stream[at:at+count]);at+=count
+            entries.append((bool(head&0x8000),state,lists))
+        self.assertEqual(entries,[(False,3,[[2],[0],[1]]),(True,5,[[1],[],[]])])
         before=copy.deepcopy(data)
         world.postpack_masks(data,sources)
         self.assertEqual(data,before)
