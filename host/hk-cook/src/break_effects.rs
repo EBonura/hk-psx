@@ -2579,9 +2579,13 @@ struct Bank {
     sheet: Image,
 }
 
+/// A cell is cut at its projected size, at most `MAX_CELL`: a bigger quad (the Great Door's dust,
+/// 2.3 units) is drawn from a cell of 32 texels and stretched.
 fn target_size(size: f64) -> i64 {
-    (size / 65536.0 * focal() / -CAM_Z).ceil() as i64
+    ((size / 65536.0 * focal() / -CAM_Z).ceil() as i64).min(MAX_CELL)
 }
+/// Texels on a side of a cell of the art sheet.
+const MAX_CELL: i64 = 32;
 
 /// `art_bank`: every style's cells cut from its source sheet (`textures`, in
 /// first-use order) at its projected size, one joint palette per opacity level.
