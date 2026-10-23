@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |767,732|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |279,256|
-| BSS, including shared scene arena and runtime pools |795,940|
-| Total static span |1,842,948|
+| Linked code |770,496|
+| Code-to-data alignment |0|
+| Linked data, including menu and HUD |279,304|
+| BSS, including shared scene arena and runtime pools |800,380|
+| Total static span |1,850,188|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |139,260|
+| Unallocated gap before reserved stack |132,020|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |36,860|
+| Free RAM below the module pool |29,620|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -135,9 +135,11 @@ The 2026-10-23 round 6 menus pass and its follow-ups (menu animations after the 
 
 The 2026-10-23 replay on emulator 0e87b3a (texture-cache cost accuracy) added one guard to the room-module loader: `flush_instruction_cache_idle` waits for the GPU channel to idle before the instruction cache is flushed, because a flush while DMA2 was still walking the previous frame's list is a hazard on silicon. The helper is kept out of line; inlined it took about 1,600 bytes more, out of line it takes 288 (linked code 766,652 to 766,936, free below the module pool 43,156 to 42,868).
 
-Static data ends at `0x801d1f04`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-23 object state pass (cut grass and broken stones stay changed in every view that draws or holds them: one `KIND_REMOTE_ART` stream per region, `State::apply`, `fill_edges` and `broken_edge` following the scene table; see `docs/STATE_IDENTITY.md`) moved the shipping disc by +2,764 bytes of linked code, +48 of data and +4,440 of BSS, all of it the scene arena (the 4,294 bindings of the whole game, 4 bytes each plus 2 per draw or edge index, peak scene 60): free below the pool 36,860 to 29,620.
+
+Static data ends at `0x801d3b4c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
-There is no heap. The single scene arena occupies 410,612 bytes, replacing five
+There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
 1,120 scene-global texture IDs; the animation cache still permits 2,048 keys.
 Geo logic, resident art/audio, functional menus, break-effect and Lifeblood
