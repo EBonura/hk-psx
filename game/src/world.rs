@@ -635,6 +635,18 @@ pub fn resident(region_id: usize) -> Option<Region> {
         grass_emitters: SCENE_EMITTERS[scene],
     })
 }
+/// The rigid debris code is the `debris` room module (host/code_modules.py): resident in the scenes
+/// whose metadata bank carries pieces, which are the only ones that can launch or draw any.
+#[cfg(not(test))]
+#[inline(always)]
+fn debris_here() -> bool {
+    crate::modules::loaded(crate::modules::DEBRIS)
+}
+#[cfg(test)]
+#[inline(always)]
+fn debris_here() -> bool {
+    true
+}
 /// A rigid debris piece of the admitted scene by its object index in the bank's
 /// first region, where every piece of the scene sits at the head of the list.
 #[inline(never)]
@@ -1008,13 +1020,17 @@ impl State {
     }
     /// One call per 60 Hz simulation tick, including GPU-wait VBlanks.
     pub fn draw_impacts(&mut self, region: &Region, room: &Room, camera: (i32, i32)) -> u32 {
-        let debris = self.debris.draw(
-            region.scene,
-            fragment_spec,
-            |piece| fragment_frame(region, piece),
-            room,
-            camera,
-        );
+        let debris = if debris_here() {
+            self.debris.draw(
+                region.scene,
+                fragment_spec,
+                |piece| fragment_frame(region, piece),
+                room,
+                camera,
+            )
+        } else {
+            0
+        };
         let (impacts, skipped) =
             self.impacts
                 .draw_limited(region.scene, region.grass_impact, room, camera, 32 - debris);
@@ -1032,13 +1048,15 @@ impl State {
         let count = room.counts[5];
         let edge = terrain(&self.edge_cache[..self.edge_cache_count]);
         particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
-        self.debris.tick(
-            region.scene,
-            fragment_spec,
-            region.collision_bounds,
-            count,
-            edge,
-        );
+        if debris_here() {
+            self.debris.tick(
+                region.scene,
+                fragment_spec,
+                region.collision_bounds,
+                count,
+                edge,
+            );
+        }
     }
     /// The resident scene payload is immutable. Explicit world generation plus
     /// global region ID and the borrowed room view select the local edge
@@ -1216,8 +1234,10 @@ impl State {
                     particles::HIT_DUST_OWNER,
                     [mid(0, 2), mid(1, 3)],
                 );
-                self.debris
-                    .spawn(region.scene, owner_fragments(id), nail.kind as u8, player.facing);
+                if debris_here() {
+                    self.debris
+                        .spawn(region.scene, owner_fragments(id), nail.kind as u8, player.facing);
+                }
                 result.broken += 1;
                 result.last_broken = Some(id);
                 result.door_sounds += u16::from(object.door_sound());

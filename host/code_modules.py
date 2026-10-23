@@ -117,6 +117,23 @@ MODULES = {
     'fsm3_logic': _sim('fsm3_flow', 'fsm3_math', 'fsm3_events', 'fsm3_timers', 'fsm3_playerdata'),
     'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
+    # Tutorial_01's Lifeblood cocoon and its two Health Scuttlers (game/src/lifeblood.rs): the world's strike
+    # and tick, their resident-side wrappers, and the cocoon's presentation. The blue masks in the HUD (every
+    # scene) and the persistence hooks stay resident. Entry points are guarded by `modules::loaded(LIFEBLOOD)`.
+    # Rigid debris (game/src/debris.rs): the bodies and their solver, the pool's spawn, tick and draw, and the
+    # lookups into the scene bank's pieces (game/src/world.rs). The rotation helpers, the pool's counters and
+    # its scene clear stay resident: enemies, particles and every scene's reset use them. Resident only in the
+    # scenes whose bank carries pieces (`debris_scenes`); `world::State` guards its three entry points.
+    'debris': ('*6debrisNt*4Body*', '*6debrisNt*4Pool5spawn*', '*6debrisNt*4Pool4tick*', '*6debrisNt*4Pool4draw*',
+               '*6debrisNt*4Pool14longest_stopped*', '*6debrisNt*4Pool5piece*',
+               *(f'*5world6debris{len(f)}{f}*' for f in ('decode', 'random', 'same_edge', 'launch_range', 'mulq', 'divq',
+                                                         'dot', 'crossq', 'supports', 'kinetic', 'length', 'unit',
+                                                         'crossing', 'scaled', 'keep')),
+               '*5world13fragment_spec*', '*5world15owner_fragments*', '*5world14fragment_frame*'),
+    'lifeblood': ('*9lifebloodNt*5World11strike_with*', '*9lifebloodNt*5World9tick_with*',
+                  '*9lifebloodNt*5World6strike*', '*9lifebloodNt*5World4tick*',
+                  '*9lifeblood12presentation5apply*', '*9lifeblood12presentation4draw*',
+                  '*9lifeblood12presentation10draw_frame*'),
 }
 if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
@@ -132,7 +149,9 @@ if HORNET:
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
-                'cornifer': ('cornifer.rs', 'CORNIFER_SCENE')}
+                'cornifer': ('cornifer.rs', 'CORNIFER_SCENE'),
+                # The cocoon's scene is the `scene` field of its cooked `LIFE_SPEC`.
+                'lifeblood': ('lifeblood.rs', r'Spec\{\s*scene:(\d+)')}
 if HORNET:
     ROOM_MODULES['hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
     ROOM_MODULES['art_hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
@@ -171,7 +190,8 @@ FAMILY_MODULE = {0: 'fsm3_logic', 1: 'fsm3_logic', 2: 'fsm3_logic', 3: 'fsm3_log
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
 # Blocker's room is resident.
-CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame')
+CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame', '16strike_lifeblood',
+           '5State6strike', '5State12draw_impacts', '5State11tick_debris')
 J26, HI16, LO16, W32 = 1, 2, 3, 4
 
 
@@ -193,7 +213,8 @@ def room_scenes():
     out = {}
     root = Path(__file__).resolve().parents[1] / 'data'
     for name, (file, const) in ROOM_MODULES.items():
-        m = re.search(rf'pub const {const}:usize=(\d+);', (root / file).read_text())
+        pattern = const if '(' in const else rf'pub const {const}:usize=(\d+);'
+        m = re.search(pattern, (root / file).read_text())
         out.setdefault(int(m[1]), set()).add(name)
     return out
 
@@ -216,12 +237,29 @@ def fsm3_modules(label):
     return mods
 
 
+FRAGMENT_KIND = 20  # tools/world_metadata.py KINDS['fragment'], hk_format::world_meta KIND_FRAGMENT
+
+
+def debris_scenes():
+    """Scene ids whose packed metadata bank holds rigid debris pieces (data from host/pack_scenes.py)."""
+    out = set()
+    root = Path(__file__).resolve().parents[1] / '.hkpsx' / 'world-metadata-packed'
+    for bank_file in sorted(root.glob('scene_*.hkwm')):
+        bank = bank_file.read_bytes()
+        offset, count, stride = struct.unpack_from('<3I', bank, 64 + 12)
+        if any(struct.unpack_from('<H', bank, offset + n * stride + 8)[0] == FRAGMENT_KIND for n in range(count)):
+            out.add(int(bank_file.stem.split('_')[1]))
+    return out
+
+
 def scene_modules(regions_rs):
     """{scene id: set of module names} from the cooked actor tables and the
     rooms' own logic."""
     out = {}
     for sid, mods in room_scenes().items():
         out.setdefault(sid, set()).update(mods)
+    for sid in debris_scenes():
+        out.setdefault(sid, set()).add('debris')
     scripts = fsm3_modules(FSM3_SCRIPTS)
     for sid in script_scenes():
         out.setdefault(sid, set()).update(scripts)
@@ -611,7 +649,7 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
                 if kind not in (2, 4, 5, 6):
                     raise ValueError(f'resident relocation type {kind} into a module at {offset:#x}')
                 where = elf.function_at(offset) or f'{section}+{offset:#x}'
-                if section == '.text' and not any(c in where for c in CALLERS):
+                if section == '.text' and where != 'main' and not any(c in where for c in CALLERS):
                     raise ValueError(f'{where} calls into module {names[mod_index[shndx]]}')
                 resident_relocs[offset] = (kind, mod_index[shndx], where)
 

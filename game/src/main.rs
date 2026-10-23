@@ -477,7 +477,7 @@ fn strike_lifeblood(
     for (dst, p) in polygon.iter_mut().zip(source) {
         *dst = [player.x - p[0] * player.facing, player.y + p[1]];
     }
-    life.strike(scene, &polygon[..source.len()])
+    lifeblood::strike(life, scene, &polygon[..source.len()])
 }
 fn strike_great_door(
     door: &mut great_door::World,
