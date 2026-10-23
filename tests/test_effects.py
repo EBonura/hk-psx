@@ -18,7 +18,7 @@ class CorpseMetadataTests(unittest.TestCase):
             del record[missing]
             with self.assertRaisesRegex(ValueError,'missing cooked'):generated_corpse(record)
 
-from effects import polygon_moment,generated_debris
+from effects import polygon_moment
 class DoorMetadataTests(unittest.TestCase):
     def test_uniform_moment_rectangle_triangle_and_winding(self):
         rectangle=[[-1.,-2.],[1.,-2.],[1.,2.],[-1.,2.]]
@@ -29,10 +29,3 @@ class DoorMetadataTests(unittest.TestCase):
         self.assertEqual(center,[1.,2.]);self.assertAlmostEqual(inertia,(9+36)/18)
     def test_degenerate_geometry_rejected(self):
         with self.assertRaisesRegex(ValueError,'degenerate'):polygon_moment([[0,0],[1,1],[2,2]])
-    def test_generated_id_owner_and_reflection_survive(self):
-        p={'id':0,'door_state':38,'frame':105,'source':'level6:10618','origin':[1,2],'centroid':[3,4],'scale':[-65536,65536],
-           'polygon':[[0,0],[1,0],[1,1]],'torque':100,'angle_offset':-60}
-        result=generated_debris([p],1)
-        self.assertIn('door:166',result);self.assertIn('frame:105',result);self.assertIn('scale:[-65536,65536]',result)
-        with self.assertRaisesRegex(ValueError,'identity'):generated_debris([p,p],1)
-        with self.assertRaisesRegex(ValueError,'pool'):generated_debris([p]*29,1)

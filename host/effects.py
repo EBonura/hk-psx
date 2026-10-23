@@ -531,12 +531,20 @@ def append_grass_impact_art(source,scene,atlas,frames,clips):
 # and spin side; this file owns the art and the solver's per-instance geometry.
 FLING_SPEED=[10.,17.]
 FLING_ANGLE_OFFSET=-60
-# One scene's fragments share the runtime pool in game/src/debris.rs, and a
-# Spec's id is its slot in it, so the pool is the limit on how many of a scene's
-# fragments can exist at once. Two of the 32 scenes that author fragments hold
-# more than the pool (Crossroads_ShamanTemple 57, Crossroads_07 33); the
-# overflow is a recorded refusal rather than a silently shortened list.
-FRAGMENT_POOL=28
+# What the scene bank's fragment object can hold (tools/world_metadata.py
+# KIND_FRAGMENT): the polygon is one 3..8 point path, the spin a signed six-bit
+# count of halves, the start pose 1/64 degree.
+FRAGMENT_MAX_POINTS=8
+SPIN_HALF_RANGE=(-32,31)
+POSE_STEPS=360*64
+# SimpleRock turns against its own x speed at a constant, which its Start
+# hard-codes (IL SimpleRock::FixedUpdate AddTorque(vx * -7.5)), and its sprite is
+# one colour. The 44 pieces of that class share the tint below.
+SIMPLE_ROCK_SPIN=-7.5
+SIMPLE_ROCK_TINT=(.489,.51,.559)
+# FinishingRigidBody: wait asleep, shrink, then SetActive(false); measured on all
+# 70 parts, so a changed install fails loudly instead of running a stale timeline.
+FINISHING_TIMELINE={'waitDuration':8.,'shrinkDuration':1.,'conclusion':0,'persistOffScreen':0}
 def polygon_moment(points):
     """Mass-one uniform polygon centroid/moment; not native Rigidbody2D inertia."""
     area=cx=cy=moment=0.
@@ -565,20 +573,72 @@ def fragment_polygon(components):
     return [[x+offset['x'],y+offset['y']]for x,y in paths[0]]
 
 
-def fragment_records(source,scene,atlas,frames,refusals=None):
-    """Every rigid Breakable fragment this scene authors, with its solver geometry.
+
+def _tint_ok(color,simple_rock):
+    if color=={'r':1.,'g':1.,'b':1.,'a':1.}:return True
+    return simple_rock and color['a']==1. and all(abs(color[k]-v)<2e-3 for k,v in zip('rgb',SIMPLE_ROCK_TINT))
+
+def fragment_geometry(components,matrix,local_z):
+    """What the guest solver needs of one rigid part that does not come from its art.
+
+    `components` maps type to (id, data); `matrix` is the part's world transform
+    (2x2 or larger, row major); `local_z` its own authored rotation about Z in
+    degrees. Classifies the part by the spin behaviour it carries (the IL is in
+    hk-debris/PLAN.md):
+      SpinSelf        random start rotation, AddTorque(vx * spinFactor)
+      SimpleRock      random start rotation, AddTorque(vx * -7.5), tinted, finishing
+      SpinSelfSimple  authored start rotation, AddTorque(-vx * spinFactor)
+      neither         authored start rotation, no torque
+    Raises ValueError, naming the reason, for what the solver cannot hold.
+    """
+    import math
+    if 'SpinSelf' in components and ('SpinSelfSimple' in components or 'SimpleRock' in components):
+        raise ValueError('fragment carries two spin behaviours')
+    renderer=components['SpriteRenderer'][1]
+    if renderer['m_FlipX'] or renderer['m_FlipY']:raise ValueError('unsupported fragment sprite color/reflection')
+    simple_rock='SimpleRock' in components
+    if not _tint_ok(renderer['m_Color'],simple_rock):raise ValueError('unsupported fragment sprite color/reflection')
+    if 'SpinSelf' in components:coefficient,random_start=components['SpinSelf'][1]['spinFactor'],True
+    elif simple_rock:coefficient,random_start=SIMPLE_ROCK_SPIN,True
+    elif 'SpinSelfSimple' in components:coefficient,random_start=-components['SpinSelfSimple'][1]['spinFactor'],False
+    else:coefficient,random_start=0.,False
+    spin_half=round(coefficient*2)
+    if abs(coefficient*2-spin_half)>1e-6 or not SPIN_HALF_RANGE[0]<=spin_half<=SPIN_HALF_RANGE[1]:
+        raise ValueError(f'unsupported fragment spin {coefficient}')
+    finishing='FinishingRigidBody' in components
+    if finishing:
+        data=components['FinishingRigidBody'][1]
+        if any(data[k]!=v for k,v in FINISHING_TIMELINE.items()):raise ValueError('unmeasured fragment finishing timeline')
+    columns=(math.hypot(matrix[0][0],matrix[1][0]),math.hypot(matrix[0][1],matrix[1][1]))
+    if not all(.5<=c<=2 for c in columns):raise ValueError('unsupported fragment world scale')
+    mirrored=matrix[0][0]*matrix[1][1]-matrix[0][1]*matrix[1][0]<0
+    sx,sy=(-columns[0] if mirrored else columns[0]),columns[1]
+    points=fragment_polygon(components)
+    if len(points)>FRAGMENT_MAX_POINTS:raise ValueError(f'fragment polygon over {FRAGMENT_MAX_POINTS} points')
+    center,_=polygon_moment(points)
+    _,inertia=polygon_moment([[x*sx,y*sy]for x,y in points])
+    return {'spin_half':spin_half,'random_start':random_start,'finishing':finishing,'tint':simple_rock,
+        'scale':[round(sx*65536),round(sy*65536)],'centroid':[round(v*65536)for v in center],
+        'polygon':[[round(v*65536)for v in p]for p in points],'inertia_estimate':inertia,
+        'inv_inertia':round(65536/inertia),'start_pose':round((local_z%360)*64)%POSE_STEPS}
+
+
+def fragment_records(source,scene,atlas,frames,refusals=None,bounds=None):
+    """Every rigid Breakable fragment of the owners in `bounds` (a region's interaction bounds; the whole scene when None).
 
     Reproduces Breakable.Break's FlingObject path for any instance matching the
     shared definition in breakables.rigid_fragment, not the four Tutorial door
     sprites this was first written against. A part the solver has not been shown
     is a recorded refusal for its owner, never a fragment quietly left out.
+    The region filter is the one `breakables` itself uses, so a region cooks art
+    and frames for exactly the owners it can break.
     """
     from cook import native_sprite,FOCAL,CAM_Z
     from breakables import breakable_sources,rigid_fragment
     import math
     file=Path(scene.file.name).name
     textures={};records=[];errors=[];refusals=refusals if refusals is not None else []
-    for owner in breakable_sources(scene,errors=errors,contract=False):
+    for owner in breakable_sources(scene,bounds,errors=errors,contract=False):
         selected=[]
         for part in owner['debris']:
             gid=int(part['game_object'].split(':')[-1]);components={typ:(i,d)for i,typ,d in _components(scene,gid)}
@@ -587,27 +647,14 @@ def fragment_records(source,scene,atlas,frames,refusals=None):
                 if owner['fling_speed']!=FLING_SPEED or round(owner['angle_offset'])!=FLING_ANGLE_OFFSET:
                     raise ValueError(f"unmeasured fling {owner['fling_speed']} at {owner['angle_offset']}")
                 rid,renderer=components['SpriteRenderer'];obj=source.ref(scene.file,renderer['m_Sprite']);sid=source.sid(obj)
-                spin=next((components[name][1]for name in ('SpinSelf','SpinSelfSimple')if name in components),None)
-                # SpinSelfSimple turns at a fixed rate; the solver only carries
-                # SpinSelf's speed-driven torque, so the others are refused here
-                # rather than drawn spinning at the wrong rate.
-                if 'SpinSelfSimple' in components:raise ValueError('SpinSelfSimple fixed-rate spin is not in the solver')
-                # Spec carries one speed-driven torque and generated_debris
-                # requires it positive, so a spinless fragment has no Spec to
-                # write rather than one that silently never turns.
-                if spin is None or spin['spinFactor']<=0:raise ValueError('fragment has no positive SpinSelf factor')
-                if renderer['m_Color']!={'r':1.,'g':1.,'b':1.,'a':1.} or renderer['m_FlipX'] or renderer['m_FlipY']:
-                    raise ValueError('unsupported fragment sprite color/reflection')
+                transform=scene.transforms[scene.go_transform[gid]];q=transform['m_LocalRotation']
+                if abs(q['x'])>1e-6 or abs(q['y'])>1e-6:raise ValueError('fragment rotated about X or Y')
+                local_z=math.degrees(2*math.atan2(q['z'],q['w']))
                 matrix=scene.world(scene.go_transform[gid])
-                if abs(matrix[0][1])>1e-6 or abs(matrix[1][0])>1e-6 or not all(.5<=abs(matrix[i][i])<=2 for i in range(2)):
-                    raise ValueError('unsupported fragment world scale/rotation')
-                points=fragment_polygon(components)
-                center,_=polygon_moment(points)
-                sx,sy=matrix[0][0],matrix[1][1]
-                _,inertia=polygon_moment([[x*sx,y*sy]for x,y in points])
-                factor=spin['spinFactor']if spin else 0.
+                geometry=fragment_geometry(components,matrix,local_z)
             except ValueError as error:
                 refusals.append({'owner':owner['source'],'part':part['game_object'],'reason':str(error)});continue
+            sx,sy=geometry['scale'][0]/65536,geometry['scale'][1]/65536
             key=(sid,sx,sy)
             if key not in textures:
                 image,box=native_sprite(obj)
@@ -615,55 +662,19 @@ def fragment_records(source,scene,atlas,frames,refusals=None):
                 textures[key]=len(frames)
                 frames.append({'texture':tex,'box':box,'sprite':sid,'event':{'source':'Breakable debris/SpinSelf'}})
             selected.append({'source':f'{file}:{rid}','game_object':part['game_object'],'sprite':sid,'door_source':owner['source'],
-                'door_state':owner['state_index'],'frame':textures[key],'scale':[round(sx*65536),round(sy*65536)],'origin':[round(v*65536)for v in part['position'][:2]],
-                'centroid':[round(v*65536)for v in center],'polygon':[[round(v*65536)for v in p]for p in points],
-                'inertia_estimate':inertia,'torque':round((factor/50)*(180/math.pi)/inertia*65536),'angle_offset':round(owner['angle_offset']),
+                'door_state':owner['state_index'],'frame':textures[key],'origin':[round(v*65536)for v in part['position'][:2]],
+                **geometry,'angle_offset':round(owner['angle_offset']),
                 'z':part['position'][2],'order':renderer['m_SortingOrder'],'layer':renderer['m_SortingLayer'],
                 'limitations':['Uniform-polygon inertia and 50Hz approximation are not verified Unity native physics',
                     'Source ObjectBounce cache/threshold/reflection and sleep are implemented; contact manifold/inertia/friction remain fixed-point native-physics approximations',
-                    'No authored lifetime; persistent per-scene pool, deterministic RNG differs from Unity']})
+                    'Deterministic RNG differs from Unity; SimpleRock.OnTriggerEnter nail knock is not ported']})
         records.extend(selected)
-    # Stable identity independent of texture/region ordering; draw original Z order.
-    indices={p['source']:i for i,p in enumerate(sorted(records,key=lambda p:int(p['source'].split(':')[-1])))}
-    for p in records:p['id']=indices[p['source']]
-    if len(records)>FRAGMENT_POOL:
-        authored=len(records)
-        for p in records:
-            if p['id']>=FRAGMENT_POOL:
-                refusals.append({'owner':p['door_source'],'part':p['game_object'],
-                    'reason':f'rigid fragment pool holds {FRAGMENT_POOL}; this scene authors {authored}'})
-        records=[p for p in records if p['id']<FRAGMENT_POOL]
     return sorted(records,key=lambda p:(-p['z'],p['layer'],p['order'],p['source']))
 
 
-def append_door_debris_art(source,scene,atlas,frames,refusals=None):
-    """Cooked rigid fragments for this scene; see fragment_records.
+def append_door_debris_art(source,scene,atlas,frames,refusals=None,bounds=None):
+    """Cooked rigid fragments for the owners of this region; see fragment_records.
 
     `refusals` receives one {owner, part, reason} per part left out, so a caller
     can report them rather than let a refused part look never authored."""
-    return fragment_records(source,scene,atlas,frames,refusals)
-
-# How many distinct door-debris variants the catalogue may hold. Not a format
-# limit: the world bank carries the index as a full i32 payload word and the
-# guest indexes a slice with it. It is a guard against the table growing without
-# anyone looking, and it was written in two places, `host/world.py` and
-# `tools/world_metadata.py`, which is why raising one of them did not help.
-# Measured at 11 once rigid fragments cooked beyond Tutorial_01, because a
-# region's fragment set differs per region rather than per scene.
-DEBRIS_VARIANT_LIMIT = 12
-
-def generated_debris(records,scene):
-    if len(records)>28:raise ValueError('door fragment pool budget')
-    result=[];seen=set()
-    for p in records:
-        index=p['id']
-        if not isinstance(index,int) or not 0<=index<28 or index in seen:raise ValueError('door fragment identity')
-        seen.add(index)
-        if not 0<=p['door_state']<128 or not 0<=p['frame']<65536:raise ValueError('door fragment owner/frame')
-        if not 3<=len(p['polygon'])<=16 or not 0<p['torque']<2**31:raise ValueError('door fragment geometry')
-        def array(values):return '['+','.join(map(str,values))+']'
-        fields={'id':index,'door':scene*128+p['door_state'],'frame':p['frame'],'source':int(p['source'].split(':')[-1]),
-                'origin':array(p['origin']),'centroid':array(p['centroid']),'scale':array(p['scale']),'polygon':'&['+','.join(array(v)for v in p['polygon'])+']',
-                'torque':p['torque'],'angle_offset':p['angle_offset']}
-        result.append('debris::Spec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'}')
-    return '&['+','.join(result)+']'
+    return fragment_records(source,scene,atlas,frames,refusals,bounds)
