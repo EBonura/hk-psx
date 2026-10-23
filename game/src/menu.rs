@@ -28,6 +28,16 @@ pub static mut HK_MENU_MUSIC: u32 = 10;
 // arena before the title and uploaded to VRAM; only its size, checksum and the
 // glyph advances stay linked.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu.rs"));
+// The styles' logos (host/hk-cook/src/title_style.rs): per style two halves of 4bpp coverage.
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/menu_logos.rs"));
+/// The style the title shows (`MenuStyles.currentSettings.styleIndex`): kept across visits to the
+/// title in a session. The options page changes it (`state::STYLE_NAMES`).
+static mut STYLE: u8 = 0;
+/// Where the halves of the logo sit in VRAM: two 4bpp pages of their own beside the title strip,
+/// free while the title is up and overwritten by the scenes after it.
+const LOGO_X: [u16; 2] = [640, 704];
+/// The logo's vertical centre.
+const LOGO_Y: i16 = 97;
 /// Test discs only (`route-input`): held together while the save slot is chosen, the four shoulder
 /// buttons start a new game on the ledge instead of with the drop from the top gate (main.rs). The
 /// recorded routes (tools/tapes) press them so they begin where they were recorded. A shipping build
@@ -194,6 +204,33 @@ fn ornament(x: i16, y: i16, size: (u8, u8), uv: (u8, u16), gain: u8) {
             (gain, gain, gain),
         ),
     );
+}
+/// The style's logo (`LogoTitle`: the sprite `MenuStyleTitle` picks), centred, added to the picture at
+/// `gain` of 128.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn logo(gain: u8) {
+    if gain == 0 || !unsafe { ART } {
+        return;
+    }
+    let halves = LOGOS[unsafe { STYLE } as usize];
+    let total = i16::from(halves[0].1) + i16::from(halves[1].1);
+    let mut x = 160 - total / 2;
+    for (half, &page_x) in halves.iter().zip(&LOGO_X) {
+        let (w, h) = (i16::from(half.1), i16::from(half.2));
+        let y = LOGO_Y - h / 2;
+        gpu::draw_quad_textured_material(
+            [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
+            [(0, 0), (w as u8 - 1, 0), (0, h as u8 - 1), (w as u8 - 1, h as u8 - 1)],
+            TextureMaterial::blended(
+                Clut::new(320, 481).uv_clut_word(),
+                Tpage::new(page_x, 0, TexDepth::Bit4).uv_tpage_word(0),
+                (gain, gain, gain),
+                BlendMode::Add,
+            ),
+        );
+        x += w;
+    }
 }
 /// The menu pointer, as the source's title menu shows it: a leaf left of the chosen row pointing
 /// right at it and its mirror right of the row pointing left. The cooked sprite points left, so the
@@ -411,6 +448,9 @@ struct View {
     lv: Levels,
     age: u16,
     gain: u8,
+    /// How much of the style shows, 0 to 128: the style fades through black when the options page
+    /// changes it (`MenuStyles.Fade`, 0.25 s); the page's own text stays.
+    bg: u8,
     step: u8,
 }
 #[cfg_attr(not(test), optimize(size))]
@@ -418,10 +458,15 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
     let View { page, row, lv, step, .. } = v;
     let scaled = |level: u8| (u16::from(v.gain) * u16::from(level) / 128) as u8;
     let (gain, title) = (scaled(lv.content), scaled(lv.title));
-    draw(v.gain);
-    particles(v.gain);
+    let bg = (u16::from(v.gain) * u16::from(v.bg) / 128) as u8;
+    draw(bg);
+    if unsafe { STYLE } == 1 {
+        particles(bg);
+    }
     match page {
         Page::Main => {
+            // The logo is the style's own sprite, fading with the page's heading.
+            logo((u16::from(title) * u16::from(v.bg) / 128) as u8);
             for (i, label) in state::MAIN_ITEMS.iter().enumerate() {
                 let y = 152 + i as i16 * 18;
                 let g = if i == row { gain } else { gain - gain / 4 };
@@ -433,8 +478,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             }
         }
         Page::Profiles => {
-            // A page of its own, as the source's Select Game is: no logo behind it.
-            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            // A page of its own, as the source's Select Game is: the style behind it, no logo.
             flourishes(24, 224, lv, v.gain);
             centered_caps(51, "SELECT GAME", title);
             for i in 0..crate::save::PROFILES {
@@ -454,7 +498,6 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             }
         }
         Page::Options => {
-            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             flourishes(24, 224, lv, v.gain);
             centered_caps(51, "OPTIONS", title);
             for (i, label) in state::OPTION_ITEMS.iter().enumerate() {
@@ -468,6 +511,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
                     3..=5 => {
                         state::signed([s.brightness, s.screen_x, s.screen_y][i - 3], &mut sign)
                     }
+                    state::STYLE_ROW => state::STYLE_NAMES[usize::from(s.style)],
                     _ => "",
                 };
                 if !value.is_empty() {
@@ -479,7 +523,6 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             }
         }
         Page::Controls => {
-            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
             flourishes(24, 224, lv, v.gain);
             centered_caps(51, "CONTROLS", title);
             for (i, line) in state::CONTROL_LINES.iter().enumerate() {
@@ -487,9 +530,8 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
             }
         }
         Page::Cheats => {
-            // The same panel and flourishes as Options: a window of eight rows follows the
-            // cursor through the twelve cheats and Back.
-            gpu::draw_rect_flat(18, 41, 284, 188, 0, 0, 0);
+            // The same flourishes as Options: a window of eight rows follows the cursor through the
+            // twelve cheats and Back.
             flourishes(24, 224, lv, v.gain);
             centered_caps(51, "CHEATS", title);
             const WINDOW: usize = 8;
@@ -578,16 +620,35 @@ pub fn run(
     // The page starts from what is set now: the title comes back after a session reset.
     menu.settings.brightness = crate::display::brightness();
     (menu.settings.screen_x, menu.settings.screen_y) = crate::display::screen();
+    menu.settings.style = unsafe { STYLE };
     // What is on screen lags what the buttons chose: a page that is left plays its leaving sequence
     // (`levels`) and the chosen page then plays its own, as the source does. Input is not held back
     // meanwhile (the source's is): the recorded routes press again on their own timing.
-    let mut view = View { page: menu.page, row: 0, lv: FULL, age: 60, gain: 0, step: 5 };
+    let mut view = View { page: menu.page, row: 0, lv: FULL, age: 60, gain: 0, bg: 128, step: 5 };
+    // A style the options page chose: SetStyle fades the old style to black over 0.25 s
+    // (`MenuStyles.fadeTime`), replaces its art and logo in VRAM, and the new one comes up from black;
+    // the page's text stays.
+    let mut pending: Option<u8> = None;
     let mut hiding = false;
     // Frames since the chosen row changed, for the pointer's opening.
     let mut moved = 0u16;
     loop {
         gain = gain.saturating_add(8).min(128);
         view.gain = gain;
+        view.bg = match pending {
+            Some(next) if view.bg == 0 => {
+                unsafe {
+                    STYLE = next;
+                }
+                if let Some(data) = art {
+                    upload_style(data);
+                }
+                pending = None;
+                9
+            }
+            Some(_) => view.bg.saturating_sub(9),
+            None => (view.bg + 9).min(128),
+        };
         view.lv = levels(view.page, hiding, view.age);
         view.step = if view.age < input_at(view.page) || hiding { HIDDEN } else { moved.min(5) as u8 };
         draw_menu(&menu, view, slots, fault);
@@ -624,6 +685,9 @@ pub fn run(
             }
             if old.music != menu.settings.music {
                 crate::music::set_volume(menu.settings.music);
+            }
+            if old.style != menu.settings.style {
+                pending = Some(menu.settings.style);
             }
             if old.brightness != menu.settings.brightness {
                 crate::display::set_brightness(menu.settings.brightness);
@@ -679,6 +743,7 @@ pub fn run(
 
 fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {
     draw(128);
+    logo(128);
     gpu::draw_sprite_material(
         64,
         177,
@@ -736,27 +801,36 @@ pub fn restore(art: Option<&[u8]>) {
     let (at, len) = crate::boot_art::CARD_FONT;
     assert_eq!(len, state::CARD_BYTES);
     upload_bytes(VramRect::new(0, 500, 320, 12), &data[at..at + len]);
-    let data = &data[..MENU_BYTES];
-    assert!(data.len() == METRICS + 96);
+    upload_style(data);
+}
+/// The chosen style's background pages, palette and loading prompts, and its logo.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn upload_style(chunk: &[u8]) {
+    let style = unsafe { STYLE } as usize;
+    let at = crate::boot_art::STYLE_ART[style];
+    // The chunk's checksum was verified when it was read and the blob's size is `MENU_BYTES` (a const
+    // check above); the header and the glyph advances are checked by the cooker and the tests.
+    let data = &chunk[at..at + MENU_BYTES];
     assert!(&data[..8] == b"HKMENU03");
-    assert!(data[8..12] == [64, 1, 240, 0]);
-    assert!(
-        u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize == LEFT + RIGHT + 2 * PATCH
-    );
     upload_bytes(
         VramRect::new(768, 480, 256, 1),
         &data[HEADER..HEADER + PALETTE],
-    );
-    assert!(
-        data[METRICS..METRICS + 95]
-            .iter()
-            .all(|&n| (1..=state::GLYPH_W as u8).contains(&n))
-            && data[METRICS + 95] == 0
     );
     let pixels = &data[HEADER + PALETTE..METRICS];
     upload_bytes(VramRect::new(384, 0, 128, 240), &pixels[..LEFT]);
     upload_bytes(VramRect::new(512, 0, 32, 240), &pixels[LEFT..LEFT + RIGHT]);
     upload_bytes(VramRect::new(544, 0, 96, 64), &pixels[LEFT + RIGHT..]);
+    let (logos, len) = crate::boot_art::LOGO_ART;
+    assert_eq!(len, LOGO_BYTES);
+    let logos = &chunk[logos..logos + len];
+    for (half, &x) in LOGOS[style].iter().zip(&LOGO_X) {
+        let (offset, w, h) = *half;
+        let w = halfwords(w);
+        upload_bytes(VramRect::new(x, 0, w, u16::from(h)), &logos[offset..offset + w as usize * h as usize * 2]);
+    }
+    // GP0(01h): the texture and palette caches still hold the previous style's texels and colours.
+    psx_io::gpu::write_command(0x0100_0000);
 }
 fn upload_ornaments(rows: &[u8]) {
     let mut put = |piece: (usize, u8, u8), x: u16, y: u16| {

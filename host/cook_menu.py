@@ -26,24 +26,26 @@ def named(source, filename, kind, name):
     return matches[0]
 
 
-def cook():
-    source = Source()
-    logo_obj, logo = named(source, 'sharedassets1.assets', 'Sprite', 'title')
-    bg_obj, background = named(source, 'sharedassets1.assets', 'Sprite', 'Voidheart_menu_BG')
-    font_obj, font = named(source, 'resources.assets', 'Font', 'Perpetua')
-    # Title UI is a static composition; this does not flatten the gameplay room.
-    canvas = ImageOps.fit(background.image.convert('RGB'), (320, 240),
-                          method=Image.Resampling.LANCZOS)
-    canvas = ImageEnhance.Brightness(canvas).enhance(0.38).convert('RGBA')
-    mark = logo.image.convert('RGBA')
-    mark = mark.resize((278, round(mark.height * 278 / mark.width)), Image.Resampling.LANCZOS)
-    canvas.alpha_composite(mark, ((320 - mark.width) // 2, 40))
+# The title styles the guest carries (hk-cook title-style: `title_style::SHIPPED`, in the order the
+# options list them): the composed background of each, and the blob it becomes.
+STYLES = [('Modern_Style', 'menu.hk'), ('VHeart_menu_Style', 'menu-voidheart.hk')]
+
+
+def style_blob(canvas, font, advances):
+    """One style's HKMENU03 blob: its palette, its 320x240 background as two 8bpp pages and the
+    loading/retry prompts cut from it. Returns (blob, palette-applied indexed preview)."""
     clean = canvas.copy()
-    # The glyph advances come with the strip, from hk-cook dialogue-art (host/hk-cook/src/font_strip.rs).
-    advances = json.loads((ROOT/'data/font-metrics.json').read_text())['advances']
-    if len(advances)!=95 or not all(1<=a<=13 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
-    indexed = canvas.convert('RGB').quantize(colors=256, method=Image.Quantize.MEDIANCUT,
-                                           dither=Image.Dither.NONE)
+    # Smooth glows band badly in 15-bit colour, so the palette is chosen first and then the picture is
+    # error-diffused onto it as the console will show it (each entry cut to 5 bits a channel): the
+    # steps become fine noise instead of contour lines.
+    rough = canvas.convert('RGB').quantize(colors=256, method=Image.Quantize.MEDIANCUT,
+                                         dither=Image.Dither.NONE)
+    rough_palette = rough.getpalette('RGB')
+    rough_palette += [0] * (768 - len(rough_palette))
+    shown = [((c >> 3) * 255 // 31) for c in rough_palette]
+    reference = Image.new('P', (1, 1))
+    reference.putpalette(shown)
+    indexed = canvas.convert('RGB').quantize(palette=reference, dither=Image.Dither.FLOYDSTEINBERG)
     palette = indexed.getpalette('RGB')
     palette += [0] * (768 - len(palette))
     words = []
@@ -63,12 +65,34 @@ def cook():
         tiles += patch.quantize(palette=indexed, dither=Image.Dither.NONE).tobytes()
     blob = struct.pack('<8sHHI', b'HKMENU03', 320, 240, len(tiles))
     blob += struct.pack('<256H', *words) + tiles + bytes(advances) + b'\0'
-    out = ROOT / 'data/menu.hk'
-    out.parent.mkdir(exist_ok=True)
-    out.write_bytes(blob)
-    # The blob is a disc chunk read before the title, not linked RAM; the guest
-    # keeps only its size and checksum (to verify the read) and the glyph
-    # advances, which the in-game text layout needs after the title is gone.
+    return blob
+
+
+def cook():
+    source = Source()
+    font_obj, font = named(source, 'resources.assets', 'Font', 'Perpetua')
+    # The glyph advances come with the strip, from hk-cook dialogue-art (host/hk-cook/src/font_strip.rs).
+    advances = json.loads((ROOT/'data/font-metrics.json').read_text())['advances']
+    if len(advances)!=95 or not all(1<=a<=13 for a in advances):raise ValueError('data/font-metrics.json has no usable advances')
+    blobs = []
+    for style, filename in STYLES:
+        # hk-cook title-style composes the style's own sprites (glows, light shafts, picture and vignette)
+        # through the title camera; the logo is a separate piece that the guest draws and fades.
+        composed = ROOT / '.hkpsx/title-styles' / f'{style}.png'
+        if not composed.is_file():
+            raise ValueError(f'{composed} is missing: run `hk-cook title-style` first')
+        canvas = Image.open(composed).convert('RGBA')
+        if canvas.size != (320, 240):
+            raise ValueError(f'{composed} is {canvas.size}, not 320x240')
+        blob = style_blob(canvas, font, advances)
+        (ROOT / 'data').mkdir(exist_ok=True)
+        (ROOT / 'data' / filename).write_bytes(blob)
+        blobs.append((style, filename, blob))
+    blob = blobs[0][2]
+    if any(len(b) != len(blob) for _, _, b in blobs):raise ValueError('every style blob must have the same size')
+    # The blobs are disc chunks read before the title, not linked RAM; the guest keeps only their
+    # size and checksum (to verify the read) and the glyph advances, which the in-game text layout
+    # needs after the title is gone.
     fnv = 0x811c9dc5
     for byte in blob:
         fnv = ((fnv ^ byte) * 0x01000193) & 0xffffffff
@@ -77,10 +101,6 @@ def cook():
         f'pub const MENU_BYTES:usize={len(blob)};\n'
         f'pub const MENU_CHECKSUM:u32={fnv};\n'
         f'pub const MENU_METRICS:[u8;96]=[{",".join(str(b) for b in blob[-96:])}];\n')
-    # Preview includes PS1's actual 5-bit palette reduction.
-    indexed.putpalette([c for word in words for c in
-                        (((word & 31) * 255 // 31), (((word >> 5) & 31) * 255 // 31),
-                         (((word >> 10) & 31) * 255 // 31))])
     inputs = {}
     for filename in sorted(set(source.files) | {Path(k).name for k in source.env.files}):
         path = source.directory / filename
@@ -88,11 +108,13 @@ def cook():
             inputs[filename] = {'bytes': path.stat().st_size, 'sha256': sha(path)}
     dump(ROOT / '.hkpsx/menu-provenance.json', {
         'source': str(source.directory), 'inputs': inputs,
-        'objects': [{'id': source.sid(obj), 'name': value.m_Name}
-                    for obj, value in ((logo_obj, logo), (bg_obj, background), (font_obj, font))],
-        'output': {'path': 'data/menu.hk', 'bytes': len(blob), 'sha256': sha(out)},
-        'composition': 'Original title and Voidheart background, cropped to 320x240, '
-                       'background brightness 0.38, shared original Perpetua glyphs. Functional title choices; '
+        'objects': [{'id': source.sid(font_obj), 'name': font.m_Name}],
+        'output': {'path': 'data/menu.hk', 'bytes': len(blob), 'sha256': sha(ROOT / 'data/menu.hk')},
+        'styles': [{'style': style, 'path': f'data/{filename}', 'sha256': sha(ROOT / 'data' / filename),
+                    'composition': sha(ROOT / '.hkpsx/title-styles' / f'{style}.png')}
+                   for style, filename, _ in blobs],
+        'composition': 'Each style is the original title scene\'s own sprites seen through its camera '
+                       '(hk-cook title-style), shared original Perpetua glyphs. Functional title choices; '
                        'not an emulation of the retail menu transitions or animated effects.',
         'format': 'HKMENU03: 16-byte <8sHHI header, 512-byte RGB555 palette, '
                   '61440-byte left 256x240 tile, 15360-byte right 64x240 tile, '
@@ -103,7 +125,7 @@ def cook():
         'vram_bytes': 89600,
         'shared_glyph_vram_bytes':12832,
     })
-    print(f'Cooked title menu: {len(blob)} bytes, 89600 title VRAM bytes plus the 12832-byte font image.')
+    print(f'Cooked title menu: {len(STYLES)} styles of {len(blob)} bytes, 89600 title VRAM bytes plus the 12832-byte font image.')
 
 
 if __name__ == '__main__':

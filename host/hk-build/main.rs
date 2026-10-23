@@ -505,11 +505,17 @@ fn menu_cached(root: &Path, force: bool) -> Result<()> {
             Value::String(sha256_file(&root.join("host").join(name))?),
         );
     }
-    // The title art carries the glyph advances.
+    // The title art carries the glyph advances, and is made from the styles' composed backgrounds.
     code.insert(
         "font-metrics.json".into(),
         Value::String(sha256_file(&root.join("data/font-metrics.json"))?),
     );
+    for (style, _, _) in hk_cook::title_style::SHIPPED {
+        code.insert(
+            format!("title-style:{style}"),
+            Value::String(sha256_file(&root.join(".hkpsx/title-styles").join(format!("{style}.png")))?),
+        );
+    }
     let code = Value::Object(code);
     let source = selected_source(root)?;
     if !force && provenance.exists() && cache.exists() {
@@ -794,6 +800,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "focus-art" => hk_cook::focus_art::main(root, None)?,
         "dialogue-art" => hk_cook::dialogue_art::main(root, None)?,
+        "title-style" => hk_cook::title_style::main(root, None, &[])?,
         "ambience" => hk_cook::ambience::main(root, None)?,
         "runner-audio" => {
             hk_cook::runner_audio::main(root, &[], None)?;
@@ -864,6 +871,8 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // The glyph strip and its advances (data/font-metrics.json) come out of this stage; the
     // title art cooked next carries the advances. A fifth of a second, so it runs every build.
     rust_step(root, "dialogue-art")?;
+    // The title styles' backgrounds and logos, which the title art cooked next is made from.
+    rust_step(root, "title-style")?;
     menu_cached(root, options.recook)?;
     assets_cached(root, options.recook)?;
     // Every HKFSM03 bank the guest links: the enemies' original graphs and the scene scripts.

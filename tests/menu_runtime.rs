@@ -3,6 +3,9 @@ extern crate self as psx_gpu;
 extern crate self as psx_pad;
 extern crate self as psx_vram;
 extern crate self as psx_rt;
+extern crate self as psx_io;
+// `psx_io::gpu::write_command`: the texture cache clear after a style's upload.
+pub mod gpu{pub fn write_command(_:u32){}}
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -85,7 +88,9 @@ const EMPTY:[&str;4]=["Empty","Empty","Empty","Empty"];
 /// The title art the disc would hand `run` and `restore` (tests/test_menu.py writes it).
 static ART:&[u8]=include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/menu.hk"));
 // The boot art chunk's layout the title reads: its ornaments follow the title art (89,712 bytes) and the glyph sheet (7,712).
-mod boot_art{pub const TITLE_ORNAMENTS:(usize,usize)=(89712+12832,10768);pub const CARD_FONT:(usize,usize)=(89712+12832+10768,7680);}
+mod boot_art{pub const TITLE_ORNAMENTS:(usize,usize)=(89712+12832,10768);pub const CARD_FONT:(usize,usize)=(89712+12832+10768,7680);
+ // The second style's art follows the card glyphs, then the logos.
+ pub const STYLE_ART:[usize;2]=[0,89712+12832+10768+7680];pub const LOGO_ART:(usize,usize)=(2*89712+12832+10768+7680,64);}
 #[path="../game/src/menu.rs"]mod menu;
 fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{samples:bits.into_iter().collect(),..Trace::default()});}
 #[test]fn start_opens_the_save_screen_and_the_first_slot_keeps_the_defaults(){
@@ -95,7 +100,7 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  for b in [button::START,button::CROSS]{
   let mut samples=vec![0;8];samples.push(b);samples.push(0);samples.push(button::CROSS);samples.extend([0;40]);feed(samples);
   let (s,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings::new());assert_eq!(p,0);
-  TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),23);});
+  TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),25);});
  }
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
@@ -108,7 +113,7 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  let _guard=LOCK.lock().unwrap();feed([button::START,button::START,0,button::CROSS]);menu::restore(Some(ART));menu::retry(&mut framebuf::FrameBuffer);
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.polls,4);// `restore` uploads the glyphs ahead of the art now; find the patches by place.
   let patch=t.uploads.iter().find(|v|v.0.x==544).expect("the status patches");assert_eq!(patch.0.h,64);assert_eq!(patch.1,12288);
-  assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+12832+10768+7680);// art, glyphs, the title ornaments, then the card glyphs
+  assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+12832+10768+7680+32);// art, glyphs, the title ornaments, the card glyphs, then the style's logo
  });
  feed([0]);menu::loading(&mut framebuf::FrameBuffer);TRACE.with(|t|assert_eq!(t.borrow().polls,1));
 }
@@ -143,4 +148,20 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  // The next visit to the title starts from what is set now.
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
  let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));
+}
+
+#[test]fn the_options_page_changes_the_title_style_with_a_fade_and_a_new_upload(){
+ let _guard=LOCK.lock().unwrap();use menu::state::*;
+ // Options, down to Menu style, Right: Voidheart. The old style fades out over a few frames (the
+ // samples drop meanwhile), then its art and logo are uploaded; then Back, Start, slot 1.
+ let mut samples=Vec::new();for b in [DOWN,CROSS]{samples.extend([b,0]);}
+ for _ in 0..STYLE_ROW{samples.extend([DOWN,0]);}
+ samples.extend([RIGHT,0]);samples.extend([0;24]);
+ for b in [DOWN,CROSS,UP,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(p,0);assert_eq!(s,menu::Settings{style:1,..menu::Settings::new()});
+ // The title came up with Modern's art and the change uploaded Voidheart's palette and logo.
+ TRACE.with(|t|{let t=t.borrow();assert_eq!(t.uploads.iter().filter(|v|v.0.x==768&&v.0.y==480).count(),2);assert_eq!(t.uploads.iter().filter(|v|v.0.x==640&&v.0.y==0).count(),2);});
+ // The next visit to the title keeps the style.
+ let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
+ let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s.style,1);
 }

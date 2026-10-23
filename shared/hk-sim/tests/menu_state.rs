@@ -96,7 +96,7 @@ fn controls_and_back_are_functional_and_confirm_never_retriggers_while_held() {
         assert_eq!(s.page, Page::Main);
     }
     assert_eq!(MAIN_ITEMS.len(), 4);
-    assert_eq!(OPTION_ITEMS.len(), 7);
+    assert_eq!(OPTION_ITEMS.len(), 8);
     assert_eq!(CONTROL_LINES.len(), 10);
 }
 #[test]
@@ -195,7 +195,7 @@ fn music_is_independent_clamped_and_back_preserves_it() {
     assert_eq!(s.settings.music, 1);
     tap(&mut s, DOWN);
     assert_eq!(OPTION_ITEMS[s.selected], "Brightness");
-    for _ in 0..3 {
+    for _ in 0..4 {
         tap(&mut s, DOWN);
     }
     assert_eq!(OPTION_ITEMS[s.selected], "Back");
@@ -235,7 +235,7 @@ fn brightness_and_screen_position_step_within_their_limits_and_print_signed() {
     assert_eq!((s.screen_x, s.screen_y), (-SCREEN_RANGE, -SCREEN_RANGE));
     // Nothing but its own row moves a value.
     assert_eq!((s.sfx, s.ambience, s.music), (10, 10, 10));
-    assert!(!s.adjust(6, 1));
+    assert!(!s.adjust(OPTION_BACK, 1));
     let mut out = [0u8; 3];
     assert_eq!(signed(0, &mut out), "0");
     assert_eq!(signed(3, &mut out), "+3");
@@ -258,4 +258,39 @@ fn brightness_and_screen_position_step_within_their_limits_and_print_signed() {
         (m.settings.sfx, m.settings.ambience, m.settings.music),
         (10, 10, 10)
     );
+}
+
+#[test]
+fn the_style_row_cycles_through_the_styles_and_wraps() {
+    assert_eq!(OPTION_ITEMS[STYLE_ROW], "Menu style");
+    assert_eq!(STYLE_ROW + 1, OPTION_BACK);
+    // Modern first: the source's 1.5.0 default (`MenuStyles.StyleDefault`).
+    let mut s = Settings::new();
+    assert_eq!(STYLE_NAMES[usize::from(s.style)], "Modern");
+    assert!(s.adjust(STYLE_ROW, 1));
+    assert_eq!(STYLE_NAMES[usize::from(s.style)], "Voidheart");
+    // The list wraps both ways, one step a press however far the delta reaches.
+    assert!(s.adjust(STYLE_ROW, 100));
+    assert_eq!(s.style, 0);
+    assert!(s.adjust(STYLE_ROW, -1));
+    assert_eq!(usize::from(s.style), STYLE_NAMES.len() - 1);
+    assert!(!s.adjust(STYLE_ROW, 0));
+    // Nothing else moved.
+    assert_eq!((s.sfx, s.ambience, s.music, s.brightness), (10, 10, 10, 0));
+    // Through the page: Cross on the row steps to the next style, Left and Right step either way.
+    let mut m = State::new();
+    tap(&mut m, DOWN);
+    tap(&mut m, CROSS);
+    assert_eq!(m.page, Page::Options);
+    for _ in 0..STYLE_ROW {
+        tap(&mut m, DOWN);
+    }
+    assert_eq!(m.selected, STYLE_ROW);
+    tap(&mut m, CROSS);
+    assert_eq!(m.settings.style, 1);
+    assert_eq!(m.page, Page::Options);
+    tap(&mut m, LEFT);
+    assert_eq!(m.settings.style, 0);
+    tap(&mut m, RIGHT);
+    assert_eq!(m.settings.style, 1);
 }

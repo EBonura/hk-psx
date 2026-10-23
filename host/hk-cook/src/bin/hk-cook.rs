@@ -30,6 +30,7 @@ fn main() {
         Some("shaman-runner-bind") => hk_cook::shaman_runner_scene::bind_generated_specs(&root).map_err(|e| e.to_string()),
         Some("hornet-measure") => hk_cook::hornet_scene::measure(&root).map_err(|e| e.to_string()),
         Some("dialogue-art") => hk_cook::dialogue_art::main(&root, source.as_deref()),
+        Some("title-style") => hk_cook::title_style::main(&root, source.as_deref(), &args[2..].iter().enumerate().filter(|(i, a)| !a.starts_with("--") && !(*i > 0 && args[2 + i - 1] == "--source")).map(|(_, a)| a.clone()).collect::<Vec<_>>()),
         Some("props") => hk_cook::props::main(&root, source.as_deref()),
         Some("break-effects") => hk_cook::break_effects::main(&root, source.as_deref()),
         Some("scene-sfx") => hk_cook::scene_sfx::main(&root, source.as_deref()),

@@ -100,7 +100,7 @@ fn orb_image(size: usize) -> Image {
 /// Coverage to one of 16 levels. Thin strokes lose their contrast when the
 /// source is shrunk by a factor of three, so the ramp is steepened around the
 /// middle: a stroke stays a stroke instead of turning into a grey haze.
-fn level(alpha: u8, luma: u8) -> u8 {
+pub(crate) fn level(alpha: u8, luma: u8) -> u8 {
     let t = f64::from(alpha) / 255.0 * f64::from(luma) / 255.0;
     let t = ((t - 0.08) / 0.84).clamp(0.0, 1.0);
     let s = t * t * (3.0 - 2.0 * t);
@@ -133,7 +133,7 @@ const POINTER_W: usize = 20;
 const POINTER_H: usize = 14;
 
 /// `grey` (one index per pixel) as 4bpp rows padded to whole halfwords, first pixel in the low nibble.
-fn whole_rows(grey: &[u8], width: usize, height: usize) -> Vec<u8> {
+pub(crate) fn whole_rows(grey: &[u8], width: usize, height: usize) -> Vec<u8> {
     let padded = width.div_ceil(4) * 4;
     let mut out = Vec::with_capacity(padded / 2 * height);
     for y in 0..height {
@@ -164,7 +164,7 @@ fn coin_level(alpha: u8, luma: u8) -> u8 {
 }
 
 /// The 4bpp indices of `image`, row-major, one byte per pixel.
-fn indices(image: &Image) -> Vec<u8> {
+pub(crate) fn indices(image: &Image) -> Vec<u8> {
     image
         .data
         .chunks_exact(4)
