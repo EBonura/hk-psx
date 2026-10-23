@@ -30,7 +30,7 @@ class AudioTests(unittest.TestCase):
                 '];const EXTRA_SAMPLES:[(u32,u32,i16);7]=['+
                 ','.join(f'({0x1010+(i%10)*32},11025,1000)' for i in range(7))+
                 '];const GREAT_DOOR_HIT_PITCH:[u16;2]=[1741,2355];'+
-                'const HARD_FALL_MIN_TICKS:u16=67;const SOFT_LANDING_TICKS:u16=2;const RUN_SEQUENCE_TICKS:u16=4;'+
+                'const HARD_FALL_MIN_TICKS:u16=67;const HARD_LANDING_TICKS:u16=48;const SOFT_LANDING_TICKS:u16=2;const RUN_SEQUENCE_TICKS:u16=4;'+
                 # The menu's two clips sit right above the bank.
                 f'const UI_BYTES:usize=64;const UI_SAMPLES:[(u32,u32,i16);2]=[({0x1010+320},22050,500),({0x1010+352},11025,500)];')
             (root/'data/ui_sfx.adpcm').write_bytes(bytes([20])+bytes(31)+bytes([21])+bytes(31))

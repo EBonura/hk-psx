@@ -72,8 +72,8 @@ static BANK:Bank=Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../da
 #[repr(align(4))]struct World([u8;160]);
 static WORLD:World=World(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../data/world-sfx.adpcm")));
 
-fn descent(ticks:usize){for _ in 0..ticks{audio::movement_tick(false,false,true,false,true);}}
-fn run(){audio::movement_tick(true,true,false,true,true);}
+fn descent(ticks:usize){for _ in 0..ticks{audio::movement_tick(false,false,false,false);}}
+fn run(){audio::movement_tick(true,true,true,false);}
 fn pair(index:u8,gain:i16)->Vec<Event>{vec![Event::Off(1<<index),Event::On(1<<index,gain)]}
 
 #[test]
@@ -163,15 +163,13 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     audio::great_door_hit();
     assert_eq!(take()[1],Event::Configure(15,0x1010,22050,0),"the door inherited a world sample");
 
-    // Threshold and suppression exercise the actual event->physical voice path.
+    // The simulation's verdict picks the landing sound; the audio keeps no fall count of its own.
     audio::reset_movement();assert_eq!(take(),[Event::Off(1<<17)]);
     descent(67);assert!(take().is_empty());
-    audio::movement_tick(false,true,false,false,true);assert_eq!(take(),pair(16,0));
-    audio::movement_tick(true,true,false,false,true);assert!(take().is_empty());
+    audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
+    audio::movement_tick(true,true,false,true);assert!(take().is_empty());
     audio::reset_movement();take();descent(66);
-    audio::movement_tick(false,true,false,false,true);assert_eq!(take(),pair(2,0));
-    audio::reset_movement();take();descent(67);
-    audio::movement_tick(false,true,false,false,false);assert_eq!(take(),pair(2,0));
+    audio::movement_tick(false,true,false,false);assert_eq!(take(),pair(2,0));
     unsafe {assert_eq!(audio::HK_HARD_LAND_SFX,1);assert_eq!(audio::HK_SFX_EVENT_COUNTS[6],1);}
 
     audio::reset_movement();take();run();assert_eq!(take(),pair(17,0));
@@ -179,17 +177,17 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     run();assert_eq!(take(),pair(17,0)); // Four-tick synthetic complete sequence.
     audio::stop_footsteps();assert_eq!(take(),[Event::Off(1<<17)]);
     run();assert_eq!(take(),pair(17,0));
-    audio::movement_tick(true,false,false,false,true);assert_eq!(take(),[Event::Off(1<<17)]);
+    audio::movement_tick(true,false,true,false);assert_eq!(take(),[Event::Off(1<<17)]);
     descent(3);assert!(take().is_empty());
-    audio::movement_tick(false,true,false,true,true);assert_eq!(take(),pair(2,0));
+    audio::movement_tick(false,true,true,false);assert_eq!(take(),pair(2,0));
     run();assert!(take().is_empty());run();assert_eq!(take(),pair(17,0)); // Soft voice gates restart.
     unsafe {assert_eq!(audio::HK_FOOTSTEP_STARTS,4);assert_eq!(audio::HK_SFX_EVENT_COUNTS[7],4);}
 
-    // Pause stops playback without discarding fall state; scene reset does.
+    // Pausing stops the footsteps and nothing else; a scene reset starts the next landing soft.
     audio::reset_movement();take();descent(67);audio::stop_footsteps();take();
-    audio::movement_tick(false,true,false,false,true);assert_eq!(take(),pair(16,0));
-    descent(67);audio::reset_movement();take();
-    audio::movement_tick(false,true,false,false,true);assert_eq!(take(),pair(2,0));
+    audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
+    audio::reset_movement();take();
+    audio::movement_tick(false,true,false,false);assert_eq!(take(),pair(2,0));
 
     // Every owned physical voice changes gain, including both new voices and
     // Great Door; keying an event after exact mute cannot restore its gain.
@@ -200,6 +198,6 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     }
     audio::great_door_hit();assert_eq!(take().last(),Some(&Event::On(1<<15,0)));
     audio::reset_movement();take();run();assert_eq!(take(),pair(17,0));
-    descent(67);take();audio::movement_tick(false,true,false,false,true);assert_eq!(take(),pair(16,0));
+    descent(67);take();audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
     let t=TRACE.lock().unwrap();for v in physical.into_iter().chain([15]){assert_eq!(t.gains[v as usize],0);}
 }

@@ -33,6 +33,7 @@ pub mod fsm3_timers;
 pub mod fsm3_transform;
 pub mod gruz_mother;
 pub mod gruzzer;
+pub mod hard_landing;
 pub mod hatcher;
 pub mod waves;
 #[cfg(feature = "boss")]
@@ -53,6 +54,7 @@ pub mod shockwave;
 pub mod switches;
 pub mod vengefly;
 pub mod zombie_shield;
+pub use hard_landing::HardLandingParams;
 pub use corpse::{Corpse, CorpsePhase, CorpseSpec};
 mod focus;
 mod vitals;
@@ -245,6 +247,10 @@ pub struct Player {
     pub animation: u16,
     pub animation_tick: u32,
     pub land_tick: u16,
+    /// Ticks of uninterrupted descent so far (`HeroController.fallTimer`); see `hard_landing`.
+    pub fall_ticks: u16,
+    /// Ticks of the hard landing's lock left (`hero_state == hard_landing`); zero when not locked.
+    pub hard_land: u16,
 }
 impl Player {
     pub const fn spawn(x: i32, y: i32) -> Self {
@@ -290,6 +296,8 @@ impl Player {
             animation: 0,
             animation_tick: 0,
             land_tick: 0,
+            fall_ticks: 0,
+            hard_land: 0,
         }
     }
     pub fn tick(&mut self, p: Params, dir: i32, jump: bool, room: &Room) {

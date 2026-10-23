@@ -45,6 +45,12 @@ pub const LOOK_UP: usize = 21;
 pub const LOOK_DOWN: usize = 22;
 pub const LOOK_UP_END: usize = 23;
 pub const LOOK_DOWN_END: usize = 24;
+/// The crouch of a hard landing (`HardLand`, `host/ability_art.py` HARD_LAND_CLIP, after the look clips).
+pub const HARD_LAND: usize = 25;
+/// King's Pass's opening crash: the Knight face down after the first fall, and getting up from it
+/// (`host/ability_art.py` CRASH_CLIPS).
+pub const SUPER_HARD_LAND: usize = 26;
+pub const GET_UP: usize = 27;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;

@@ -410,23 +410,16 @@ pub fn enemy_hit() {
 
 /// Call once after each consumed60Hz player physics step, replacing the old
 /// standalone soft-land call. `running` describes the supported RUNNING state,
-/// excluding pause/dialogue/recoil; `falling` is post-step vy<0. Normal dry
-/// terrain allows hard landing; NoHardLanding/acid surfaces must pass false.
-pub fn movement_tick(
-    was_grounded: bool,
-    grounded: bool,
-    falling: bool,
-    running: bool,
-    hard_allowed: bool,
-) {
+/// excluding pause/dialogue/recoil. `hard` is the simulation's verdict on this
+/// tick's landing (`Player::hard_landing_tick`), which already excludes gate
+/// drop-ins; NoHardLanding/acid surfaces must clear it.
+pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bool) {
     let events = unsafe {
         MOVEMENT.tick(
             was_grounded,
             grounded,
-            falling,
             running,
-            hard_allowed,
-            HARD_FALL_MIN_TICKS,
+            hard,
             SOFT_LANDING_TICKS,
             RUN_SEQUENCE_TICKS,
         )

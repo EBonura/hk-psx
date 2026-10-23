@@ -84,6 +84,7 @@ mod geo_audio;
 mod geo_render;
 mod great_door;
 mod gruz_art;
+mod hard_landing;
 #[cfg(any(feature = "hero-light", feature = "hero-vignette"))]
 mod hero_light;
 mod impact;
@@ -237,6 +238,11 @@ fn ability_pose(
             _ => 3,
         };
         return Some((ability_art::DN_START + offset, dream.tick as u32));
+    }
+    // The crouch of a hard landing; a spell cast during it (CanCast does not refuse the state)
+    // has already returned above.
+    if let Some(pose) = hard_landing::pose(player) {
+        return Some(pose);
     }
     // The Crystal Heart owns the body through all four of its phases.
     match player.super_dash {
@@ -974,6 +980,8 @@ fn main() {
         // timing, title card and region binds cannot be made to match the ones they were recorded in.
         game.player = Player::spawn(NEW_GAME_ENTRY.0, NEW_GAME_ENTRY.1);
         game.region_id = NEW_GAME_ENTRY.2;
+        // Tutorial_01's `Initial Fall Impact` takes this fall's landing (hard_landing.rs).
+        hard_landing::arm_opening_crash();
     }
     // After the Game exists, whether or not a save loaded: a new game hands
     // over an empty store and changes nothing.

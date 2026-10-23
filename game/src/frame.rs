@@ -526,6 +526,8 @@ pub fn interact(
         && !game.door.pending()
         && !game.vitals.dead
         && game.player.grounded
+        // CanInteract and CanQuickMap want cState.onGround, which a hard landing leaves false.
+        && !game.player.hard_landing()
         && game.vitals.can_control()
         && !game.nail.active
         && !game.focus.locks_control();
@@ -1053,7 +1055,8 @@ pub fn simulate(
                 held: cast_button
                     && game.cast.held_past_tap(FIREBALL_PARAMS)
                     && !game.cast.locks_control(),
-                grounded: game.player.grounded,
+                // CanFocus wants cState.onGround, which a hard landing leaves false.
+                grounded: game.player.grounded && !game.player.hard_landing(),
                 can_start: game.vitals.can_control()
                     && !game.door.pending()
                     && (!game.nail.active || game.nail.age >= FOCUS_PARAMS.attack_recovery_ticks),
@@ -1123,13 +1126,15 @@ pub fn simulate(
             PARAMS,
             pad.is_held(input::bind::SUPER_DASH)
                 && game.vitals.can_control()
-                && !locked_for_dash(&game.focus, &game.door, &game.bench),
+                && !locked_for_dash(&game.focus, &game.door, &game.bench)
+                && !game.player.hard_landing(),
         );
         game.player.dash_input(
             PARAMS,
             pad.is_held(input::bind::DASH)
                 && game.vitals.can_control()
-                && !locked_for_dash(&game.focus, &game.door, &game.bench),
+                && !locked_for_dash(&game.focus, &game.door, &game.bench)
+                && !game.player.hard_landing(),
         );
         // The seated prompt owns input while it is up, so the bench
         // neither reads a leave press nor starts another rest.
@@ -1163,6 +1168,7 @@ pub fn simulate(
                 || read_consumes
                 || asking)
                 && game.vitals.can_control()
+                && !game.player.hard_landing()
                 && !game.nail.active;
             let leave = !asking
                 && [
@@ -1213,7 +1219,10 @@ pub fn simulate(
             || game.bench.locks_control()
             || game.save_ui.modal()
             || game.cast.locks_control()
-            || game.pickups.kneeling();
+            || game.pickups.kneeling()
+            // `Update` skips LookForInput in `hard_landing`, and CanJump, CanAttack and CanDash
+            // refuse the state: no steering, jump, dash or strike until the timer runs out.
+            || game.player.hard_landing();
         // Take Control: the Dream Nail owns the Knight from Start to End.
         game.dream.has_dream_nail =
             game.settings.cheats.dream || persist::player(persist::HAS_DREAM_NAIL);
@@ -1232,6 +1241,7 @@ pub fn simulate(
             i32::from(pad.is_held(button::RIGHT)) - i32::from(pad.is_held(button::LEFT))
         };
         let was_grounded = game.player.grounded;
+        let hard_locked = game.player.hard_landing();
         let jump = !locked && !read_consumes && pad.is_held(button::CROSS);
         let could_jump = was_grounded
             && !game.player.was_jump
@@ -1254,6 +1264,8 @@ pub fn simulate(
             game.player.jumping = false;
             game.player.was_jump = pad.is_held(button::CROSS);
         } else if let Some((vx, vy)) = game.vitals.recoil_velocity(VITAL_PARAMS) {
+            // A hit takes the Knight out of `hard_landing` (his state becomes no_input).
+            game.player.end_hard_landing();
             let mut p = PARAMS;
             p.speed = vx.abs();
             p.gravity = 0;
@@ -1295,6 +1307,10 @@ pub fn simulate(
                 })
             };
             game.door.landed(game.player.grounded);
+            // A jump held through the lock is not a new press when control returns.
+            if hard_locked {
+                game.player.was_jump = pad.is_held(button::CROSS);
+            }
         }
         hero_sounds(&before, &game.player);
         great_door::probe(
@@ -1303,14 +1319,22 @@ pub fn simulate(
             game.player.y,
             game.player.jumping,
         );
+        // FallCheck, ShouldHardLand and DoHardLanding. A gate entry's drop is `no_input` in the
+        // source, which lands through FinishedEnteringScene, never a hard landing.
+        let hard = game
+            .player
+            .hard_landing_tick(hard_landing::RULE, was_grounded, !game.door.entering());
+        if hard {
+            hard_landing::landed(r.scene, &mut game.player);
+        }
+        hard_landing::tick(&game.player);
         audio::movement_tick(
             was_grounded,
             game.player.grounded,
-            game.player.vy < 0,
             (game.door.entry_footsteps() || (dir != 0 && !locked))
                 && game.vitals.can_control()
                 && game.vitals.recoil_velocity(VITAL_PARAMS).is_none(),
-            true,
+            hard,
         );
         let vertical = i32::from(pad.is_held(button::UP)) - i32::from(pad.is_held(button::DOWN));
         let attacked = game.nail.tick(
