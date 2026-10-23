@@ -1643,6 +1643,11 @@ pub fn simulate(
         if life_strike.hit_bugs > 0 {
             audio::enemy_hit();
         }
+        // `ScuttlerControl.Hit`: `EnemyKillShake` and the blue blood.
+        if let Some(at) = life_strike.hit_at {
+            camera::request(camera::Shake::Kill);
+            fx::raise(r.scene, fx::SCUTTLER_BLOOD, at);
+        }
         if life_strike.opened {
             audio::cocoon_break();
             // `HealthCocoon.OnTriggerEnter2D`: the nail's slash and strike at its top, the

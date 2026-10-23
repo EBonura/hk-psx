@@ -35,6 +35,8 @@ pub const FX_HIT_CHIPS: i64 = FX_OWNER | 0x13;
 pub const FX_COCOON: i64 = FX_OWNER | 0x20;
 pub const FX_COCOON_CAP_RIGHT: i64 = FX_OWNER | 0x21;
 pub const FX_COCOON_CAP_LEFT: i64 = FX_OWNER | 0x22;
+/// A struck Health Scuttler's blood (`SpawnBlood`, colour (0.145, 0.656, 0.860)).
+pub const FX_SCUTTLER_BLOOD: i64 = FX_OWNER | 0x23;
 /// A grub jar's `Pt Glass L` and `Pt Glass S` (anchor: the jar).
 pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
 
@@ -617,6 +619,33 @@ fn collect_cocoon(
         COCOON_BODY,
         "spatter_blue",
         "Spatter Blue x50",
+    )?;
+    // `ScuttlerControl`'s SpawnBlood: 12 to 18 drops, speed 4 to 22, angle 30 to 150, in the spatter's
+    // blue; it shares the spatters' sheet.
+    push_burst(
+        c,
+        scene_id,
+        FX_SCUTTLER_BLOOD,
+        &Burst {
+            count: 15,
+            life: [90, 150],
+            speed: [4.0, 22.0],
+            angle: [30.0, 150.0],
+            spread: [0.0, 0.0],
+            gravity_scale: 1.0,
+            bounce: 0.0,
+            life_loss: 0.0,
+            spin: 0.0,
+            size: [0.7, 1.0],
+            radius: 0.3,
+            splash: Some((1, 12, 4)),
+            fade_from: 0.8,
+        },
+        &spatter,
+        gravity,
+        [0.0; 3],
+        "spatter_blue",
+        "Health Scuttler blood x12..18",
     )?;
     // Blue Glob: tk2d sharedassets6:1135, Glob Fall flies, Glob Land lies.
     let glob = tk2d_ids(source, "sharedassets6.assets", 1135, &[95, 101])?;
