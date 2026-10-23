@@ -39,11 +39,24 @@ pub struct Style {
     pub life_loss: i32,
     pub kill_speed: i32,
     pub radius_scale: i32,
-    /// A particle that lands turns into a splash: bits 0..7 its ticks, 8..11 the style's frame
-    /// it shows, 12..15 its size in quarters (0 for no splash).
+    /// Bits 0..7: ticks a particle that lands lives on as a splash (0 for none); 8..11 the style's
+    /// frame it shows then; 12..14 its size in quarters; 15 set for a burst that flies on
+    /// outside the region's collision coverage instead of pausing there.
     pub splash: u16,
     pub samples: &'static [Sample],
     pub frames: &'static [[u16; 3]],
+}
+impl Style {
+    /// A particle of this style turns into a splash where it lands.
+    #[inline(always)]
+    fn lands(&self) -> bool {
+        self.splash & 0xff != 0
+    }
+    /// A particle of this style keeps flying, without contacts, outside the coverage.
+    #[inline(always)]
+    fn flies_free(&self) -> bool {
+        self.splash & 0x8000 != 0
+    }
 }
 #[derive(Clone, Copy)]
 pub struct Emitter {
@@ -95,7 +108,7 @@ pub const FX_MAX_STYLES: usize = 28;
 #[cfg(test)]
 pub const FX_MAX_EMITTERS: usize = 128;
 #[cfg(test)]
-pub const FX_MAX_ART: usize = 64;
+pub const FX_MAX_ART: usize = 96;
 #[cfg(test)]
 pub const FX_MAX_UPLOADS: usize = 64;
 #[cfg(test)]
@@ -786,7 +799,7 @@ fn spawn_specs_with_bases(
                 // A style with a splash flies its first frame and lands in another.
                 cell: {
                     let random = (super::random(&mut rng) % s.frames.len() as u32) as u8;
-                    if s.splash != 0 {
+                    if s.lands() {
                         0
                     } else {
                         random
@@ -880,12 +893,11 @@ fn tick_specs_with_tracks(
             continue;
         }
         let s = &styles[(p.kind - 2) as usize];
-        if s.collision
-            && (p.position[0] < coverage[0]
-                || p.position[0] > coverage[2]
-                || p.position[1] < coverage[1]
-                || p.position[1] > coverage[3])
-        {
+        let outside = p.position[0] < coverage[0]
+            || p.position[0] > coverage[2]
+            || p.position[1] < coverage[1]
+            || p.position[1] > coverage[3];
+        if s.collision && outside && !s.flies_free() {
             continue;
         }
         let words = cached_frame(pool.tracks[index], phase(p), tracks);
@@ -924,7 +936,7 @@ fn tick_specs_with_tracks(
             p.angle = (p.angle + spin / 60).rem_euclid(360 * ONE);
         }
         let next = sweep(p);
-        if s.collision {
+        if s.collision && !outside {
             let old = p.position;
             union = [
                 union[0].min(next[0].min(old[0]) - radius),
@@ -986,12 +998,12 @@ fn tick_specs_with_tracks(
                     );
                 }
                 p.position = next;
-                if (normal[0] | normal[1]) != 0 && s.splash != 0 && p.cell == 0 {
+                if (normal[0] | normal[1]) != 0 && s.lands() && p.cell == 0 {
                     // Lands: stops where it hit and shows its splash, turned to the surface.
                     p.cell = ((s.splash >> 8) & 15) as u8;
                     p.velocity = [0; 3];
                     p.force = 0;
-                    let quarters = (s.splash >> 12) as i32;
+                    let quarters = ((s.splash >> 12) & 7) as i32;
                     if quarters != 0 {
                         p.size = mulq(p.size, quarters * (ONE / 4));
                     }
@@ -1913,13 +1925,13 @@ mod tests {
     }
     #[test]
     fn a_landing_particle_stops_and_turns_into_its_splash() {
-        // Splash: 12 ticks, frame 1, drawn at twice its size.
+        // Splash: 12 ticks, frame 1, drawn at one and a half times its size.
         let s = Style {
             count: 1,
             force: [[0, 0], [-60 * ONE; 2], [0, 0]],
             collision: true,
             life: [600; 2],
-            splash: 12 | 1 << 8 | 8 << 12,
+            splash: 12 | 1 << 8 | 6 << 12,
             ..STYLE
         };
         let mut pool = Pool::new();
@@ -1935,7 +1947,7 @@ mod tests {
                 landed = Some(tick);
                 assert_eq!(p.velocity, [0; 3]);
                 assert_eq!(p.force, 0);
-                assert_eq!(p.size, 2 * ONE);
+                assert_eq!(p.size, ONE * 3 / 2);
                 assert_eq!((p.age, p.life.get()), (0, 12));
                 assert_eq!(p.angle, 0, "floor: upright");
             }
