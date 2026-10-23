@@ -405,7 +405,7 @@ mod presentation {
     use psx_gpu::{
         material::{BlendMode, TextureMaterial},
         ot::OrderingTable,
-        prim::{QuadTextured, Sprite},
+        prim::QuadTextured,
     };
     use psx_vram::{upload_bytes, VramRect};
     #[no_mangle]
@@ -532,10 +532,51 @@ mod presentation {
         }
         drawn
     }
-    static mut BLUE: [Sprite; 22] =
-        [const { Sprite::new(0, 0, 0, 0, (0, 0), 0, 128, 128, 128) }; 22];
-    /// Twenty testing masks plus the authored two-bug cocoon fit this pool.
-    /// Use the original Blue Idle image, not a blue tint of a white mask.
+    static mut BLUE: [QuadTextured; 22] =
+        [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; 22];
+    static mut BREAKS: [QuadTextured; 22] =
+        [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; 22];
+    /// The vblank each blue mask appeared at and each broken slot's mask broke at (0: none).
+    static mut BORN: [u32; 22] = [0; 22];
+    static mut BROKE: [u32; 22] = [0; 22];
+    /// How many blue masks the last frame showed.
+    static mut SEEN: u16 = 0;
+    /// `Blue Appear`: nine frames at 20 fps. `Blue Break`: five frames at 20 fps.
+    const APPEAR_VBLANKS: u32 = 27;
+    const BREAK_VBLANKS: u32 = 15;
+    /// The mask's size while it appears (Q16): grows from a third past its size and settles.
+    fn appear_scale(age: u32) -> i32 {
+        if age >= APPEAR_VBLANKS {
+            return ONE;
+        }
+        // 0..19 vblanks: 0.3 to 1.2, then 1.2 back to 1.0.
+        let rise = 19;
+        if age < rise {
+            ONE * 3 / 10 + (ONE * 9 / 10) * age as i32 / rise as i32
+        } else {
+            ONE * 12 / 10 - (ONE * 2 / 10) * (age - rise) as i32 / (APPEAR_VBLANKS - rise) as i32
+        }
+    }
+    /// `art` centred in the 16 px mask cell at (x, y), `scale` (Q16) times its size.
+    fn mask_quad(art: Art, x: i16, y: i16, scale: i32, tint: u8) -> QuadTextured {
+        let (w, h) = (
+            ((i32::from(art.w) * scale) >> 16) as i16,
+            ((i32::from(art.h) * scale) >> 16) as i16,
+        );
+        let (cx, cy) = (x + art.w as i16 / 2, y + art.h as i16 / 2);
+        let (x0, y0, x1, y1) = (cx - w / 2, cy - h / 2, cx - w / 2 + w, cy - h / 2 + h);
+        let right = (u16::from(art.u) + u16::from(art.w) - 1) as u8;
+        let bottom = (u16::from(art.v) + u16::from(art.h) - 1) as u8;
+        QuadTextured::with_material(
+            [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            [(art.u, art.v), (right, art.v), (art.u, bottom), (right, bottom)],
+            TextureMaterial::blended(art.clut, art.tpage, (tint, tint, tint), BlendMode::Average),
+        )
+    }
+    /// Twenty testing masks plus the authored two-bug cocoon fit this pool. Uses the original
+    /// Blue Idle image, not a blue tint of a white mask. A new mask grows in as `Blue Appear` does
+    /// and a lost one swells and goes dark as `Blue Break` does (the source's frames are not
+    /// kept: the bank has no room, so the first Blue Idle pose is scaled).
     pub fn append_hud(ot: &mut OrderingTable<1>, max_health: u16, blue_health: u16) {
         assert!(
             blue_health <= 22,
@@ -544,18 +585,36 @@ mod presentation {
         let parts = LIFE_FRAMES[BLUE_HUD].parts;
         assert_eq!(parts.len(), 1);
         let art = parts[0];
-        for i in (0..blue_health).rev() {
-            unsafe {
+        let now = psx_rt::interrupts::vblank_count();
+        unsafe {
+            let seen = SEEN;
+            for i in seen..blue_health {
+                BORN[i as usize] = now;
+                BROKE[i as usize] = 0;
+            }
+            for i in blue_health..seen {
+                BROKE[i as usize] = now;
+            }
+            SEEN = blue_health;
+            for i in (0..22u16).rev() {
+                let slot = i as usize;
                 let (x, y) = crate::hud::mask_position(max_health + i);
-                BLUE[i as usize] = Sprite::with_material(
-                    x,
-                    y,
-                    u16::from(art.w),
-                    u16::from(art.h),
-                    (art.u, art.v),
-                    material(art),
-                );
-                crate::display::ot_add(ot, 0, &mut BLUE[i as usize], Sprite::WORDS);
+                if i < blue_health {
+                    let scale = appear_scale(now.wrapping_sub(BORN[slot]));
+                    BLUE[slot] = mask_quad(art, x, y, scale, 128);
+                    crate::display::ot_add(ot, 0, &mut BLUE[slot], QuadTextured::WORDS);
+                } else if BROKE[slot] != 0 {
+                    let age = now.wrapping_sub(BROKE[slot]);
+                    if age >= BREAK_VBLANKS {
+                        BROKE[slot] = 0;
+                        continue;
+                    }
+                    // 1.0 to 1.5 times its size while the light drains out of it.
+                    let scale = ONE + ONE / 2 * age as i32 / BREAK_VBLANKS as i32;
+                    let tint = (128 - 128 * age / BREAK_VBLANKS) as u8;
+                    BREAKS[slot] = mask_quad(art, x, y, scale, tint);
+                    crate::display::ot_add(ot, 0, &mut BREAKS[slot], QuadTextured::WORDS);
+                }
             }
         }
     }
