@@ -1447,6 +1447,9 @@ fn scene_needs(
                 })
                 .collect()
         };
+        // Scenes a widened selector reached beyond the ones the row was cooked for: their copy of the
+        // row is late (see LATE_PRIORITY), so it never moves a clip those scenes already held.
+        let mut late: HashSet<i64> = HashSet::new();
         let ids: HashSet<i64> = match kind[0] {
             "scene" => named()?,
             "arena" => named()?.intersection(&arena_scenes).copied().collect(),
@@ -1454,14 +1457,17 @@ fn scene_needs(
             "secrets" => secrets.clone(),
             "secret_walls" => walls.clone(),
             "secret_breaks" => walls.union(&floors).copied().collect(),
-            "barrels" => barrels.union(&floors).copied().collect(),
+            "barrels" => {
+                late = barrels.difference(&floors).copied().collect();
+                barrels.union(&floors).copied().collect()
+            }
             "poles" => poles.clone(),
             "wagons" => wagons.clone(),
-            "wall_deaths" => walls
-                .union(&floors)
-                .chain(door_scenes.iter())
-                .copied()
-                .collect(),
+            "wall_deaths" => {
+                let secrets: HashSet<i64> = walls.union(&floors).copied().collect();
+                late = door_scenes.difference(&secrets).copied().collect();
+                secrets.union(&door_scenes).copied().collect()
+            }
             "secret_floors" => floors.clone(),
             "totems" => totems.clone(),
             "chests" => chests.clone(),
@@ -1473,7 +1479,11 @@ fn scene_needs(
         };
         for scene in ids {
             if let Some(list) = needs.get_mut(&scene) {
-                list.push(event.clone());
+                let mut row = event.clone();
+                if late.contains(&scene) {
+                    row.priority += LATE_PRIORITY;
+                }
+                list.push(row);
             }
         }
     }

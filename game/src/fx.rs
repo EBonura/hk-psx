@@ -20,5 +20,5 @@ pub const SCUTTLER_BLOOD: usize = 0xD023;
 #[cfg(not(test))]
 #[inline(never)]
 pub fn raise(scene: usize, owner: usize, at: [i32; 2]) {
-    crate::world::particles::pool().spawn_break_at(scene, owner, at);
+    crate::world::particles::pool().spawn_break_salted(scene, owner, at);
 }
