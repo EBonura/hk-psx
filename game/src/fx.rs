@@ -14,6 +14,7 @@ pub const COCOON: usize = 0xD020;
 pub const COCOON_CAP_RIGHT: usize = 0xD021;
 pub const COCOON_CAP_LEFT: usize = 0xD022;
 pub const JAR_GLASS: usize = 0xD030;
+pub const SCUTTLER_BLOOD: usize = 0xD023;
 
 /// Raise `owner`'s emitters, moved by `at` (world, Q16).
 #[cfg(not(test))]

@@ -52,6 +52,8 @@ pub struct World {
 pub struct Strike {
     pub opened: bool,
     pub hit_bugs: u16,
+    /// Where the last Scuttler this swing struck was: its blood is raised there.
+    pub hit_at: Option<[i32; 2]>,
 }
 #[no_mangle]
 pub static mut HK_LIFEBLOOD_OPENED: u32 = 0;
@@ -148,6 +150,7 @@ impl World {
                 bug.vx = 0;
                 bug.body.vy = 0;
                 event.hit_bugs += 1;
+                event.hit_at = Some([bug.body.x, bug.body.y]);
                 self.struck += 1;
             }
         }
