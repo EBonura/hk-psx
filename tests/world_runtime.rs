@@ -67,15 +67,17 @@ const SQUARE: &[[i32; 2]] = &[[100, 0], [200, 0], [200, 100], [100, 100]];
 // fade draws [5] for 60 ticks) and breakable 1 (SQUARE, no fade), both
 // persistent door-sound objects with off [1], on [2], edges [1]; region 2 is empty.
 fn region() -> Region {
+    region_with(1)
+}
+fn region_with(global_id: usize) -> Region {
     use_bank(FIXTURE_BANK);
     Region {
-        global_id: 1,
+        global_id,
         scene: 0,
         bounds: [0, 0, 1000, 1000],
         collision_bounds: [0, 0, 1000, 1000],
         camera: [0, 0, 1000, 1000],
         grass_impact:None,
-    door_debris:&[],
     particle_bank:None,
     grass_emitters:&[],
     }
@@ -714,15 +716,18 @@ fn scoped_edge_reader_matches_direct_queries_across_mutations_sources_and_fallba
     let b=edge_room_bytes(&[[11,12,13,12],[14,15,14,16]]);
     let a=hk_format::Room::parse(&a).unwrap();let b=hk_format::Room::parse(&b).unwrap();
     let r=region();let mut state=State::new();
-    let check=|state:&State,room:&hk_format::Room| {
+    // `edge_reader` takes the state mutably (it may refresh the scratch it reads), so the
+    // direct answers are taken first and the reader's compared with them.
+    let check=|state:&mut State,room:&hk_format::Room| {
+        let direct:Vec<[i32;4]>=(0..room.counts[5]).map(|i|state.edge(&r,room,i)).collect();
         let read=state.edge_reader(&r,room);
-        for i in 0..room.counts[5]{assert_eq!(read(i),state.edge(&r,room,i));}
+        for (i,want) in direct.into_iter().enumerate(){assert_eq!(read(i),want);}
     };
-    check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);check(&state,&b);
-    state.break_object(0,60);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
-    state.set_geo_edges(&[0]);check(&state,&a);state.refresh_edges(&r,&a);check(&state,&a);
+    check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);check(&mut state,&b);
+    state.break_object(0,60);check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);
+    state.set_geo_edges(&[0]);check(&mut state,&a);state.refresh_edges(&r,&a);check(&mut state,&a);
     let big=edge_room_bytes(&vec![[101,102,103,102];129]);
-    let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&state,&big);
+    let big=hk_format::Room::parse(&big).unwrap();state.refresh_edges(&r,&big);check(&mut state,&big);
 }
 
 #[test]
@@ -832,4 +837,25 @@ fn every_breakable_on_every_disc_bank_can_be_struck_open() {
     for u in &unreachable { eprintln!("  never breaks: {u:?}"); }
     assert!(objects > 0);
     assert!(unreachable.is_empty(), "{unreachable:?}");
+}
+
+#[test]
+fn a_break_launches_its_owners_pieces_and_a_region_draws_them_as_its_own_frames() {
+    // FIXTURE_BANK (tools/test_world.py): pieces 0 (owner 0) and 1, 2 (owner 1) at the head of
+    // region 1; region 1 maps 0 to frame 3, 1 to 4, 2 to 5; region 2 maps only 1, to 9.
+    let (one, two) = (region_with(1), region_with(2));
+    assert_eq!(world::fragment_spec(1).map(|s| (s.owner, s.index)), Some((1, 1)));
+    assert!(world::fragment_spec(3).is_none(), "the fourth object is no piece");
+    assert_eq!([0, 1, 2].map(|i| world::fragment_frame(&one, i)), [Some(3), Some(4), Some(5)]);
+    assert_eq!([0, 1, 2].map(|i| world::fragment_frame(&two, i)), [None, Some(9), None]);
+    let mut state = State::new();
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 2;
+    let player = Player::spawn(0, 0);
+    let attack = &[[-185, 80], [-180, 80], [-180, 85], [-185, 85]][..];
+    // The triangle's hit polygon rejects the box swing; the square (owner 1) breaks and launches two pieces.
+    state.strike(&one, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    assert!(state.broken(1) && !state.broken(0));
+    assert_eq!(state.debris_active(), 2);
 }
