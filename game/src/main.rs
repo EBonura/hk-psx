@@ -83,6 +83,7 @@ mod draw_packet;
 mod drip;
 mod fk_art;
 mod frame;
+mod fx;
 mod game_map;
 mod geo;
 mod geo_audio;

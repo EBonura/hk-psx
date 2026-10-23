@@ -1632,6 +1632,29 @@ pub fn simulate(
         }
         if life_strike.opened {
             audio::cocoon_break();
+            // `HealthCocoon.OnTriggerEnter2D`: the nail's slash and strike at its top, the
+            // `EnemyKillShake`, the cap knocked away from the Knight, and the flung spatters
+            // and globs (the Scuttlers are `lifeblood`'s own).
+            let at = lifeblood::origin();
+            let top = at[1] + hk_sim::ONE * 4 / 5;
+            let quarter = hk_sim::ONE / 4;
+            game.state.hit_impact(
+                r,
+                game.attacks as usize,
+                [at[0] - quarter, top - quarter, at[0] + quarter, top + quarter],
+                game.player.x,
+            );
+            camera::request(camera::Shake::Kill);
+            fx::raise(r.scene, fx::COCOON, at);
+            fx::raise(
+                r.scene,
+                if at[0] >= game.player.x {
+                    fx::COCOON_CAP_RIGHT
+                } else {
+                    fx::COCOON_CAP_LEFT
+                },
+                at,
+            );
             persist::set(persist::Kind::Cocoon, r.scene, 0, 1);
             lifeblood::apply(game.life, &mut game.state, game.region_id, game.view);
             great_door::apply(&game.door, &mut game.state, game.region_id);
@@ -1658,6 +1681,21 @@ pub fn simulate(
             } else {
                 camera::Shake::Kill
             });
+            // `Hit`: Door_dust over the door, Dust Hit Med and three to five chips at the nail,
+            // and ten to twelve over the door's height; `Break 1` and `Break 2` add the rubble
+            // falling from the lintel and twelve more.
+            // Hits 4, 8 and 13 add `breakable_wall_death` to the hit's own sound.
+            if (door_hit.staged || door_hit.opened) && scene_sfx::resident(scene_sfx::BREAKABLE_WALL_DEATH) {
+                scene_sfx::play(scene_sfx::BREAKABLE_WALL_DEATH);
+            }
+            fx::raise(r.scene, fx::DOOR_DUST, [0, 0]);
+            fx::raise(r.scene, fx::HIT_DUST, [x, y]);
+            fx::raise(r.scene, fx::HIT_CHIPS, [x, y]);
+            fx::raise(r.scene, fx::DOOR_CHIPS, [0, 0]);
+            if door_hit.staged {
+                fx::raise(r.scene, fx::DOOR_RUBBLE, [0, 0]);
+                fx::raise(r.scene, fx::DOOR_CHIPS, [0, 0]);
+            }
         }
         if door_hit.opened {
             great_door::apply(&game.door, &mut game.state, game.region_id);
@@ -1687,8 +1725,18 @@ pub fn simulate(
             let struck = props_strike.broken | props_strike.batted;
             if struck > 0 && scene_sfx::resident(clip) {
                 scene_sfx::play(clip);
-            } else if struck | props_strike.freed > 0 {
+            } else if struck > 0 {
                 audio::enemy_hit();
+            }
+            // `Bottle Control`'s Shatter: `EnemyKillShake` and the glass.
+            if let Some(jar) = props_strike.jar {
+                camera::request(camera::Shake::Kill);
+                fx::raise(r.scene, fx::JAR_GLASS, jar);
+                if scene_sfx::resident(scene_sfx::CRYSTAL_BREAK_1) {
+                    scene_sfx::play(scene_sfx::CRYSTAL_BREAK_1);
+                } else {
+                    audio::enemy_hit();
+                }
             }
             if let Some(b) = props_strike.impact {
                 game.state
@@ -1712,6 +1760,10 @@ pub fn simulate(
                 room.counts[5],
                 game.state.edge_reader(r, room),
             );
+            // `Grub Control`'s Leave: `grub_free`.
+            if touched.left.is_some() && scene_sfx::resident(scene_sfx::GRUB_FREE_1) {
+                scene_sfx::play(scene_sfx::GRUB_FREE_1);
+            }
             if touched.fell > 0 && scene_sfx::resident(scene_sfx::STALACTITE_BREAK) {
                 scene_sfx::play(scene_sfx::STALACTITE_BREAK);
             }

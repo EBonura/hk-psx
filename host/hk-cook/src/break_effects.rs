@@ -33,6 +33,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+mod fx;
+
 const VRAM_RECTS: [(i64, i64, i64, i64); 3] =
     [(352, 176, 32, 64), (360, 32, 24, 32), (352, 64, 32, 32)];
 const ALPHAS: [u32; 3] = [43, 85, 128];
@@ -55,10 +57,10 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
 const FX_LIMITS: [(&str, usize); 5] = [
-    ("styles", 18),
-    ("emitters", 100),
-    ("art", 48),
-    ("uploads", 48),
+    ("styles", 28),
+    ("emitters", 128),
+    ("art", 64),
+    ("uploads", 64),
     ("frames", 96),
 ];
 const FAMILY_WALL: i64 = 1;
@@ -261,6 +263,8 @@ struct Style {
     life_loss: i64,
     kill_speed: i64,
     radius_scale: i64,
+    /// A landing particle's splash (guest `Style::splash`): ticks, frame and quarter-scale, 0 for none.
+    splash: i64,
     samples: Vec<Sample>,
     cells: i64,
     texture: String,
@@ -320,6 +324,7 @@ impl Style {
             ("life_loss".into(), Json::Int(self.life_loss)),
             ("kill_speed".into(), Json::Int(self.kill_speed)),
             ("radius_scale".into(), Json::Int(self.radius_scale)),
+            ("splash".into(), Json::Int(self.splash)),
             (
                 "samples".into(),
                 Json::List(self.samples.iter().map(Sample::json).collect()),
@@ -747,6 +752,7 @@ fn style(
         life_loss: q(values(get(collision, "m_EnergyLossOnCollision")?, 0.0)?[0])?,
         kill_speed: q(f(collision, "minKillSpeed")?)?,
         radius_scale: q(f(collision, "radiusScale")?)?,
+        splash: 0,
         samples,
         cells,
         texture: String::new(),
@@ -1292,7 +1298,19 @@ pub(crate) fn prefab_emitters(
 ) -> Result<Vec<Emitter>> {
     let prefab = view_of.deref(source, reference)?;
     let _ = file;
-    let tree = source.read(&prefab).map_err(|e| e.to_string())?;
+    prefab_emitters_obj(source, &prefab, gravity, origin, rotation, relaxed)
+}
+
+/// `prefab_emitters` for a prefab named by file and path id rather than by a scene's reference.
+pub(crate) fn prefab_emitters_obj(
+    source: &Source,
+    prefab: &Obj,
+    gravity: f64,
+    origin: [f64; 3],
+    rotation: Option<[f64; 3]>,
+    relaxed: bool,
+) -> Result<Vec<Emitter>> {
+    let tree = source.read(prefab).map_err(|e| e.to_string())?;
     if tree.get("m_Component").is_none() {
         return err("CreateObject target is not a GameObject");
     }
@@ -1867,6 +1885,8 @@ struct Collected {
     styles: Vec<Style>,
     emitters: Vec<EmitterRow>,
     textures: Vec<(String, Obj)>,
+    /// Sheets the cook builds itself (`fx`), by the id their styles name.
+    synthetic: Vec<(String, Arc<Image>)>,
     records: Vec<Json>,
     ignored: Vec<Json>,
 }
@@ -1931,10 +1951,12 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         styles: Vec::new(),
         emitters: Vec::new(),
         textures: Vec::new(),
+        synthetic: Vec::new(),
         records: Vec::new(),
         ignored: Vec::new(),
     };
     let mut stalactite_scenes: Vec<(i64, String)> = Vec::new();
+    let mut fx_scenes: Vec<(i64, String, fx::Kinds)> = Vec::new();
     for desc in metadata["scenes"].as_array().ok_or("no scenes")? {
         let scene_id = desc["scene_id"].as_i64().ok_or("scene id")?;
         let sc = Scene::new(source, &jstr(desc, "file")).map_err(|e| e.to_string())?;
@@ -2025,11 +2047,19 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         if stalactites {
             stalactite_scenes.push((scene_id, jstr(desc, "file")));
         }
+        let kinds = fx::detect(&sc);
+        if kinds.any() {
+            fx_scenes.push((scene_id, jstr(desc, "file"), kinds));
+        }
     }
     // After every scene's own emitters, so their style numbers stay put.
     for (scene_id, file) in stalactite_scenes {
         let sc = Scene::new(source, &file).map_err(|e| e.to_string())?;
         collect_stalactites(source, &sc, scene_id, gravity, &mut c)?;
+    }
+    for (scene_id, file, kinds) in fx_scenes {
+        let sc = Scene::new(source, &file).map_err(|e| e.to_string())?;
+        fx::collect(source, &sc, scene_id, kinds, gravity, &mut c)?;
     }
     let scenes: Vec<i64> = metadata["scenes"]
         .as_array()
@@ -2934,7 +2964,7 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
         ] {
             w(&mut r, v);
         }
-        for v in [curve as i64, first as i64, cells.len() as i64, 0] {
+        for v in [curve as i64, first as i64, cells.len() as i64, st.splash] {
             h(&mut r, v);
         }
         debug_assert_eq!(r.len(), 168);
@@ -3181,7 +3211,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let (mut manifest, mut curves, mut scene_rows, mut total_vram, mut kept) =
         (Vec::new(), Vec::new(), Vec::new(), 0usize, 0usize);
     let mut arts: Vec<(i64, SceneArt)> = Vec::new();
-    let mut images: HashMap<String, Arc<Image>> = HashMap::new();
+    let mut images: HashMap<String, Arc<Image>> = c.synthetic.iter().cloned().collect();
     for scene in 0..scenes.len() as i64 {
         let data = scene_art(
             scene,
@@ -3379,6 +3409,7 @@ mod tests {
             life_loss: 0,
             kill_speed: 0,
             radius_scale: 0,
+            splash: 0,
             samples: Vec::new(),
             cells,
             texture: texture.into(),
