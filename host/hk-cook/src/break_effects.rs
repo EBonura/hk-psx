@@ -57,7 +57,7 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
 const FX_LIMITS: [(&str, usize); 5] = [
-    ("styles", 28),
+    ("styles", 32),
     ("emitters", 128),
     ("art", 96),
     ("uploads", 64),
@@ -2096,6 +2096,7 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         false,
         ("Knight", "Can Focus Particles, once per Can Heal"),
     )?;
+    fx::collect_hard_land(source, &scenes, gravity, &mut c)?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
     }

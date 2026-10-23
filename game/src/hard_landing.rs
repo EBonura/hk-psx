@@ -4,9 +4,9 @@
 //! and raises dust, and `HeroAnimationController` plays the `HardLand` clip for the whole lock.
 //! The landing sound is the audio module's (`audio::movement_tick`).
 //!
-//! The dust is a stand-in: `HardLandEffect`'s own `Knight Hard Land Dust B/F` particle systems, its
-//! impact lines and its flung rocks are not cooked yet, so the Knight's Focus dust (`Dust L` and
-//! `Dust R`, already cooked into every scene) is raised at his feet instead.
+//! The dust is the effect's own (the `Dust` environment): `Knight Hard Land Dust B/F` and the two
+//! `Particle Rock Small Shrinker` bursts, cooked into every scene (host/hk-cook
+//! break_effects/fx.rs `collect_hard_land`). Its impact lines (a sprite animation) are not drawn.
 //!
 //! King's Pass's first fall is not an ordinary hard landing. Tutorial_01's `Initial Fall Impact`
 //! FSM (`Control`) catches the new game's drop as the Knight passes y 11.56: it spawns the same
@@ -14,7 +14,7 @@
 //! `BigShake`, plays `Super Hard Land`, waits 0.75 s, lets the crows go (`Flock`) for 3.25 s, then
 //! plays `Collect Normal 3` to get him up and hands control back. The crows, their calls and the
 //! grass shake (`SHAKE ALL GRASS`) are not ported.
-use crate::{ability_art, audio, camera, focus_fx, world};
+use crate::{ability_art, audio, camera, fx};
 use hk_sim::{HardLandingParams, Player};
 
 /// The hard landing's two times, resampled from `HeroController` (data/sfx.rs).
@@ -79,7 +79,10 @@ pub fn landed(scene: usize, player: &mut Player) {
     } else {
         camera::Shake::Average
     });
-    world::particles::pool().spawn_break_at(scene, focus_fx::DUST_OWNER, [player.x, player.y]);
+    let at = [player.x, player.y];
+    fx::raise(scene, fx::HARD_LAND_DUST, at);
+    fx::raise(scene, fx::HARD_LAND_ROCKS_HIGH, at);
+    fx::raise(scene, fx::HARD_LAND_ROCKS_LOW, at);
 }
 
 /// Call once per consumed tick, after the Knight's lock was stepped.

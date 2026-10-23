@@ -15,6 +15,10 @@ pub const COCOON: usize = 0xD020;
 pub const COCOON_CAP_RIGHT: usize = 0xD021;
 pub const COCOON_CAP_LEFT: usize = 0xD022;
 pub const JAR_GLASS: usize = 0xD030;
+/// `HardLandEffect`'s dust (`Knight Hard Land Dust B` and `F`) and its two rock bursts.
+pub const HARD_LAND_DUST: usize = 0xD040;
+pub const HARD_LAND_ROCKS_HIGH: usize = 0xD041;
+pub const HARD_LAND_ROCKS_LOW: usize = 0xD042;
 pub const SCUTTLER_BLOOD: usize = 0xD023;
 
 /// Raise `owner`'s emitters, moved by `at` (world, Q16).

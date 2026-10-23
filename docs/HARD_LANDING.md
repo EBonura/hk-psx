@@ -27,12 +27,12 @@ A fall of 1.1 s from rest is about 17.8 world units: gravity is 47.4 units/s squ
 
 * `shared/hk-sim/src/hard_landing.rs`: `Player::hard_landing_tick` counts the descent and decides the landing (`fall_ticks` = 67, `floor(1.1 * 60) + 1` updates, the same rule the landing sound used), starts a 48 tick lock (`floor(0.8 * 60)`: the update that finds the timer past 0.8 already returns control), and cancels a held or queued jump. `Player::hard_landing`, `hard_landing_age` and `end_hard_landing` are the rest of the surface. Tests: a fall one tick under and exactly at the threshold, the lock length and the age, a mashed jump, upward velocity, wall slide, gate entry and dash resets.
 * `game/src/frame.rs`: while locked the Knight gets no direction, jump, dash, strike, focus, bench, shop, NPC or map input (the same gates a Focus or a cast use); a hit ends the lock. A jump held through the lock is not a new press afterwards. A spell is not blocked, as in the source. The landing sound follows the simulation's verdict (the audio no longer keeps its own fall count).
-* `game/src/hard_landing.rs`: camera `AverageShake` (the existing `camera::Shake::Average`), the `HardLand` clip (cooked into the ability art, `host/ability_art.py`), telemetry `HK_HARD_LANDINGS` and `HK_HARD_LOCK_TICKS`.
+* `game/src/hard_landing.rs`: the effect's dust (`Knight Hard Land Dust B` and `F`) and its two `Particle Rock Small Shrinker` bursts (cooked into every scene by hk-cook `break_effects/fx.rs`, owners 0xD040 to 0xD042, see `docs/EFFECTS.md`), camera `AverageShake` (the existing `camera::Shake::Average`), the `HardLand` clip (cooked into the ability art, `host/ability_art.py`), telemetry `HK_HARD_LANDINGS` and `HK_HARD_LOCK_TICKS`.
 * The clip's frames-per-second is stored as 12 (the ability art keeps whole fps), so the pose stretches the age by 25/24 to land on the 12.5 fps frame at every tick.
 
 ## Not ported
 
-* The dust, impact lines and rocks of `HardLandEffect`: a placeholder raises the Knight's Focus dust (`Dust L`/`Dust R`, cooked into every scene) at his feet. The hk-effects-fidelity lane builds the particle side; swap `hard_landing::landed` when it lands.
+* The impact lines of `HardLandEffect` (a sprite animation) and the other environments' children (Grass, Bone, Spa, Metal, Wet): only the Dust child is raised, whatever the ground.
 * The fall rumble (`RumblingFall`: a 0.015 unit looping camera shake and sound 12 from 1.1 s on), invisible at this scale.
 * `NoHardLanding` and acid: no cooked scene carries one (the Fungus2 scenes are not cooked), so `allowed` only excludes gate drop-ins. The cooker lists any such component as unsupported when Fungal Wastes is cooked.
 * `ForceHardLanding` (called from PlayMaker FSMs) and the `FailSafeChecks` timeout.

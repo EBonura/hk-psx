@@ -39,6 +39,11 @@ pub const FX_COCOON_CAP_LEFT: i64 = FX_OWNER | 0x22;
 pub const FX_SCUTTLER_BLOOD: i64 = FX_OWNER | 0x23;
 /// A grub jar's `Pt Glass L` and `Pt Glass S` (anchor: the jar).
 pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
+/// `HardLandEffect`'s dust (`Knight Hard Land Dust B` and `F`) and its two flung rock bursts, at
+/// the Knight, in every scene.
+pub const FX_HARD_LAND_DUST: i64 = FX_OWNER | 0x40;
+pub const FX_HARD_LAND_ROCKS_HIGH: i64 = FX_OWNER | 0x41;
+pub const FX_HARD_LAND_ROCKS_LOW: i64 = FX_OWNER | 0x42;
 
 /// Where the cocoon's bursts leave it, from the cocoon's origin: the `Splat Sprite`'s place, and
 /// the `Cocoon Cap`'s local position (Tutorial_01, level6).
@@ -419,6 +424,76 @@ fn prefab_owner(
             Ok(())
         }
     }
+}
+
+/// What a hard landing raises in every scene (`HardLandEffect.OnEnable` for the Dust environment,
+/// prefab resources.assets:4666): the child `Dust`'s two particle systems, and two
+/// `SpawnRandomObjectsV2` bursts of `Particle Rock Small Shrinker` (2 to 3 each, speed 12 to 15,
+/// angles 95 to 140 and 40 to 85, from 0.9 below the Knight; the rock rests 8 s and shrinks over 1 s).
+/// The impact lines (a sprite animation) are not cooked. Optional like the Focus dust: a scene whose
+/// art budget has no room goes without.
+pub fn collect_hard_land(
+    source: &Source,
+    scenes: &[i64],
+    gravity: f64,
+    c: &mut Collected,
+) -> Result<()> {
+    super::collect_hero_effect(
+        source,
+        gravity,
+        scenes,
+        c,
+        FX_HARD_LAND_DUST,
+        &[
+            (5272, "Knight Hard Land Dust B"),
+            (7198, "Knight Hard Land Dust F"),
+        ],
+        None,
+        false,
+        ("HardLandEffect", "Dust: Knight Hard Land Dust B and F"),
+    )?;
+    let rocks = rock_frames(source)?;
+    for (owner, angle, what) in [
+        (
+            FX_HARD_LAND_ROCKS_HIGH,
+            [95.0, 140.0],
+            "Particle Rock Small Shrinker, 2..3 at 95..140 degrees",
+        ),
+        (
+            FX_HARD_LAND_ROCKS_LOW,
+            [40.0, 85.0],
+            "Particle Rock Small Shrinker, 2..3 at 40..85 degrees",
+        ),
+    ] {
+        for &scene_id in scenes {
+            push_burst(
+                c,
+                scene_id,
+                owner,
+                &Burst {
+                    count: 3,
+                    life: [480, 540],
+                    speed: [12.0, 15.0],
+                    angle,
+                    spread: [0.0, 0.0],
+                    gravity_scale: 1.0,
+                    bounce: 0.5,
+                    life_loss: 0.0,
+                    spin: 300.0,
+                    size: [1.25, 2.0],
+                    radius: 0.45,
+                    splash: None,
+                    fade_from: 0.89,
+                },
+                &rocks,
+                gravity,
+                [0.0, -0.9, 0.0],
+                "rocks",
+                what,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 pub fn collect(

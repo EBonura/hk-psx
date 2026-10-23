@@ -35,7 +35,9 @@ the break-effect particle pool (`game/src/particles.rs`, `break_effects.rs`) and
 | 0xD020 COCOON | `Spatter Blue` x50 and `Blue Glob` x9 | resources:5399, sharedassets6:495 |
 | 0xD021, 0xD022 | the cocoon's cap, knocked right or left | scene cap sprite |
 | 0xD023 SCUTTLER_BLOOD | a struck Scuttler's blood x15 | resources:5399 sprites |
-| 0xD030 JAR_GLASS | a jar's glass | scene `Pt Glass L/S` |
+| 0xD030 JAR_GLASS | a jar's glass, one opacity level (Crossroads_05 has no room for `Pt Glass L` at three) | scene `Pt Glass L/S` |
+| 0xD040 HARD_LAND_DUST | `HardLandEffect`'s Dust child, in every scene | resources:5272, 7198 |
+| 0xD041, 0xD042 HARD_LAND_ROCKS | `Particle Rock Small Shrinker` x3 at 95..140 and 40..85 degrees | resources:4329 |
 
 `.hkpsx/break-effects/report.json` lists, per scene, which owners fit and why the others were dropped.
 

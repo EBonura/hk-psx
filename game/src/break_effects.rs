@@ -104,7 +104,7 @@ pub static PARTICLE_TRACKS: &[[[u32; 2]; 33]] = &[];
 #[cfg(test)]
 pub static EMITTER_TRACK_BASES: &[u16] = &[];
 #[cfg(test)]
-pub const FX_MAX_STYLES: usize = 28;
+pub const FX_MAX_STYLES: usize = 32;
 #[cfg(test)]
 pub const FX_MAX_EMITTERS: usize = 128;
 #[cfg(test)]
