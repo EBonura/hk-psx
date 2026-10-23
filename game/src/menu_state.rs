@@ -25,6 +25,9 @@ pub struct Settings {
     pub brightness: i8,
     pub screen_x: i8,
     pub screen_y: i8,
+    /// Row 6: the title style (`MenuStyles.currentSettings.styleIndex`, as an index into
+    /// `STYLE_NAMES`).
+    pub style: u8,
 }
 impl Settings {
     pub const fn new() -> Self {
@@ -36,6 +39,7 @@ impl Settings {
             brightness: 0,
             screen_x: 0,
             screen_y: 0,
+            style: 0,
         }
     }
     /// Rows 0/1/2 adjust sound effects/ambience/music (0 to 10), rows 3/4/5 brightness and the screen
@@ -48,6 +52,13 @@ impl Settings {
             3 => return step(&mut self.brightness, delta, BRIGHT_STEPS),
             4 => return step(&mut self.screen_x, delta, SCREEN_RANGE),
             5 => return step(&mut self.screen_y, delta, SCREEN_RANGE),
+            // The style list wraps (`MenuStyleSetting.OnMove`).
+            6 => {
+                let next = (i16::from(self.style) + i16::from(delta.signum())).rem_euclid(STYLE_NAMES.len() as i16) as u8;
+                let changed = next != self.style;
+                self.style = next;
+                return changed;
+            }
             _ => return false,
         };
         let next = (*value as i16 + delta as i16).clamp(low, high) as u8;
@@ -108,15 +119,23 @@ pub const CHEAT_ITEMS: [&str; 12] = [
     "Vengeful Spirit (tap O)",
     "All charms found",
 ];
-pub const OPTION_ITEMS: [&str; 7] = [
+pub const OPTION_ITEMS: [&str; 8] = [
     "Sound effects",
     "Ambience",
     "Music",
     "Brightness",
     "Screen X",
     "Screen Y",
+    "Menu style",
     "Back",
 ];
+/// The options row that picks the title style.
+pub const STYLE_ROW: usize = 6;
+/// The title styles the port carries, in the order of `MenuStyles.styles` they come from: Modern
+/// (`UI_MENU_STYLE_MODERN`, the 1.5.0 default) and Voidheart (`UI_MENUSTYLE_VOIDHEART`). Both are
+/// available from the start, as in the source (no unlock key). The others (docs/MENU_STYLES.md) wait
+/// for their unlocks and art.
+pub const STYLE_NAMES: [&str; 2] = ["Modern", "Voidheart"];
 /// The row that leaves the options page.
 pub const OPTION_BACK: usize = OPTION_ITEMS.len() - 1;
 pub const CONTROL_LINES: [&str; 10] = [
@@ -218,6 +237,9 @@ impl State {
                     if self.selected == OPTION_BACK {
                         self.page = Page::Main;
                         self.selected = 1;
+                    } else if self.selected == STYLE_ROW {
+                        // `MenuStyleSetting.OnSubmit` steps to the next style.
+                        self.settings.adjust(STYLE_ROW, 1);
                     }
                 }
                 Page::Controls => {
