@@ -1,4 +1,4 @@
-pacing = 957
+pacing = 1008
 card = secret-c37.mcd
 # Standing still in Crossroads_37 for 3,000 polls, the case that panicked
 # at poll 125 on the ship6 disc.

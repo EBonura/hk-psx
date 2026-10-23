@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |766,652|
-| Code-to-data alignment |4|
+| Linked code |766,936|
+| Code-to-data alignment |8|
 | Linked data, including menu and HUD |274,072|
 | BSS, including shared scene arena and runtime pools |795,916|
-| Total static span |1,836,652|
+| Total static span |1,836,940|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |145,556|
+| Unallocated gap before reserved stack |145,268|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |43,156|
+| Free RAM below the module pool |42,868|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -133,7 +133,9 @@ The 2026-10-23 scenery trimming policy (`trim_policy::verdict`, a three-frame co
 
 The 2026-10-23 round 6 menus pass and its follow-ups (menu animations after the original's data: page sequences, flourish unfurl, cursor leaf opening, dialogue box fade and typewriter, charm board fade and icon flight, area card timing; the Cornifer price as coin and number; "Game saved" in the Saving box; then the NPCs inert under the first-visit area title, the Listen prompt's flourish, the title screen's particles and the overcharm damage doubling) leave 43,156 bytes free below the module pool, against the 43,248 of round 5 (the trimming policy above took 148 of its own on the way): linked code 766,644, linked data 274,072, BSS 795,916. The glyph routine `text_gain` is no longer inlined at each of the panel's text calls, which returned roughly 8 KB of code and paid for the animations; the title particles, the prompt marker and the page sequences are built out of line (`#[inline(never)]`, the particles for size) so they do not grow their callers. The pointer's five opening frames, the smoke frames and the speck (7,192 bytes in all) ride the boot art chunk and cost no RAM; the prompt flourish is 612 bytes of the dialogue art, whose cooker limit rose from 9,216 to 16,384 bytes.
 
-Static data ends at `0x801d066c`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-23 replay on emulator 0e87b3a (texture-cache cost accuracy) added one guard to the room-module loader: `flush_instruction_cache_idle` waits for the GPU channel to idle before the instruction cache is flushed, because a flush while DMA2 was still walking the previous frame's list is a hazard on silicon. The helper is kept out of line; inlined it took about 1,600 bytes more, out of line it takes 288 (linked code 766,652 to 766,936, free below the module pool 43,156 to 42,868).
+
+Static data ends at `0x801d078c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 410,612 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

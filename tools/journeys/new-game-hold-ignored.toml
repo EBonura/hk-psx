@@ -10,8 +10,9 @@ max_ticks = 200000
 
 [[step]]
 label = "title"
-# The title's page sequence opens input a few ticks after 200 (menu.rs input_at); 240 leaves a margin.
-wait = 240
+# The title's page sequence opens input at about 200 ticks on the old texture timing and about 245 on emulator 0e87b3a
+# (the title's textured draws now take longer a frame; menu.rs input_at counts frames); 300 leaves a margin on both.
+wait = 300
 
 [[step]]
 label = "Start Game"

@@ -1,4 +1,4 @@
-pacing = 26
+pacing = 28
 missed_vblanks = 15
 card = mawlek.mcd
 # mawlek-fight boots from a seeded card (tools/seed_card.py from grub-jar.mcd)
