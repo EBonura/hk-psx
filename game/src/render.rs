@@ -15,6 +15,8 @@ include!(concat!(
 ));
 #[path = "back_prebuild.rs"]
 mod back_prebuild;
+#[path = "trim_policy.rs"]
+mod trim_policy;
 #[path = "core_map_cache.rs"]
 mod core_map_cache;
 #[path = "draw_visibility.rs"]
@@ -350,6 +352,7 @@ pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>)
         BOUND_VIEW = region;
         EARLY_BACK = EARLY_UNKNOWN;
         TRIMMING = !CPU_VIEWS.contains(&(bank, region));
+        CPU_SLOW_FRAMES = 0;
         // The vignette words belong to the old view's draws: remake them all.
         #[cfg(feature = "hero-vignette")]
         {
@@ -1147,17 +1150,25 @@ pub fn begin_frame(framebuffer_y: u16) {
         // exact trimming below (occluder holes, tile runs, alpha scissors, flat
         // cores) is worth its CPU time. It saves GPU pixels and spends CPU
         // cycles. A frame past two vblanks whose GPU kept working well after the
-        // CPU's last kick (a long tail) was GPU-bound: trim. One whose tail was
-        // short was CPU-bound: stop trimming, since the GPU has room for the
-        // pixels (Crossroads_04 runs the GPU at about 0.7 vblank). Frames inside
-        // the budget change nothing, and a loading gap is not a slow frame.
+        // CPU's last kick (a long tail) was GPU-bound: trim. Several in a row
+        // whose tail was short were CPU-bound: stop trimming, since the GPU has
+        // room for the pixels (Crossroads_04 runs the GPU at about 0.7 vblank).
+        // Frames inside the budget change nothing, and a loading gap is not a
+        // slow frame. The thresholds and the reason for the count are in
+        // `trim_policy`.
         let tail = HK_FRAME_FLIP_LINES.saturating_sub(HK_FRAME_LAST_KICK_LINES);
-        let vblanks = crate::presentation::HK_FRAME_VBLANKS;
-        if vblanks > 2 && vblanks <= 8 {
-            if TRIMMING && tail < TRIM_OFF_TAIL {
+        match trim_policy::verdict(
+            TRIMMING,
+            &mut *(&raw mut CPU_SLOW_FRAMES),
+            crate::presentation::HK_FRAME_VBLANKS,
+            tail,
+        ) {
+            trim_policy::Verdict::Keep => {}
+            trim_policy::Verdict::TrimOff => {
                 TRIMMING = false;
                 remember_cpu_view(true);
-            } else if !TRIMMING && tail >= TRIM_ON_TAIL {
+            }
+            trim_policy::Verdict::TrimOn => {
                 TRIMMING = true;
                 remember_cpu_view(false);
             }
@@ -1187,8 +1198,11 @@ static mut EARLY_BACK: u8 = EARLY_UNKNOWN;
 static mut CPU_BOUND: bool = false;
 /// Whether the last slow frame was GPU-bound (see `begin_frame`), and the GPU
 /// tails in lines after the CPU's last kick that tell the two apart: under
-/// TRIM_OFF_TAIL the CPU was the limit, from TRIM_ON_TAIL the GPU was.
+/// `trim_policy::OFF_TAIL` the CPU was the limit, from `trim_policy::ON_TAIL`
+/// the GPU was.
 static mut TRIMMING: bool = true;
+/// Slow frames in a row that ran out of CPU first (`trim_policy`).
+static mut CPU_SLOW_FRAMES: u8 = 0;
 /// Views (bank, view) found CPU-bound, so they start without trimming when
 /// they are bound again instead of paying a slow frame to find out.
 static mut CPU_VIEWS: [(usize, usize); 8] = [(usize::MAX, 0); 8];
@@ -1211,8 +1225,6 @@ fn remember_cpu_view(cpu: bool) {
         }
     }
 }
-const TRIM_OFF_TAIL: u32 = 60;
-const TRIM_ON_TAIL: u32 = 140;
 const EARLY_UNKNOWN: u8 = 0;
 const EARLY_NO: u8 = 1;
 const EARLY_YES: u8 = 2;
