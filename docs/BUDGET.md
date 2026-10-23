@@ -7,8 +7,8 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |766,644|
-| Code-to-data alignment |12|
+| Linked code |766,652|
+| Code-to-data alignment |4|
 | Linked data, including menu and HUD |274,072|
 | BSS, including shared scene arena and runtime pools |795,916|
 | Total static span |1,836,652|
