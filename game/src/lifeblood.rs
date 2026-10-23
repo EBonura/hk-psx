@@ -537,8 +537,6 @@ mod presentation {
     /// A settled mask is the 1:1 blit it always was; only a mask that is moving uses a quad.
     static mut SETTLED: [Sprite; 22] =
         [const { Sprite::new(0, 0, 0, 0, (0, 0), 0, 128, 128, 128) }; 22];
-    static mut BREAKS: [QuadTextured; 22] =
-        [const { QuadTextured::new([(0, 0); 4], [(0, 0); 4], 0, 0, (128, 128, 128)) }; 22];
     /// The vblank each blue mask appeared at and each broken slot's mask broke at (0: none).
     static mut BORN: [u32; 22] = [0; 22];
     static mut BROKE: [u32; 22] = [0; 22];
@@ -627,8 +625,9 @@ mod presentation {
                     // 1.0 to 1.5 times its size while the light drains out of it.
                     let scale = ONE + ONE / 2 * age as i32 / BREAK_VBLANKS as i32;
                     let tint = (128 - 128 * age / BREAK_VBLANKS) as u8;
-                    BREAKS[slot] = mask_quad(art, x, y, scale, tint);
-                    crate::display::ot_add(ot, 0, &mut BREAKS[slot], QuadTextured::WORDS);
+                    // A slot shows a growing mask or a breaking one, never both: one packet each.
+                    BLUE[slot] = mask_quad(art, x, y, scale, tint);
+                    crate::display::ot_add(ot, 0, &mut BLUE[slot], QuadTextured::WORDS);
                 }
             }
         }
