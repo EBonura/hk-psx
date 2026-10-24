@@ -144,6 +144,18 @@ impl Game {
     #[cfg(not(test))]
     #[inline(never)]
     pub fn carry_streamed_art(&self, current: usize) {
+        // Nearly every frame nothing is wanted and nothing was: two compares, no table work.
+        static mut CARRYING: bool = false;
+        let quiet = !self.vitals.dead
+            && u32::from(self.vitals.health) + u32::from(self.vitals.blue_health) > LOW_HEALTH
+            && !self.bench.respawning()
+            && !music::boss_active();
+        if quiet && unsafe { !CARRYING } {
+            return;
+        }
+        unsafe {
+            CARRYING = !quiet;
+        }
         let here = crate::disc::manifest_index(current);
         let dying = self.vitals.dead;
         let clip_over = dying && self.death_age() >= ability_art::clip_ticks(ability_art::DEATH);

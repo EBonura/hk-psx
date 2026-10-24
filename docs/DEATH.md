@@ -36,7 +36,7 @@ The slashes are cooked at a third of their length and full height. The code is `
 phases and the death pose and fade in `frame.rs`. Free RAM below the module pool went from 23,756 to 4,660
 (19,096 bytes: code +5,964, linked data +13,120, BSS +8; docs/BUDGET.md).
 The Death clip and the respawn clips are not linked (next section): with them streamed, free RAM below the
-module pool is 12,628 on the draw-order texture packing base (code +7,352 over the 23,756 baseline, linked data +3,712 of which 1,856 are the packing's atlas rows).
+module pool is 12,480 on the draw-order texture packing base (code +7,496 over the 23,756 baseline, linked data +3,712 of which 1,856 are the packing's atlas rows).
 
 ## Streamed art
 
