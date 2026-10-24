@@ -1,18 +1,27 @@
-pacing = 132
-frame_time = 226
+pacing = 4
+frame_time = 202
 long_frames = 2
 card = husk-guard.mcd
 art_late = 44
 # husk-guard: a seeded card 6.7 units left of Crossroads_48's Husk Guard (the
 # authored Attack Range, 8.1 units each way, is what wakes a dormant guard; the
 # wider Alert Range only matters once it is up), and the Knight stands still
-# for 1,500 polls. The guard wakes on sight and alternates club slams (short
-# of the Knight) with stomps, whose two shockwaves (counted with the False
-# Knight's, HK_FK_WAVES) are what reach him: five stomps, ten waves, five
-# masks, which is his whole health, so one death.
-HK_FK_WAVES = 10
-HK_FK_WAVE_HITS = 5
-HK_DEATHS = 1
+# for 1,500 polls. The guard wakes on sight and alternates club slams with
+# stomps. The club's Swipe collider follows its three-frame clip: nothing on the
+# first frame, the raised club behind on the second, the slam reaching 5.76 ahead
+# on the third, so a Knight standing at the edge of the guard's Attack Range
+# takes the club on the ninth tick of the clip (HK_HG_SWIPE_TICK, 1 based) as in
+# the original. Three clubs landed (HK_HG_SWIPE_HITS, each 2 masks), three stomp
+# waves reached him (HK_FK_WAVE_HITS) and he died twice. HK_HG_SOUNDS: the guard
+# cried awake (1), readied the club (2), swung it (4), jumped (8), landed (16)
+# and ran its footstep loop (32).
+HK_FK_WAVES = 8
+HK_FK_WAVE_HITS = 3
+HK_DEATHS = 2
+HK_HG_SWIPE_HITS = 3
+HK_HG_SWIPE_TICK = 9
+HK_HG_SOUNDS = 63
 HK_REGION_ID = 541
 HK_CHEATS = 0
 HK_SAVE_LOADED = 1
+HK_SCENE_SFX_MISSED = 0

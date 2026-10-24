@@ -73,6 +73,7 @@ WATCHES+='HK_FK_FLOOR HK_FK_HEAD_HITS'.split()
 # The slam's Shockwave Wave: spawns, the spurts that reached the hero, and the
 # fight's CD-DA (HK_MUSIC_BOSS is 1 while it plays).
 WATCHES+='HK_FK_WAVES HK_FK_WAVE_HITS HK_MUSIC_BOSS HK_MUSIC_BOSS_STARTS'.split()
+WATCHES+='HK_HG_SWIPE_HITS HK_HG_SWIPE_TICK HK_HG_SOUNDS'.split()
 # Scene one-shot banks: plays asked for that the resident bank did not hold.
 WATCHES+=['HK_SCENE_SFX_MISSED']
 # Grub jars broken and grubs freed (the grub-jar route pins both).

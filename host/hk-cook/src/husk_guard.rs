@@ -61,6 +61,29 @@ const ATTACK_Q16: [i64; 4] = [-327680, -246088, 327680, 172687];
 const DORMANT_ATTACK_Q16: [i64; 4] = [-533791, -246088, 533791, 172687];
 const OVERHEAD_Q16: [i64; 4] = [-101253, 12880, 101253, 244406];
 const SWIPE_Q16: [i64; 4] = [-323584, -70656, 142336, 299008];
+/// `Swipe`'s clip: three frames at 15 fps whose sprites carry their own PolygonCollider2D, which
+/// tk2d swaps in with the sprite. The first frame has none; the other two are the polygons
+/// `husk_guard::SWIPE_RAISED` and `SWIPE_SLAM` carry (Q16, localScale +1).
+const SWIPE_FRAME_POLYGONS_Q16: [&[[i64; 2]]; 3] = [
+    &[],
+    &[
+        [-65536, 299008],
+        [-188416, 242688],
+        [-323584, 97280],
+        [-260096, -70656],
+        [142336, 174080],
+    ],
+    &[
+        [-29696, -204800],
+        [343040, -250880],
+        [377344, -222208],
+        [376832, -75776],
+        [333824, 64512],
+        [252928, 183296],
+        [77312, 276992],
+        [-30720, 159744],
+    ],
+];
 const WAVE_SPEED: f64 = 18.0;
 const WAVE_SCALE: f64 = 1.25;
 const FRAME_STRIDE: [&str; 6] = ["Walk", "Idle", "Run", "Stop Run", "Wake", "Stomp Land"];
@@ -480,6 +503,61 @@ pub fn recognize(
             ));
         }
     }
+    // The collider the Swipe has on each frame of its clip.
+    let swipe_part = |kind: &str| -> Result<&Value> {
+        swipe_records
+            .iter()
+            .find(|r| r.1 == kind)
+            .map(|r| r.2)
+            .ok_or_else(|| format!("Husk Guard Swipe has no {kind}"))
+    };
+    let swipe_animator = swipe_part("tk2dSpriteAnimator")?;
+    let swipe_library = u(source.read(&u(sc.deref(get(swipe_animator, "library")?))?))?;
+    let swipe_clip = get(&swipe_library, "clips")?
+        .list()
+        .and_then(|c| c.get(get(swipe_animator, "defaultClipId").ok()?.int()? as usize))
+        .ok_or("Husk Guard Swipe has no default clip")?;
+    let collection = u(source.read(&u(sc.deref(get(swipe_part("tk2dSprite")?, "collection")?))?))?;
+    let definitions = get(&collection, "spriteDefinitions")?
+        .list()
+        .ok_or("no sprite definitions")?;
+    let frames = get(swipe_clip, "frames")?.list().ok_or("no frames")?;
+    if get(swipe_clip, "name")?.str().as_deref() != Some("Swipe")
+        || get(swipe_clip, "fps")?.float() != Some(15.0)
+        || get(swipe_clip, "wrapMode")?.int() != Some(2)
+        || frames.len() != SWIPE_FRAME_POLYGONS_Q16.len()
+    {
+        return err("unsupported Husk Guard Swipe clip");
+    }
+    for (frame, want) in frames.iter().zip(SWIPE_FRAME_POLYGONS_Q16) {
+        let sprite = get(frame, "spriteId")?
+            .int()
+            .and_then(|i| definitions.get(i as usize))
+            .ok_or("Swipe frame has no sprite")?;
+        let colliders = get(sprite, "polygonCollider2D")?
+            .list()
+            .ok_or("no polygon colliders")?;
+        let got: Vec<[i64; 2]> = match colliders {
+            [] => Vec::new(),
+            [one] => get(one, "points")?
+                .list()
+                .ok_or("no points")?
+                .iter()
+                .map(|p| {
+                    Ok([
+                        q(get(p, "x")?.float().ok_or("x")?),
+                        q(get(p, "y")?.float().ok_or("y")?),
+                    ])
+                })
+                .collect::<Result<_>>()?,
+            _ => return err("a Husk Guard Swipe frame has several colliders"),
+        };
+        if got != want {
+            return err(format!(
+                "Husk Guard Swipe frame collider {got:?} is not the audited one"
+            ));
+        }
+    }
     let animator = records
         .iter()
         .rev()
@@ -530,7 +608,7 @@ pub fn recognize(
     let limitations: Vec<String> = vec![
         "Stomp Cooldown waits on a WAIT event with no transition; read literally the guard would stand for good after its first stomp. The shipped game's guards keep attacking, so the port goes on to Cooldown after the 0.4 s wait.".into(),
         "The FSM's Facing Right is localScale +1 while the art, the Swipe polygon and the run dust all put the front at -x and Slam Origin/Burst Rocks at +x; the port faces the sprite where the body moves and puts the club, the Swipe and the slam in front.".into(),
-        "Hero Solid (the back the Knight can stand on), the thrown club of the corpse, particles, audio and camera shakes are not presented.".into(),
+        "Hero Solid (the back the Knight can stand on), the thrown club of the corpse, particles and the run's camera rumble are not presented.".into(),
         "Walk, Idle, Run, Stop Run, Wake and Stomp Land keep every other frame at half the rate (same durations), to fit Crossroads_21's 256 KiB actor bank.".into()    ];
     Ok(jobj(vec![
         ("kind", js("HuskGuard")),

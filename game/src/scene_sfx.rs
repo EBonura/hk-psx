@@ -86,7 +86,7 @@ pub fn upload(scene: usize, bytes: &[u8]) {
             spu::upload_adpcm(SpuAddr::new(address + (slice * UPLOAD_SLICE) as u32), part);
             crate::input::checkpoint();
         }
-        if event == MINER_IDLE_HUM {
+        if event == MINER_IDLE_HUM || event == ZOMBIE_GUARD_RUN_LOOP {
             make_loop(address, clip);
         }
         total += len;
@@ -147,7 +147,9 @@ pub fn resident(event: u8) -> bool {
     let current = unsafe { CURRENT };
     current != NONE && entries(current).iter().any(|e| e.0 == event)
 }
-/// `play` with the clip's pitch scaled by `scale` / 4096.
+/// `play` with the clip's pitch scaled by `scale` / 4096. One body for every caller: inlined into
+/// each call site it cost more than the sounds it plays.
+#[inline(never)]
 pub fn play_pitched(event: u8, scale: u32) {
     let Some((address, rate, gain, pitch)) = lookup(event) else {
         return;
@@ -168,22 +170,7 @@ pub fn play_pitched(event: u8, scale: u32) {
 }
 /// One scene sound on the scene voice, if the resident bank holds it.
 pub fn play(event: u8) {
-    let Some((address, rate, gain, pitch)) = lookup(event) else {
-        return;
-    };
-    unsafe {
-        LOOPING = NONE;
-    }
-    Voice::key_off(1 << VOICE);
-    let voice = Voice::new(VOICE);
-    voice.configure_sample(
-        SpuAddr::new(address),
-        rate,
-        Volume(volume::scale(gain, crate::audio::level())),
-        Adsr::sample_one_shot(),
-    );
-    voice.set_pitch(Pitch::raw(pitch));
-    Voice::key_on(1 << VOICE);
+    play_pitched(event, 4096);
 }
 /// A looped scene sound (`make_loop`) at `level`/4096 of its gain, on the scene voice. Call every
 /// frame the source can be heard: it starts the loop when the voice is not already playing it

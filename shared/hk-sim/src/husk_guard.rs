@@ -16,9 +16,8 @@
 //! the transform's +1 scale, and the original at +1 draws the sprite facing
 //! right (hkref frames with the hero on each side), so the cooked art, which is
 //! the sprite as authored at +1, faces +x and the guest draws it with minus the
-//! facing. The `Swipe` polygon is cooked with its front at -x and `Slam
-//! Origin`/`Burst Rocks Club` at +x; the Swipe box is mirrored with `facing`
-//! so that the front is where the guard faces.
+//! facing. The `Swipe` polygons and `Slam Origin`/`Burst Rocks Club` are
+//! authored at +1 too, so they are placed with `facing` as their sign.
 //!
 //! `Stomp Cooldown` waits 0.4 s with `WAIT` but only has a `FINISHED`
 //! transition, so read literally the FSM would leave the guard standing after
@@ -34,10 +33,60 @@ pub const ATTACK: [i32; 4] = [-327680, -246088, 327680, 172687];
 /// Authored Attack Range before Wake scales its width to ten units.
 pub const DORMANT_ATTACK: [i32; 4] = [-533791, -246088, 533791, 172687];
 pub const OVERHEAD: [i32; 4] = [-101253, 12880, 101253, 244406];
+/// The bounds of the `Swipe` polygon as placed, which is its second frame's.
 pub const SWIPE: [i32; 4] = [-323584, -70656, 142336, 299008];
 /// `Swipe`'s DamageHero, armed for its own 3-frame 15 fps clip.
 pub const SWIPE_DAMAGE: u16 = 2;
 pub const SWIPE_TICKS: u16 = 12;
+/// One frame of the `Swipe` clip (15 fps).
+pub const SWIPE_FRAME_TICKS: u16 = 4;
+/// `Swipe` swaps its PolygonCollider2D with its sprite: the first frame
+/// (`attack_v02_club_slash0007`) has none, the second (`...0005`, the club
+/// raised behind the head) reaches back and a little ahead, the third
+/// (`...0006`, the slam) reaches ahead and down to the ground. Q16 at
+/// localScale +1, where the guard faces +x; `host/hk-cook` proves both against
+/// the sprite collection.
+pub const SWIPE_RAISED: [[i32; 2]; 5] = [
+    [-65536, 299008],
+    [-188416, 242688],
+    [-323584, 97280],
+    [-260096, -70656],
+    [142336, 174080],
+];
+pub const SWIPE_SLAM: [[i32; 2]; 8] = [
+    [-29696, -204800],
+    [343040, -250880],
+    [377344, -222208],
+    [376832, -75776],
+    [333824, 64512],
+    [252928, 183296],
+    [77312, 276992],
+    [-30720, 159744],
+];
+/// Whether the `Swipe` collider `elapsed` ticks after `Attack` armed it reaches `body`.
+pub fn swipe_hits(facing: i32, position: [i32; 2], elapsed: u16, body: [i32; 4]) -> bool {
+    let mut points = [[0; 2]; 8];
+    crate::polygon_hits_box(swipe_polygon(facing, position, elapsed, &mut points), body)
+}
+/// The `Swipe` collider `elapsed` ticks after `Attack` armed it, in world
+/// space for a guard at `position` facing `facing`: empty before its second
+/// frame and once the clip is over. `out` holds the points.
+pub fn swipe_polygon<'a>(
+    facing: i32,
+    position: [i32; 2],
+    elapsed: u16,
+    out: &'a mut [[i32; 2]; 8],
+) -> &'a [[i32; 2]] {
+    let local: &[[i32; 2]] = match elapsed / SWIPE_FRAME_TICKS {
+        1 => &SWIPE_RAISED,
+        2 => &SWIPE_SLAM,
+        _ => return &[],
+    };
+    for (world, p) in out.iter_mut().zip(local) {
+        *world = [position[0] + facing * p[0], position[1] + p[1]];
+    }
+    &out[..local.len()]
+}
 /// `Check Left`/`Check Right`: Walk Speed and Run Speed.
 pub const WALK_SPEED: i32 = 5 * ONE;
 pub const RUN_SPEED: i32 = 10 * ONE;
@@ -248,10 +297,6 @@ impl HuskGuard {
     }
     pub fn clip(&self) -> Clip {
         self.animation.map_or(Clip::Dormant, |a| a.clip)
-    }
-    /// The `Swipe` box in world space for a body at `position`.
-    pub fn swipe_box(&self, position: [i32; 2]) -> [i32; 4] {
-        facing_box(SWIPE, self.facing as i32, position)
     }
     fn play(&mut self, clip: Clip, actions: &mut Actions) {
         // tk2dSpriteAnimator.Play of the clip already playing continues it.
@@ -579,7 +624,9 @@ impl HuskGuard {
 fn distance(a: [i32; 2], b: [i32; 2]) -> i32 {
     crate::fixed::hypot(a[0] - b[0], a[1] - b[1]) as i32
 }
-/// A box cooked in the art frame (front -x), for a body facing `facing`.
+/// A sense box for a body facing `facing`, mirrored about the body for +1. Every sense box is
+/// symmetric about the origin, so the mirror changes nothing; the `Swipe` is placed by
+/// `swipe_polygon` instead.
 pub fn facing_box(b: [i32; 4], facing: i32, position: [i32; 2]) -> [i32; 4] {
     let (x0, x1) = if facing > 0 {
         (-b[2], -b[0])
@@ -776,12 +823,29 @@ mod tests {
         assert!(matches!(g.phase(), Phase::Idle(_)));
     }
     #[test]
-    fn the_swipe_box_is_in_front() {
-        let g = awake(1);
-        let b = g.swipe_box([0, 0]);
-        assert!(b[2] > 4 * ONE && b[0] < 0);
-        let g = awake(-1);
-        let b = g.swipe_box([0, 0]);
-        assert!(b[0] < -4 * ONE);
+    fn the_swipe_lands_on_its_third_frame_in_front_and_follows_the_facing() {
+        let mut out = [[0; 2]; 8];
+        let hits = |facing: i32, elapsed: u16, hero: [i32; 4]| {
+            let mut out = [[0; 2]; 8];
+            crate::polygon_hits_box(swipe_polygon(facing, [0, 0], elapsed, &mut out), hero)
+        };
+        // 5.26 units ahead, on the ground, as the original's hero stood when the
+        // slam landed: nothing before the slam frame, a hit in it, nothing after.
+        let ahead = [5 * ONE, 0, 6 * ONE, 2 * ONE];
+        let behind = [-6 * ONE, 0, -5 * ONE, 2 * ONE];
+        for elapsed in [0, 3, 4, 7, 12] {
+            assert!(!hits(1, elapsed, ahead), "{elapsed}");
+        }
+        for elapsed in [8, 11] {
+            assert!(hits(1, elapsed, ahead), "{elapsed}");
+            assert!(!hits(1, elapsed, behind), "{elapsed}");
+            assert!(hits(-1, elapsed, behind), "{elapsed}");
+        }
+        // The raised club reaches 4.94 behind the guard and 2.17 ahead.
+        let near_behind = [-4 * ONE, 2 * ONE, -3 * ONE, 3 * ONE];
+        assert!(hits(1, 4, near_behind) && !hits(-1, 4, near_behind));
+        assert_eq!(swipe_polygon(1, [0, 0], 0, &mut out).len(), 0);
+        assert_eq!(swipe_polygon(1, [0, 0], 4, &mut out).len(), 5);
+        assert_eq!(swipe_polygon(1, [0, 0], 8, &mut out).len(), 8);
     }
 }

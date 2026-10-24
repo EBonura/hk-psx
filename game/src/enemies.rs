@@ -975,6 +975,64 @@ struct HuskGuardRuntime {
     animation_tick: u32,
     /// Ticks the armed `Swipe` has left (`DeactivateAfter2dtkAnimation`).
     swipe_left: u16,
+    /// Its `Run` footstep loop holds the scene voice.
+    run_loop: bool,
+}
+/// Husk Guard journey telemetry: swipes that took masks, the first one's tick in the Swipe clip
+/// (1 based), and a bit per sound the guard has made (`husk_guard_sound`).
+#[no_mangle]
+pub static mut HK_HG_SWIPE_HITS: u32 = 0;
+#[no_mangle]
+pub static mut HK_HG_SWIPE_TICK: u32 = 0;
+#[no_mangle]
+pub static mut HK_HG_SOUNDS: u32 = 0;
+/// Sound bits of `HK_HG_SOUNDS`.
+const HG_AWAKE: u32 = 1;
+const HG_PREPARE: u32 = 2;
+const HG_CLUB: u32 = 4;
+const HG_JUMP: u32 = 8;
+const HG_LAND: u32 = 16;
+const HG_RUN: u32 = 32;
+const HG_DEATH: u32 = 64;
+fn husk_guard_heard(bit: u32) {
+    unsafe { HK_HG_SOUNDS |= bit }
+}
+/// `AudioPlayerOneShot`s of the guard's clips. `Anticipate` and `Stomp Antic` pick one of three
+/// club-prepare clips with equal weights at pitch 0.9 to 1.0; `Stomp Jump` and `Land` play the
+/// False Knight's clips at pitch 1.2. The other states play nothing (`Run`'s loop is
+/// `HuskGuardRuntime::run_loop`).
+fn husk_guard_sound(clip: hk_sim::husk_guard::Clip) {
+    use crate::scene_sfx as bank;
+    use hk_sim::husk_guard::Clip;
+    static mut RANDOM: u32 = 0x7a67_6431;
+    match clip {
+        Clip::Wake | Clip::Startle => {
+            husk_guard_heard(HG_AWAKE);
+            bank::play(bank::ZOMBIE_GUARD_AWAKE)
+        }
+        Clip::Anticipate | Clip::StompAntic => {
+            let r = unsafe {
+                RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+                RANDOM >> 8
+            };
+            husk_guard_heard(HG_PREPARE);
+            let event = match r % 3 {
+                0 => bank::ZOMBIE_GUARD_CLUB_PREPARE,
+                1 => bank::ZOMBIE_GUARD_CLUB_PREPARE_2,
+                _ => bank::ZOMBIE_GUARD_CLUB_PREPARE_3,
+            };
+            bank::play_pitched(event, 3686 + (r >> 2) % 410);
+        }
+        Clip::StompJump => {
+            husk_guard_heard(HG_JUMP);
+            bank::play_pitched(bank::FALSE_KNIGHT_JUMP, 4915)
+        }
+        Clip::StompLand => {
+            husk_guard_heard(HG_LAND);
+            bank::play_pitched(bank::FALSE_KNIGHT_LAND_1ST_TIME, 4915)
+        }
+        _ => {}
+    }
 }
 impl HuskGuardRuntime {
     fn clip(&self, spec: &ActorSpec) -> u16 {
@@ -2005,6 +2063,7 @@ impl Actor {
                     ),
                     animation_tick: 0,
                     swipe_left: 0,
+                    run_loop: false,
                 }),
                 // `Init` plays `Closed` and raises the shell; `Direction` then
                 // branches on the FSM's own `Facing Right`, not on the
@@ -2730,15 +2789,25 @@ impl Actor {
         };
         for action in actions.iter() {
             match action {
-                Action::Play(_) => guard.animation_tick = 0,
+                Action::Play(animation) => {
+                    guard.animation_tick = 0;
+                    husk_guard_sound(animation.clip);
+                }
                 Action::Swipe => guard.swipe_left = g::SWIPE_TICKS,
-                Action::Slam(p) => emit(RunnerEvent {
-                    scene: self.scene,
-                    source_id: self.source_id,
-                    position: p,
-                    facing,
-                    kind: RunnerEventKind::Effect { clip: slam_clip },
-                }),
+                Action::Slam(p) => {
+                    // `Impact`: the club lands (the stomp's slam is `Land`'s own).
+                    if guard.controller.clip() == g::Clip::Attack {
+                        husk_guard_heard(HG_CLUB);
+                        crate::scene_sfx::play(crate::scene_sfx::ZOMBIE_GUARD_CLUB);
+                    }
+                    emit(RunnerEvent {
+                        scene: self.scene,
+                        source_id: self.source_id,
+                        position: p,
+                        facing,
+                        kind: RunnerEventKind::Effect { clip: slam_clip },
+                    });
+                }
                 Action::Shockwaves(p) => {
                     for dir in [1, -1] {
                         emit(RunnerEvent {
@@ -2751,6 +2820,21 @@ impl Actor {
                     }
                 }
             }
+        }
+        // `Run`'s AudioSource loops `zombie_guard_footstep` (min 39, max 50 from the camera); it keeps going until the next state stops it.
+        if guard.controller.clip() == g::Clip::Run {
+            let level = hk_sim::fixed::source_rolloff(
+                self.x - context.camera[0],
+                self.y - context.camera[1],
+                39,
+                50,
+            );
+            crate::scene_sfx::loop_tick(crate::scene_sfx::ZOMBIE_GUARD_RUN_LOOP, level);
+            husk_guard_heard(HG_RUN);
+            guard.run_loop = true;
+        } else if guard.run_loop {
+            crate::scene_sfx::loop_stop();
+            guard.run_loop = false;
         }
         self.walk.direction = facing;
         let vx = guard.controller.velocity_x();
@@ -6242,7 +6326,16 @@ impl EnemyWorld {
                                 // `park_baby` so the kill is counted first.
                                 Runtime::HatcherBaby(_) => {}
                                 Runtime::ZombieShield(z) => z.controller.die(),
-                                Runtime::HuskGuard(g) => g.controller.die(),
+                                Runtime::HuskGuard(g) => {
+                                    g.controller.die();
+                                    if g.run_loop {
+                                        crate::scene_sfx::loop_stop();
+                                        g.run_loop = false;
+                                    }
+                                    // The corpse's `Sound` state, as it spawns.
+                                    husk_guard_heard(HG_DEATH);
+                                    crate::scene_sfx::play(crate::scene_sfx::ZOMBIE_GUARD_DEATH);
+                                }
                                 Runtime::Blocker(b) => {
                                     b.controller.die();
                                     crate::blocker_terrain::killed(actor.scene, actor.source_id);
@@ -6455,16 +6548,35 @@ impl EnemyWorld {
             } else {
                 0
             };
-            // `Swipe`, armed for its clip: a second DamageHero reaching ahead.
+            // `Swipe`, armed for its clip: a second DamageHero whose collider
+            // follows the clip's frames (the raised club, then the slam).
+            let mut swipe_tick = 0;
             if let Some(guard) = actor.husk_guard() {
-                if guard.swipe_left != 0
-                    && overlap(body, guard.controller.swipe_box([actor.x, actor.y]))
-                {
-                    damage = hk_sim::husk_guard::SWIPE_DAMAGE;
+                if guard.swipe_left != 0 {
+                    let elapsed = hk_sim::husk_guard::SWIPE_TICKS - guard.swipe_left;
+                    if hk_sim::husk_guard::swipe_hits(
+                        guard.controller.facing(),
+                        [actor.x, actor.y],
+                        elapsed,
+                        body,
+                    ) {
+                        damage = hk_sim::husk_guard::SWIPE_DAMAGE;
+                        swipe_tick = u32::from(elapsed) + 1;
+                    }
                 }
             }
             if damage != 0 {
+                let health = vitals.health;
                 events.damage_hero(vitals, cheats, player, actor.x, damage);
+                // Journey telemetry: a swipe that took masks, and its tick in the clip (1 based).
+                if swipe_tick != 0 && vitals.health < health {
+                    unsafe {
+                        HK_HG_SWIPE_HITS = HK_HG_SWIPE_HITS.saturating_add(1);
+                        if HK_HG_SWIPE_TICK == 0 {
+                            HK_HG_SWIPE_TICK = swipe_tick;
+                        }
+                    }
+                }
             }
         }
         for (scene, position, velocity, kind, shot_clip, impact_clip) in fires.into_iter().flatten()

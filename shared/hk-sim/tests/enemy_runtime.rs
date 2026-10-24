@@ -582,6 +582,17 @@ mod scene_sfx {
     pub const GRUZ_FINAL_HIT: u8 = 28;
     pub const GRUZ_EXPLODE: u8 = 29;
     pub const GRUZ_GUSHING: u8 = 30;
+    pub const ZOMBIE_GUARD_AWAKE: u8 = 31;
+    pub const ZOMBIE_GUARD_CLUB_PREPARE: u8 = 32;
+    pub const ZOMBIE_GUARD_CLUB_PREPARE_2: u8 = 33;
+    pub const ZOMBIE_GUARD_CLUB_PREPARE_3: u8 = 34;
+    pub const ZOMBIE_GUARD_DEATH: u8 = 35;
+    pub const ZOMBIE_GUARD_RUN_LOOP: u8 = 36;
+    pub fn play_pitched(_event: u8, _scale: u32) {
+        crate::boss_effects::record("scene voice");
+    }
+    pub fn loop_tick(_event: u8, _level: i32) {}
+    pub fn loop_stop() {}
     pub fn play(event: u8) {
         if event != ASPID_SPIT {
             crate::boss_effects::record("scene voice");

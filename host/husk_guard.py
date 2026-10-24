@@ -286,8 +286,8 @@ def recognize(sc, actor):
             "The FSM's Facing Right is localScale +1 while the art, the Swipe polygon and the run dust"
             ' all put the front at -x and Slam Origin/Burst Rocks at +x; the port faces the sprite where'
             ' the body moves and puts the club, the Swipe and the slam in front.',
-            'Hero Solid (the back the Knight can stand on), the thrown club of the corpse, particles,'
-            ' audio and camera shakes are not presented.',
+            "Hero Solid (the back the Knight can stand on), the thrown club of the corpse, particles"
+            " and the run's camera rumble are not presented.",
             'Walk, Idle, Run, Stop Run, Wake and Stomp Land keep every other frame at half the rate'
             " (same durations), to fit Crossroads_21's 256 KiB actor bank.",
         ],
