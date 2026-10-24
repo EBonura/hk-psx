@@ -330,7 +330,8 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             raw=(ROOT/r['path']).read_bytes()
             if sha(raw)!=r['sha256']:raise ValueError('Stale source room: '+str(r['chunk_id']))
             inputs.append((r['chunk_id'],raw))
-        raw,e=build_scene(scene,inputs,page_limit=MAX_PAGES,scenery_cap=48,dedup_mode='blob',share_pixel_planes=True)
+        cameras={r['chunk_id']:(tuple(r['camera_x']),tuple(r['camera_y']))for r in meta['regions']if r['scene_id']==scene and 'camera_x' in r and 'camera_y' in r}
+        raw,e=build_scene(scene,inputs,page_limit=MAX_PAGES,scenery_cap=48,dedup_mode='blob',share_pixel_planes=True,cameras=cameras)
         if e['changed_static_textures']:raise ValueError('Lossless bank unexpectedly resampled scenery')
         raw,additive=scene_grading.additive_palettes(raw,e,meta,blend_kinds.get(scene,{}))
         e['additive_palettes']={str(p):k for p,k in sorted(additive.items())}
