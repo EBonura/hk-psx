@@ -196,7 +196,22 @@ pub fn measure(output: &Path) -> Result<Pacing> {
         }
         counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
     };
-    let (play, ready) = (mode(game), mode(load));
+    // Gameplay is `HK_GAME_MODE` 1. The most common value is only a fallback: on a short route (the
+    // cheat tapes) the load and the play last about as long, and the count alone picked the load.
+    let play = match game {
+        Some(g) if rows.iter().any(|r| r[g] == "1") => Some("1"),
+        _ => mode(game),
+    };
+    // The load state the play runs in: the commonest among the play rows.
+    let ready = {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        if let Some(l) = load {
+            for r in rows.iter().filter(|r| game.is_none_or(|g| Some(r[g]) == play)) {
+                *counts.entry(r[l]).or_default() += 1;
+            }
+        }
+        counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
+    };
     let pacing = fold(rows.iter().map(|r| {
         let gameplay = game.is_none_or(|g| Some(r[g]) == play) && load.is_none_or(|l| Some(r[l]) == ready);
         (gameplay, r[flip] == "1", binds.and_then(|b| r[b].parse().ok()))
