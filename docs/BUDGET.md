@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |775,664|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |279,960|
-| BSS, including shared scene arena and runtime pools |800,420|
-| Total static span |1,856,052|
+| Linked code |781,628|
+| Code-to-data alignment |4|
+| Linked data, including menu and HUD |293,080|
+| BSS, including shared scene arena and runtime pools |800,428|
+| Total static span |1,875,148|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |126,156|
+| Unallocated gap before reserved stack |107,060|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |23,756|
+| Free RAM below the module pool |4,660|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -139,7 +139,9 @@ The 2026-10-23 object state pass (cut grass and broken stones stay changed in ev
 
 The 2026-10-24 round 7 and 8 title passes (the style's own background behind every title page and the logo as a piece of its own; then all ten styles of the original with their colour grades, particles and animated sprites, the unlock rules and a profile record on the memory card, and the Cheats page's "Unlock all menu styles" action; docs/MENU_STYLES.md, docs/MENUS.md) leave 24,764 bytes free below the module pool against 29,620 before (-4,856): linked code 770,496 to 774,964 (+4,468), linked data 279,304 to 279,672 (+368: the ten style names and the style table), BSS +8, code-to-data alignment +12. The code is the one cost of the system: the particle and layer player (`extras`, `emitter`, `layer`, `piece`) about 2.7 KB, the style read and upload (`Cache::stage_menu`, `upload_style`, the song's suspend and resume) about 1.3 KB, the selector, the Cheats row and the profile record (`save::unlock_styles`, its read in `survey`) about 0.9 KB, less the Voidheart-only particle code the player replaces (1.5 KB). The pictures (89,712 bytes each), logos, particle tracks and flipbooks are disc data: the boot art chunk is 1,230,848 bytes (248,420 before), of which the first 163,840 are read at boot (the title starts sooner than with the 248,420-byte read); a style other than Modern is read from its own sectors when the options page picks it, into the scene arena after the common part. Video memory: the extras use x 768 to 959, rows 0 to 255 and a palette row at (768, 479), title only. One way to give the code back: the title (menu.rs, about 18 KB) as an overlay module in the room pool, which is idle at the title.
 
-Static data ends at `0x801d5234`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-24 death pass (docs/DEATH.md: the Knight's Death clip, the dark slashes every hit throws, the fade to black and the bench or ground respawn) moved the free RAM below the module pool from 23,756 to 4,660: linked code 775,664 to 781,628 (the slash burst, the death pose and fade, the bench's respawn phases), linked data 279,960 to 293,080 (61 more ability frames, 10,584 run-length coded bytes in the existing five palette rows, and their table rows), BSS 800,420 to 800,428.
+
+Static data ends at `0x801d9ccc`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
