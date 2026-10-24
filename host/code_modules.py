@@ -287,13 +287,13 @@ def debris_scenes():
     return out
 
 
-def scene_modules(regions_rs):
+def scene_modules(regions_rs, debris=()):
     """{scene id: set of module names} from the cooked actor tables and the
     rooms' own logic."""
     out = {}
     for sid, mods in room_scenes().items():
         out.setdefault(sid, set()).update(mods)
-    for sid in debris_scenes():
+    for sid in debris:
         out.setdefault(sid, set()).add('debris')
     scripts = fsm3_modules(FSM3_SCRIPTS)
     for sid in script_scenes():
@@ -327,11 +327,11 @@ def carried_blobs(root):
     return {name: (Path(root) / path).read_bytes() for name, path in CARRIED.items()}
 
 
-def scene_table(packed, regions_rs, props_rs=None):
+def scene_table(packed, regions_rs, props_rs=None, debris=()):
     """Manifest index -> sorted module ids its rooms need (code and art)."""
     index = {r['scene_id']: i for i, r in enumerate(packed['scenes'])}
     names = all_names()
-    need = scene_modules(regions_rs)
+    need = scene_modules(regions_rs, debris)
     if props_rs is not None:
         for sid, arts in props_scenes(props_rs).items():
             need.setdefault(sid, set()).update(arts)
@@ -459,7 +459,7 @@ def art_stored(blob):
 def manifest_rust(packed, regions_rs, props_rs=None):
     """data/modules.rs: module ids, the per-scene module sets and package
     chunks, and the pool constants."""
-    table = scene_table(packed, regions_rs, props_rs)
+    table = scene_table(packed, regions_rs, props_rs, debris_scenes())
     n = len(packed['scenes'])
     chunks = package_chunks(table)
     codes = [c[1] for c in chunks if c[0] == 'code']

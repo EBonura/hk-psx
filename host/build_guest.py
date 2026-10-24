@@ -104,7 +104,7 @@ def module_tables():
         art['art_hornet']=bytes(blob)
     for name,text in (('modules.rs',code_modules.manifest_rust(packed,regions_rs,props_rs)),('props_art.rs',art_rs)):
         if not (ROOT/'data'/name).is_file() or (ROOT/'data'/name).read_text()!=text:(ROOT/'data'/name).write_text(text)
-    return code_modules.scene_table(packed,regions_rs,props_rs),art
+    return code_modules.scene_table(packed,regions_rs,props_rs,code_modules.debris_scenes()),art
 
 def boot_art():
     """Write data/boot-art.hk and the offsets the guest links (data/boot_art.rs)."""
