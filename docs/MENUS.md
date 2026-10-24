@@ -81,9 +81,23 @@ run the cooker, read `.hkpsx/title-styles/report.txt` for slot counts and GPU co
 
 The ten styles on emulator 0e87b3a, route-input disc: every style presents one frame per video period.
 
-| Style | Disc (picture + extras, bytes) | VRAM of the extras (bytes) | Quad GPU cycles a frame | Notes |
-| --- | ---: | ---: | ---: | --- |
-| STYLE_TABLE |
+| Style | Disc: picture + extras (B) | VRAM: picture + extras (B) | Particle slots | Quads a frame | Quad GPU cycles a frame |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Classic | 100,224 | 91,648 | 129 | 45 | 12,128 |
+| HD | 98,984 | 97,792 | 15 | 14 | 114,089 |
+| Grimm | 101,340 | 92,672 | 130 | 95 | 25,465 |
+| GG | 105,004 | 97,792 | 102 | 77 | 20,561 |
+| Infected | 130,540 | 124,800 | 76 | 64 | 128,653 |
+| Shade | 117,380 | 105,984 | 172 | 160 | 43,047 |
+| Steel | 98,560 | 91,648 | 103 | 89 | 23,801 |
+| Eternal | 191,096 | 186,240 | 66 | 57 | 165,365 |
+| Voidheart | 113,056 | 105,984 | 105 | 89 | 23,917 |
+| Modern | 99,212 | 91,648 | 113 | 96 | 25,798 |
+
+The logo adds two 4bpp halves of about 13.7 KB (disc, shared by nine styles; Voidheart's own) and the same in video memory at x 640 and 704. The whole
+boot art chunk is 1,230,848 B (it was 248,420 B with two styles), of which the first 163,840 B are read at boot (the title was 248,420 B
+before: the boot reads less and starts sooner). The picture and the text cost about 190,000 GPU cycles a frame and a frame fits one video
+period up to about 400,000 together.
 
 Linked RAM (code, bytes) for the whole system, against the round 7 build: see docs/BUDGET.md; the pictures, tracks and flipbooks are
 disc data. The system's code is the particle and layer player (`extras`, `emitter`, `layer`, `piece`), the style read and upload

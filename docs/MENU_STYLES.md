@@ -106,8 +106,8 @@ options row then steps through all ten. The keys: 1 `infectedMenu`, 2 `shadeMenu
 
 ## Costs
 
-Per style (disc is the style's bytes of the boot art chunk: the 89,712-byte picture and the extras; VRAM is what the extras
-upload on top of the picture's 89,600 and the logo's two halves): see the table in docs/MENUS.md.
+Per style (disc is the style's bytes of the boot art chunk: the 89,712-byte picture and the extras; VRAM is the picture's 89,600
+bytes plus what the extras upload): see the table in docs/MENUS.md.
 
 Linked RAM: the style system costs code (the particle and layer player, the disc read of a style, the selector and the
 unlock record), counted in docs/BUDGET.md; the pictures, tracks and flipbooks cost none.
