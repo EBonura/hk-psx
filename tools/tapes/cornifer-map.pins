@@ -1,5 +1,5 @@
 pacing = 336
-frame_time = 303
+frame_time = 300
 long_frames = 2
 card = cornifer-map.mcd
 # The map and its mapper. cornifer-map boots from tools/cards/cornifer-map.mcd,

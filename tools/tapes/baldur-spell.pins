@@ -1,5 +1,5 @@
-pacing = 619
-frame_time = 315
+pacing = 537
+frame_time = 275
 long_frames = 2
 card = baldur-spell.mcd
 # baldur-spell is the Greenpath exit: a seeded card right of Crossroads_11_alt's

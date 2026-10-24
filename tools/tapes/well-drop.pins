@@ -1,5 +1,5 @@
 pacing = 698
-frame_time = 279
+frame_time = 277
 long_frames = 2
 card = town-continue.mcd
 scene_gate = true

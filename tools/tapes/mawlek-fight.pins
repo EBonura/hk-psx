@@ -1,5 +1,5 @@
-pacing = 28
-frame_time = 213
+pacing = 13
+frame_time = 212
 long_frames = 5
 missed_vblanks = 15
 card = mawlek.mcd

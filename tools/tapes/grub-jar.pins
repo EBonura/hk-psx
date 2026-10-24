@@ -1,5 +1,5 @@
-pacing = 147
-frame_time = 314
+pacing = 121
+frame_time = 272
 long_frames = 2
 card = grub-jar.mcd
 # grub-jar boots from a seeded card (tools/seed_card.py) on the Crossroads_05

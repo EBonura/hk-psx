@@ -1,5 +1,5 @@
-pacing = 4
-frame_time = 202
+pacing = 97
+frame_time = 222
 long_frames = 2
 card = husk-guard.mcd
 art_late = 44
@@ -27,9 +27,9 @@ HK_SAVE_LOADED = 1
 HK_SCENE_SFX_MISSED = 0
 # Every hit throws the dark slashes (hit_fx.rs) and each death bursts them again; the first death
 # wakes the Knight asleep and then waking (Sit Fall Asleep, Wake To Sit) after the fade out and the
-# 48 tick hold; the card's marker is not a bench, so he stands after it. The second death is one
-# tick into its hold when the tape ends.
+# 48 tick hold; the card's marker is not a bench, so he stands after it. The second death is in its
+# hold when the tape ends: the replay on 0e87b3a counts 48 ticks of it, which is what main measures too.
 HK_HIT_FX_BURSTS = 8
 HK_BENCH_WAKES = 1
 HK_GROUND_WAKES = 0
-HK_DEATH_HOLD_TICKS = 49
+HK_DEATH_HOLD_TICKS = 48

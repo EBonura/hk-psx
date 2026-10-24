@@ -1,5 +1,5 @@
 pacing = 2
-frame_time = 206
+frame_time = 205
 long_frames = 2
 card = town-continue.mcd
 # town-elderbug resumes in Town, walks into Elderbug's npc_control talk trigger and

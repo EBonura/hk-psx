@@ -1,5 +1,5 @@
-pacing = 318
-frame_time = 223
+pacing = 270
+frame_time = 221
 long_frames = 4
 missed_vblanks = 8
 card = boss-fight.mcd

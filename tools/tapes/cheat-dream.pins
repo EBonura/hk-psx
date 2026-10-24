@@ -1,6 +1,6 @@
-pacing = 292
-frame_time = 245
-long_frames = 20
+pacing = 268
+frame_time = 241
+long_frames = 17
 # Dream Nail: SOUL on this port comes from a nail hit, a Focus refund or
 # DREAM_NAIL_PARAMS.soul. Enemy hits and Focus are both zero, so the 33 is
 # EnemyDreamnailReaction on the Crawler and nothing else. Invincibility is

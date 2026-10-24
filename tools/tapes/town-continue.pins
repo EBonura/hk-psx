@@ -1,5 +1,5 @@
 pacing = 2
-frame_time = 206
+frame_time = 205
 long_frames = 2
 card = town-continue.mcd
 # Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save

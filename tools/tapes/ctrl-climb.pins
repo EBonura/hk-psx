@@ -2,7 +2,7 @@
 # Layout noise on the Hornet-milestone build: 199 -> 206 late frames of about 2,230 with nothing on this route changed (measured, 2026-10-18).
 pacing = 344
 frame_time = 228
-long_frames = 34
+long_frames = 22
 HK_CHEATS = 0
 HK_SCRIPT_FLAGS = 0
 HK_SCRIPT_WRITES = 0

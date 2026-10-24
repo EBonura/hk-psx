@@ -1,6 +1,6 @@
 pacing = 243
 frame_time = 245
-long_frames = 30
+long_frames = 16
 card = kings-return.mcd
 # kings-return boots from the card kings-death itself wrote, so the Shade it spawns
 # comes from a real death rather than a hand-seeded record. Walking the same

@@ -1,5 +1,5 @@
-pacing = 1045
-frame_time = 290
+pacing = 407
+frame_time = 238
 long_frames = 4
 card = secret-c37.mcd
 # Standing still in Crossroads_37 for 3,000 polls, the case that panicked

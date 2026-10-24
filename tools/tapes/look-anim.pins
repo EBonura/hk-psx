@@ -1,5 +1,5 @@
-pacing = 10
-frame_time = 214
+pacing = 2
+frame_time = 210
 long_frames = 2
 card = town-continue.mcd
 # look-anim: from the Dirtmouth bench of the town-continue card walk right a few steps (past the

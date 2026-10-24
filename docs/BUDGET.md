@@ -9,15 +9,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 | --- | ---: |
 | Linked code |781,628|
 | Code-to-data alignment |4|
-| Linked data, including menu and HUD |293,080|
+| Linked data, including menu and HUD |294,936|
 | BSS, including shared scene arena and runtime pools |800,428|
-| Total static span |1,875,148|
+| Total static span |1,877,004|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |107,060|
+| Unallocated gap before reserved stack |105,204|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |4,660|
+| Free RAM below the module pool |2,804|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -141,7 +141,9 @@ The 2026-10-24 round 7 and 8 title passes (the style's own background behind eve
 
 The 2026-10-24 death pass (docs/DEATH.md: the Knight's Death clip, the dark slashes every hit throws, the fade to black and the bench or ground respawn) moved the free RAM below the module pool from 23,756 to 4,660: linked code 775,664 to 781,628 (the slash burst, the death pose and fade, the bench's respawn phases), linked data 279,960 to 293,080 (61 more ability frames, 10,584 run-length coded bytes in the existing five palette rows, and their table rows), BSS 800,420 to 800,428.
 
-Static data ends at `0x801d9ccc`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-24 texture-placement pass (scene atlas textures placed by draw order, so consecutive draws share a texture page; host/scene_bank.py `ordered_pack`) moved the free RAM below the module pool from 4,660 to 2,804: linked data 293,080 to 294,936 (+1,856) and nothing else. The placement may add up to four atlas pages to a scene when that removes page switches, and each added page is one 32-byte `AtlasDesc` row in `data/scene_manifest.rs` (693 atlas rows against 635, 58 added). The scene arena stays 415,052 bytes.
+
+Static data ends at `0x801da40c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
