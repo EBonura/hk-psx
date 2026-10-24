@@ -3,8 +3,9 @@ import sys
 import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'host'));sys.path.insert(0,str(ROOT/'tests'))
-from scene_bank import with_texture_attributes, build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags
+sys.path.insert(0,str(ROOT/'host'));sys.path.insert(0,str(ROOT/'tests'));sys.path.insert(0,str(ROOT/'tools'))
+from scene_bank import with_texture_attributes, build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags,ordered_pack,pack_one_page,cut_weight,draw_sequences,transition_weights
+from audit_resident_bank import dense_pack
 from test_region_delta import room
 from region_delta import textures,layout
 from alpha_covers import record
@@ -155,6 +156,49 @@ def tiled_room():
     frame=struct.pack('<I4i',0,0,0,65536,65536);clip=struct.pack('<4I',0,1,60*65536,0)
     header=b'HKROOM02'+struct.pack('<6I',0,3,0,1,1,0)+struct.pack('<2I',len(stream),0)
     return header+records+frame+clip+b''.join(p for _,_,p,_ in blobs)+stream
+
+
+class OrderedPackTests(unittest.TestCase):
+    def rectangles(self):
+        # Eight 128x128 planes: two fit a page, so dense_pack needs four pages.
+        return [(128,128,i) for i in range(8)]
+
+    def test_planes_drawn_in_sequence_share_a_page_without_more_pages(self):
+        rects=self.rectangles()
+        weights={(0,5):9.0,(1,6):9.0,(2,7):9.0,(3,4):9.0}
+        base_pages,base=dense_pack(rects)
+        pages,placements,report=ordered_pack(rects,weights,18,0)
+        page_of={i:page for i,page,x,y,w,h in placements}
+        self.assertLessEqual(pages,base_pages)
+        self.assertEqual(sorted(page_of),list(range(8)))
+        for a,b in weights:self.assertEqual(page_of[a],page_of[b])
+        self.assertEqual(cut_weight(page_of,weights),0)
+        self.assertLess(report['weight_cut_after'],report['weight_cut_before'])
+
+    def test_placements_are_inside_their_page_and_never_overlap(self):
+        rects=[(64+4*(i%5),32+8*(i%7),i) for i in range(60)]
+        weights={(i,(i*7+3)%60):float(i+1) for i in range(60) if i!=(i*7+3)%60}
+        pages,placements,report=ordered_pack(rects,weights,18)
+        taken=set()
+        for i,page,x,y,w,h in placements:
+            self.assertTrue(0<=x and x+w<=256 and 0<=y and y+h<=256 and page<pages)
+            for yy in range(y,y+h):
+                for xx in range(x,x+w,4):
+                    self.assertNotIn((page,xx,yy),taken);taken.add((page,xx,yy))
+        self.assertLessEqual(report['weight_cut_after'],report['weight_cut_before'])
+
+    def test_result_is_deterministic_and_respects_the_page_ceiling(self):
+        rects=self.rectangles();weights={(0,1):1.0,(2,3):2.0,(4,5):3.0}
+        first=ordered_pack(rects,weights,18);second=ordered_pack(rects,weights,18)
+        self.assertEqual(first,second)
+        self.assertLessEqual(first[0],18)
+
+    def test_one_page_packer_agrees_with_dense_pack(self):
+        rects=[(128,128,0),(128,128,1),(128,64,2),(64,64,3)]
+        placed=pack_one_page(rects);count,base=dense_pack(rects)
+        self.assertEqual(count,1)
+        self.assertEqual(placed,{i:(x,y) for i,page,x,y,w,h in base})
+        self.assertIsNone(pack_one_page(rects+[(256,256,4)]))
 
 
 class TileGridTests(unittest.TestCase):

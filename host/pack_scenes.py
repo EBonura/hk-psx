@@ -10,7 +10,7 @@ import subprocess
 import struct
 import sys
 from pathlib import Path
-from scene_bank import build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
+from scene_bank import BOOT_SCENE, build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
 
 ROOT=Path(__file__).resolve().parents[1]
 def rel(path):
@@ -330,15 +330,26 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             raw=(ROOT/r['path']).read_bytes()
             if sha(raw)!=r['sha256']:raise ValueError('Stale source room: '+str(r['chunk_id']))
             inputs.append((r['chunk_id'],raw))
-        raw,e=build_scene(scene,inputs,page_limit=MAX_PAGES,scenery_cap=48,dedup_mode='blob',share_pixel_planes=True)
-        if e['changed_static_textures']:raise ValueError('Lossless bank unexpectedly resampled scenery')
-        raw,additive=scene_grading.additive_palettes(raw,e,meta,blend_kinds.get(scene,{}))
-        e['additive_palettes']={str(p):k for p,k in sorted(additive.items())}
-        e['geometry_packet_bound']=validate_geometry(raw,e,meta)
-        e['black_cores']=black_cores(raw,e)
-        e['opaque_cores']=opaque_cores(raw,e)
-        # Flags and cores ride in the resident bank; nothing per texture links.
-        stored=compressed(raw);resident=with_texture_attributes(compact_resident(raw),texture_flags(raw,e),e['black_cores'],e['opaque_cores']);resident_stored=compressed(resident)
+        cameras={r['chunk_id']:(tuple(r['camera_x']),tuple(r['camera_y']))for r in meta['regions']if r['scene_id']==scene and 'camera_x' in r and 'camera_y' in r}
+        def bank(cameras):
+            raw,e=build_scene(scene,inputs,page_limit=MAX_PAGES,scenery_cap=48,dedup_mode='blob',share_pixel_planes=True,cameras=cameras)
+            if e['changed_static_textures']:raise ValueError('Lossless bank unexpectedly resampled scenery')
+            raw,additive=scene_grading.additive_palettes(raw,e,meta,blend_kinds.get(scene,{}))
+            e['additive_palettes']={str(p):k for p,k in sorted(additive.items())}
+            e['geometry_packet_bound']=validate_geometry(raw,e,meta)
+            e['black_cores']=black_cores(raw,e)
+            e['opaque_cores']=opaque_cores(raw,e)
+            # Flags and cores ride in the resident bank; nothing per texture links.
+            stored=compressed(raw);resident=with_texture_attributes(compact_resident(raw),texture_flags(raw,e),e['black_cores'],e['opaque_cores']);resident_stored=compressed(resident)
+            return raw,e,stored,resident,resident_stored
+        raw,e,stored,resident,resident_stored=bank(cameras)
+        if scene==BOOT_SCENE:
+            # Tutorial_01 is the scene of every new game and its art chunk follows its banks on the
+            # disc, so one more sector there delays the Knight's art (kings-death counted 46 late
+            # frames against 44). Keep the draw-order layout only if the scene reads no more sectors.
+            sectors=lambda *parts:sum(-(-len(x)//2048)for x in parts)
+            dense=bank(None)
+            if sectors(stored,resident_stored)>sectors(dense[2],dense[4]):raw,e,stored,resident,resident_stored=dense
         bodies[scene]=(raw,stored,resident,resident_stored)
         e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=rel(output_dir/f'scene_{scene}.hk'),stored_path=rel(output_dir/f'scene_{scene}.hlzc'),
