@@ -125,8 +125,288 @@ def resize_static(blob, cap):
     return struct.pack('<HH',nw,nh)+blob[4:36]+out
 
 
-def build_scene(scene_id, inputs, page_limit=20, scenery_cap=48, dedup_mode="blob", share_pixel_planes=False):
-    """inputs=(global chunk_id, HKROOM02bytes), returns checked bytes+provenance."""
+# --- Draw-order-aware atlas placement -------------------------------------
+#
+# The GPU pays for every texture page change: the first primitive drawn after a
+# page switch refills the texture cache in proportion to its pixels (hwtest
+# v2.1, mirrored in the emulator's cost model). Which textures share a page is
+# free to change: `dense_pack` only minimises page count, in area order, so
+# textures drawn one after another land on unrelated pages. This packs the same
+# planes into no more pages, but puts textures the renderer draws in sequence
+# on the same page. Positions are data; the sampled texels are unchanged.
+SAMPLES_X=6
+SAMPLES_Y=4
+SCREEN_W=320
+SCREEN_H=240
+PAGE_TEXELS=256*256
+
+
+def draw_sequences(raw,camera):
+    """Per camera sample, the room's visible static draws in render order.
+
+    Yields lists of (local texture, estimated visible pixels). The renderer
+    walks the draw table once per pass, background pass first, skipping the
+    draws of the other pass; a draw is visible when its projected quad overlaps
+    the 320x240 screen. Occlusion is ignored: it removes some draws from the
+    run but never reorders it.
+    """
+    counts,prefix,page_start,stream_start=layout(raw)
+    draw_at=40+counts[1]*16
+    draws=[]
+    for i in range(counts[2]):
+        rec=raw[draw_at+i*44:draw_at+(i+1)*44]
+        texture,front,scale=struct.unpack_from('<HHI',rec)
+        xy=struct.unpack_from('<8i',rec,8)
+        draws.append((texture,front,scale,xy))
+    (x0,x1),(y0,y1)=camera
+    seqs=[]
+    for sy in range(SAMPLES_Y):
+        cy=y0+(y1-y0)*sy/max(1,SAMPLES_Y-1)
+        for sx in range(SAMPLES_X):
+            cx=x0+(x1-x0)*sx/max(1,SAMPLES_X-1)
+            visible=[[],[]]
+            for texture,front,scale,xy in draws:
+                zoom=scale/4096
+                px=[160+xy[k*2]/256-cx*zoom for k in range(4)]
+                py=[120-xy[k*2+1]/256+cy*zoom for k in range(4)]
+                lo_x,hi_x=min(px),max(px);lo_y,hi_y=min(py),max(py)
+                if hi_x<=0 or lo_x>=SCREEN_W or hi_y<=0 or lo_y>=SCREEN_H:continue
+                box=(hi_x-lo_x)*(hi_y-lo_y)
+                clipped=(min(hi_x,SCREEN_W)-max(lo_x,0))*(min(hi_y,SCREEN_H)-max(lo_y,0))
+                # Shoelace area over the bounding box gives the fill ratio of a
+                # rotated quad; an axis-aligned one is 1.
+                ring=(0,1,3,2)
+                a=abs(sum(px[ring[j]]*py[ring[(j+1)%4]]-px[ring[(j+1)%4]]*py[ring[j]]for j in range(4)))/2
+                fill=min(1.0,a/box)if box>0 else 0.0
+                visible[1 if front else 0].append((texture,clipped*fill))
+            seqs.append(visible[0]+visible[1])
+    return seqs
+
+
+def transition_weights(inputs,maps,plane_of,cameras):
+    """{(plane a, plane b): pixels} summed over every consecutive visible pair.
+
+    The weight of a pair is the visible pixels of the second draw, which is what
+    its page-change refill charges, averaged over the camera samples of its
+    room. `cameras` maps a room's chunk id to ((x0, x1), (y0, y1)); a room
+    without one contributes nothing.
+    """
+    weights={}
+    for (chunk,raw),mapping in zip(inputs,maps):
+        camera=cameras.get(chunk)
+        if camera is None:continue
+        counts=layout(raw)[0]
+        if counts[2]==0:continue
+        runs=draw_sequences(raw,camera)
+        share=1.0/len(runs)
+        for run in runs:
+            previous=None
+            for texture,pixels in run:
+                plane=plane_of(mapping[texture])
+                if plane is None:continue
+                if previous is not None and previous!=plane:
+                    key=(min(previous,plane),max(previous,plane))
+                    weights[key]=weights.get(key,0.0)+pixels*share
+                previous=plane
+    return weights
+
+
+def pack_one_page(rectangles):
+    """dense_pack's MaxRects restricted to one page: {index: (x, y)} or None.
+
+    Same ordering and scoring as dense_pack, so a set it accepts is a set
+    dense_pack puts on one page. The overlap audit is left to the caller.
+    """
+    free=[(0,0,256,256)];placed={}
+    for width,height,index in sorted(rectangles,key=lambda r:(r[0]*r[1],max(r[:2]),r[2]),reverse=True):
+        best=None
+        for x,y,w,h in free:
+            if width<=w and height<=h:
+                key=(min(w-width,h-height),max(w-width,h-height),0,y,x)
+                if best is None or key<best[0]:best=(key,x,y)
+        if best is None:return None
+        _,x,y=best;placed[index]=(x,y);changed=[]
+        for fx,fy,fw,fh in free:
+            if x>=fx+fw or x+width<=fx or y>=fy+fh or y+height<=fy:
+                changed.append((fx,fy,fw,fh));continue
+            if fx<x:changed.append((fx,fy,x-fx,fh))
+            if x+width<fx+fw:changed.append((x+width,fy,fx+fw-x-width,fh))
+            if fy<y:changed.append((fx,fy,fw,y-fy))
+            if y+height<fy+fh:changed.append((fx,y+height,fw,fy+fh-y-height))
+        free=[r for j,r in enumerate(changed)if not any(k!=j and
+            q[0]<=r[0]and q[1]<=r[1]and q[0]+q[2]>=r[0]+r[2]and q[1]+q[3]>=r[1]+r[3]
+            and(q!=r or k<j)for k,q in enumerate(changed))]
+    return placed
+
+
+def cut_weight(assign,weights):
+    """Total pair weight whose two planes sit on different pages."""
+    return sum(w for (a,b),w in weights.items()if assign[a]!=assign[b])
+
+
+def cluster_planes(rects,weights):
+    """Group planes into page-sized clusters by merging the most-linked pairs first.
+
+    `rects` maps plane -> (width, height); `weights` is {(a, b): pixels}. Two
+    clusters merge when they are linked and their union still packs on one page.
+    Returns the clusters (sets of planes) once no linked pair can merge.
+    """
+    area={i:w*h for i,(w,h)in rects.items()}
+    members={i:{i}for i in rects};size=dict(area)
+    link={}
+    for (a,b),w in weights.items():link[(a,b)]=link.get((a,b),0.0)+w
+    fits={}
+    def packs(union):
+        key=frozenset(union)
+        if key not in fits:fits[key]=pack_one_page([(rects[i][0],rects[i][1],i)for i in key])is not None
+        return fits[key]
+    refused=set()
+    while True:
+        merged=False
+        for (a,b),w in sorted(link.items(),key=lambda kv:(-kv[1],kv[0])):
+            if size[a]+size[b]>PAGE_TEXELS:continue
+            pair=(frozenset(members[a]),frozenset(members[b]))
+            if pair in refused or pair[::-1]in refused:continue
+            if not packs(members[a]|members[b]):
+                refused.add(pair);continue
+            members[a]|=members.pop(b);size[a]+=size.pop(b)
+            relinked={}
+            for (x,y),v in link.items():
+                x=a if x==b else x;y=a if y==b else y
+                if x!=y:
+                    key=(min(x,y),max(x,y));relinked[key]=relinked.get(key,0.0)+v
+            link=relinked;merged=True;break
+        if not merged:return [members[c]for c in sorted(members)],packs
+
+
+MERGE_ATTEMPTS=3000
+
+
+def merge_down(clusters,packs,rects,limit):
+    """Join clusters, largest first, until at most `limit` remain; None if stuck.
+
+    Gives up after MERGE_ATTEMPTS page-packing checks so a scene that cannot reach
+    `limit` (one already at the page ceiling) costs a bounded amount of cook time.
+    """
+    clusters=[set(c)for c in clusters]
+    area=lambda c:sum(rects[i][0]*rects[i][1]for i in c)
+    attempts=0
+    while len(clusters)>limit:
+        clusters.sort(key=lambda c:(-area(c),min(c)))
+        for i,a in enumerate(clusters):
+            partner=None
+            for b in clusters[i+1:]:
+                if area(a)+area(b)>PAGE_TEXELS:continue
+                attempts+=1
+                if attempts>MERGE_ATTEMPTS:return None
+                if packs(a|b):partner=b;break
+            if partner is not None:
+                a|=partner;clusters.remove(partner);break
+        else:return None
+    return clusters
+
+
+EXTRA_PAGE_COST=0.01
+# Page 18 is the quick map's (shared/hk-cache residency.rs MAP_PAGE); only a scene
+# that already needs nineteen pages overwrites it, so extra pages stop at eighteen.
+ORDERED_PAGE_CEILING=18
+MAX_EXTRA_PAGES=4
+
+
+def ordered_pack(rectangles,weights,page_limit=None,max_extra=MAX_EXTRA_PAGES):
+    """Like dense_pack, but planes drawn in sequence share pages.
+
+    Candidates: dense_pack's own placement and a clustering of the most-linked
+    planes, each at dense_pack's page count and up to `max_extra` pages more (the
+    page budget `page_limit` still holds). An extra page must remove at least
+    EXTRA_PAGE_COST of the total pair weight from the cut to be worth its upload.
+    The winner is polished by moving or swapping planes while that lowers the cut.
+    Deterministic. Returns (page_count, placements, report).
+    """
+    base_pages,base=dense_pack(rectangles)
+    rects={i:(w,h)for w,h,i in rectangles}
+    base_assign={i:page for i,page,x,y,w,h in base}
+    total=sum(weights.values())or 1.0
+    before=cut_weight(base_assign,weights)
+    options=[(before,0,base_assign)]
+    clusters,packs=cluster_planes(rects,weights)
+    for extra in range(max_extra+1):
+        limit=base_pages+extra
+        if limit>max(base_pages,ORDERED_PAGE_CEILING) or(page_limit is not None and limit>page_limit):break
+        grouped=merge_down(clusters,packs,rects,limit)
+        if grouped is None:continue
+        assign={i:k for k,group in enumerate(grouped)for i in group}
+        options.append((cut_weight(assign,weights)+EXTRA_PAGE_COST*total*max(0,len(grouped)-base_pages),max(0,len(grouped)-base_pages),assign))
+    score,extra,assign=min(options,key=lambda o:(o[0],o[1]))
+    pages=sorted(set(assign.values()))
+    layouts={page:{}for page in pages}
+    for i,page in assign.items():layouts[page][i]=None
+    for page in pages:
+        placed=pack_one_page([(rects[i][0],rects[i][1],i)for i in layouts[page]])
+        if placed is None:return base_pages,base,{'weight_cut_before':before,'weight_cut_after':before,'moved':0,'extra_pages':0,'fallback':True}
+        layouts[page]=placed
+    used={page:sum(rects[i][0]*rects[i][1]for i in layouts[page])for page in pages}
+    adjacent={}
+    for (a,b),w in weights.items():
+        adjacent.setdefault(a,{})[b]=w;adjacent.setdefault(b,{})[a]=w
+    cache={}
+    def fit(members):
+        key=frozenset(members)
+        if key not in cache:cache[key]=pack_one_page([(rects[i][0],rects[i][1],i)for i in key])
+        return cache[key]
+    def together(p,page,skip=None):
+        return sum(w for q,w in adjacent.get(p,{}).items()if assign[q]==page and q!=skip)
+    order=sorted(adjacent,key=lambda p:(-sum(adjacent[p].values()),p))
+    for _ in range(12):
+        improved=False
+        for p in order:
+            home=assign[p];here=together(p,home)
+            best=None
+            for page in pages:
+                if page==home:continue
+                there=together(p,page)
+                area=rects[p][0]*rects[p][1]
+                if used[page]+area<=PAGE_TEXELS:
+                    placed=fit(set(layouts[page])|{p})
+                    if placed is not None:
+                        if there-here>1e-9 and(best is None or there-here>best[0]):best=(there-here,page,None,placed,None)
+                        continue
+                # No room (or no packing): swap with a plane there, if the pair gains.
+                for q in sorted(layouts[page]):
+                    pair=adjacent.get(p,{}).get(q,0.0)
+                    gain=(there-pair)-here+together(q,home,skip=p)-together(q,page)
+                    if gain<=1e-9 or(best is not None and gain<=best[0]):continue
+                    into=(set(layouts[page])-{q})|{p};out=(set(layouts[home])-{p})|{q}
+                    if sum(rects[i][0]*rects[i][1]for i in into)>PAGE_TEXELS or sum(rects[i][0]*rects[i][1]for i in out)>PAGE_TEXELS:continue
+                    placed=fit(into);other=fit(out)
+                    if placed is not None and other is not None:best=(gain,page,q,placed,other)
+            if best is None:continue
+            gain,page,q,placed,other=best
+            if q is None:
+                del layouts[home][p];layouts[page]=placed;assign[p]=page
+                used[home]-=rects[p][0]*rects[p][1];used[page]+=rects[p][0]*rects[p][1]
+            else:
+                layouts[page]=placed;layouts[home]=other;assign[p]=page;assign[q]=home
+                used[page]+=rects[p][0]*rects[p][1]-rects[q][0]*rects[q][1]
+                used[home]+=rects[q][0]*rects[q][1]-rects[p][0]*rects[p][1]
+            improved=True
+        if not improved:break
+    live=[page for page in pages if layouts[page]]
+    renumber={old:new for new,old in enumerate(live)}
+    placements=[(i,renumber[assign[i]],x,y,rects[i][0],rects[i][1])for page in live for i,(x,y)in sorted(layouts[page].items())]
+    after=cut_weight(assign,weights)
+    if after>before:
+        return base_pages,base,{'weight_cut_before':before,'weight_cut_after':before,'moved':0,'extra_pages':0,'fallback':True}
+    moved=sum(1 for i,page,x,y,w,h in base if renumber[assign[i]]!=page)
+    return len(live),placements,{'weight_cut_before':before,'weight_cut_after':after,'weight_total':total,'moved':moved,'extra_pages':len(live)-base_pages,'fallback':False}
+
+
+def build_scene(scene_id, inputs, page_limit=20, scenery_cap=48, dedup_mode="blob", share_pixel_planes=False, cameras=None):
+    """inputs=(global chunk_id, HKROOM02bytes), returns checked bytes+provenance.
+
+    `cameras` maps a chunk id to its ((x0, x1), (y0, y1)) camera range. With it the
+    atlas puts textures the renderer draws in sequence on the same page (ordered_pack);
+    without it pages are packed by area alone."""
     if not inputs or len({i for i,_ in inputs})!=len(inputs):raise ValueError('Empty/duplicate room IDs')
     if dedup_mode not in ('blob','texel_words'):raise ValueError('Unknown texture equality')
     tex=Pool();pal=Pool();pools={n:Pool()for n in ('draws','frames','clips','edges')}
@@ -192,7 +472,11 @@ def build_scene(scene_id, inputs, page_limit=20, scenery_cap=48, dedup_mode="blo
         roomrefs.append((chunk,c,refs))
     planes,plane_map,plane_proof=shared_planes(tex.values,share_pixel_planes)
     rectangles=[(aligned(w),h,i)for i,(w,h,pixels)in enumerate(planes)]
-    page_count,placements=dense_pack(rectangles)
+    order_report=None
+    if cameras:
+        weights=transition_weights(inputs,[o['texture_map']for o in original],lambda tid:None if tid in streamed else plane_map[tid][0],cameras)
+        page_count,placements,order_report=ordered_pack(rectangles,weights,page_limit)
+    else:page_count,placements=dense_pack(rectangles)
     if page_count>page_limit:raise ValueError(f'Scene{scene_id}: {page_count} pages exceeds {page_limit}; source recook required')
     positions={i:(p,x,y)for i,p,x,y,w,h in placements};pages=bytearray(page_count*32768);stream=bytearray();table=[]
     for i,tagged in enumerate(tex.values):
@@ -233,7 +517,7 @@ def build_scene(scene_id, inputs, page_limit=20, scenery_cap=48, dedup_mode="blo
     report={'scene_id':scene_id,'bytes':len(payload),'sha256':digest(payload),'pages':page_count,'textures':len(tex.values),
       'palettes':len(pal.values),'stream_bytes':len(stream),'pools':{n:len(p.values)for n,p in pools.items()},
       'sections':{n:{'offset':offsets[n],'bytes':len(sections[n])}for n in SECTIONS},
-      'source_rooms':original,'all_source_fields_and_texels_verified':True,'dedup_mode':dedup_mode,'word_exact_alias_references':word_aliases,'shared_pixel_planes':share_pixel_planes,'pixel_plane_groups':plane_proof,'static_pixel_planes':len(planes),'scenery_cap':scenery_cap,'changed_static_textures':list(changed_textures.values()),'quality':('Dimensions, source records and sampled16bit texel words are exact; streamed texture bytes and strict-mask indices/palettes are preserved.' if not changed_textures else 'Listed static48-axis textures were resized; source records and protected masks/animation were preserved.')}
+      'source_rooms':original,'all_source_fields_and_texels_verified':True,'dedup_mode':dedup_mode,'word_exact_alias_references':word_aliases,'shared_pixel_planes':share_pixel_planes,'pixel_plane_groups':plane_proof,'static_pixel_planes':len(planes),'scenery_cap':scenery_cap,'page_order':order_report,'changed_static_textures':list(changed_textures.values()),'quality':('Dimensions, source records and sampled16bit texel words are exact; streamed texture bytes and strict-mask indices/palettes are preserved.' if not changed_textures else 'Listed static48-axis textures were resized; source records and protected masks/animation were preserved.')}
     return payload,report
 
 
