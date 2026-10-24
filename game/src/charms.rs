@@ -473,7 +473,7 @@ mod presentation {
     /// board shows every slot at once, so the icons travel sixteen to a slot
     /// (`ICON_SHEETS` keys, not one a charm).
     pub const KEY_BASE: u16 =
-        crate::ability_art::KEY_BASE + crate::ability_art::ABILITY_FRAMES.len() as u16;
+        crate::ability_art::KEY_BASE + crate::ability_art::FRAME_COUNT as u16;
     /// Keys the sheets take.
     pub const KEYS: usize = ICON_SHEETS;
     const _: () = assert!(KEY_BASE as usize + KEYS <= hk_cache::MAX_KEYS);

@@ -147,7 +147,10 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # Knight died in). Each ships in its own chunk, in the disc's last group, and
 # is read into the pool by the gate into the scene that carries it.
 # name -> the cooked file, read whole (repo-relative).
-CARRIED = {'art_shade': 'data/shade.hk'}
+# The Knight's death and respawn clips are carried too (host/ability_art.py STREAM_PACKS, the same names
+# and files, in that order): game/src/frame.rs `carry_streamed_art` asks for them when a hit could kill
+# and when he has died. Up to four packages can be asked for at once (modules.rs CARRIED).
+CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk'}
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
@@ -774,12 +777,15 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
         need = sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods)
         if need > POOL_BYTES - 0x1000:
             raise ValueError(f"scene {scene} needs {need} pool bytes, more than the pool allows")
-    # A carried package rides on top of any room's own (the Shade's scene can be any).
-    carried = [report['modules'][n]['image_bytes'] for n in CARRIED if n in report['modules']]
+    # Carried packages ride on top of any room's own (the Shade's scene can be any, and the death art follows
+    # whatever scene he is in), and at most the three largest are in the pool at once (a boss fight carries the
+    # Shade's art, the Death clip and the respawn clips: the song holds the drive): a package nobody asks for any
+    # more is evicted for the next one that needs the room. Each is read in whole sectors.
+    carried = sorted((-(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048 for n in CARRIED if n in report['modules']), reverse=True)[:3]
     if carried:
         worst = max(sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods) for mods in scene_table.values())
-        if worst + max(carried) > POOL_BYTES - 0x1000:
-            raise ValueError(f'a room ({worst} pool bytes) plus a carried package ({max(carried)}) exceeds the pool')
+        if worst + sum(carried) > POOL_BYTES - 0x1000:
+            raise ValueError(f'a room ({worst} pool bytes) plus its carried packages ({sum(carried)}) exceeds the pool')
     report['chunks'] = chunks
     report['pool'] = {'base': pool_base(), 'bytes': POOL_BYTES}
     # Scans: each module appended to the final resident EXE, with an explicit

@@ -82,6 +82,12 @@ pub struct Game {
 /// 0.8 s and only then calls `ReadyForRespawn`. The fade is the camera's ordinary one (0.33 s, 20
 /// ticks, `EXIT_FADE_TICKS`), so the screen is black for the 28 ticks that remain.
 pub const DEATH_HOLD_TICKS: u16 = 48;
+/// Total health (masks and Lifeblood) at or below which a hit can kill, so the Death clip is carried:
+/// the most any one hit takes is two masks, doubled by Fragile and Unbreakable overcharming.
+const LOW_HEALTH: u32 = 4;
+/// Frames the Death clip was due and its pack had not arrived, for the route pins (none expected).
+#[no_mangle]
+pub static mut HK_STREAM_ART_LATE: u32 = 0;
 /// Ticks spent in that fade and hold across the run, for the route pins.
 #[no_mangle]
 pub static mut HK_DEATH_HOLD_TICKS: u32 = 0;
@@ -120,8 +126,46 @@ impl Game {
     pub fn death_pose(&self) -> Option<(usize, u32)> {
         // The body goes when the clip ends (`End` turns the mesh renderer off).
         let age = self.death_age();
-        (self.vitals.dead && age < ability_art::clip_ticks(ability_art::DEATH))
-            .then_some((ability_art::DEATH, age))
+        (self.vitals.dead
+            && age < ability_art::clip_ticks(ability_art::DEATH)
+            && ability_art::ready(ability_art::DEATH))
+        .then_some((ability_art::DEATH, age))
+    }
+    /// Keep the streamed Knight art (ability_art.rs `STREAMS`) in the room pool for the moments that
+    /// need it, and let it go otherwise (modules.rs `carry`; a gate reads what a scene carries, the
+    /// pool's background fetch reads what the current scene carries).
+    ///
+    /// The Death clip is wanted from the time a hit could kill (`LOW_HEALTH`, or any boss fight) until
+    /// the clip ends. A boss song takes the drive for the whole fight, so the song waits for the fetch
+    /// (modules.rs `fetch_pending`) and the respawn clips are fetched with the Death clip, in the boss
+    /// room; otherwise they are fetched once the Death clip is over, in the room he died in. When the
+    /// respawn load starts they are carried into the scene he wakes in (`frame::respawn`), which keeps
+    /// them through that gate, until he is up.
+    #[cfg(not(test))]
+    #[inline(never)]
+    pub fn carry_streamed_art(&self, current: usize) {
+        let here = crate::disc::manifest_index(current);
+        let dying = self.vitals.dead;
+        let clip_over = dying && self.death_age() >= ability_art::clip_ticks(ability_art::DEATH);
+        let respawning = self.bench.respawning();
+        let boss = music::boss_active();
+        let low = u32::from(self.vitals.health) + u32::from(self.vitals.blue_health) <= LOW_HEALTH
+            || boss;
+        let death = (dying && !clip_over) || (!dying && !respawning && low);
+        let wake = if respawning {
+            crate::disc::manifest_index(world::scene_of(self.respawn.map_or(0, |r| r.3)))
+        } else if boss || clip_over {
+            here
+        } else {
+            None
+        };
+        crate::modules::carry(crate::modules::ART_DEATH, here.filter(|_| death));
+        crate::modules::carry(crate::modules::ART_WAKE, wake);
+        if dying && !clip_over && !ability_art::ready(ability_art::DEATH) {
+            unsafe {
+                HK_STREAM_ART_LATE = HK_STREAM_ART_LATE.saturating_add(1);
+            }
+        }
     }
     /// Screen darkness for the death fade, 0 (none) to 255 (black).
     pub fn death_shade(&self) -> u8 {
@@ -825,6 +869,7 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
         HK_BREAK_COUNT = 0;
         HK_DEATHS = 0;
         HK_DEATH_HOLD_TICKS = 0;
+        HK_STREAM_ART_LATE = 0;
         hit_fx::HK_HIT_FX_BURSTS = 0;
         bench::HK_BENCH_WAKES = 0;
         bench::HK_GROUND_WAKES = 0;
@@ -1059,6 +1104,9 @@ pub fn simulate(
         game.focus.interrupt();
         focus_audio::interrupt();
         *target = Some(slot);
+        // The load that starts now reads what the scene carries: the respawn clips go with it.
+        #[cfg(not(test))]
+        game.carry_streamed_art(r.scene);
     } else if game.vitals.hazard_pending {
         dialogue::cancel();
         unsafe {

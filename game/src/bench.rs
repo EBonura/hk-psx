@@ -71,6 +71,18 @@ impl State {
             start_x: 0,
         }
     }
+    /// A death respawn is under way: the scene is loading or the Knight is waking (`Respawned` to `Rising`).
+    pub fn respawning(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::Respawned
+                | Phase::Asleep(_)
+                | Phase::Waking(_)
+                | Phase::RespawnedGround
+                | Phase::Lying(_)
+                | Phase::Rising(_)
+        )
+    }
     pub fn locks_control(&self) -> bool {
         self.phase != Phase::Idle
     }
@@ -166,6 +178,11 @@ impl State {
                 }
             }
             Phase::Respawned => {
+                // The respawn clips are a carried pack (ability_art.rs `STREAMS`): the screen stays
+                // black until it is in, which is at the first tick unless the pool fetch lost its race.
+                if !ability_art::ready(ability_art::SIT_FALL_ASLEEP) {
+                    return events;
+                }
                 // The marker put the Knight on the seat: the bench is the one he stands in.
                 let found = crate::world::benches(region).find(|b: &Bench| {
                     b.bounds[0] <= hero_body[2]
@@ -184,6 +201,9 @@ impl State {
                 }
             }
             Phase::RespawnedGround => {
+                if !ability_art::ready(ability_art::WAKE_GROUND_LIE) {
+                    return events;
+                }
                 self.phase = Phase::Lying(0);
                 unsafe {
                     HK_GROUND_WAKES += 1;

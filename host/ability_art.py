@@ -68,6 +68,17 @@ CRASH_CLIPS = ('Super Hard Land', 'Collect Normal 3')
 # 10 fps, played once); `Sit Fall Asleep` is what Bench Control's Init Resting plays for the 1.2 s
 # after a death respawn and `Wake To Sit` (9 frames at 12 fps) is its Startle.
 DEATH_CLIPS = ('Death', 'Sit Fall Asleep', 'Wake To Sit')
+# Frames the guest keeps on the disc, not in linked RAM (game/src/ability_art.rs `STREAMS`). They are the
+# last frames, so the resident table ends where the first pack starts. Each pack is a carried data module
+# (host/code_modules.py CARRIED, read into the room pool by the scene gate or the pool's background fetch):
+# the clips that make it, in cook order, and the file it is written to. A pack's clips must be contiguous
+# and the packs must follow each other in this order; to stream another group of frames, add its clips
+# after the last pack's and a row here, and a module of its name to CARRIED.
+STREAM_PACKS = (('art_death', 'data/art-death.hk', ('Death',)),
+                ('art_wake', 'data/art-wake.hk', ('Sit Fall Asleep', 'Wake To Sit', 'Wake Up Ground Lie', 'Wake Up Ground Rise')))
+# One streamed frame's record at the head of its pack: offset into the pack's coded texels (u32), width and
+# height (u16), palette (u32) and the four bounds (i32, Q16): the guest's `Frame` field for field.
+STREAM_RECORD = '<IHHIiiii'
 # Effects from other tk2d libraries of resources.assets, as (name, library path id, clip, scale):
 # the `Slash Effect GhostDark1/2` the Knight Damage FSM flings on every hit and the Hero Death
 # FSM bursts on a death (`Slash Ghost 1/2`, prefab scale 2). The `Hit Crack` and `Death Crack`
@@ -315,14 +326,6 @@ def cook():
         clips.append(dict(name=name, start=start, count=len(clip['frames']),
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
 
-    for name in DEATH_CLIPS:
-        clip = by_name[name]
-        start = len(images)
-        for frame in clip['frames']:
-            sprite(frame['spriteCollection'], frame['spriteId'])
-        assert clip['wrapMode'] == 2, f'{name} no longer plays once'
-        clips.append(dict(name=name, start=start, count=len(clip['frames']),
-                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
     for name, library_id, clip_name, k in EFFECT_LIBRARY_CLIPS:
         library = source.read(resources.objects[library_id])
         clip = next(c for c in library['clips'] if c['name'] == clip_name)
@@ -334,6 +337,14 @@ def cook():
         clips.append(dict(name=name, start=start, count=len(frames),
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=0))
 
+    for name in DEATH_CLIPS:
+        clip = by_name[name]
+        start = len(images)
+        for frame in clip['frames']:
+            sprite(frame['spriteCollection'], frame['spriteId'])
+        assert clip['wrapMode'] == 2, f'{name} no longer plays once'
+        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
     ground = by_name[WAKE_GROUND]
     assert ground['wrapMode'] == 2 and int(ground['fps']) == 18, f'{WAKE_GROUND} changed'
     lie, rise = ground['frames'][:WAKE_GROUND_LIE_FRAMES], ground['frames'][WAKE_GROUND_LIE_FRAMES:-1]
@@ -386,6 +397,19 @@ def cook():
     flash_clut = len(groups)
     groups.append([flash_start])
 
+    # The frames from the first streamed clip on are written to their pack's file, not to the linked blob.
+    by_clip = {c['name']: c for c in clips}
+    pack_ranges = []
+    for pack, _, names in STREAM_PACKS:
+        first, last = by_clip[names[0]], by_clip[names[-1]]
+        for a, b in zip(names, names[1:]):
+            assert by_clip[a]['start'] + by_clip[a]['count'] == by_clip[b]['start'], f'{pack}: {a} and {b} are not contiguous'
+        pack_ranges.append((first['start'], last['start'] + last['count']))
+    for (_, end), (start, _) in zip(pack_ranges, pack_ranges[1:]):
+        assert end == start, 'the streamed packs are not back to back'
+    resident_frames = pack_ranges[0][0]
+    assert pack_ranges[-1][1] == len(images), 'frames follow the last streamed pack'
+    pack_blobs = [bytearray() for _ in STREAM_PACKS]
     palettes, blob, frames = [], bytearray(), [None] * len(images)
     raw_bytes = 0
     for clut_index, group in enumerate(groups):
@@ -414,14 +438,24 @@ def cook():
             assert len(texels) <= SLOT_BYTES and image.width <= 64 and image.height <= 64, f'ability frame {i} ({image.width}x{image.height}) exceeds one 64x64 animation slot'
             coded = packbits(bytes(texels))
             assert unpackbits(coded) == bytes(texels)
-            frames[i] = dict(offset=len(blob), width=image.width, height=image.height,
+            target = blob
+            for k, (start, end) in enumerate(pack_ranges):
+                if start <= i < end:
+                    target = pack_blobs[k]
+            frames[i] = dict(offset=len(target), width=image.width, height=image.height,
                              bounds=boxes[i], clut=clut_index)
-            blob.extend(coded)
+            target.extend(coded)
             raw_bytes += len(texels)
 
     palette_bytes = b''.join(palettes)
     payload = bytes(palette_bytes) + bytes(blob)
     (ROOT / 'data/ability-art.hk').write_bytes(payload)
+    pack_payloads = []
+    for (_, path, _), (start, end), coded in zip(STREAM_PACKS, pack_ranges, pack_blobs):
+        table = b''.join(struct.pack(STREAM_RECORD, f['offset'], f['width'], f['height'], f['clut'],
+                                     *(round(v * 65536) for v in f['bounds'])) for f in frames[start:end])
+        pack_payloads.append(table + bytes(coded))
+        (ROOT / path).write_bytes(pack_payloads[-1])
     lines = [
         '// Generated Knight ability art; no embedded retail source dump.',
         f'pub const CLUT_RECT:(u16,u16,u16,u16)=({CLUT[0]},{CLUT[1]},{CLUT[2]},{CLUT[3]});',
@@ -437,21 +471,25 @@ def cook():
             'Frame{offset:%d,width:%d,height:%d,clut:%d,bounds:[%s]}' % (
                 f['offset'], f['width'], f['height'], f['clut'],
                 ','.join(str(round(v * 65536)) for v in f['bounds']))
-            for f in frames) + '];',
+            for f in frames[:resident_frames]) + '];',
+        f'pub const FRAME_COUNT:usize={len(frames)};',
+        '/// Each streamed pack\'s (first frame, frame count), in `STREAM_PACKS` order.',
+        'pub const STREAM_PACKS:&[(usize,usize)]=&[' + ','.join(f'({start},{end - start})' for start, end in pack_ranges) + '];',
     ]
     lines.append(f'pub const FOCUS_EFFECT_LOOP_START:usize={effect_loop};')
     code = '\n'.join(lines) + '\n'
     (ROOT / 'data/ability-art.rs').write_text(code)
     report = {'clips': clips, 'frames': len(frames), 'palettes': len(palettes),
-              'payload_bytes': len(payload), 'texel_bytes_uncoded': raw_bytes, 'clut_rect': list(CLUT), 'clut_rows': CLUT_ROWS,
+              'payload_bytes': len(payload), 'stream_packs': {pack: len(data) for (pack, _, _), data in zip(STREAM_PACKS, pack_payloads)}, 'texel_bytes_uncoded': raw_bytes, 'clut_rect': list(CLUT), 'clut_rows': CLUT_ROWS,
               'animation': source.sid(anim_obj), 'art_sources': art_sources,
               'payload_sha256': hashlib.sha256(payload).hexdigest(),
-              'storage': 'linked RAM, run-length coded per frame; frames are decoded into VRAM through the shared 64x64 animation slots',
+              'storage': 'run-length coded per frame, in linked RAM or (STREAM_PACKS) in carried pool modules read from the disc; frames are decoded into VRAM through the shared 64x64 animation slots',
               'limitations': ['The Crystal Heart has no clip here: its SD set is a separate '
                               'charge, dash and wall-hit sequence that P15 has not modelled.']}
     dump(ROOT / '.hkpsx/ability-art.json', report)
     print(f'Ability art: {len(frames)} original frames across {len(clips)} clips, '
-          f'{len(palettes)} palettes, {len(payload)} linked bytes')
+          f'{len(palettes)} palettes, {len(payload)} linked bytes, streamed packs '
+          + ', '.join(f'{pack} {len(data)}' for (pack, _, _), data in zip(STREAM_PACKS, pack_payloads)))
 
 if __name__ == '__main__':
     cook()

@@ -222,10 +222,18 @@ fn missing_art_chunk(scene: usize) -> Option<usize> {
 }
 /// A resident data package's bytes (room art), or None while it is not.
 pub fn data(m: usize) -> Option<&'static [u8]> {
-    if resident() & (1 << m) == 0 {
+    let bytes = bytes(m);
+    if bytes.is_none() {
         unsafe {
             HK_MODULE_ART_LATE = HK_MODULE_ART_LATE.saturating_add(1);
         }
+    }
+    bytes
+}
+/// `data`, for art whose absence is expected and handled (a carried pack that is asked about before
+/// it has arrived): no miss is counted.
+pub fn bytes(m: usize) -> Option<&'static [u8]> {
+    if resident() & (1 << m) == 0 {
         return None;
     }
     let s = slots()[m];
@@ -669,6 +677,9 @@ fn abort_background() {
 /// modules it holds that are not resident, a slice of work per frame.
 pub fn service() {
     pool_service(POOL_WORDS);
+    unsafe {
+        CARRY_SETTLED = true;
+    }
     let Some((scene, gen, base, landed)) = crate::disc::code_prefetch() else {
         if !matches!(bg(), Bg::Idle) {
             abort_background();
@@ -996,6 +1007,7 @@ fn plan(kind: Kind, scene: usize, c: usize) {
 }
 /// The drive asks for a pool read when it is free (code first, then art,
 /// both before the room prefetch).
+#[inline(never)]
 pub fn pool_want(code: bool) -> Option<(*mut u32, usize, usize)> {
     let p = pf();
     if p.state != Pf::Want || (p.kind == Kind::Code) != code {
@@ -1251,9 +1263,33 @@ fn pool_gate(scene: usize) {
         PF_GAVE_UP = (0, usize::MAX);
     }
 }
+/// What gameplay carries was looked at since a fight began (`hold_carry`, `service`).
+static mut CARRY_SETTLED: bool = true;
+/// A boss fight is starting and will take the drive: until the next `service` has planned the
+/// fetches of what the fight carries, the song must not start (`fetch_pending`).
+pub fn hold_carry() {
+    unsafe {
+        CARRY_SETTLED = false;
+    }
+}
 /// A pool fetch still needs the drive (planned, or reading).
+#[inline(never)]
 pub fn fetch_pending() -> bool {
-    matches!(pf().state, Pf::Want | Pf::Reading)
+    if unsafe { !CARRY_SETTLED } || matches!(pf().state, Pf::Want | Pf::Reading) {
+        return true;
+    }
+    // Carried data the current scene asked for and that is not here yet is a fetch about to be planned
+    // (the Death clip behind the Shade's art ahead of a boss song, which then holds the drive for the
+    // whole fight), unless the pool had no room for it.
+    let current = unsafe { CURRENT };
+    current != usize::MAX
+        && unsafe { PF_GAVE_UP } != (Kind::Art as u8, current)
+        && unsafe { &*(&raw const CARRIED) }.iter().any(|&(m, s)| {
+            m != u8::MAX
+                && s as usize == current
+                && resident() & (1 << m) == 0
+                && MODULE_CHUNK[m as usize] != u8::MAX
+        })
 }
 /// Some of `scene`'s art is not resident.
 pub fn art_missing(scene: usize) -> bool {

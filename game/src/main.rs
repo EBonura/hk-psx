@@ -1397,6 +1397,7 @@ fn main() {
             // Install the approached room's code from its prefetched chunk,
             // a slice per frame (modules.rs).
             game.shade.carry(Some(r.scene));
+            game.carry_streamed_art(r.scene);
             modules::service();
             // Guess the next gate every fourth frame and let the drive read
             // that scene ahead; an exit fade has already named its gate.

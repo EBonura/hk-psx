@@ -4,6 +4,12 @@
 //! An ability is usable in any view, and the tightest admitted region has about
 //! 19 free texture slots against the 416-slot CLUT budget, so these frames
 //! cannot ride in a per-region atlas. Their keys sit above the Shade's.
+//!
+//! The last frames are not linked: the death clip and the respawn clips are
+//! packs on the disc (`STREAMS`), carried into the room pool only while a moment
+//! needs them (`ready`, frame.rs `carry_streamed_art`). Their keys, table rows and
+//! palettes are where they always were; only the texels and the frame records
+//! travel. Frames of a pack that is not resident must not be requested.
 pub use crate::shade::{Clip, Frame};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -13,6 +19,13 @@ static DATA: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/ability-art.hk"
 ));
+/// The carried module of each streamed pack, in `STREAM_PACKS` order
+/// (host/ability_art.py): the Death clip, then the respawn clips.
+#[cfg(not(test))]
+const STREAMS: [usize; 2] = [crate::modules::ART_DEATH, crate::modules::ART_WAKE];
+/// Bytes of one streamed frame record at the head of a pack: the guest `Frame` field for field
+/// (offset u32, width and height u16, palette u32, four bounds i32).
+const RECORD_BYTES: usize = 28;
 
 /// Clip indices, in the order `host/ability_art.py::ORDER` cooks them.
 pub const DASH: usize = 0;
@@ -51,14 +64,15 @@ pub const HARD_LAND: usize = 25;
 /// (`host/ability_art.py` CRASH_CLIPS).
 pub const SUPER_HARD_LAND: usize = 26;
 pub const GET_UP: usize = 27;
-/// The Knight's death (the Hero Death object's `Death` clip), the two bench-respawn clips after it
-/// and the two Slash Effect GhostDark clips the Knight Damage and Hero Death FSMs fling
-/// (`host/ability_art.py` DEATH_CLIPS, EFFECT_LIBRARY_CLIPS).
-pub const DEATH: usize = 28;
-pub const SIT_FALL_ASLEEP: usize = 29;
-pub const WAKE_TO_SIT: usize = 30;
-pub const SLASH_GHOST_1: usize = 31;
-pub const SLASH_GHOST_2: usize = 32;
+/// The two Slash Effect GhostDark clips the Knight Damage and Hero Death FSMs fling
+/// (`host/ability_art.py` EFFECT_LIBRARY_CLIPS), then the Knight's death (the Hero Death object's
+/// `Death` clip) and the two bench-respawn clips after it (`DEATH_CLIPS`). The slashes are linked; from
+/// `DEATH` on the clips are the streamed packs (`host/ability_art.py` STREAM_PACKS).
+pub const SLASH_GHOST_1: usize = 28;
+pub const SLASH_GHOST_2: usize = 29;
+pub const DEATH: usize = 30;
+pub const SIT_FALL_ASLEEP: usize = 31;
+pub const WAKE_TO_SIT: usize = 32;
 /// The respawn at the new-game spawn: the lying pose, then getting up (`Wake Up Ground`).
 pub const WAKE_GROUND_LIE: usize = 33;
 pub const WAKE_GROUND_RISE: usize = 34;
@@ -90,20 +104,79 @@ pub fn clip_ticks(clip: usize) -> u32 {
     let c = ABILITY_CLIPS[clip];
     (c.count as u32 * 60).div_ceil(u32::from(c.fps))
 }
+/// The bytes of streamed pack `k`, when it is resident (the pool holds it), without counting a miss.
+fn pack(k: usize) -> Option<&'static [u8]> {
+    #[cfg(not(test))]
+    {
+        crate::modules::bytes(STREAMS[k])
+    }
+    #[cfg(test)]
+    {
+        [
+            &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-death.hk"))[..],
+            &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-wake.hk"))[..],
+        ]
+        .get(k)
+        .copied()
+    }
+}
+/// The streamed pack holding frame `index`: its number, and the frame's place in it.
+fn stream_of(index: usize) -> Option<(usize, usize)> {
+    STREAM_PACKS
+        .iter()
+        .position(|&(first, count)| (first..first + count).contains(&index))
+        .map(|k| (k, index - STREAM_PACKS[k].0))
+}
+/// The little-endian word of a pack's frame table at byte `at`. One copy: seven inline reads of four
+/// bounds-checked bytes each were most of `locate`.
+#[inline(never)]
+fn record_word(blob: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes([blob[at], blob[at + 1], blob[at + 2], blob[at + 3]])
+}
+/// Frame `index`'s record and the coded texels its `offset` counts from. None for a frame past the table
+/// and for one whose pack is not resident.
+fn locate(index: usize) -> Option<(Frame, &'static [u8])> {
+    if let Some(&frame) = ABILITY_FRAMES.get(index) {
+        return Some((frame, &DATA[PALETTE_BYTES..]));
+    }
+    let (k, at) = stream_of(index)?;
+    let blob = pack(k)?;
+    let word = |n: usize| record_word(blob, at * RECORD_BYTES + n * 4);
+    let dims = word(1);
+    let bounds = |n: usize| word(n) as i32;
+    let frame = Frame {
+        offset: word(0) as usize,
+        width: dims as u16,
+        height: (dims >> 16) as u16,
+        clut: word(2) as usize,
+        bounds: [bounds(3), bounds(4), bounds(5), bounds(6)],
+    };
+    Some((frame, &blob[STREAM_PACKS[k].1 * RECORD_BYTES..]))
+}
+/// The frame's record, if its art is here.
+fn frame_record(index: usize) -> Option<Frame> {
+    locate(index).map(|(frame, _)| frame)
+}
+/// Whether `clip` can be drawn now: always for a linked clip, for a streamed one once its pack is resident.
+pub fn ready(clip: usize) -> bool {
+    let first = ABILITY_CLIPS[clip].start;
+    first < ABILITY_FRAMES.len() || stream_of(first).is_some_and(|(k, _)| pack(k).is_some())
+}
 /// Width and height of one ability frame's texels.
 pub fn size(index: usize) -> Option<(u16, u16)> {
-    let frame = ABILITY_FRAMES.get(index)?;
+    let frame = frame_record(index)?;
     Some((frame.width, frame.height))
 }
 /// Decoded texel bytes of one ability frame: 4 bpp, rows padded to whole halfwords.
 pub fn texel_bytes(index: usize) -> Option<usize> {
-    let frame = ABILITY_FRAMES.get(index)?;
+    let frame = frame_record(index)?;
     Some((frame.width as usize + 3) / 4 * 2 * frame.height as usize)
 }
 /// The frame's run-length coded texels (host/ability_art.py `packbits`), running to the
 /// end of the blob at worst: the decoder stops at `texel_bytes`.
 fn coded(index: usize) -> Option<&'static [u8]> {
-    Some(&DATA[PALETTE_BYTES + ABILITY_FRAMES.get(index)?.offset..])
+    let (frame, base) = locate(index)?;
+    Some(&base[frame.offset..])
 }
 /// Bytes of a frame in order, decoded from its run-length code. A token below 0x80 is a
 /// literal of token + 1 bytes; from 0x80 it is a run of (token & 0x7f) + 2 copies of the
@@ -223,10 +296,9 @@ mod presentation {
         camera: (i32, i32),
         tint: u8,
     ) -> u32 {
-        let Some(frame) = ABILITY_FRAMES.get(index) else {
+        let Some(frame) = frame_record(index) else {
             return 0;
         };
-        let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let b = frame.bounds;
         let (sin, cos) = turn;
         let world = [[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]];
@@ -240,31 +312,7 @@ mod presentation {
                 120 - hk_sim::fixed::project(at[1] + ry, camera.1, crate::KNIGHT_SCALE as i32, 28),
             )
         });
-        if vertices.iter().all(|p| p.0 < 0)
-            || vertices.iter().all(|p| p.0 >= 320)
-            || vertices.iter().all(|p| p.1 < 0)
-            || vertices.iter().all(|p| p.1 >= 240)
-        {
-            return 0;
-        }
-        let right = (u16::from(u) + frame.width - 1) as u8;
-        let bottom = (u16::from(v) + frame.height - 1) as u8;
-        let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_clut_word();
-        let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
-        let template = QuadTextured::with_material(
-            [(0, 0); 4],
-            [(u, v), (right, v), (u, bottom), (right, bottom)],
-            TextureMaterial::blended(clut, tpage, (tint, tint, tint), BlendMode::Add),
-        );
-        crate::render::resident_quad_tinted(
-            &template,
-            vertices.map(|(x, y)| (x as i16, y as i16)),
-            (tint, tint, tint),
-        );
-        unsafe {
-            HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1);
-        }
-        1
+        submit(index, frame, vertices, BlendMode::Add, tint)
     }
     #[inline(always)]
     fn draw_with(
@@ -276,10 +324,9 @@ mod presentation {
         tint: u8,
         blend: BlendMode,
     ) -> u32 {
-        let Some(frame) = ABILITY_FRAMES.get(index) else {
+        let Some(frame) = frame_record(index) else {
             return 0;
         };
-        let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let b = frame.bounds;
         let world = [[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]];
         let vertices = world.map(|[wx, wy]| {
@@ -291,6 +338,19 @@ mod presentation {
                 120 - hk_sim::fixed::project(py, camera.1, crate::KNIGHT_SCALE as i32, 28),
             )
         });
+        submit(index, frame, vertices, blend, tint)
+    }
+    /// The quad of frame `index` at the four projected corners (top-left, top-right, bottom-left,
+    /// bottom-right of the sprite), unless every corner is off one side of the screen. One copy
+    /// for the three draws above.
+    #[inline(never)]
+    fn submit(
+        index: usize,
+        frame: Frame,
+        vertices: [(i32, i32); 4],
+        blend: BlendMode,
+        tint: u8,
+    ) -> u32 {
         if vertices.iter().all(|p| p.0 < 0)
             || vertices.iter().all(|p| p.0 >= 320)
             || vertices.iter().all(|p| p.1 < 0)
@@ -298,6 +358,7 @@ mod presentation {
         {
             return 0;
         }
+        let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let right = (u16::from(u) + frame.width - 1) as u8;
         let bottom = (u16::from(v) + frame.height - 1) as u8;
         let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_clut_word();
@@ -308,7 +369,7 @@ mod presentation {
             TextureMaterial::blended(clut, tpage, (tint, tint, tint), blend),
         );
         // `resident_quad` draws at the texel's own level whatever the template's tint: only the
-        // additive (Focus) draws pass theirs on, since the flash fades through it.
+        // additive (Focus, slash) draws pass theirs on, since the flash fades through it.
         let level = if matches!(blend, BlendMode::Add) {
             tint
         } else {

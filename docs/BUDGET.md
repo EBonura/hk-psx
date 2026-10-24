@@ -144,6 +144,10 @@ The 2026-10-24 death pass (docs/DEATH.md: the Knight's Death clip, the dark slas
 The 2026-10-24 texture-placement pass (scene atlas textures placed by draw order, so consecutive draws share a texture page; host/scene_bank.py `ordered_pack`) moved the free RAM below the module pool from 4,660 to 2,804: linked data 293,080 to 294,936 (+1,856) and nothing else. The placement may add up to four atlas pages to a scene when that removes page switches, and each added page is one 32-byte `AtlasDesc` row in `data/scene_manifest.rs` (693 atlas rows against 635, 58 added). The scene arena stays 415,052 bytes.
 
 Static data ends at `0x801da40c`; the reserved stack begins at `0x801f3f00`.
+
+The 2026-10-24 streamed death art pass (docs/DEATH.md, "Streamed art") moved the Knight's death and respawn art out of linked data: the Death clip (18 frames) and the respawn clips (32 frames) are now two carried pool packages, `art_death` (5,862 bytes) and `art_wake` (5,510), read from the disc when a moment needs them. Linked data fell from 293,080 to 281,816 (-11,264: the frames, and their table rows for the 50 streamed frames) while linked code rose from 781,628 to 783,016 (+1,388: the frame lookup, the carry rule and the boss song's wait for it), so 14,484 bytes are free below the module pool (4,660 before; 23,756 before the death pass). What stays linked is the death pass's code (+5,964 over 23,756) and its 11 slash frames and clip tables.
+
+Static data ends at `0x801d766c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

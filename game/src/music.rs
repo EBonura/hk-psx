@@ -528,6 +528,8 @@ pub fn boss(active: bool) {
 /// (`MAWLEK_TRACK`) for Brooding Mawlek. Ended by `boss(false)` or faded out
 /// by `boss_silence`.
 pub fn boss_track(track: u8) {
+    // The fight reads nothing: what it carries (the Shade's art, the Death clip) is fetched first.
+    crate::modules::hold_carry();
     unsafe {
         BOSS.want = true;
         BOSS.fade_len = 0;

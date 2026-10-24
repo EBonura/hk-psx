@@ -498,21 +498,22 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         fs::write(&path, stored.as_deref().unwrap_or(&raw))?;
         chunks.push(json!({"kind":kind,"scene_index":chunk["scene_index"],"modules":ids,"bytes":raw.len(),"stored_bytes":stored.as_ref().map_or(raw.len(),|b|b.len()),"path":path}));
     }
-    let carried = config["carried"]
+    // The three largest carried packages can be in the pool at once (a package nobody asks for any more is
+    // evicted for the next one), each read in whole sectors after its 20-byte header.
+    let mut carried_sizes = config["carried"]
         .as_array()
         .ok_or("carried")?
         .iter()
         .map(|id| {
             sizes
                 .get(id.as_u64().unwrap_or(u64::MAX) as usize)
-                .copied()
+                .map(|size| (size + 20).div_ceil(2048) * 2048)
                 .ok_or("carried id")
         })
-        .collect::<std::result::Result<Vec<_>, _>>()?
-        .into_iter()
-        .max()
-        .unwrap_or(0);
-    // Every room's own modules plus the largest carried package must fit the pool less one 4 KiB window fence.
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    carried_sizes.sort_unstable_by(|a, b| b.cmp(a));
+    let carried: u32 = carried_sizes.iter().take(3).sum();
+    // Every room's own modules plus the carried packages in the pool together must fit the pool less one 4 KiB window fence.
     let pool = config["pool"].as_u64().unwrap_or(0x17000) as u32;
     let limit = pool - 0x1000;
     let names = config["names"].as_array().ok_or("names")?;

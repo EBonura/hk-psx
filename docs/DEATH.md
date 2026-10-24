@@ -35,6 +35,44 @@ rows (the slashes join the additive Focus sheet; every frame fits a 64x64 slot, 
 The slashes are cooked at a third of their length and full height. The code is `hit_fx.rs`, the `bench.rs`
 phases and the death pose and fade in `frame.rs`. Free RAM below the module pool went from 23,756 to 4,660
 (19,096 bytes: code +5,964, linked data +13,120, BSS +8; docs/BUDGET.md).
+The Death clip and the respawn clips are not linked (next section): with them streamed, free RAM below the
+module pool is 14,484 (code +7,352 over the 23,756 baseline, linked data +1,856).
+
+## Streamed art
+
+The Knight's Death clip (18 frames) and respawn clips (Sit Fall Asleep, Wake To Sit, Wake Up Ground Lie and
+Rise, 32 frames) live on the disc as two carried pool packages, `art_death` and `art_wake` (the same mechanism
+as the Shade's art, `art_shade`; `host/code_modules.py` `CARRIED`, `game/src/modules.rs` `carry`). The cooker
+(`host/ability_art.py` `STREAM_PACKS`) writes each pack as a table of 28-byte frame records followed by the
+coded texels (`data/art-death.hk`, `data/art-wake.hk`); the clip table, the palette rows and the animation keys
+stay linked, so the draw path is unchanged. `ability_art::ready(clip)` says whether a clip can be drawn and
+`locate` reads a frame's record from the resident pack. When a pack is not resident the Knight is simply not
+drawn for that tick (`HK_STREAM_ART_LATE` counts a Death clip that was due and not there; the pin is 0). The
+pool holds at most the three largest carried packages at once (the host pool-fit check).
+
+What asks for them (`Game::carry_streamed_art`, once a frame):
+
+* `art_death` is carried into the current scene while a hit could kill (health plus Lifeblood at most 4, the most
+  one hit takes) or a boss fight is on, and until the clip ends. A background pool fetch reads it when the
+  drive is free. A boss song takes the drive for the whole fight, so `music::boss_track` holds the song until
+  `modules::service` has planned what the fight carries and `modules::fetch_pending` (also true while a
+  carried package of the current scene is not here yet) lets it go: the Shade's art, then the Death clip, then
+  the respawn clips are read in the moments before the song starts.
+* `art_wake` is carried into the scene he wakes in from the moment the respawn load starts
+  (`frame.rs`, the respawn branch calls `carry_streamed_art` again), so that gate keeps it or reads it with the
+  scene's own art; in a boss fight it is read with the Death clip, otherwise as soon as the Death clip is over,
+  in the room he died in. `bench.rs` waits one tick for it if it is somehow still missing (the screen is black).
+
+Measured on the routes: death to respawn takes no longer than with the linked art (221 ticks on kings-death, 220
+on boss-death, 221 and 220 on husk-guard before and after) and the frames match the linked art's to the pixel except for ambient noise and
+one-tick offsets of fades and animations; the hit frames are identical.
+
+To stream another group of frames (hk-effects' cocoon, door dust and grub jar): cook the clips after the last pack's
+in `ability_art.py` and add a row to `STREAM_PACKS`, add a module of that name to `CARRIED` in `code_modules.py`
+and a `STREAMS` entry in `ability_art.rs`, and call `modules::carry(module, scene)` from whatever knows the
+moment is coming (a cocoon room, a door about to open) a few seconds ahead. Keep to what fits: the pool-fit check
+fails the build if the worst room plus the three largest packages no longer fits.
+
 
 ## Pins
 
