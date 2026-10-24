@@ -85,6 +85,7 @@ mod geo_render;
 mod great_door;
 mod gruz_art;
 mod hard_landing;
+mod hit_fx;
 #[cfg(any(feature = "hero-light", feature = "hero-vignette"))]
 mod hero_light;
 mod impact;
@@ -657,6 +658,7 @@ fn locked_for_dash(focus: &hk_sim::Focus, door: &great_door::World, bench: &benc
 /// respawn when every other kind of damage ended it. See docs/DAMAGE.md.
 fn respond_to_hurt(
     hurt: hk_sim::Hurt,
+    at: [i32; 2],
     nail: &mut Nail,
     response: &mut hk_sim::NailResponse,
     focus: &mut hk_sim::Focus,
@@ -672,13 +674,18 @@ fn respond_to_hurt(
     dialogue::cancel();
     audio::hurt();
     // `Knight Damage`'s `Gen` state, on the DAMAGE event TakeDamage sends:
-    // AverageShake to the camera on every hit. Its hit particles, the
-    // vignette flash and the low-health steam are not reproduced.
+    // AverageShake to the camera on every hit, and the dark slashes it flings
+    // (hit_fx.rs). Its Hit Crack and Hit Pt particles, the vignette flash and the
+    // low-health steam are not reproduced.
     camera::request(camera::Shake::Average);
     // The death FSM starts hero_damage and hero_death_v2 together; the hurt
-    // clip above stands in for the first.
+    // clip above stands in for the first. Its Initiate state bursts the slashes
+    // in every direction.
     if hurt == hk_sim::Hurt::Died {
         audio::hero_death();
+        hit_fx::death(at);
+    } else {
+        hit_fx::hit(at);
     }
     *nail = Nail::new();
     *response = hk_sim::NailResponse::new();
@@ -708,7 +715,7 @@ fn apply_hurt(
         hazard,
         player.shadow_dashing,
     );
-    respond_to_hurt(hurt, nail, response, focus);
+    respond_to_hurt(hurt, [player.x, player.y], nail, response, focus);
     hurt
 }
 // `VITAL_PARAMS.max_health` and `shop::STARTING_MASKS` are two cooks of the
@@ -949,6 +956,7 @@ fn main() {
         scene_ticks: 0,
         gate_cooldown: 0,
         exit: None,
+        death_hold: 0,
         region_id: 0,
         view: 0,
         wake: false,

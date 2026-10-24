@@ -63,6 +63,29 @@ HARD_LAND_CLIP = 'HardLand'
 # King's Pass's opening crash (the `Initial Fall Impact` FSM `Control`, Tutorial_01): `Super Hard Land`
 # (four frames at 12 fps, held on its last) when he lands, `Collect Normal 3` (five frames) to get up.
 CRASH_CLIPS = ('Super Hard Land', 'Collect Normal 3')
+# The Knight's death, the bench respawn and the hit effects, appended after the crash clips so no
+# index moves. `Death` is the Hero Death object's own clip (the body breaking up, 18 frames at
+# 10 fps, played once); `Sit Fall Asleep` is what Bench Control's Init Resting plays for the 1.2 s
+# after a death respawn and `Wake To Sit` (9 frames at 12 fps) is its Startle.
+DEATH_CLIPS = ('Death', 'Sit Fall Asleep', 'Wake To Sit')
+# Effects from other tk2d libraries of resources.assets, as (name, library path id, clip, scale):
+# the `Slash Effect GhostDark1/2` the Knight Damage FSM flings on every hit and the Hero Death
+# FSM bursts on a death (`Slash Ghost 1/2`, prefab scale 2). The `Hit Crack` and `Death Crack`
+# tk2d clips are one-pixel placeholders: the visible cracks are Unity Animator sprites, not cooked.
+# A trailing blank frame (sprite 77) only hides the effect and is not cooked: the clip's end does.
+EFFECT_LIBRARY_CLIPS = (('Slash Ghost 1', 21298, 'Slash Ghost 1', 2.0),
+                        ('Slash Ghost 2', 21298, 'Slash Ghost 2', 2.0))
+BLANK_SPRITE = 77
+# The respawn at the new-game spawn (`HeroController.Respawn`, respawn type 0) plays `Wake Up Ground`:
+# 25 frames of one lying pose, 20 more getting up, and a one-pixel closing sprite. The lying pose is
+# cooked once and held (`Wake Up Ground Lie`), the rest as `Wake Up Ground Rise`.
+WAKE_GROUND = 'Wake Up Ground'
+WAKE_GROUND_LIE_FRAMES = 25
+# Its frames are large, so they are cooked at half texel density to fit the shared palette sheets.
+GROUND_SHRINK = 2
+# The slashes are soft white wisps, drawn additively like the Focus effects: cut to a third of their
+# length (a slot is 64 texels wide) and kept at full height, so they stay thin.
+SLASH_SHRINK = (3, 1)
 
 def knight_animation(source):
     """The Knight's own tk2d animation table, found by the clips it carries."""
@@ -198,7 +221,7 @@ def cook():
     source = Source()
     anim_obj, table = knight_animation(source)
     by_name = {c['name']: c for c in table['clips']}
-    missing = [n for n in ORDER + LOOK_CLIPS + (HARD_LAND_CLIP,) + CRASH_CLIPS if n not in by_name]
+    missing = [n for n in ORDER + LOOK_CLIPS + (HARD_LAND_CLIP,) + CRASH_CLIPS + DEATH_CLIPS + (WAKE_GROUND,) if n not in by_name]
     assert not missing, f'the Knight animation lost {missing}'
     resources = source.file('resources.assets')
     scale = FOCAL / -CAM_Z
@@ -207,7 +230,8 @@ def cook():
     def sprite(collection_ref, index, place=None, shrink=1):
         obj = source.ref(resources, collection_ref)
         image, box = tk_sprite(source, obj.assets_file, source.read(obj), index, textures)
-        dims = tuple(max(1, math.ceil((box[i + 2] - box[i]) * scale / shrink)) for i in (0, 1))
+        kx, ky = shrink if isinstance(shrink, tuple) else (shrink, shrink)
+        dims = tuple(max(1, math.ceil((box[i + 2] - box[i]) * scale / k)) for i, k in ((0, kx), (1, ky)))
         images.append(image.resize(dims, Image.Resampling.LANCZOS))
         if place:
             # A child's local transform: the texture stays at the unit scale
@@ -291,9 +315,38 @@ def cook():
         clips.append(dict(name=name, start=start, count=len(clip['frames']),
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
 
+    for name in DEATH_CLIPS:
+        clip = by_name[name]
+        start = len(images)
+        for frame in clip['frames']:
+            sprite(frame['spriteCollection'], frame['spriteId'])
+        assert clip['wrapMode'] == 2, f'{name} no longer plays once'
+        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
+    for name, library_id, clip_name, k in EFFECT_LIBRARY_CLIPS:
+        library = source.read(resources.objects[library_id])
+        clip = next(c for c in library['clips'] if c['name'] == clip_name)
+        frames = [f for f in clip['frames'] if f['spriteId'] != BLANK_SPRITE]
+        assert clip['wrapMode'] == 2 and len(frames) == len(clip['frames']) - 1, f'{clip_name} changed'
+        start = len(images)
+        for frame in frames:
+            sprite(frame['spriteCollection'], frame['spriteId'], (0.0, 0.0, k), SLASH_SHRINK)
+        clips.append(dict(name=name, start=start, count=len(frames),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=0))
+
+    ground = by_name[WAKE_GROUND]
+    assert ground['wrapMode'] == 2 and int(ground['fps']) == 18, f'{WAKE_GROUND} changed'
+    lie, rise = ground['frames'][:WAKE_GROUND_LIE_FRAMES], ground['frames'][WAKE_GROUND_LIE_FRAMES:-1]
+    assert {f['spriteId'] for f in lie} == {343} and ground['frames'][-1]['spriteId'] == 7, f'{WAKE_GROUND} changed'
+    for name, frames in (('Wake Up Ground Lie', lie[:1]), ('Wake Up Ground Rise', rise)):
+        start = len(images)
+        for frame in frames:
+            sprite(frame['spriteCollection'], frame['spriteId'], None, GROUND_SHRINK)
+        clips.append(dict(name=name, start=start, count=len(frames), fps=18, wrap=2, loop=0))
+
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
-    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'}
+    effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'} | {name for name, _, _, _ in EFFECT_LIBRARY_CLIPS}
     groups, current = [], []
     for clip in clips:
         if clip['name'] in effect_names:
@@ -358,7 +411,7 @@ def cook():
                     byte = packed[(y + y0) * ((sw + 1) // 2) + (x + x0) // 2]
                     nibble = (byte >> (((x + x0) & 1) * 4)) & 15
                     texels[y * stride + x // 2] |= nibble << ((x & 1) * 4)
-            assert len(texels) <= SLOT_BYTES, f'ability frame {i} exceeds one animation slot'
+            assert len(texels) <= SLOT_BYTES and image.width <= 64 and image.height <= 64, f'ability frame {i} ({image.width}x{image.height}) exceeds one 64x64 animation slot'
             coded = packbits(bytes(texels))
             assert unpackbits(coded) == bytes(texels)
             frames[i] = dict(offset=len(blob), width=image.width, height=image.height,

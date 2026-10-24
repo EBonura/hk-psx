@@ -75,7 +75,16 @@ pub struct Game {
     /// The spell orb's `Check Fall` has reached black: move the Knight to where
     /// he wakes, on the next simulation tick (shaman.rs).
     pub wake: bool,
+    /// Ticks the screen has been black after a death, before the respawn load: see `DEATH_HOLD_TICKS`.
+    pub death_hold: u16,
 }
+/// `GameManager.PlayerDead`: after `DEATH_WAIT` (the vitals' 171 ticks) the camera fades out, waits
+/// 0.8 s and only then calls `ReadyForRespawn`. The fade is the camera's ordinary one (0.33 s, 20
+/// ticks, `EXIT_FADE_TICKS`), so the screen is black for the 28 ticks that remain.
+pub const DEATH_HOLD_TICKS: u16 = 48;
+/// Ticks spent in that fade and hold across the run, for the route pins.
+#[no_mangle]
+pub static mut HK_DEATH_HOLD_TICKS: u32 = 0;
 /// Source `CameraFade` FSM, state FadingOut: CameraFadeOut over 0.33 s.
 /// The camera holds and a side-gate Knight keeps running out while it fades.
 pub const EXIT_FADE_TICKS: u16 = 20;
@@ -102,6 +111,26 @@ pub struct Exit {
     pub dir: i32,
 }
 impl Game {
+    /// Ticks since the Knight died: the vitals' own countdown, then the hold of the fade.
+    pub fn death_age(&self) -> u32 {
+        (VITAL_PARAMS.death_ticks - self.vitals.death_ticks) as u32 + self.death_hold as u32
+    }
+    /// The Knight's `Death` clip and its age while he is dead (the Hero Death object plays it where
+    /// he fell, the renderer being off).
+    pub fn death_pose(&self) -> Option<(usize, u32)> {
+        // The body goes when the clip ends (`End` turns the mesh renderer off).
+        let age = self.death_age();
+        (self.vitals.dead && age < ability_art::clip_ticks(ability_art::DEATH))
+            .then_some((ability_art::DEATH, age))
+    }
+    /// Screen darkness for the death fade, 0 (none) to 255 (black).
+    pub fn death_shade(&self) -> u8 {
+        if !self.vitals.dead {
+            return 0;
+        }
+        let into = self.death_age().saturating_sub(VITAL_PARAMS.death_ticks as u32);
+        (into.min(EXIT_FADE_TICKS as u32) * 255 / EXIT_FADE_TICKS as u32) as u8
+    }
     /// Screen darkness for the exit fade, 0 (none) to 255 (black).
     pub fn exit_shade(&self) -> u8 {
         self.exit.map_or(0, |e| {
@@ -166,7 +195,10 @@ pub fn render(
     let pose = if game.bench.animation().is_some() || kneel.is_some() {
         None
     } else {
-        ability_pose(&game.player, &game.dream, &game.cast).or_else(|| game.look.pose())
+        game.death_pose()
+            .or_else(|| game.bench.ability_animation())
+            .or_else(|| ability_pose(&game.player, &game.dream, &game.cast))
+            .or_else(|| game.look.pose())
     };
     let body_frame = if let Some(f) = kneel {
         f
@@ -358,6 +390,8 @@ pub fn render(
     let pickup_draws =
         game.pickups
             .append_needed(room, game.region_id, &mut needed, &mut needed_len);
+    // Last of all: the slashes are the one thing that may go undrawn when the cache is spoken for.
+    let slashes = hit_fx::request(&mut needed, &mut needed_len);
     if early {
         render::bind_animation(room, &needed[..needed_len], true);
     } else {
@@ -422,7 +456,7 @@ pub fn render(
     // time (Vitals::invulnerable_pulse), whatever the frame rate.
     let pulse = game.vitals.invulnerable_pulse();
     let tint = (128 - u32::from(pulse) * 128 / u32::from(hk_sim::PULSE_TICKS)) as u8;
-    if !game.vitals.dead && !game.door.hidden() {
+    if (!game.vitals.dead || ability_frame.is_some()) && !game.door.hidden() {
         prims += match ability_frame {
             Some(i) => ability_art::draw(
                 i,
@@ -437,6 +471,9 @@ pub fn render(
                 1
             }
         };
+    }
+    if slashes {
+        prims += hit_fx::draw(camera);
     }
     // Lines Anim and Heal Anim sit just in front of the Knight, additive.
     for i in fx_frames.into_iter().flatten() {
@@ -505,7 +542,11 @@ pub fn render(
         soul_cap(&game.shade, vitals.max_soul),
         game.paused,
         game.vitals.blue_health,
-        game.door.shade().max(game.exit_shade()),
+        game.door
+            .shade()
+            .max(game.exit_shade())
+            .max(game.death_shade())
+            .max(game.bench.fade_shade()),
     );
     prims
 }
@@ -783,6 +824,10 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     unsafe {
         HK_BREAK_COUNT = 0;
         HK_DEATHS = 0;
+        HK_DEATH_HOLD_TICKS = 0;
+        hit_fx::HK_HIT_FX_BURSTS = 0;
+        bench::HK_BENCH_WAKES = 0;
+        bench::HK_GROUND_WAKES = 0;
         HK_ENEMY_HITS = 0;
         HK_ENEMY_KILLS = 0;
         HK_HAZARD_RESPAWNS = 0;
@@ -906,6 +951,7 @@ pub fn simulate(
     spatial_target: &mut bool,
 ) {
     battle_gates::tick();
+    hit_fx::tick();
     drip::tick(r.scene);
     // What the enemies see is the camera as the previous tick left it: in the
     // original their FSMs run in Update and read the camera transform its
@@ -946,7 +992,17 @@ pub fn simulate(
     game.state.tick();
     game.state.tick_debris(r, room);
     presentation::checkpoint();
-    if game.vitals.needs_death_respawn() {
+    if game.vitals.needs_death_respawn() && game.death_hold < DEATH_HOLD_TICKS {
+        // The camera has faded out and `PlayerDead` waits 0.8 s before `ReadyForRespawn`.
+        game.death_hold += 1;
+        unsafe {
+            HK_DEATH_HOLD_TICKS += 1;
+        }
+    } else if game.vitals.needs_death_respawn() {
+        game.death_hold = 0;
+        hit_fx::clear();
+        // The screen is already black; the load carries on from there (exit_fade.rs).
+        exit_fade::arm(255, 1);
         // A fight lost ends its XA song; the arena resets for the next try.
         music::boss(false);
         // Hero Death Anim: Remove Geo moves the wallet into the pool the
@@ -995,6 +1051,9 @@ pub fn simulate(
         game.safe = (spawn.0, spawn.1, slot);
         game.safe_facing = facing;
         game.bench.reset();
+        // A bench respawn wakes asleep on the bench (Bench Control's `Init Resting`); the new-game
+        // spawn gets up from the ground (`HeroController.Respawn`'s `Wake Up Ground`).
+        game.bench.respawn(game.respawn.is_some());
         game.nail = Nail::new();
         game.nail_response = hk_sim::NailResponse::new();
         game.focus.interrupt();
@@ -1816,6 +1875,7 @@ pub fn simulate(
         }
         respond_to_hurt(
             enemy_events.hurt,
+            [game.player.x, game.player.y],
             &mut game.nail,
             &mut game.nail_response,
             &mut game.focus,
@@ -2014,6 +2074,7 @@ fn take_gate(
     } else {
         (g.spawn, g.target_region)
     };
+    hit_fx::clear();
     game.geo.leave_scene(r.scene, geo::GEO_PARAMS);
     game.geo.reset_enemies(r.scene);
     game.vitals.add_blue_health(game.life.leave_scene());

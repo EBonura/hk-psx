@@ -24,3 +24,10 @@ HK_SCRIPT_NATIVE = 0
 # kings-return passes underneath at y 11.4. That needs the King's Pass
 # climb, which no route does yet.
 HK_SCRIPT_ACTIVE = 1
+# The Knight died before any bench: his respawn is the new-game spawn, where he gets up from the
+# ground (Wake Up Ground) after the fade out and the 48 tick hold; every hit and the death threw the
+# dark slashes (hit_fx.rs).
+HK_HIT_FX_BURSTS = 5
+HK_GROUND_WAKES = 1
+HK_BENCH_WAKES = 0
+HK_DEATH_HOLD_TICKS = 48

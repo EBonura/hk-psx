@@ -51,6 +51,17 @@ pub const HARD_LAND: usize = 25;
 /// (`host/ability_art.py` CRASH_CLIPS).
 pub const SUPER_HARD_LAND: usize = 26;
 pub const GET_UP: usize = 27;
+/// The Knight's death (the Hero Death object's `Death` clip), the two bench-respawn clips after it
+/// and the two Slash Effect GhostDark clips the Knight Damage and Hero Death FSMs fling
+/// (`host/ability_art.py` DEATH_CLIPS, EFFECT_LIBRARY_CLIPS).
+pub const DEATH: usize = 28;
+pub const SIT_FALL_ASLEEP: usize = 29;
+pub const WAKE_TO_SIT: usize = 30;
+pub const SLASH_GHOST_1: usize = 31;
+pub const SLASH_GHOST_2: usize = 32;
+/// The respawn at the new-game spawn: the lying pose, then getting up (`Wake Up Ground`).
+pub const WAKE_GROUND_LIE: usize = 33;
+pub const WAKE_GROUND_RISE: usize = 34;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -200,6 +211,61 @@ mod presentation {
     ) -> u32 {
         draw_with(index, x, y, facing, camera, tint, BlendMode::Add)
     }
+    /// One slash frame at a world point, turned `sin`/`cos` (Q12) about its own origin and grown by
+    /// `scale` sixteenths. The frame's bounds are in the sprite's own orientation, so this is not
+    /// mirrored by a facing.
+    #[inline(never)]
+    pub fn draw_slash(
+        index: usize,
+        at: [i32; 2],
+        turn: (i32, i32),
+        scale: i32,
+        camera: (i32, i32),
+        tint: u8,
+    ) -> u32 {
+        let Some(frame) = ABILITY_FRAMES.get(index) else {
+            return 0;
+        };
+        let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
+        let b = frame.bounds;
+        let (sin, cos) = turn;
+        let world = [[b[0], b[3]], [b[2], b[3]], [b[0], b[1]], [b[2], b[1]]];
+        let vertices = world.map(|[wx, wy]| {
+            // Each term is cut to 20 bits before the Q12 product, so none of them can overflow.
+            let (wx, wy) = ((wx * scale) >> 4, (wy * scale) >> 4);
+            let rx = (((wx >> 4) * cos) - ((wy >> 4) * sin)) >> 8;
+            let ry = (((wx >> 4) * sin) + ((wy >> 4) * cos)) >> 8;
+            (
+                160 + hk_sim::fixed::project(at[0] + rx, camera.0, crate::KNIGHT_SCALE as i32, 28),
+                120 - hk_sim::fixed::project(at[1] + ry, camera.1, crate::KNIGHT_SCALE as i32, 28),
+            )
+        });
+        if vertices.iter().all(|p| p.0 < 0)
+            || vertices.iter().all(|p| p.0 >= 320)
+            || vertices.iter().all(|p| p.1 < 0)
+            || vertices.iter().all(|p| p.1 >= 240)
+        {
+            return 0;
+        }
+        let right = (u16::from(u) + frame.width - 1) as u8;
+        let bottom = (u16::from(v) + frame.height - 1) as u8;
+        let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_clut_word();
+        let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
+        let template = QuadTextured::with_material(
+            [(0, 0); 4],
+            [(u, v), (right, v), (u, bottom), (right, bottom)],
+            TextureMaterial::blended(clut, tpage, (tint, tint, tint), BlendMode::Add),
+        );
+        crate::render::resident_quad_tinted(
+            &template,
+            vertices.map(|(x, y)| (x as i16, y as i16)),
+            (tint, tint, tint),
+        );
+        unsafe {
+            HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1);
+        }
+        1
+    }
     #[inline(always)]
     fn draw_with(
         index: usize,
@@ -260,4 +326,4 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, draw_additive, upload, upload_frame};
+pub use presentation::{draw, draw_additive, draw_slash, upload, upload_frame};

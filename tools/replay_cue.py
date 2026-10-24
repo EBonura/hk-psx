@@ -44,6 +44,7 @@ WATCHES+='HK_HARD_LANDINGS HK_HARD_LOCK_TICKS HK_OPENING_CRASHES'.split()
 # A queued display flip the GPU never released (no GP0(1Fh) reached it) and
 # the present loop wrote by hand after its timeout: a frame missing its close.
 WATCHES+=['HK_FLIP_TIMEOUTS']
+WATCHES+='HK_HIT_FX_BURSTS HK_BENCH_WAKES HK_GROUND_WAKES HK_DEATH_HOLD_TICKS'.split()
 # Crossroads_22's waves arena (enemies.rs) and the semi-persistent reset (persist.rs).
 WATCHES+='HK_ARENA_WAVES HK_ARENA_LANDED HK_ARENA_WAVE_DEATHS HK_SEMI_RESETS'.split()
 # Hidden walls and cracked floors (secret_breaks.rs): hits the counters took,

@@ -47,3 +47,9 @@ HK_FK_FLOOR = 0
 # then is frame timing; HK_DEATHS 1 above is the assertion that he died
 # exactly once and got back up.
 HK_HEALTH >= 1
+# The Knight died at the False Knight: the dark slashes burst, the screen faded out, held black for
+# 48 ticks, and he woke asleep and then waking (the card's marker is not a bench).
+HK_BENCH_WAKES = 1
+HK_GROUND_WAKES = 0
+HK_HIT_FX_BURSTS = 5
+HK_DEATH_HOLD_TICKS = 48

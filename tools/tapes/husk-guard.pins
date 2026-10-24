@@ -25,3 +25,11 @@ HK_REGION_ID = 541
 HK_CHEATS = 0
 HK_SAVE_LOADED = 1
 HK_SCENE_SFX_MISSED = 0
+# Every hit throws the dark slashes (hit_fx.rs) and each death bursts them again; the first death
+# wakes the Knight asleep and then waking (Sit Fall Asleep, Wake To Sit) after the fade out and the
+# 48 tick hold; the card's marker is not a bench, so he stands after it. The second death is one
+# tick into its hold when the tape ends.
+HK_HIT_FX_BURSTS = 8
+HK_BENCH_WAKES = 1
+HK_GROUND_WAKES = 0
+HK_DEATH_HOLD_TICKS = 49
