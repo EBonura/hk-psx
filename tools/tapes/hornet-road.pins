@@ -1,5 +1,7 @@
 card = hornet-road.mcd
-pacing = 2440
+pacing = 2453
+frame_time = 371
+long_frames = 2
 # Greenpath's road to Hornet's arena: Fungus1_22 from its upper shaft, up
 # through its top gate into Fungus1_21, left through its gate into
 # Fungus1_04, to the Cloak Corpse (region 1005). Ordinary controls, no

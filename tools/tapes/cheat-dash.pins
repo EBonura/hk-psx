@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 210
+long_frames = 2
 # Mothwing Cloak: the tape presses no direction at all, so the alternative
 # to a dash is X unchanged. The delta is dash_speed times dash_ticks exactly.
 HK_CHEATS = 16

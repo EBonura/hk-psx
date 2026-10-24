@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 210
+long_frames = 2
 # Crystal Heart: 48 polls of charge, then 23.3 units of travel with no
 # direction pressed, which is not an ordinary dash's 5.0.
 HK_CHEATS = 128

@@ -13,6 +13,7 @@ mod card_check;
 mod disc;
 mod earned_focus;
 mod intro;
+mod pacing;
 mod region_cache;
 mod routes;
 mod scene_gate;
@@ -1477,93 +1478,6 @@ fn ram_word(root: &Path, output: &Path, symbol: &str) -> Result<u32> {
     Ok(u32::from_le_bytes(bytes.try_into()?))
 }
 
-/// Frame pacing of one replay: gameplay frames (the run of vblanks between two
-/// display flips) over the 30 fps bar of two vblanks. Only gameplay ticks count:
-/// `HK_GAME_MODE` at its most common value and `HK_ROOM_LOAD_STATE` at its
-/// most common (resident) value, so the title screen, loads and gates stay
-/// out (the same rule as tools/frame-pacing). The first frame after the game
-/// re-enters those states is the view bind (render::init, the template and
-/// vignette rebuild and the first cold scenery pass, five or six vblanks of
-/// `hkperf ticks` samples spread over the last load row and the first frames):
-/// it is load work (so is the bind of a new view inside a scene, `HK_VIEW_BINDS`, which costs the same) whether the load flag happens to read ready a row before or
-/// after it, which moved by one row between builds with no relevant change and
-/// turned a 2-vblank bind into a 3-vblank gameplay frame on ten routes. It is
-/// counted apart. Returns (frames, over two vblanks, longest frame in vblanks,
-/// longest run of consecutive over frames, bind frames, longest bind frame).
-fn pacing(output: &Path) -> Result<(u64, u64, u64, u64, u64, u64)> {
-    let command: Value = serde_json::from_slice(&std::fs::read(output.join("command.json"))?)?;
-    let column = |name: &str| {
-        command["watches"][name]
-            .as_str()
-            .map(|a| format!("ram_{:0>8}", a.trim_start_matches("0x")))
-    };
-    let text = std::fs::read_to_string(output.join("route.csv"))?;
-    let mut lines = text.lines();
-    let header: Vec<&str> = lines
-        .next()
-        .ok_or("route.csv is empty")?
-        .split(',')
-        .collect();
-    let at = |name: &str| header.iter().position(|h| *h == name);
-    let flip = at("display_start_changed").ok_or("route.csv has no display_start_changed")?;
-    let (game, load) = (
-        column("HK_GAME_MODE").and_then(|c| at(&c)),
-        column("HK_ROOM_LOAD_STATE").and_then(|c| at(&c)),
-    );
-    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
-    let mode = |index: Option<usize>| -> Option<&str> {
-        let index = index?;
-        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for r in &rows {
-            *counts.entry(r[index]).or_default() += 1;
-        }
-        counts.into_iter().max_by_key(|&(_, n)| n).map(|(v, _)| v)
-    };
-    let binds = column("HK_VIEW_BINDS").and_then(|c| at(&c));
-    let (play, ready) = (mode(game), mode(load));
-    let gameplay = |r: &Vec<&str>| {
-        game.is_none_or(|g| Some(r[g]) == play) && load.is_none_or(|l| Some(r[l]) == ready)
-    };
-    let (mut frames, mut over, mut longest, mut streak, mut worst_streak, mut since) =
-        (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
-    let (mut bind, mut bind_longest, mut fresh, mut seen_binds) = (0u64, 0u64, true, None::<&str>);
-    for r in &rows {
-        if let Some(b) = binds {
-            // A bind inside a scene (the camera crossing into another view) is the same work without a load.
-            if seen_binds.is_some_and(|s| s != r[b]) && gameplay(r) {
-                fresh = true;
-            }
-            seen_binds = Some(r[b]);
-        }
-        if !gameplay(r) {
-            since = 0;
-            fresh = true;
-            continue;
-        }
-        since += 1;
-        if r[flip] == "1" {
-            if fresh {
-                bind += 1;
-                bind_longest = bind_longest.max(since);
-                fresh = false;
-            } else if since > 0 {
-                fresh = false;
-                frames += 1;
-                longest = longest.max(since);
-                if since > 2 {
-                    over += 1;
-                    streak += 1;
-                    worst_streak = worst_streak.max(streak);
-                } else {
-                    streak = 0;
-                }
-            }
-            since = 0;
-        }
-    }
-    Ok((frames, over, longest, worst_streak, bind, bind_longest))
-}
-
 const BASELINE_ROUTE_FRONTEND_SHA256: &str =
     "6fcd365e56011d071fde86ee5afb5086ed1a49a0c0e6a9cdc5af9d7e09e55e16";
 const BASELINE_DISC_SHA256: &str =
@@ -1817,19 +1731,21 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 }
             }
         }
-        // The 30 fps bar: no gameplay frame over two vblanks. A route may not
-        // exceed its ceiling (`pacing` in its pin file, zero when absent); the
-        // ceilings are the debt that remains and only ever go down. A closed-loop
-        // route whose tape drifted on this disc did not play the route that was
-        // measured, so its figure is not compared.
-        match pacing(&output) {
-            Ok((frames, over, longest, streak, bind, bind_longest)) => {
-                let ceiling = route.pacing;
+        // Frame pacing (host/hk-build/pacing.rs, docs/ROUTES.md "Frame pacing"): the mean frame
+        // time and the frames of four vblanks or more are the primary ceilings, the frames over
+        // two vblanks the secondary one. A closed-loop route whose tape drifted on this disc did
+        // not play the route that was measured, so its figures are not compared.
+        match pacing::measure(&output) {
+            Ok(measured) => {
                 if closed && !open_pins_hold {
-                    println!("{name}: pacing {over} of {frames} frames over 2 vblanks, not judged: the open-loop tape drifted on this disc (the closed-loop run judges the route)");
+                    println!("{name}: {}, not judged: the open-loop tape drifted on this disc (the closed-loop run judges the route)", measured.report(&route.pacing_pins()));
                 } else {
-                    println!("{name}: pacing {over} of {frames} frames over 2 vblanks (ceiling {ceiling}), longest {longest}, worst streak {streak}; view binds {bind}, longest {bind_longest}");
-                    if over > ceiling {
+                    println!("{name}: {}", measured.report(&route.pacing_pins()));
+                    let failures = measured.failures(&route.pacing_pins());
+                    for failure in &failures {
+                        println!("{name}: pacing over its ceiling: {failure}");
+                    }
+                    if !failures.is_empty() {
                         ok = false;
                     }
                 }
@@ -2087,7 +2003,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2102,6 +2018,7 @@ fn usage() -> ! {
          HK_PSX_GATE and HK_PSX_GATE_SHA256) against the current CUE\n\
          cuts      write NAME.cuts from the baseline replays in --work (default .hkpsx/validate), for every\n          \
          --tape NAME with two or more scene loads (HK_CUTS_MIN=1 lets a one-load route have a cut list, for a wait)\n\
+         pace-pins [RUN_DIR]  rewrite the pacing ceilings of the route pin files from a validate run (default .hkpsx/validate)\n\
          tape-hold NAME FIRST LAST BUTTON  hold BUTTON over polls FIRST..LAST of tools/tapes/NAME.pxtape\n\
          tape-stall NAME POLL TICKS  repeat sample POLL of tools/tapes/NAME.pxtape TICKS more times (a hard landing's lock)\n\
          card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
@@ -2170,6 +2087,16 @@ fn main() {
             Ok(())
         })();
         if let Err(error) = result {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "pace-pins" {
+        // pace-pins [RUN_DIR]: rewrite the pacing ceilings of every route pin file from a validate run
+        // (default .hkpsx/validate): the rule in pacing.rs, documented in docs/ROUTES.md.
+        let dir = args.next().map(PathBuf::from).unwrap_or_else(|| root().join(".hkpsx/validate"));
+        if let Err(error) = pacing::write_pins(&root(), &dir) {
             eprintln!("error: {error}");
             std::process::exit(1);
         }

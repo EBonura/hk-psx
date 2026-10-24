@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 210
+long_frames = 2
 # Monarch Wings against ctrl-wings, the same tape with the grant removed.
 # The Knight lands on the same floor either way, so the double jump shows
 # only in the clip count, which is why this route had no assertion at all

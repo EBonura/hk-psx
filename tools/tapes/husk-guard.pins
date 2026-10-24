@@ -1,4 +1,6 @@
 pacing = 132
+frame_time = 226
+long_frames = 2
 card = husk-guard.mcd
 art_late = 44
 # husk-guard: a seeded card 6.7 units left of Crossroads_48's Husk Guard (the

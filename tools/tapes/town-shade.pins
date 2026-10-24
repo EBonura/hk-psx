@@ -1,4 +1,6 @@
-pacing = 25
+pacing = 27
+frame_time = 124
+long_frames = 2
 card = town-shade.mcd
 # town-shade boots from a card whose record already carries a Hollow Shade six units
 # from the Dirtmouth bench with a 99-Geo pool. It must spawn, chase and hurt the

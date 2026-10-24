@@ -1,4 +1,6 @@
-pacing = 26
+pacing = 147
+frame_time = 314
+long_frames = 2
 card = grub-jar.mcd
 # grub-jar boots from a seeded card (tools/seed_card.py) on the Crossroads_05
 # ledge beside its grub jar, facing it, and swings: the first swing breaks

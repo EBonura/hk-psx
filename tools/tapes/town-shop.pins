@@ -1,4 +1,6 @@
 pacing = 2
+frame_time = 210
+long_frames = 2
 card = town-shop.mcd
 # Sly's shop is shut on a fresh save, as in the source: Dirtmouth's
 # `Check Opened` turns `Sly_shop/open` off until `slyRescued`, and door_sly

@@ -1,4 +1,6 @@
-pacing = 10
+pacing = 13
+frame_time = 214
+long_frames = 2
 card = door-jiji.mcd
 # door-jiji is a door whose room is not on the disc: a seeded card by
 # Dirtmouth's door_jiji, walk right, UP opens the source's locked-door line

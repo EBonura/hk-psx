@@ -1,2 +1,5 @@
+pacing = 2
+frame_time = 210
+long_frames = 2
 HK_CHEATS = 0
 HK_ABILITY_DRAWN = 0

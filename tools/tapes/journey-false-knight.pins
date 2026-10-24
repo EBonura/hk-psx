@@ -1,5 +1,7 @@
 # Canonical 0d32a16e on pinned 0868022 completed the same boss death,
 # save, and return with 1186 slow frames; the ceiling is 130% rounded up.
+# The open-loop tape of this route drifts on emulator 0e87b3a (chained cards), so its frames are never judged and it
+# has no frame_time or long_frames (tests in host/hk-build/routes.rs); the closed loop judges the route.
 pacing = 1542
 missed_vblanks = 8
 journey = 3

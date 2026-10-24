@@ -1,4 +1,6 @@
-pacing = 1298
+pacing = 1304
+frame_time = 278
+long_frames = 26
 missed_vblanks = 16
 card = gruz-fight.mcd
 # gruz-fight boots from a seeded card (tools/seed_card.py from secret-c04.mcd)

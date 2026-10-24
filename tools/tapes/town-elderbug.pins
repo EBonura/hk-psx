@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 206
+long_frames = 2
 card = town-continue.mcd
 # town-elderbug resumes in Town, walks into Elderbug's npc_control talk trigger and
 # holds a whole conversation: UP opens it, six presses of X page through all six

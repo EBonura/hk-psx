@@ -1,4 +1,6 @@
-pacing = 687
+pacing = 686
+frame_time = 266
+long_frames = 2
 card = mound-spell.mcd
 # Vengeful Spirit earned in play. mound-spell boots from
 # tools/cards/mound-spell.mcd (the same record seeded in the Ancestral Mound

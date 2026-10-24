@@ -10,6 +10,8 @@
 //! card = town-continue.mcd     boots from tools/cards/town-continue.mcd (absent: a formatted card)
 //! scene_gate = true            also run the resident-scene verifier on the open-loop replay
 //! journey = 2                  segment 2 of the save journey: boots from the card segment 1 wrote
+//! frame_time = 289             mean frame time in hundredths of a vblank over the judged frames
+//! long_frames = 3              frames of four or more vblanks the route may still show
 //! pacing = 303                 late frames (over two vblanks) the route may still show
 //! art_late = 44                frames the route may still show late art for
 //! missed_vblanks = 12          pad polls the route may still miss (read by tools/replay_cue.py)
@@ -43,13 +45,26 @@ pub struct Route {
     pub card: Option<String>,
     pub scene_gate: bool,
     pub journey: Option<u32>,
+    /// Secondary ceiling: gameplay frames over two vblanks. Zero when absent.
     pub pacing: u64,
+    /// Mean frame time over the judged frames, in hundredths of a vblank (289 = 2.89 vblanks).
+    /// The figure that still moves when most frames are late. `None`: not checked.
+    pub frame_time: Option<u64>,
+    /// Gameplay frames of four or more vblanks (the tail). `None`: not checked.
+    pub long_frames: Option<u64>,
     pub art_late: u64,
     /// Pad polls the route may miss; the replay itself judges it (tools/replay_cue.py).
     pub missed_vblanks: u64,
     pub pins: Vec<Pin>,
     /// Scene loads found in the baseline replay; empty when the route has no cut list.
     pub cuts: Option<Cuts>,
+}
+
+impl Route {
+    /// The ceilings the route's pin file holds its frame pacing to (host/hk-build/pacing.rs).
+    pub fn pacing_pins(&self) -> super::pacing::PacingPins {
+        super::pacing::PacingPins { pacing: self.pacing, frame_time: self.frame_time, long_frames: self.long_frames }
+    }
 }
 
 pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
@@ -77,6 +92,8 @@ pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
                 "scene_gate" => route.scene_gate = value == "true",
                 "journey" => route.journey = Some(number(value)? as u32),
                 "pacing" => route.pacing = number(value)?,
+                "frame_time" => route.frame_time = Some(number(value)?),
+                "long_frames" => route.long_frames = Some(number(value)?),
                 "art_late" => route.art_late = number(value)?,
                 "missed_vblanks" => route.missed_vblanks = number(value)?,
                 k if k.starts_with("HK_") || k.starts_with("__") => route.pins.push(Pin {
@@ -706,16 +723,35 @@ mod tests {
         assert_eq!(journey, ["journey-kings", "journey-crossroads", "journey-false-knight", "journey-reload"]);
     }
 
+    /// The journey routes whose open-loop tape never reaches the pins (the chained cards make it
+    /// drift on emulator 0e87b3a): their closed loop judges them, nothing measures their frames.
+    const OPEN_LOOP_NEVER_JUDGED: [&str; 2] = ["journey-false-knight", "journey-reload"];
+
+    #[test]
+    fn every_judged_route_pins_its_frame_time_and_its_tail() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for r in load(&root).unwrap() {
+            if OPEN_LOOP_NEVER_JUDGED.contains(&r.name.as_str()) {
+                assert!(r.frame_time.is_none() && r.long_frames.is_none(), "{} is not measured", r.name);
+                continue;
+            }
+            let ft = r.frame_time.unwrap_or_else(|| panic!("{}.pins has no frame_time", r.name));
+            assert!((100..=1000).contains(&ft), "{}.pins frame_time {ft}", r.name);
+            assert!(r.long_frames.is_some(), "{}.pins has no long_frames", r.name);
+        }
+    }
+
     #[test]
     fn pin_files_parse() {
         let r = parse_pins(
             "x",
-            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nart_late = 3\nmissed_vblanks = 7\nHK_A = 7\nHK_B >= 2\n",
+            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nframe_time = 231\nlong_frames = 1\nart_late = 3\nmissed_vblanks = 7\nHK_A = 7\nHK_B >= 2\n",
         )
         .unwrap();
         assert_eq!(r.card.as_deref(), Some("a.mcd"));
         assert!(r.scene_gate);
         assert_eq!((r.journey, r.pacing, r.art_late, r.missed_vblanks), (Some(2), 5, 3, 7));
+        assert_eq!((r.frame_time, r.long_frames), (Some(231), Some(1)));
         assert_eq!(r.pins.len(), 2);
         assert!(!r.pins[0].at_least && r.pins[0].value == 7);
         assert!(r.pins[1].at_least && r.pins[1].value == 2);

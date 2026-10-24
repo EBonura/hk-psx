@@ -1,4 +1,6 @@
-pacing = 2
+pacing = 5
+frame_time = 193
+long_frames = 2
 card = town-continue.mcd
 scene_gate = true
 # town-reset2 resumes, walks, then the Cheats page's Reset session row (Start, Up Up, X, Up Up, X, X) resets the session back to the spawn.

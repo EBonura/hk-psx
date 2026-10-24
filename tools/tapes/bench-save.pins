@@ -1,4 +1,6 @@
-pacing = 2
+pacing = 4
+frame_time = 220
+long_frames = 4
 card = town-continue.mcd
 # bench-save resumes at the Dirtmouth bench, sits, and accepts the prompt. It is the
 # only way this port writes the card, and what the power-cut check interrupts.

@@ -1,4 +1,6 @@
-pacing = 307
+pacing = 318
+frame_time = 223
+long_frames = 4
 missed_vblanks = 8
 card = boss-fight.mcd
 # The False Knight, fought fairly and killed. No cheats, five masks at the

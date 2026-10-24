@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 210
+long_frames = 2
 # The ability routes. Every one boots fresh and grants its ability from the
 # pause Cheats page, because no admitted scene holds an ability pickup, and
 # every one presses exactly one ability button. HK_ABILITY_DRAWN counts

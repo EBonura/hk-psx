@@ -1,4 +1,6 @@
-pacing = 420
+pacing = 336
+frame_time = 303
+long_frames = 2
 card = cornifer-map.mcd
 # The map and its mapper. cornifer-map boots from tools/cards/cornifer-map.mcd,
 # town-continue's record seeded in Crossroads_33 beside Cornifer with 100 Geo

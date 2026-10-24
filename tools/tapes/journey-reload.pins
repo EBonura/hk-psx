@@ -1,5 +1,7 @@
 # Canonical reload of that completed save on the same emulator has 662
 # slow frames; matched region transitions differ by at most two polls.
+# The open-loop tape of this route drifts on emulator 0e87b3a (chained cards), so its frames are never judged and it
+# has no frame_time or long_frames (tests in host/hk-build/routes.rs); the closed loop judges the route.
 pacing = 861
 journey = 4
 scene_gate = true

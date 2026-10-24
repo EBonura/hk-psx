@@ -1,4 +1,6 @@
-pacing = 2
+pacing = 4
+frame_time = 196
+long_frames = 4
 missed_vblanks = 7
 card = boss-fight.mcd
 art_late = 44

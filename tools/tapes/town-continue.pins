@@ -1,3 +1,6 @@
+pacing = 2
+frame_time = 206
+long_frames = 2
 card = town-continue.mcd
 # Continue boots from tools/cards/town-continue.mcd (a town-bench run's card): the save
 # screen's first slot resumes in the Town view with that record's wallet and opened Great Door. A catalogue change

@@ -1,4 +1,6 @@
-pacing = 968
+pacing = 875
+frame_time = 353
+long_frames = 4
 missed_vblanks = 2
 card = greenpath.mcd
 scene_gate = true

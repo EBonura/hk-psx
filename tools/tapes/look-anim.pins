@@ -1,4 +1,6 @@
 pacing = 10
+frame_time = 214
+long_frames = 2
 card = town-continue.mcd
 # look-anim: from the Dirtmouth bench of the town-continue card walk right a few steps (past the
 # bench's reach), hold UP for 100 polls, then DOWN for 100. HeroAnimationController plays LookUp
