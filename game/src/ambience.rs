@@ -231,7 +231,7 @@ fn silence() {
 /// Startup/retry only: silence before replacing any resident bytes.
 pub fn begin_load() {
     silence();
-    Voice::key_off(state::VOICE_MASK);
+    Voice::release(state::VOICE_MASK);
     unsafe {
         MIXER = state::Mixer::new();
         HK_AMBIENCE_START_COUNT = 0;
@@ -352,7 +352,7 @@ fn cut(stems: u8) {
             keyed |= voice.mask();
         }
     }
-    Voice::key_off(keyed);
+    Voice::release(keyed);
     unsafe {
         MIXER.release(audible);
         HK_AMBIENCE_CUTS = HK_AMBIENCE_CUTS.saturating_add(audible.count_ones());
@@ -415,7 +415,7 @@ pub fn set_scene(scene: u8) -> bool {
         keyed |= voice.mask();
     }
     if start != 0 {
-        Voice::key_on(keyed);
+        Voice::start(keyed);
         // The loop point and the gain only after key-on: key-on latches the
         // repeat address from the ADPCM loop flag, and a stem that is audible
         // for the register write between the two is audible at silence.
@@ -472,7 +472,7 @@ pub fn tick() {
                 keyed |= Voice::new(unsafe { MIXER.voice(i) }).mask();
             }
         }
-        Voice::key_off(keyed);
+        Voice::release(keyed);
         // Only now that the SPU has been told, so no cue this frame can hand a
         // pooled voice to another stem while the old one is still keying off.
         unsafe {

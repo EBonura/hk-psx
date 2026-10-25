@@ -7,7 +7,7 @@ use psx_gpu::{
     material::{BlendMode, TextureMaterial},
 };
 use psx_pad::button;
-use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
+use psx_vram::{upload_bytes, Clut, TextureDepth, TexturePage, VramRect};
 
 #[path = "menu_state.rs"]
 pub mod state;
@@ -105,9 +105,9 @@ fn draw(gain: u8) {
     if !unsafe { ART } {
         return;
     }
-    let clut = Clut::new(768, 480).uv_clut_word();
+    let clut = Clut::new(768, 480).uv_word();
     for (screen_x, vram_x, width) in [(0, 384, 256), (256, 512, 64)] {
-        let page = Tpage::new(vram_x, 0, TexDepth::Bit8).uv_tpage_word(0);
+        let page = TexturePage::new(vram_x, 0, TextureDepth::Bit8).uv_word(0);
         gpu::draw_sprite_material(
             screen_x,
             0,
@@ -143,8 +143,8 @@ fn text(x: i16, y: i16, value: &str, gain: u8) {
                 ),
                 // Adding: the glyph palette's entries are semi-transparent (font_strip.rs).
                 TextureMaterial::blended(
-                    Clut::new(320, 481).uv_clut_word(),
-                    Tpage::new(state::FONT_X, state::FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0),
+                    Clut::new(320, 481).uv_word(),
+                    TexturePage::new(state::FONT_X, state::FONT_PAGE_Y, TextureDepth::Bit4).uv_word(0),
                     (gain, gain, gain),
                     BlendMode::Add,
                 ),
@@ -190,8 +190,8 @@ fn caps(x: i16, y: i16, value: &str, gain: u8) {
                 (state::FONT_V0 + state::CAPS_V0 + row * state::CAPS_H) as u8,
             ),
             TextureMaterial::blended(
-                Clut::new(320, 481).uv_clut_word(),
-                Tpage::new(state::FONT_X, state::FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0),
+                Clut::new(320, 481).uv_word(),
+                TexturePage::new(state::FONT_X, state::FONT_PAGE_Y, TextureDepth::Bit4).uv_word(0),
                 (gain, gain, gain),
                 BlendMode::Add,
             ),
@@ -214,8 +214,8 @@ fn ornament(x: i16, y: i16, size: (u8, u8), uv: (u8, u16), gain: u8) {
         size.1 as u16,
         (uv.0, uv.1 as u8),
         TextureMaterial::opaque(
-            Clut::new(320, 481).uv_clut_word(),
-            Tpage::new(ORN_X, 0, TexDepth::Bit4).uv_tpage_word(0),
+            Clut::new(320, 481).uv_word(),
+            TexturePage::new(ORN_X, 0, TextureDepth::Bit4).uv_word(0),
             (gain, gain, gain),
         ),
     );
@@ -238,8 +238,8 @@ fn logo(gain: u8) {
             [(x, y), (x + w, y), (x, y + h), (x + w, y + h)],
             [(0, 0), (w as u8 - 1, 0), (0, h as u8 - 1), (w as u8 - 1, h as u8 - 1)],
             TextureMaterial::blended(
-                Clut::new(320, 481).uv_clut_word(),
-                Tpage::new(page_x, 0, TexDepth::Bit4).uv_tpage_word(0),
+                Clut::new(320, 481).uv_word(),
+                TexturePage::new(page_x, 0, TextureDepth::Bit4).uv_word(0),
                 (gain, gain, gain),
                 BlendMode::Add,
             ),
@@ -327,11 +327,11 @@ enum Meet {
 #[cfg_attr(not(test), optimize(size))]
 fn piece(corners: [(i16, i16); 4], (u, v, w, h): (i32, i32, i32, i32), page: i32, meet: Meet, tint: (u8, u8, u8)) {
     let eight = page == 2;
-    let tpage = Tpage::new(768 + 64 * page as u16, 0, if eight { TexDepth::Bit8 } else { TexDepth::Bit4 }).uv_tpage_word(0);
+    let tpage = TexturePage::new(768 + 64 * page as u16, 0, if eight { TextureDepth::Bit8 } else { TextureDepth::Bit4 }).uv_word(0);
     let material = match meet {
-        Meet::Opaque => TextureMaterial::opaque(Clut::new(768, 479).uv_clut_word(), tpage, tint),
-        Meet::Take => TextureMaterial::blended(Clut::new(320, 481).uv_clut_word(), tpage, tint, BlendMode::Subtract),
-        Meet::Add => TextureMaterial::blended(Clut::new(320, 481).uv_clut_word(), tpage, tint, BlendMode::Add),
+        Meet::Opaque => TextureMaterial::opaque(Clut::new(768, 479).uv_word(), tpage, tint),
+        Meet::Take => TextureMaterial::blended(Clut::new(320, 481).uv_word(), tpage, tint, BlendMode::Subtract),
+        Meet::Add => TextureMaterial::blended(Clut::new(320, 481).uv_word(), tpage, tint, BlendMode::Add),
     };
     let (u1, v1) = ((u + w - 1) as u8, (v + h - 1) as u8);
     gpu::draw_quad_textured_material(corners, [(u as u8, v as u8), (u1, v as u8), (u as u8, v1), (u1, v1)], material);
@@ -598,9 +598,9 @@ fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
     // psx-rt apply the flip, once the GPU has drawn everything before it.
     gpu::arm_draw_done();
     gpu::signal_draw_done();
-    psx_rt::interrupts::queue_gp1_at_vblank(fb.begin_deferred_swap());
+    psx_rt::interrupts::queue_display_control_at_vblank(fb.begin_deferred_swap());
     let mut waited = 0u32;
-    while psx_rt::interrupts::gp1_queue_pending() {
+    while psx_rt::interrupts::is_display_control_queued() {
         psx_rt::interrupts::wait_vblank();
         // Process each real sample in order, even if a frame spans several blanks.
         sample(poll_bits());
@@ -782,8 +782,8 @@ fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {
         32,
         (64, patch * 32),
         TextureMaterial::opaque(
-            Clut::new(768, 480).uv_clut_word(),
-            Tpage::new(512, 0, TexDepth::Bit8).uv_tpage_word(0),
+            Clut::new(768, 480).uv_word(),
+            TexturePage::new(512, 0, TextureDepth::Bit8).uv_word(0),
             (128, 128, 128),
         ),
     );

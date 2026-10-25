@@ -21,7 +21,7 @@
 //! where the original does and never darkens the middle of a large
 //! background quad that reaches the Knight. Actors keep full brightness.
 #[cfg(feature = "hero-light")]
-use psx_vram::{Clut, TexDepth, Tpage, VramRect};
+use psx_vram::{Clut, TextureDepth, TexturePage, VramRect};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/scene_grading.rs"
@@ -164,8 +164,8 @@ pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
         .rgb
         .map(|c| (c as u32 * 128 / 248 * GLOW_PERCENT / 100).min(255));
     let colour = tint[0] | tint[1] << 8 | tint[2] << 16;
-    let clut = Clut::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1).uv_clut_word() as u32;
-    let tpage = Tpage::new(320, 256, TexDepth::Bit4).uv_tpage_word(1) as u32;
+    let clut = Clut::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1).uv_word() as u32;
+    let tpage = TexturePage::new(320, 256, TextureDepth::Bit4).uv_word(1) as u32;
     let vertex = |p: (i32, i32)| {
         ((p.1.clamp(-1023, 1023) as u32 & 0xffff) << 16) | (p.0.clamp(-1023, 1023) as u32 & 0xffff)
     };

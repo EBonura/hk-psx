@@ -342,7 +342,7 @@ mod live {
         material::{BlendMode, TextureMaterial},
         prim::{QuadGouraudBlended, QuadTextured},
     };
-    use psx_vram::{Clut, TexDepth, Tpage};
+    use psx_vram::{Clut, TextureDepth, TexturePage};
     struct Store;
     impl Player for Store {
         fn get(&self, bit: u32) -> bool {
@@ -440,7 +440,7 @@ mod live {
         if !crate::game_map::ready() {
             return 0;
         }
-        let tpage = Tpage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TexDepth::Bit4).uv_tpage_word(0);
+        let tpage = TexturePage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TextureDepth::Bit4).uv_word(0);
         for (index, at) in visible(scene, age).into_iter().flatten() {
             let f = &SHAMAN_FRAMES[index];
             let (u, v) = (f.u as u8, f.v as u8);
@@ -462,7 +462,7 @@ mod live {
             }
             let right = (f.u + f.w - 1) as u8;
             let bottom = (f.v + f.h - 1) as u8;
-            let clut = Clut::new(MAP_CLUT_XY[f.clut].0, MAP_CLUT_XY[f.clut].1).uv_clut_word();
+            let clut = Clut::new(MAP_CLUT_XY[f.clut].0, MAP_CLUT_XY[f.clut].1).uv_word();
             let template = QuadTextured::with_material(
                 [(0, 0); 4],
                 [(u, v), (right, v), (u, bottom), (right, bottom)],

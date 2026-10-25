@@ -5,7 +5,7 @@ use psx_gpu::{
     ot::OrderingTable,
     prim::{RectFlat, Sprite},
 };
-use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
+use psx_vram::{upload_bytes, Clut, TextureDepth, TexturePage, VramRect};
 #[path = "hud_state.rs"]
 mod hud_state;
 pub use hud_state::{geo_y, mask_position};
@@ -51,8 +51,8 @@ static mut PAUSE: [RectFlat; 2] = [const { RectFlat::new(0, 0, 0, 0, 220, 220, 2
 fn sprite(icon: usize, x: i16, y: i16, cut: u16, gain: u8) -> Sprite {
     let p = 8 + icon * 8;
     let material = TextureMaterial::opaque(
-        Clut::new(352, CLUT_Y[icon]).uv_clut_word(),
-        Tpage::new(320, 0, TexDepth::Bit4).uv_tpage_word(0),
+        Clut::new(352, CLUT_Y[icon]).uv_word(),
+        TexturePage::new(320, 0, TextureDepth::Bit4).uv_word(0),
         (gain, gain, gain),
     );
     Sprite::with_material(
@@ -128,7 +128,7 @@ pub fn append(
         crate::display::ot_add(ot, 0, &mut ORB[0], Sprite::WORDS);
         MODE.word = TextureMaterial::opaque(
             0,
-            Tpage::new(320, 0, TexDepth::Bit4).uv_tpage_word(0),
+            TexturePage::new(320, 0, TextureDepth::Bit4).uv_word(0),
             (128, 128, 128),
         )
         .draw_mode_word();

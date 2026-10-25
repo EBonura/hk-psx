@@ -460,7 +460,7 @@ mod presentation {
             }
             let right = (u16::from(u) + frame.width - 1) as u8;
             let bottom = (u16::from(v) + frame.height - 1) as u8;
-            let clut = Clut::new(CLUT_RECT.0, CLUT_RECT.1 + frame.clut as u16).uv_clut_word();
+            let clut = Clut::new(CLUT_RECT.0, CLUT_RECT.1 + frame.clut as u16).uv_word();
             let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
             let template = QuadTextured::with_material(
                 [(0, 0); 4],

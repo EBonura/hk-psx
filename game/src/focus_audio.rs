@@ -139,14 +139,14 @@ pub fn tick(focus: &hk_sim::Focus, events: hk_sim::FocusEvents) {
     };
     let e = unsafe { STATE.step(phase, events.started, events.completed, FADE_TICKS) };
     if e.stop {
-        Voice::key_off(1 << CHARGE);
+        Voice::release(1 << CHARGE);
     }
     if e.volume_changed || e.start {
         charge_volume(e.gain);
     }
     if e.start {
-        Voice::key_off(1 << CHARGE);
-        Voice::key_on(1 << CHARGE);
+        Voice::release(1 << CHARGE);
+        Voice::start(1 << CHARGE);
         Voice::new(CHARGE).set_loop_addr(SpuAddr::new(SPU_BASE));
         unsafe {
             HK_FOCUS_CHARGE_STARTS = HK_FOCUS_CHARGE_STARTS.saturating_add(1);
@@ -158,8 +158,8 @@ pub fn tick(focus: &hk_sim::Focus, events: hk_sim::FocusEvents) {
             NEXT_HEAL = (NEXT_HEAL + 1) % HEALS.len();
             v
         };
-        Voice::key_off(1 << voice);
-        Voice::key_on(1 << voice);
+        Voice::release(1 << voice);
+        Voice::start(1 << voice);
         unsafe {
             HK_FOCUS_HEAL_SOUNDS = HK_FOCUS_HEAL_SOUNDS.saturating_add(1);
         }
@@ -172,6 +172,6 @@ pub fn interrupt() {
     }
     if ready() {
         charge_volume(0);
-        Voice::key_off(1 << CHARGE);
+        Voice::release(1 << CHARGE);
     }
 }

@@ -86,7 +86,7 @@ fn choice(count: u32) -> usize {
 }
 fn play(voice: u8, sample: (u32, u32, i16)) {
     assert!(unsafe { HK_GEO_AUDIO_READY != 0 });
-    Voice::key_off(1 << voice);
+    Voice::release(1 << voice);
     // The pinned SDK's fast-release one-shot points END to reserved silence.
     // sample() would have indefinite release; this retains the full source clip.
     Voice::new(voice).configure_sample(
@@ -95,7 +95,7 @@ fn play(voice: u8, sample: (u32, u32, i16)) {
         Volume(volume::scale(sample.2, unsafe { LEVEL })),
         Adsr::sample_one_shot(),
     );
-    Voice::key_on(1 << voice);
+    Voice::start(1 << voice);
 }
 /// Value of this picked-up coin (1, 5 or 25), not a summed batch value.
 pub fn pickup(value: u32) {

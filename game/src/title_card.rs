@@ -11,7 +11,7 @@
 //! The text uses the dialogue font the disc already has for the small lines; the main line is
 //! the card strip's glyphs (font_strip.rs `cook_cards`): Perpetua rasterised at 40 px, grid
 //! fitted, in bands that sit in VRAM rows 500..511 and are drawn 1:1 as rectangles.
-use psx_vram::{Clut, TexDepth, Tpage};
+use psx_vram::{Clut, TextureDepth, TexturePage};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/title_cards.rs"
@@ -224,9 +224,9 @@ fn line(text: &str, y: i16, level: u8, centre: i16) {
         if b != b' ' {
             let u = crate::dialogue::glyph_u(i) as u8;
             let v = crate::dialogue::glyph_v(i) as u8;
-            let clut = Clut::new(320, 481).uv_clut_word();
+            let clut = Clut::new(320, 481).uv_word();
             // Added to the view: the glyph palette is semi-transparent (font_strip.rs).
-            let tpage = Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1);
+            let tpage = TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1);
             rect(
                 x,
                 y,
@@ -253,7 +253,7 @@ fn big_line(text: &str, y: i16, level: u8, centre: i16) {
         .map(|b| card_glyph(b).map_or(CARD_SPACE, |i| CARD_ADVANCES[i] as i16))
         .sum();
     let mut x = start_x(width, centre);
-    let clut = Clut::new(320, 481).uv_clut_word();
+    let clut = Clut::new(320, 481).uv_word();
     for b in text.bytes() {
         let Some(i) = card_glyph(b) else {
             x += CARD_SPACE;
@@ -261,7 +261,7 @@ fn big_line(text: &str, y: i16, level: u8, centre: i16) {
         };
         for band in &CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize] {
             let (page, u) = (band.x / 256, band.x % 256);
-            let tpage = Tpage::new(page * 64, CARD_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1);
+            let tpage = TexturePage::new(page * 64, CARD_PAGE_Y, TextureDepth::Bit4).uv_word(1);
             rect(
                 x + i16::from(band.dx),
                 y + i16::from(band.dy),

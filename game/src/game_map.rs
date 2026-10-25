@@ -26,7 +26,7 @@
 //! `scenesVisited` / `scenesMapped` as one `MapScene` item per scene.
 use crate::persist;
 use psx_gpu::{material::BlendMode, ot::OrderingTable, prim::QuadGouraudBlended};
-use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
+use psx_vram::{upload_bytes, Clut, TextureDepth, TexturePage, VramRect};
 
 pub struct MapTex {
     pub u: u16,
@@ -272,12 +272,12 @@ fn sprite(x: i16, y: i16, t: &MapTex, clut: usize) {
         let p = &mut SPRITES[USED];
         USED += 1;
         p.mode = 0xe100_0000
-            | Tpage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TexDepth::Bit4).uv_tpage_word(0) as u32;
+            | TexturePage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TextureDepth::Bit4).uv_word(0) as u32;
         p.color = 0x6480_8080;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         p.uv = t.u as u32
             | ((t.v as u32) << 8)
-            | ((Clut::new(MAP_CLUT_XY[clut].0, MAP_CLUT_XY[clut].1).uv_clut_word() as u32) << 16);
+            | ((Clut::new(MAP_CLUT_XY[clut].0, MAP_CLUT_XY[clut].1).uv_word() as u32) << 16);
         p.wh = t.w as u32 | ((t.h as u32) << 16);
     }
 }

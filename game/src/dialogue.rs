@@ -8,7 +8,7 @@ use crate::menu::state::{
     CAPS_ADVANCES, CAPS_CHARS, CAPS_H, CAPS_PER_ROW, CAPS_V0, CAPS_W, COIN_CELL, FONT_X,
     FONT_PAGE_Y, FONT_V0, GLYPH_H, GLYPH_PER_ROW, GLYPH_ROW_PITCH, GLYPH_U0, GLYPH_W,
 };
-use psx_vram::{upload_bytes, Clut, TexDepth, Tpage, VramRect};
+use psx_vram::{upload_bytes, Clut, TextureDepth, TexturePage, VramRect};
 #[path = "npc_state.rs"]
 mod npc_state;
 #[path = "read_state.rs"]
@@ -335,12 +335,12 @@ fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
                 let p = &mut GLYPHS[USED];
                 USED += 1;
                 p.mode = 0xe100_0000
-                    | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1) as u32;
+                    | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32;
                 p.color = color;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
                 p.uv = glyph_u(i) as u32
                     | ((glyph_v(i) as u32) << 8)
-                    | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
+                    | ((Clut::new(320, 481).uv_word() as u32) << 16);
                 p.wh = GLYPH_W as u32 | ((GLYPH_H as u32) << 16);
             }
         }
@@ -361,13 +361,13 @@ fn coin(x: i16, y: i16) {
         assert!(USED < CAP);
         let p = &mut GLYPHS[USED];
         USED += 1;
-        p.mode = 0xe100_0000 | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(0) as u32;
+        p.mode = 0xe100_0000 | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(0) as u32;
         p.color = 0x6400_0000 | u32::from(faded(0x80)) * 0x0001_0101;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         let (col, row) = (COIN_CELL % CAPS_PER_ROW, COIN_CELL / CAPS_PER_ROW);
         p.uv = (GLYPH_U0 + col * CAPS_W) as u32
             | (((FONT_V0 + CAPS_V0 + row * CAPS_H) as u32) << 8)
-            | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
+            | ((Clut::new(320, 481).uv_word() as u32) << 16);
         p.wh = 12 | (12 << 16);
     }
 }
@@ -396,13 +396,13 @@ pub(crate) fn caps_text(x: i16, y: i16, value: &str, gain: u8) {
             assert!(USED < CAP);
             let p = &mut GLYPHS[USED];
             USED += 1;
-            p.mode = 0xe100_0000 | Tpage::new(FONT_X, FONT_PAGE_Y, TexDepth::Bit4).uv_tpage_word(1) as u32;
+            p.mode = 0xe100_0000 | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32;
             p.color = color;
             p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
             let (col, row) = (i % CAPS_PER_ROW, i / CAPS_PER_ROW);
             p.uv = (GLYPH_U0 + col * CAPS_W) as u32
                 | (((FONT_V0 + CAPS_V0 + row * CAPS_H) as u32) << 8)
-                | ((Clut::new(320, 481).uv_clut_word() as u32) << 16);
+                | ((Clut::new(320, 481).uv_word() as u32) << 16);
             p.wh = CAPS_W as u32 | ((CAPS_H as u32) << 16);
         }
         x += CAPS_ADVANCES[i] as i16;
@@ -742,7 +742,7 @@ fn ornament_color(
     add: bool,
     reveal: u8,
 ) {
-    let clut = Clut::new(320, 481).uv_clut_word() as u32;
+    let clut = Clut::new(320, 481).uv_word() as u32;
     // Fading in or out, a piece is added to the view (the palette is semi-transparent) so that it
     // fades to nothing rather than to black.
     let add = add || unsafe { FADE } < 128;

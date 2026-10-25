@@ -280,7 +280,7 @@ mod hardware {
     }
     fn disable_irq() {
         psx_spu::enable_irq(false);
-        psx_io::irq::ack(IRQ_MASK);
+        psx_io::irq::acknowledge(IRQ_MASK);
     }
     fn arm(address: u32) {
         psx_spu::set_irq_address(SpuAddr::new(address));
@@ -339,7 +339,7 @@ mod hardware {
         voice.set_start_addr(SpuAddr::new(base));
         voice.set_loop_addr(SpuAddr::new(base));
         voice.set_pitch(Pitch::raw(PITCH));
-        Voice::key_on(1 << VOICE);
+        Voice::start(1 << VOICE);
         // Even a keyed-off voice fetches blocks, and KON takes effect at an
         // SPU sample boundary. Service waits two VBlank transitions before
         // arming B, well before playback can reach B.
@@ -354,7 +354,7 @@ mod hardware {
     pub fn stop() {
         disable_irq();
         Voice::new(VOICE).set_pitch(Pitch::raw(0));
-        Voice::key_off(1 << VOICE);
+        Voice::release(1 << VOICE);
         unsafe {
             (*(&raw mut STATE)).stop();
             ARMED = false;
@@ -381,7 +381,7 @@ mod hardware {
                     return fault();
                 }
             }
-            let irq = ARMED && psx_spu::irq_pending();
+            let irq = ARMED && psx_spu::is_irq_pending();
             let action = (*(&raw mut STATE)).poll(now, irq);
             HK_AUDIO_STREAM_MAX_SERVICE_GAP = (*(&raw const STATE)).max_gap;
             if action == Poll::Idle

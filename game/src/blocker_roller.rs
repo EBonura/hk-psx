@@ -246,7 +246,7 @@ pub fn draw(camera: (i32, i32)) -> u32 {
         material::{BlendMode, TextureMaterial},
         prim::QuadTextured,
     };
-    use psx_vram::{Clut, TexDepth, Tpage};
+    use psx_vram::{Clut, TextureDepth, TexturePage};
     if !crate::game_map::ready() {
         return 0;
     }
@@ -274,8 +274,8 @@ pub fn draw(camera: (i32, i32)) -> u32 {
     }
     let (u, v) = (f.u as u8, f.v as u8);
     let (right, bottom) = ((f.u + f.w - 1) as u8, (f.v + f.h - 1) as u8);
-    let clut = Clut::new(MAP_CLUT_XY[f.clut].0, MAP_CLUT_XY[f.clut].1).uv_clut_word();
-    let tpage = Tpage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TexDepth::Bit4).uv_tpage_word(0);
+    let clut = Clut::new(MAP_CLUT_XY[f.clut].0, MAP_CLUT_XY[f.clut].1).uv_word();
+    let tpage = TexturePage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TextureDepth::Bit4).uv_word(0);
     let template = QuadTextured::with_material(
         [(0, 0); 4],
         [(u, v), (right, v), (u, bottom), (right, bottom)],

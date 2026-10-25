@@ -101,7 +101,7 @@ fn service() {
                 HK_FRAME_VBLANKS = now.wrapping_sub(QUEUED_AT);
                 QUEUED_AT = now;
             }
-            psx_rt::interrupts::queue_gp1_at_vblank(display);
+            psx_rt::interrupts::queue_display_control_at_vblank(display);
             unsafe {
                 crate::render::HK_FRAME_FLIP_LINES = crate::render::frame_lines();
             }
@@ -111,7 +111,7 @@ fn service() {
 #[cfg(not(test))]
 pub fn finish() {
     unsafe {
-        STATE.finish(psx_rt::interrupts::gp1_queue_pending());
+        STATE.finish(psx_rt::interrupts::is_display_control_queued());
     }
 }
 /// VBlanks a queued flip may wait for its GP0(1Fh) before it is written by
@@ -133,7 +133,7 @@ pub static mut HK_FRAME_VBLANKS: u32 = 0;
 #[cfg(not(test))]
 pub fn flip_overdue() -> bool {
     queued()
-        && psx_rt::interrupts::gp1_queue_pending()
+        && psx_rt::interrupts::is_display_control_queued()
         && psx_rt::interrupts::vblank_count().wrapping_sub(unsafe { QUEUED_AT })
             >= FLIP_TIMEOUT_VBLANKS
 }
@@ -141,9 +141,9 @@ pub fn flip_overdue() -> bool {
 /// VBlank handler is harmless: it writes the same idempotent GP1 word.
 #[cfg(not(test))]
 pub fn force_flip() {
-    let word = psx_rt::interrupts::take_pending_gp1();
+    let word = psx_rt::interrupts::take_queued_display_control();
     if word != 0 {
-        psx_io::gpu::write_gp1(word);
+        psx_io::gpu::write_display_control(word);
         unsafe {
             HK_FLIP_TIMEOUTS = HK_FLIP_TIMEOUTS.wrapping_add(1);
         }
