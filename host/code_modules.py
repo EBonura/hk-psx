@@ -70,7 +70,7 @@ MAX_IMPORTS = 256
 # window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
 # now refuses a module wider than the widest window the pool holds).
 STACK_FLOOR = 0x801FFF00 - 0xC000
-POOL_BYTES = 0x19000
+POOL_BYTES = 0x1A800
 
 def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)

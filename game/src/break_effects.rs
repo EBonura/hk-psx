@@ -9,6 +9,25 @@ pub struct Sample {
     pub alpha: [u8; 2],
     pub spin: [i32; 2],
 }
+/// A style's size, opacity and spin over its life, 33 samples each. Few distinct tables of each kind
+/// serve all the styles, so the cooked data stores each once (`CURVES`) and a style names its three.
+#[derive(Clone, Copy)]
+pub struct Curve {
+    pub size: &'static [[i32; 2]; 33],
+    pub alpha: &'static [[u8; 2]; 33],
+    pub spin: &'static [[i32; 2]; 33],
+}
+impl Curve {
+    /// The sample at `phase` (0..=32).
+    #[inline(always)]
+    fn at(&self, phase: usize) -> Sample {
+        Sample {
+            size: self.size[phase],
+            alpha: self.alpha[phase],
+            spin: self.spin[phase],
+        }
+    }
+}
 #[derive(Clone, Copy)]
 pub struct Style {
     /// The two ends of the source start colour. Equal ends are one authored
@@ -43,7 +62,7 @@ pub struct Style {
     /// frame it shows then; 12..14 its size in quarters; 15 set for a burst that flies on
     /// outside the region's collision coverage instead of pausing there.
     pub splash: u16,
-    pub samples: &'static [Sample],
+    pub samples: Curve,
     pub frames: &'static [[u16; 3]],
 }
 impl Style {
@@ -98,7 +117,7 @@ include!(concat!(
     "/../data/break_effects.rs"
 ));
 #[cfg(test)]
-pub static CURVES: &[&[Sample]] = &[];
+pub static CURVES: &[Curve] = &[];
 #[cfg(test)]
 pub static PARTICLE_TRACKS: &[[[u32; 2]; 33]] = &[];
 #[cfg(test)]
@@ -177,7 +196,11 @@ const EMPTY_STYLE: Style = Style {
     kill_speed: 0,
     radius_scale: 0,
     splash: 0,
-    samples: &[],
+    samples: Curve {
+        size: &[[0; 2]; 33],
+        alpha: &[[0; 2]; 33],
+        spin: &[[0; 2]; 33],
+    },
     frames: &[],
 };
 const EMPTY_EMITTER: Emitter = Emitter {
@@ -282,6 +305,8 @@ const SOFT_CLUT_SLOTS: [(u16, u16); 4] = [(368, 239), (368, 238), (368, 237), (3
 /// white. The effects share their
 /// palettes across textures, so the copy is what keeps the rocks opaque. A
 /// soft style whose palette gets no slot keeps the coverage path.
+#[inline(never)]
+#[optimize(size)]
 fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
     r.soft_clut_count = 0;
     let free = |&(x, y): &(u16, u16)| {
@@ -295,8 +320,9 @@ fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
         let faint = s.start_alpha[0] < 255
             || r.additive[i]
             || s.samples
+                .alpha
                 .iter()
-                .any(|x| x.alpha[0] < 255 || x.alpha[1] < 255);
+                .any(|a| a[0] < 255 || a[1] < 255);
         let mut ok = faint && !s.frames.is_empty();
         for cell in s.frames.iter().filter(|_| faint) {
             let clut = r.art[cell[2] as usize].clut;
@@ -328,6 +354,8 @@ fn soft_clut(r: &Resident, clut: u16) -> Option<u16> {
 /// texels to the fixed effect VRAM rects. Returns false on any bound or
 /// format violation; nothing of the previous scene survives a failure.
 #[cfg(not(test))]
+#[inline(never)]
+#[optimize(size)]
 pub fn load_scene(scene: usize, data: &[u8]) -> bool {
     let r = unsafe { &mut *(&raw mut RESIDENT) };
     r.scene = usize::MAX;
@@ -374,7 +402,6 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
         let first = u16_at(b, 162) as usize;
         let count = u16_at(b, 164) as usize;
         if curve >= CURVES.len()
-            || CURVES[curve].len() != 33
             || first + count > frames
             || count == 0
         {
@@ -591,7 +618,7 @@ fn phase(p: &Particle) -> usize {
     (p.age as usize * 32 / p.life.get() as usize).min(32)
 }
 fn sample(p: &Particle, style: &Style) -> Sample {
-    style.samples[phase(p)]
+    style.samples.at(phase(p))
 }
 // Baked tracks were retired (BAKE_TRACKS=False); every emitter uses the scalar path.
 fn generated_tracks(_styles: &[Style]) -> &'static [[[u32; 2]; 33]] {
@@ -711,8 +738,7 @@ fn spawn_specs_with_bases(
     {
         let s = &styles[e.style as usize];
         assert!(
-            s.samples.len() == 33
-                && s.rate > 0
+            s.rate > 0
                 && s.count as usize <= super::CAPACITY
                 && s.life[0] > 0
         );
@@ -1406,11 +1432,40 @@ mod tests {
         result as i32
     }
 
-    const CURVE: [Sample; 33] = [Sample {
-        size: [ONE; 2],
-        alpha: [255; 2],
-        spin: [0; 2],
-    }; 33];
+    /// The three tables of 33 samples a `Curve` names, split out of a table of whole samples.
+    const fn split(c: &[Sample; 33]) -> ([[i32; 2]; 33], [[u8; 2]; 33], [[i32; 2]; 33]) {
+        let (mut size, mut alpha, mut spin) = ([[0; 2]; 33], [[0; 2]; 33], [[0; 2]; 33]);
+        let mut i = 0;
+        while i < 33 {
+            size[i] = c[i].size;
+            alpha[i] = c[i].alpha;
+            spin[i] = c[i].spin;
+            i += 1;
+        }
+        (size, alpha, spin)
+    }
+    /// `$name`: a `Curve` of the 33 whole samples `$samples`.
+    macro_rules! curve {
+        ($name:ident = $samples:expr) => {
+            const $name: Curve = {
+                static SIZE: [[i32; 2]; 33] = split(&$samples).0;
+                static ALPHA: [[u8; 2]; 33] = split(&$samples).1;
+                static SPIN: [[i32; 2]; 33] = split(&$samples).2;
+                Curve {
+                    size: &SIZE,
+                    alpha: &ALPHA,
+                    spin: &SPIN,
+                }
+            };
+        };
+    }
+    curve!(
+        CURVE = [Sample {
+            size: [ONE; 2],
+            alpha: [255; 2],
+            spin: [0; 2],
+        }; 33]
+    );
     const FRAMES: [[u16; 3]; 4] = [[0, 1, 2]; 4];
     const STYLE: Style = Style {
         life: [60, 60],
@@ -1438,7 +1493,7 @@ mod tests {
         kill_speed: 0,
         radius_scale: ONE,
         splash: 0,
-        samples: &CURVE,
+        samples: CURVE,
         frames: &FRAMES,
     };
     const EMITTER: Emitter = Emitter {
@@ -1606,11 +1661,13 @@ mod tests {
         flight_matches_naive(EDGE_SCRATCH, true);
     }
     fn flight_matches_naive(padding: usize, cached: bool) {
-        const SPIN_CURVE: [Sample; 33] = [Sample {
-            size: [ONE / 2, ONE],
-            alpha: [0, 255],
-            spin: [-200 * ONE, 200 * ONE],
-        }; 33];
+        curve!(
+            SPIN_CURVE = [Sample {
+                size: [ONE / 2, ONE],
+                alpha: [0, 255],
+                spin: [-200 * ONE, 200 * ONE],
+            }; 33]
+        );
         // 52+79+42+52 authors one particle more than the pool holds, so the
         // flight still runs against a full pool with exactly one drop.
         let styles = [
@@ -1628,7 +1685,7 @@ mod tests {
                 kill_speed: ONE,
                 radius_scale: 41288,
                 splash: 0,
-                samples: &SPIN_CURVE,
+                samples: SPIN_CURVE,
                 ..STYLE
             },
             Style {
@@ -1653,7 +1710,7 @@ mod tests {
                 kill_speed: ONE,
                 radius_scale: 41288,
                 splash: 0,
-                samples: &SPIN_CURVE,
+                samples: SPIN_CURVE,
                 ..STYLE
             },
             Style {
@@ -1713,7 +1770,7 @@ mod tests {
                     let s = &styles[(p.kind - 2) as usize];
                     let mut valid = true;
                     let track = core::array::from_fn(|phase| {
-                        let sample = &s.samples[phase];
+                        let sample = s.samples.at(phase);
                         let half = mulq(p.size, lerp_reference(sample.size, p.gradient)) / 2;
                         let radius = mulq(half, s.radius_scale);
                         let spin = lerp_reference(sample.spin, p.gradient);
@@ -1817,7 +1874,7 @@ mod tests {
             }
             out
         }
-        static CURVE: [Sample; 33] = curve();
+        curve!(CURVE = curve());
         // One emitter fills every slot, so the loop below can rewrite them all.
         let styles = [
             Style {
@@ -1828,7 +1885,7 @@ mod tests {
                 force: [[0; 2]; 3],
                 radius_scale: 41288,
                 splash: 0,
-                samples: &CURVE,
+                samples: CURVE,
                 ..STYLE
             },
             Style {
@@ -2220,16 +2277,20 @@ mod tests {
     }
     #[test]
     fn soft_styles_are_the_faint_ones_and_draw_through_a_free_palette_copy() {
-        static OPAQUE: [Sample; 33] = [Sample {
-            size: [ONE; 2],
-            alpha: [255; 2],
-            spin: [0; 2],
-        }; 33];
-        static FAINT: [Sample; 33] = [Sample {
-            size: [ONE; 2],
-            alpha: [0, 181],
-            spin: [0; 2],
-        }; 33];
+        curve!(
+            OPAQUE = [Sample {
+                size: [ONE; 2],
+                alpha: [255; 2],
+                spin: [0; 2],
+            }; 33]
+        );
+        curve!(
+            FAINT = [Sample {
+                size: [ONE; 2],
+                alpha: [0, 181],
+                spin: [0; 2],
+            }; 33]
+        );
         // The effects share palettes across textures: rock and dust art on one.
         static ROCK_FRAMES: [[u16; 3]; 1] = [[0, 1, 2]];
         static DUST_FRAMES: [[u16; 3]; 1] = [[0, 1, 2]];
@@ -2263,18 +2324,18 @@ mod tests {
             r.art[i].clut = clut;
         }
         r.styles[0] = Style {
-            samples: &OPAQUE,
+            samples: OPAQUE,
             frames: &ROCK_FRAMES,
             ..EMPTY_STYLE
         };
         r.styles[1] = Style {
-            samples: &FAINT,
+            samples: FAINT,
             frames: &DUST_FRAMES,
             ..EMPTY_STYLE
         };
         // Full curve, but a random start alpha below 255 (Break Dust's 83..255).
         r.styles[2] = Style {
-            samples: &OPAQUE,
+            samples: OPAQUE,
             start_alpha: [83, 255],
             frames: &DUST_FRAMES,
             ..EMPTY_STYLE
