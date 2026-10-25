@@ -1,0 +1,65 @@
+# New Game on the shipping disc: the original's poem (five lines of 'Elegy for Hallownest', with its piano) before the
+# movies. Checkpoints at 5, 12, 20 and 27 s of the poem and then the Prologue's first frames; the lines fade in one
+# after another and the whole screen fades to black from 23.6 s.
+#
+#   psoxide-gate run tools/journeys/new-game-poem.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc. The disc is the shipping one (the poem
+# and the movies are not on a test disc). Route-split: no pad tape.
+name = "new-game-poem"
+title = "new game: the poem, then the Prologue"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "poem-5s: the first line is up"
+wait = 300
+checkpoint = "poem-5s"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "poem-12s: three lines"
+wait = 420
+checkpoint = "poem-12s"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "poem-20s: all five lines"
+wait = 480
+checkpoint = "poem-20s"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "poem-27s: fading to black"
+wait = 420
+checkpoint = "poem-27s"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "prologue: the movie has begun"
+wait = 360
+checkpoint = "prologue"
+golden = false
+no_matrix = true

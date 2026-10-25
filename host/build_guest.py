@@ -115,10 +115,12 @@ def boot_art():
     if os.environ.get('HK_INTRO')=='1' and intro.is_file():
         import struct
         exe=intro.read_bytes()
-        pc0,gp0,load,size=struct.unpack_from('<4I',exe,0x10);sp=sum(struct.unpack_from('<2I',exe,0x30))&0xffffffff
-        # game/src/intro.rs launch trusts this: the image lies inside the room-module pool (empty at the title) and
-        # its stack starts under the mailbox.
-        if exe[:8]!=b'PS-X EXE' or load<0x801DB000 or load+size>0x801F3F00 or sp>0x801FFFE0 or len(exe)<0x800+size:
+        pc0,gp0,load,size=struct.unpack_from('<4I',exe,0x10)
+        # game/src/intro.rs play trusts this: the image lies inside the room-module pool (empty at the title) and
+        # the program runs on the top of the pool as its stack (the game's own stack, with the main loop's
+        # frame on it, stays untouched), with at least 16 KiB between the image's end and the stack pointer.
+        sp=0x801F3EF0
+        if exe[:8]!=b'PS-X EXE' or load<0x801DB000 or load+size>sp-0x4000 or len(exe)<0x800+size:
             raise ValueError(f'data/intro.exe does not fit the pool: load {load:#x} size {size:#x} sp {sp:#x}')
         data=struct.pack('<5I',load,size,pc0,gp0,sp)+exe[0x800:0x800+size];intro_at=(len(blob),len(data));blob+=data+bytes(-len(data)%4)
     def fnv32(data):

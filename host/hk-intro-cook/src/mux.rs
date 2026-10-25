@@ -10,6 +10,15 @@
 
 use crate::xa::{SECTOR, SUBMODE_AUDIO};
 
+/// Sectors the drive keeps reading past the end of an XA file (psx-hw `END_GUARD_SECTORS`), so that a
+/// player's poll still finds the head inside the file when the sound has ended.
+pub const END_GUARD: usize = 16;
+/// Channel of the filler sectors between the sound's (what psx-audio-cook's own files use).
+const FILLER_CHANNEL: u8 = 0xFF;
+/// Audio, Form 2, real time; the last sector of the file adds end-of-file and end-of-record.
+const SUBMODE_SOUND: u8 = 0x04 | 0x20 | 0x40;
+const SUBMODE_END: u8 = 0x80 | 0x01;
+
 /// Sectors between two sound sectors of a mono 37.8 kHz stream read at double
 /// speed: 150 sectors a second, 9.375 sound sectors a second.
 pub const AUDIO_PERIOD: usize = 16;
@@ -43,6 +52,38 @@ pub fn interleave(picture: &[u8], sound: &[u8], delay: usize) -> Result<Vec<u8>,
             }
         }
         at += 1;
+    }
+    Ok(out)
+}
+
+/// A sound-only XA file for single-speed playback: the encoder's sound sectors (`sound`, all one file
+/// and channel, `file` and `channel` here) on every `stride`th sector, filler on the others, and an end
+/// guard of filler. The drive plays the sound at the rate it was encoded for, a sector of it every
+/// `stride` sectors, which is the interleave real-time playback needs (mono 37.8 kHz: 8).
+pub fn sparse(sound: &[u8], stride: usize, file: u8, channel: u8) -> Result<Vec<u8>, String> {
+    if !sound.len().is_multiple_of(SECTOR) || sound.is_empty() {
+        return Err("the sound is not whole sectors".into());
+    }
+    let sectors: Vec<&[u8]> = sound.chunks_exact(SECTOR).collect();
+    let coding = sectors[0][3];
+    if sectors.iter().any(|s| s[3] != coding || s[2] & SUBMODE_AUDIO == 0) {
+        return Err("the sound sectors differ in coding or are not audio".into());
+    }
+    let total = sectors.len() * stride + END_GUARD;
+    let mut out = Vec::with_capacity(total * SECTOR);
+    for at in 0..total {
+        let end = if at + 1 == total { SUBMODE_END } else { 0 };
+        let (channel, data) = match (at % stride == 0).then(|| sectors.get(at / stride)).flatten() {
+            Some(sector) => (channel, Some(*sector)),
+            None => (FILLER_CHANNEL, None),
+        };
+        let head = [file, channel, SUBMODE_SOUND | end, coding];
+        out.extend_from_slice(&head);
+        out.extend_from_slice(&head);
+        match data {
+            Some(sector) => out.extend_from_slice(&sector[8..]),
+            None => out.resize(out.len() + SECTOR - 8, 0),
+        }
     }
     Ok(out)
 }
@@ -106,5 +147,31 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         assert_eq!(positions, vec![3, 19, 35]);
+    }
+
+    #[test]
+    fn sound_sits_on_every_stride_and_the_file_ends_in_a_guard() {
+        let mut sound = stream(&[(true, 100), (true, 101)]);
+        for sector in sound.chunks_exact_mut(SECTOR) {
+            sector[3] = 0;
+        }
+        let out = sparse(&sound, 8, 2, 0).unwrap();
+        assert_eq!(out.len(), (2 * 8 + END_GUARD) * SECTOR);
+        let at = |i: usize| &out[i * SECTOR..(i + 1) * SECTOR];
+        assert_eq!((at(0)[0], at(0)[1], at(0)[2], at(0)[8]), (2, 0, 0x64, 100));
+        assert_eq!((at(8)[1], at(8)[8]), (0, 101));
+        for i in [1, 7, 9, 15, 16] {
+            assert_eq!(at(i)[1], 0xFF, "{i}");
+        }
+        let last = at(2 * 8 + END_GUARD - 1);
+        assert_eq!(last[2], 0x64 | 0x81);
+        // The repeated subheader.
+        assert_eq!(at(3)[..4], at(3)[4..8]);
+    }
+
+    #[test]
+    fn sound_that_is_not_audio_is_refused() {
+        assert!(sparse(&stream(&[(false, 1)]), 8, 2, 0).is_err());
+        assert!(sparse(&[], 8, 2, 0).is_err());
     }
 }

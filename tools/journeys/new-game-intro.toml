@@ -1,4 +1,4 @@
-# New Game on the shipping disc: the opening movies play with their sound, the first press of any button
+# New Game on the shipping disc: the poem and the opening movies play with their sound, the first press of any button
 # shows "Press any button to skip" (the original's popup), a second press skips the rest, and the game
 # comes back and drops in from King's Pass's top gate. Route-split: no pad tape.
 #
@@ -31,8 +31,8 @@ press = ["cross"]
 hold = 3
 
 [[step]]
-label = "the player is loaded and the Prologue is on screen"
-wait = 600
+label = "the poem is over (28.6 s, about 1,716 ticks) and the Prologue is on screen"
+wait = 2000
 checkpoint = "prologue"
 golden = false
 no_matrix = true

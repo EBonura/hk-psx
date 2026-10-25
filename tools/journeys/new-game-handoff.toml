@@ -1,0 +1,56 @@
+# The hand-off measured: New Game on the shipping disc, left alone. The game's vblank counter stops while the movie
+# program runs (the program installs its own handler) and starts again when it returns into the game, so the tick
+# at which the counter passes its frozen value (353 at launch on this build, 360 leaves a margin) is the end of the
+# last movie, and the Knight at the top of the shaft is the first gameplay frame. The ticks between the two are the
+# new game's scene load: 335 (5.6 s) now, against 790 (13.2 s) when the program chain-loaded the game back.
+#
+#   psoxide-gate run tools/journeys/new-game-handoff.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# Route-split: no pad tape. The disc is the shipping one (the test disc has neither poem nor movies); `symbols`
+# resolves against the working directory (build/hk-psx.map).
+name = "new-game-handoff"
+title = "new game: from the last movie frame to the first gameplay frame"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "the game's vblank counter runs again: the program has returned"
+timeout = 12000
+checkpoint = "return"
+golden = false
+no_matrix = true
+[step.wait_until]
+kind = "ram"
+sym = "__psx_rt_vblank_count"
+op = "gt"
+value = 360
+
+[[step]]
+label = "first gameplay frame: the Knight at the top of the shaft"
+timeout = 3000
+checkpoint = "drop"
+golden = false
+no_matrix = true
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000

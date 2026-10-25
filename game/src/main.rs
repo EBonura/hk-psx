@@ -840,28 +840,7 @@ fn main() {
         geo_render::upload(boot);
         lifeblood::upload(boot);
     }
-    // A new game back from the opening movies (intro.rs) skips the title it
-    // already went through, with the choices it made there.
-    #[cfg(feature = "intro")]
-    let resumed = intro::take();
-    #[cfg(not(feature = "intro"))]
-    let resumed: Option<(menu::Settings, usize)> = None;
-    let (settings, profile) = match resumed {
-        Some((settings, profile)) => {
-            audio::set_volume(settings.sfx);
-            ambience::set_volume(settings.ambience);
-            music::set_volume(settings.music);
-            display::set_brightness(settings.brightness);
-            display::set_screen(settings.screen_x, settings.screen_y);
-            // Start skipped the movies and may still be down: as at the end of the
-            // title, consume it so it cannot also pause the new game.
-            while input::poll_bits() & (button::START | button::CROSS) != 0 {
-                psx_rt::interrupts::wait_vblank();
-            }
-            (settings, profile)
-        }
-        None => menu::run(&mut fb, art, &slot_lines, profile_fault),
-    };
+    let (settings, profile) = menu::run(&mut fb, art, &slot_lines, profile_fault);
     focus_audio::set_volume(settings.sfx);
     menu::loading(&mut fb);
     #[cfg(feature = "card-diag")]
@@ -877,12 +856,12 @@ fn main() {
         (s.region as usize) < world::REGION_SCENES.len()
             && world::scene_of(s.region as usize) == s.scene as usize
     });
-    // A new game on a disc that carries the movies plays them first and comes
-    // back here with `resumed` set. Never returns when it leaves.
+    // A new game on a disc that carries the movies plays them first (intro.rs) and carries on from here
+    // when they are over: the title's choices, the card's slots and everything loaded stay as they are.
     #[cfg(feature = "intro")]
-    if saved.is_none() && resumed.is_none() {
+    if saved.is_none() {
         if let Some(boot) = art {
-            intro::launch(boot, &settings, profile);
+            intro::play(boot, &mut fb, (settings.screen_x, settings.screen_y));
         }
     }
     // Sly's half of PlayerData before the charm board, and both before the

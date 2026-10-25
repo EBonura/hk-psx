@@ -4,37 +4,45 @@
 //! part of it. The game carries this program as a blob inside its boot art
 //! chunk instead (host/build_guest.py `boot_art`, game/src/intro.rs): when the
 //! player starts a new game it reads the blob back, copies it to the RAM the
-//! room-module pool owns (nothing lives there at the title) and jumps to its
-//! `_start`, leaving the new game's choices in a mailbox at the top of RAM. The
-//! blob puts the machine in the state the BIOS leaves it in ([`runtime::quiesce`]),
-//! streams the Prologue (`HKINTRO1.STR`) and the Intro (`HKINTRO2.STR`) through
-//! the SDK's MDEC player with their XA audio, in the order the source's
-//! `Opening_Sequence` plays them, until the last frame or until the player
-//! skips the rest the way the original lets him (a first press of any button
-//! shows "Press any button to skip", a second one while it shows skips), and then has the SDK's chain loader read the disc's boot executable
-//! (`PSX.EXE`, the game itself) back over the RAM the player used. The game
-//! boots from there as it does from the BIOS, finds the mailbox, and goes
-//! straight into the new game without showing its title again.
+//! room-module pool owns (nothing lives there at the title) and *calls* it,
+//! with a mailbox at the top of RAM that says where to return to and which
+//! memory the movie buffers may use (the scene arena, which holds nothing
+//! the game needs at that point).
+//!
+//! The program leaves the game where it was. It takes the hardware state it is
+//! about to change ([`machine::Saved`]), puts the machine in the state the BIOS
+//! leaves it in ([`runtime::quiesce`]), plays the poem with its piano
+//! ([`poem`]) and then streams the Prologue (`HKINTRO1.STR`) and the Intro
+//! (`HKINTRO2.STR`) through the SDK's MDEC player with their XA audio, in the
+//! order the source's `Opening_Sequence` plays them, until the last frame or
+//! until the player skips the rest the way the original lets him (a first press
+//! of any button shows "Press any button to skip", a second one while it
+//! shows skips). It then puts the hardware state back and returns into the
+//! game, which carries on into the new game with everything it had loaded:
+//! no reload of the game's executable, no second boot.
 //!
 //! The movies are the ones the original plays, cooked by host/hk-intro-cook
 //! from the player's own install. A disc built without them boots a game with
 //! no blob.
 #![no_std]
 #![no_main]
+#![feature(asm_experimental_arch)]
 
 extern crate psx_rt;
 
-use psx_chainloader::paint;
-use psx_chainloader::runtime::{self, Presentation};
+use psx_chainloader::runtime::{self};
 use psx_fmv::player::{self, Config, Depth, Movie, Stop};
 use psx_gpu::display::{DisplayConfig, Resolution, VideoMode};
 use psx_gpu::Gpu;
-use psx_io::periph::ControllerPort;
 use psx_io::gpu::write_command;
+use psx_io::periph::ControllerPort;
 use psx_pad::Port;
 use psx_rt::{interrupts, tty, Peripherals};
-use psx_spu::{self as spu, Spu, Volume};
+use psx_spu::{self as spu, Volume};
 use psx_vram::{Clut, TextureDepth, TexturePage};
+
+mod machine;
+mod poem;
 
 mod cooked {
     include!("../../.hkpsx/intro/movie.rs");
@@ -81,26 +89,60 @@ const MOVIES: [Cooked; cooked::MOVIES] = [
         latency_vblanks: cooked::intro::LATENCY_VBLANKS,
     },
 ];
-/// The disc's boot executable, which is the game.
-const GAME_FILE: &str = "PSX.EXE";
-
-/// Where the player's buffers sit: low RAM above the kernel, which the game's
-/// image overwrites once the movies are over. They end below this program.
-const PLAYER_MEMORY: usize = 0x8004_0000;
 /// No sector for two seconds ends the movie.
 const STALL_VBLANKS: u32 = 120;
 
-extern "C" {
-    /// First byte of this program's image (psoxide.ld).
-    static __text_start: u8;
+/// The hand-off the game leaves in the last 64 bytes of RAM (game/src/intro.rs `play`), above the stack
+/// it runs on (the 256 bytes over its initial stack pointer are nobody's): a magic and its complement, the
+/// stack pointer to come back with, the address to return to, the RAM the movie buffers may use (the scene
+/// arena) and its length, the disc's base sector and CD-DA track base that the SDK's file lookup needs, and
+/// the picture's position the title's screen setting chose.
+const MAILBOX: *const u32 = 0x801F_FFC0 as *const u32;
+const MAGIC: u32 = 0x484B_4E47; // "HKNG"
+
+/// What the game handed over.
+struct Handoff {
+    saved_sp: u32,
+    return_pc: u32,
+    arena: usize,
+    arena_bytes: usize,
+    /// The screen position (x, y) of the title's Options, in the display's own units.
+    screen: (i16, i16),
 }
 
-fn image_start() -> u32 {
-    (&raw const __text_start) as u32
+impl Handoff {
+    /// The mailbox, if the game wrote one: power-on garbage is no hand-off.
+    fn read() -> Option<Handoff> {
+        // SAFETY: eight words of RAM nothing else uses; volatile reads of a block the game wrote before it called.
+        let word = |i: usize| unsafe { core::ptr::read_volatile(MAILBOX.add(i)) };
+        (word(0) == MAGIC && word(1) == !MAGIC).then(|| Handoff {
+            saved_sp: word(2),
+            return_pc: word(3),
+            arena: word(4) as usize,
+            arena_bytes: word(5) as usize,
+            screen: (word(8) as i32 as i16, word(9) as i32 as i16),
+        })
+    }
+
+    /// Leave for the game: the stack it called from, then the code after its call.
+    fn leave(&self) -> ! {
+        // SAFETY: the game's `hk_intro_enter` saved its registers on the stack at `saved_sp` and put the
+        // address of its restore code in the mailbox; that code reloads them and returns to its caller.
+        unsafe {
+            core::arch::asm!(
+                "move $29, {sp}",
+                "jr {pc}",
+                "nop",
+                sp = in(reg) self.saved_sp,
+                pc = in(reg) self.return_pc,
+                options(noreturn),
+            )
+        }
+    }
 }
 
 /// Where the font's palette sits in VRAM (game/src/dialogue.rs draws every glyph with it).
-const FONT_CLUT: (u16, u16) = (320, 481);
+pub(crate) const FONT_CLUT: (u16, u16) = (320, 481);
 /// The letterbox bar under the picture: the movie is 176 lines centred in 240, so the lines
 /// from 208 down are black in every display buffer and the player never writes them.
 const LETTERBOX_Y: u16 = 208;
@@ -111,7 +153,7 @@ const FADE_IN: u32 = 9;
 const HOLD: u32 = 120;
 const FADE_OUT: u32 = 60;
 /// Full brightness of a glyph, as the game draws them (0x80 is the font's colours as they are).
-const FULL: u32 = 0x80;
+pub(crate) const FULL: u32 = 0x80;
 
 /// "Press any button to skip", shown when a first button is pressed during a movie and drawn into
 /// the bars of the player's three display buffers (a flip never rewrites them).
@@ -170,7 +212,7 @@ impl Prompt {
 
 /// The bar of the display buffer at (`x`, `y`) cleared and, for a non-zero `level`, the prompt
 /// centred in it.
-fn draw_bar(x: u16, y: u16, level: u32) {
+pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     // The bar black (GP0 fill: always on whole 16-pixel columns, outside the draw area).
     write_command(0x0200_0000);
     write_command(u32::from(y + LETTERBOX_Y) << 16 | u32::from(x));
@@ -200,13 +242,15 @@ fn draw_bar(x: u16, y: u16, level: u32) {
 }
 
 /// The pad and the skip prompt it drives.
-struct Skip {
+pub(crate) struct Skip {
     port: ControllerPort,
     /// Buttons down at the poll before; the pad starts out counted as held, so a button still
     /// down from the menu that launched the disc does not count as a press.
     held: u16,
     last_vblank: u32,
     prompt: Prompt,
+    /// Whether the prompt is drawn into the movies' display buffers (the poem draws its own frames).
+    bars: bool,
 }
 
 impl Skip {
@@ -225,18 +269,33 @@ impl Skip {
         if pressed && self.prompt.press(now) {
             return true;
         }
-        self.prompt.update(now);
+        if self.bars {
+            self.prompt.update(now);
+        }
         false
+    }
+
+    /// The poll for a screen that redraws itself every frame (the poem), which draws the prompt itself
+    /// ([`Skip::prompt_brightness`]) instead of leaving it in the movies' display buffers.
+    pub(crate) fn poll_without_bars(&mut self) -> bool {
+        self.bars = false;
+        self.poll()
+    }
+
+    /// How bright the prompt is at VBlank `now`, 0 when it is not showing.
+    pub(crate) fn prompt_brightness(&self, now: u32) -> u32 {
+        self.prompt.brightness(now)
     }
 
     /// A movie is starting: the player has cleared its buffers.
     fn begin_movie(&mut self) {
+        self.bars = true;
         self.prompt.drawn = None;
     }
 }
 
 /// Plays one movie and says how it ended.
-fn play_movie(skip: &mut Skip, cooked: &Cooked, limit: u32) -> Option<Stop> {
+fn play_movie(skip: &mut Skip, cooked: &Cooked, memory: &mut [u32]) -> Option<Stop> {
     skip.begin_movie();
     let Some((lba, _)) = player::find_root_file(cooked.file) else {
         tty::println("hk-intro: a movie is missing from this disc");
@@ -263,13 +322,10 @@ fn play_movie(skip: &mut Skip, cooked: &Cooked, limit: u32) -> Option<Stop> {
         stall_vblanks: STALL_VBLANKS,
     };
     let words = player::memory_words(&movie, config.depth);
-    if PLAYER_MEMORY + words * 4 > limit as usize {
-        tty::println("hk-intro: a movie's buffers would reach the intro's own image");
+    let Some(memory) = memory.get_mut(..words) else {
+        tty::println("hk-intro: a movie's buffers do not fit the arena the game lent");
         return None;
-    }
-    // SAFETY: low RAM between the kernel's area and this image: nothing lives
-    // there until the game is loaded over it, after the player has returned.
-    let memory = unsafe { core::slice::from_raw_parts_mut(PLAYER_MEMORY as *mut u32, words) };
+    };
     let outcome = player::play(&movie, &config, memory, &mut || skip.poll());
     report(cooked.file, &outcome);
     Some(outcome.stop)
@@ -309,7 +365,7 @@ fn report(file: &str, o: &player::Outcome) {
     tty::println("");
 }
 
-fn print_decimal(mut v: u32) {
+pub(crate) fn print_decimal(mut v: u32) {
     let mut digits = [0u8; 10];
     let mut at = digits.len();
     loop {
@@ -323,55 +379,50 @@ fn print_decimal(mut v: u32) {
     tty::print(core::str::from_utf8(&digits[at..]).unwrap_or("?"));
 }
 
-/// A dim track and a bar over it, at the foot of a black screen, while the
-/// game's image streams in.
-struct Loading;
-
-const BAR_X: i16 = 80;
-const BAR_Y: i16 = 222;
-const BAR_W: i16 = 160;
-const BAR_H: i16 = 4;
-const TRACK: u32 = 0x0030_3030;
-const FILL: u32 = 0x00B0_B0B0;
-
-impl Presentation for Loading {
-    fn setup(&mut self) {
-        paint::setup(319, 239);
+/// Leave the GPU as the game's boot leaves it, for the game's first frame: reset, the display at the title's
+/// position, both of the game's 320x240 frame buffers black (the first one is drawn into) and the drawing
+/// area its own. Then wait for the buttons that skipped the movies to come up: Start or Cross still down
+/// would also pause the new game.
+fn hand_back_the_screen(gpu: &mut Gpu, display: DisplayConfig, skip: &mut Skip) {
+    // SAFETY: nothing else is using the GPU's channel; the program owns it until it returns.
+    *gpu = Gpu::new(unsafe { psx_io::periph::GpuDma::steal() }, display);
+    for y in [0u32, 240] {
+        write_command(0x0200_0000);
+        write_command(y << 16);
+        write_command(240 << 16 | 320);
     }
-    fn begin(&mut self) {
-        paint::rect(0, 0, 320, 240, 0);
-        paint::rect(BAR_X, BAR_Y, BAR_W, BAR_H, TRACK);
-        paint::draw_sync();
-        paint::show();
+    gpu.set_draw_area((0, 0), (319, 239));
+    gpu.set_draw_offset((0, 0));
+    for _ in 0..600 {
+        let down = psx_pad::poll_on(&mut skip.port, Port::One).buttons.bits();
+        if down & (psx_pad::button::START | psx_pad::button::CROSS) == 0 {
+            break;
+        }
+        interrupts::wait_vblank();
     }
-    fn update(&mut self, done: u32, total: u32) {
-        let width = (done * BAR_W as u32 / total.max(1)).min(BAR_W as u32) as i16;
-        paint::rect(BAR_X, BAR_Y, width, BAR_H, FILL);
-        paint::draw_sync();
-    }
-    fn finish(&mut self) {}
-    fn diagnostic_mode(&mut self) {
-        paint::diagnostic_mode();
-    }
-    fn no_scratchpad(&mut self) {}
 }
 
 #[no_mangle]
 fn main() {
-    // Entered from the running game, not from the BIOS: put the machine where
-    // the BIOS leaves it (SPU silent, interrupts masked, DMA off, GPU reset).
-    // SAFETY: nothing else is running; the game that jumped here is gone.
+    let Some(handoff) = Handoff::read() else {
+        // Only the game starts this program, and it writes the mailbox first.
+        tty::println("hk-intro: started without a hand-off");
+        loop {
+            core::hint::spin_loop();
+        }
+    };
+    // SAFETY: the game is stopped in its call to this program; nothing else drives the hardware.
+    let saved = unsafe { machine::Saved::capture() };
+    // The movie player wants the machine where the BIOS leaves it (interrupts masked, DMA off, GPU
+    // reset). The SPU is the game's: its voices and the samples in its RAM stay as they are.
+    // SAFETY: as above.
     unsafe { runtime::quiesce() };
     interrupts::install_vblank_counter();
-    let peripherals = Peripherals::take().expect("the intro takes the peripherals once, at boot");
-    // The player and the chain loader take the drive, the MDEC and the GPU's
-    // channel over themselves, as their docs say; the display and the SPU are
-    // set up here.
-    let _gpu = Gpu::new(
-        peripherals.gpu_dma,
-        DisplayConfig::new(VideoMode::Ntsc, Resolution::R320X240),
-    );
-    let _spu = Spu::new(peripherals.spu_dma);
+    let peripherals = Peripherals::take().expect("the intro takes the peripherals once");
+    // The player and the poem take the drive, the MDEC and the GPU's channel over themselves, as their
+    // docs say; the display is set up here.
+    let display = DisplayConfig::new(VideoMode::Ntsc, Resolution::R320X240).with_offset(handoff.screen);
+    let mut gpu = Gpu::new(peripherals.gpu_dma, display);
     spu::set_main_volume(Volume::MAX, Volume::MAX);
 
     let mut skip = Skip {
@@ -379,29 +430,24 @@ fn main() {
         held: u16::MAX,
         last_vblank: interrupts::vblank_count(),
         prompt: Prompt { since: None, drawn: None },
+        bars: true,
     };
-    for movie in &MOVIES {
-        // A skip ends the whole sequence, as it does in the original, not just
-        // the movie that is playing.
-        if play_movie(&mut skip, movie, image_start()) != Some(Stop::End) {
-            break;
+    // SAFETY: the scene arena the game lent: nothing in it is needed until the game loads a scene into it
+    // after this returns.
+    let arena = unsafe {
+        core::slice::from_raw_parts_mut(handoff.arena as *mut u32, handoff.arena_bytes / 4)
+    };
+    if poem::play(&mut skip, peripherals.cd) == poem::End::Finished {
+        for movie in &MOVIES {
+            // A skip ends the whole sequence, as it does in the original, not just
+            // the movie that is playing.
+            if play_movie(&mut skip, movie, arena) != Some(Stop::End) {
+                break;
+            }
         }
     }
-
-    let Some((lba, _)) = player::find_root_file(GAME_FILE) else {
-        tty::println("hk-intro: no PSX.EXE on this disc");
-        loop {
-            interrupts::wait_vblank();
-        }
-    };
-    // The game is on the same disc as this program, so it takes over the
-    // bases the launcher gave this one. Passing zero here made a game read
-    // its packs at unshifted sectors whenever the disc is a multi-program one.
-    let lba_offset = psx_io::disc_base::lba_offset();
-    let cdda_track_base = u32::from(psx_io::disc_base::cdda_track_base());
-    // SAFETY: the game's payload ends below this image (the game is linked
-    // below the pool this blob sits in), the player has returned, and nothing
-    // else uses the drive. `run` never returns. No checksum: the disc builder
-    // cannot know the boot executable's, and only the read is trusted.
-    unsafe { runtime::run(lba, lba_offset, cdda_track_base, 0, image_start(), Loading) }
+    hand_back_the_screen(&mut gpu, display, &mut skip);
+    // SAFETY: the player and the poem have returned: no DMA is running and the drive is paused.
+    unsafe { saved.restore(&mut psx_io::periph::Cd::steal()) };
+    handoff.leave()
 }

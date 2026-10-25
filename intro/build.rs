@@ -23,7 +23,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=HK_INTRO_LOAD_ADDR");
     println!("cargo:rerun-if-env-changed=HKPSX_LINK_MAP");
 
-    let base = env::var("HK_INTRO_LOAD_ADDR").unwrap_or_else(|_| "0x801E0000".to_string());
+    let base = env::var("HK_INTRO_LOAD_ADDR").unwrap_or_else(|_| "0x801DB000".to_string());
     let sdk = fs::read_to_string(&ld).expect("read PSoXide linker script");
     for pattern in [SDK_LOAD, SDK_LENGTH] {
         assert_eq!(

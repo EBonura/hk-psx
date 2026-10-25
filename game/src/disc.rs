@@ -317,6 +317,11 @@ struct Buffer {
 static mut BUFFERS: Buffer = Buffer {
     words: [0; BUFFER_BYTES / 4],
 };
+/// The scene arena's address and length. The opening movies (intro.rs) buffer their frames in it: the title
+/// is over and nothing in it is needed before the first scene is loaded.
+pub fn arena() -> (usize, usize) {
+    ((&raw mut BUFFERS) as usize, BUFFER_BYTES)
+}
 /// Where an admission's chunks come from.
 #[derive(Clone, Copy)]
 enum Stage {

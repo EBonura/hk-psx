@@ -1,5 +1,5 @@
-# New Game on the shipping disc, left alone: both opening movies play to their last frame (about 68 s), the game
-# comes back from the chain load without the title and drops in from King's Pass's top gate. Route-split: no pad tape.
+# New Game on the shipping disc, left alone: the poem (28.6 s) and both opening movies play to their last frame (about 97 s), the game
+# carries on from where it was without the title and drops in from King's Pass's top gate. Route-split: no pad tape.
 #
 #   psoxide-gate run tools/journeys/new-game-intro-full.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
@@ -30,8 +30,8 @@ press = ["cross"]
 hold = 3
 
 [[step]]
-label = "the Prologue is on screen"
-wait = 900
+label = "the Prologue is on screen (the poem takes the first 28.6 s)"
+wait = 2700
 checkpoint = "prologue"
 golden = false
 no_matrix = true
