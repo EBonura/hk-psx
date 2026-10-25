@@ -44,8 +44,8 @@ the break-effect particle pool (`game/src/particles.rs`, `break_effects.rs`) and
 Nothing here is resident per effect. The tables of a scene (`HKFX0001` chunk: styles, emitters, art, frames) are
 decoded at admission into `RESIDENT`, sized by the widest scene (`FX_MAX_*`; Tutorial_01 with 27 styles and 108
 emitters), and the effect art rides the scene's own chunk. What the effects added to the resident image was paid
-for by storing the particle curves as their distinct size, opacity and spin tables (`Curve`: 16, 12 and 10 tables
-of 33 entries serve all 23 curves, 7.6 KB instead of 15.2 KB; `host/hk-cook/src/break_effects.rs` `generate`),
+for by storing the particle curves as the distinct tables of each end of their size, opacity and spin (`Curve`: 18, 19
+and 18 tables of 33 values serve all 23 curves, 5.4 KB instead of 15.2 KB; `host/hk-cook/src/break_effects.rs` `generate`),
 and by building the two scene decoders (`load_scene`, `soft_styles`) for size. The lifeblood cocoon's world code
 and the rigid debris solver are room modules (`host/code_modules.py` `lifeblood`, `debris`), read with the rooms
 that use them. The debris module (5.8 KB) lands in the worst room (Crossroads_05, the grub jars) on top of the

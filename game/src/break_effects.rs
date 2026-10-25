@@ -955,9 +955,15 @@ fn tick_specs_with_tracks(
         }
         let spin_by_speed =
             (s.spin_speed[0] | s.spin_speed[1]) != 0 && s.spin_range[1] > s.spin_range[0];
+        // A limit of zero (the smoke and dust styles) scales the velocity by one minus the
+        // damping every tick, whatever the speed: the same result as scaling to
+        // `speed - dampen * speed` over `speed`, without the root and the three wide quotients.
+        let flat_limit = s.limit == 0 && (s.spin_speed[0] | s.spin_speed[1]) == 0;
         // The root only matters for spin or above the limit: isqrt(L) > limit
         // exactly when L >= (limit+1)^2, so below it the square decides alone.
-        let speed = if spin_by_speed
+        let speed = if flat_limit {
+            0
+        } else if spin_by_speed
             || (s.limit >= 0
                 && super::length_squared(p.velocity) >= WideU::mul(s.limit as u32 + 1, s.limit as u32 + 1))
         {
@@ -965,7 +971,11 @@ fn tick_specs_with_tracks(
         } else {
             0
         };
-        if s.limit >= 0 && speed > s.limit {
+        if flat_limit {
+            for v in &mut p.velocity {
+                *v = mulq(*v, ONE - s.dampen);
+            }
+        } else if s.limit >= 0 && speed > s.limit {
             let limited = speed - mulq(speed - s.limit, s.dampen);
             for v in &mut p.velocity {
                 *v = scale_velocity(*v, limited, speed);
@@ -1313,7 +1323,12 @@ mod tests {
                 p.velocity[j] += lerp_reference(s.force[j], p.gradient) / 60;
             }
             let speed = length3_reference(p.velocity);
-            if s.limit >= 0 && speed > s.limit {
+            if s.limit == 0 && (s.spin_speed[0] | s.spin_speed[1]) == 0 {
+                // A zero limit scales by one minus the damping (tick_specs_with_tracks `flat_limit`).
+                for v in &mut p.velocity {
+                    *v = mulq(*v, ONE - s.dampen);
+                }
+            } else if s.limit >= 0 && speed > s.limit {
                 let limited = speed - mulq(speed - s.limit, s.dampen);
                 for v in &mut p.velocity {
                     *v = (*v as i64 * limited as i64 / speed as i64) as i32;
