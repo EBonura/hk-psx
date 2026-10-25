@@ -10,3 +10,4 @@ HK_SAVE_LOADED = 1
 HK_DEATHS = 0
 # 50 spatters and 9 globs (the cap, where the scene's effect art has room for it, adds one).
 HK_PARTICLES_SPAWNED >= 59
+pacing = 98
