@@ -1,6 +1,6 @@
 pacing = 321
 frame_time = 268
-long_frames = 11
+long_frames = 15
 card = town-continue.mcd
 scene_gate = true
 # crossroads-gate carries well-drop on into the Crossroads: after the well it walks
