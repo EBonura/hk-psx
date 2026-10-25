@@ -90,6 +90,7 @@ mod imp {
             }
         }
     }
+    #[inline(never)]
     pub fn set(phase: u8) {
         flush();
         unsafe {
@@ -100,6 +101,7 @@ mod imp {
     fn vbl() -> u32 {
         psx_rt::interrupts::vblank_count()
     }
+    #[inline(never)]
     pub fn trigger(src: usize, dst: usize) {
         // Close whatever phase bootstrap or the last gate left current
         // before this record starts counting.
@@ -121,6 +123,7 @@ mod imp {
         }
         event(11, src as u32, dst as u32);
     }
+    #[inline(never)]
     pub fn load_start(prefetch: u32) {
         if let Some(r) = record() {
             r[4] = vbl();
@@ -131,6 +134,7 @@ mod imp {
         }
         set(super::OTHER);
     }
+    #[inline(never)]
     pub fn display_on() {
         if let Some(r) = record() {
             r[5] = vbl();
@@ -138,6 +142,7 @@ mod imp {
         }
         set(super::REGION);
     }
+    #[inline(never)]
     pub fn read_started() {
         if let Some(r) = record() {
             r[10] += 1;
@@ -145,6 +150,7 @@ mod imp {
     }
     /// Once per presented frame. The first one after a load closes the
     /// load's time; the shade reaching zero closes the transition.
+    #[inline(never)]
     pub fn frame(shade: u8) {
         if !unsafe { OPEN } {
             return;
@@ -202,6 +208,7 @@ mod imp {
     }
     /// What ran last among the long operations, for attributing a stall (set by `ctx`).
     static mut CTX: u32 = 0;
+    #[inline(never)]
     pub fn ctx(c: u32) {
         unsafe {
             CTX = c;
@@ -210,6 +217,7 @@ mod imp {
     pub fn stall_ctx() -> u32 {
         unsafe { CTX << 8 | HK_GATE_PHASE }
     }
+    #[inline(never)]
     pub fn note(word: usize, value: u32) {
         if let Some(r) = record() {
             if (19..WORDS).contains(&word) {

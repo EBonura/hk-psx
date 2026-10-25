@@ -106,3 +106,45 @@ pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
     }
     crate::input::checkpoint();
 }
+/// Spare static pages as extra prefetch room (disc.rs `Spill`): a page holds 16 CD sectors, each
+/// sector filling 16 rows of the page's 64-word rows. Write `sectors` whole sectors of `bytes`
+/// from sector `first` of static page `page`.
+pub fn spill_write(page: usize, first: usize, sectors: usize, bytes: &[u8]) {
+    let (x, y) = residency::page_xy(page);
+    crate::texture_upload::upload(
+        VramRect::new(x, y + (first * 16) as u16, 64, (sectors * 16) as u16),
+        bytes,
+    );
+}
+/// Read the sectors `spill_write` stored back into `dst` (a four-byte aligned arena address).
+/// False if the GPU stopped answering; `dst` is then partly written.
+///
+/// # Safety
+/// `dst` must be valid for `sectors * 512` words.
+pub unsafe fn spill_read(page: usize, first: usize, sectors: usize, dst: *mut u32) -> bool {
+    let (x, y) = residency::page_xy(page);
+    let y = y + (first * 16) as u16;
+    psx_io::gpu::wait_cmd_ready();
+    psx_io::gpu::write_gp0(0xC000_0000);
+    psx_io::gpu::write_gp0(u32::from(y) << 16 | u32::from(x));
+    psx_io::gpu::write_gp0(((sectors * 16) as u32) << 16 | 64);
+    for i in 0..sectors * 512 {
+        let mut spins = 0u32;
+        // GPUSTAT bit 27: ready to send VRAM to the CPU.
+        while psx_io::gpu::status().bits() & (1 << 27) == 0 {
+            spins += 1;
+            if spins > 500_000 {
+                return false;
+            }
+        }
+        // SAFETY: the caller sized `dst` for every word.
+        unsafe { dst.add(i).write(psx_io::gpu::read_data()) };
+    }
+    true
+}
+/// The GPU is ready for a command and for DMA (GPUSTAT bits 26 and 28) and no DMA is running:
+/// what it was sent has finished, so a command now does not wait on it.
+pub fn gpu_idle() -> bool {
+    const READY: u32 = 1 << 26 | 1 << 28;
+    !crate::render::dma_pending() && psx_io::gpu::status().bits() & READY == READY
+}

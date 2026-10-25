@@ -296,11 +296,13 @@ const _: () = assert!(SCENE_COUNT <= 1 << 8);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
 /// Byte operations one decoder step may run between pad checkpoints during a load. 4096
-/// took about a VBlank on a dense room (the False Knight journey's first load), which
-/// carried a poll over one; a quarter of that leaves several opportunities per frame.
+/// took about a VBlank on a dense room (the False Knight journey's first load) before the
+/// format walks went (`room_decode::TRUST_COOK`); a step now costs a few milliseconds. On a tour
+/// of 102 gates the lz4 phase fell from 289 to 202 ms a gate at 8,192 (169 at 16,384, which
+/// lost pad polls in journey-kings and journey-crossroads).
 const DECODE_STEP: usize = match option_env!("HK_DECODE_STEP") {
     Some(s) => parse_usize(s),
-    None => 1024,
+    None => 8192,
 };
 /// Bytes past the scene arena that only a scene group staged in the tail may
 /// use (see `stage_group`). Zero keeps today's RAM; a prefetch that does not
@@ -1257,7 +1259,25 @@ impl Cache {
         // `skip`: the code chunk's sectors when the room's code is already
         // resident (installed while the Knight walked here); nothing reads
         // them. They count as staged, so every chunk keeps its place.
-        let (skip, held, adopted) = prefetch_take(scene, total, self.code_skip(scene), !split);
+        let (mut skip, mut held, adopted) = prefetch_take(scene, total, self.code_skip(scene), !split);
+
+        // The sectors a prefix kept in spare VRAM pages come back to their places in the group.
+        let (spill_first, spill_held) = unsafe { SPILL_TAKEN };
+        if spill_held > 0 {
+            if self.restore_spill(base, spill_first, spill_held) {
+                unsafe {
+                    HK_SPILL_RESTORED += spill_held as u32;
+                }
+                crate::gate_probe::note(22, spill_held as u32);
+            } else {
+                // Not what went in: read the group's own sectors from the disc.
+                unsafe {
+                    HK_SPILL_BAD += 1;
+                }
+                skip = spill_first;
+                held = 0;
+            }
+        }
         crate::gate_probe::event(9, scene as u32, (skip + held) as u32 | (adopted as u32) << 15);
         let pre = skip + held;
         if adopted {
@@ -2329,8 +2349,11 @@ impl Cache {
     fn admit_scenes(&mut self, wanted: usize) -> Result<(), LoadError> {
         // Before any read or slide moves the prefetched bytes: finish a
         // background code install for this room, or drop one for another.
+        crate::gate_probe::set(crate::gate_probe::RELOCATE);
         crate::modules::gate_begin(wanted);
+        crate::gate_probe::set(crate::gate_probe::HASH_RAW);
         self.prepare_runner_audio(wanted)?;
+        crate::gate_probe::set(crate::gate_probe::VALIDATE);
         unsafe {
             GATE_VERIFIED = psx_math::Mask64::EMPTY;
             GATE_SCENE = EMPTY;
@@ -2586,6 +2609,7 @@ impl Cache {
         {
             return Ok(());
         }
+        spill_upload();
         // A code-only prefetch whose code has since installed: plan the rest.
         // (Planning again whenever code took slack from data restarted reads
         // the gate then waited for: Crossroads_09 +43 vblanks on the tour.)
@@ -2631,6 +2655,15 @@ impl Cache {
         // A room of the other runner audio family: its bank rides below the prefix.
         let bank = bank_needed(scene);
         let slack = if bank > 0 && slack > bank { slack - bank } else if bank > 0 { 0 } else { slack };
+        // Spare VRAM pages hold the first sectors of a prefix the slack cannot.
+        let skip = if !code_only && bank == 0 {
+            match self.spill_plan(scene, skip, total, slack) {
+                None => return Ok(()),
+                Some(held) => skip + held,
+            }
+        } else {
+            skip
+        };
         let sectors = if code_only {
             code
         } else {
@@ -2649,6 +2682,12 @@ impl Cache {
         // The group's prefix: the chunks the gate decodes first, so the rest
         // can still be arriving while they decode.
         crate::gate_probe::event(2, scene as u32, sectors as u32 | (skip as u32) << 10);
+        {
+            let sp = spill_state();
+            let held = if sp.ready && sp.scene == scene { sp.want } else { 0 };
+            p.spill_first = skip - held;
+            p.spill_want = held;
+        }
         p.want = Some((
             scene,
             total,
@@ -2659,6 +2698,129 @@ impl Cache {
             code_only,
         ));
         Ok(())
+    }
+    /// Plan holding the first sectors of `scene`'s prefix after `skip` in spare VRAM pages when the
+    /// arena slack alone leaves too much of it to the gate. None while that is under way; else the
+    /// sectors held (0: none).
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
+    fn spill_plan(&self, scene: usize, skip: usize, total: usize, slack: usize) -> Option<usize> {
+        let s = spill_state();
+        if s.scene == scene && s.first == skip {
+            return if s.ready { Some(s.want) } else { None };
+        }
+        if !SPILL_ON
+            || s.failed == scene
+            || slack > SPILL_SLACK_MAX
+            || total < skip + slack + 4
+        {
+            return Some(0);
+        }
+        let page0 = SCENE_MANIFEST[self.resident_scene].page_base + scene_pages(self.resident_scene);
+        let spare = SPILL_PAGE_LIMIT.saturating_sub(page0);
+        let want = (total - skip - slack).min(spare * 16);
+        if want < 4 {
+            return Some(0);
+        }
+        // Bursts go through the slack when it holds a few sectors, else through bytes the
+        // module pool lends.
+        let (bounce, pool, bsz) = if slack >= 4 {
+            let bsz = slack.min(SPILL_BURST_MAX);
+            let at = ARENA_TOTAL - bsz * SECTOR_BYTES;
+            (unsafe { (&raw mut BUFFERS.words).cast::<u8>().add(at).cast::<u32>() }, false, bsz)
+        } else if crate::modules::pool_has_room(8 * SECTOR_BYTES as u32) {
+            // Lent per burst (`start_spill`), so the pool is never held against its own
+            // fetches between them.
+            (core::ptr::null_mut(), true, 8)
+        } else {
+            return Some(0);
+        };
+        let (flight, flight_plan, burst, plan) = (s.flight, s.flight_plan, s.burst, s.plan.wrapping_add(1));
+        let failed = s.failed;
+        let claimed = s.claimed && flight;
+        if s.claimed && !flight {
+            crate::modules::release_claim();
+        }
+        *s = Spill {
+            scene,
+            first: skip,
+            want,
+            done: 0,
+            lba: self.group_lba(scene) + skip as u32,
+            page0,
+            bounce,
+            pool,
+            claimed,
+            bounce_sectors: bsz,
+            burst: if flight { burst } else { 0 },
+            flight,
+            landed: false,
+            ready: false,
+            plan,
+            flight_plan,
+            failed,
+            sums: [0; 20],
+        };
+        if flight {
+            cd_stream::cancel();
+        }
+        // The bursts pass through the slack, where another room's prefix may be waiting.
+        let p = prefetch_state();
+        if p.state == Fetch::Ready && p.scene != scene {
+            p.state = Fetch::Idle;
+            p.scene = EMPTY;
+            p.generation += 1;
+            unsafe {
+                HK_PREFETCH_WASTED += 1;
+            }
+        }
+        None
+    }
+    /// Read the sectors `spill_take` found held in VRAM back into the arena at `base` (the group's
+    /// start). False if a page no longer sums to what went in.
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
+    fn restore_spill(&mut self, base: usize, first: usize, want: usize) -> bool {
+        let s = spill_state();
+        let (mut done, mut sum) = (0, 0u32);
+        while done < want {
+            // A few sectors at a time (about 1 ms of word reads and sums), the pad polled
+            // between them and while the exit fade's last frame is still on the GPU.
+            while !crate::vram_cache::gpu_idle() {
+                crate::input::checkpoint();
+            }
+            let n = (16 - done % 16).min(want - done).min(4);
+            let dst = unsafe {
+                (&raw mut BUFFERS.words)
+                    .cast::<u8>()
+                    .add(base + (first + done) * SECTOR_BYTES)
+                    .cast::<u32>()
+            };
+            // Safety: the group's window at the arena's tail holds every sector of the prefix.
+            if !unsafe { crate::vram_cache::spill_read(s.page0 + done / 16, done % 16, n, dst) } {
+                return false;
+            }
+            sum = spill_sum(sum, dst, n * SECTOR_BYTES / 4);
+            done += n;
+            // The sums are per page, over the page's sectors in order.
+            if done % 16 == 0 || done == want {
+                if sum != s.sums[(done - 1) / 16] {
+                    return false;
+                }
+                sum = 0;
+            }
+            crate::input::checkpoint();
+        }
+        true
+    }
+    /// Whether the resident scene leaves so little of the arena that a prefix staged under it
+    /// is small (the rooms `spill_plan` serves).
+    pub fn tight(&self) -> bool {
+        if self.loaded_scenes != 1 || self.resident_scene >= SCENE_COUNT {
+            return false;
+        }
+        let resident = ((SCENE_MANIFEST[self.resident_scene].raw_len + 3) & !3) + self.metadata_len;
+        ARENA_TOTAL.saturating_sub(resident) / SECTOR_BYTES <= SPILL_SLACK_MAX
     }
     pub fn prefetch_regions(&mut self, _regions: &[usize]) {}
     pub fn prefetch(&mut self, _region: usize) -> bool {
@@ -3017,6 +3179,10 @@ struct Prefetch {
     park_lba: u32,
     park_flight: bool,
     parked: u32,
+    /// The first group sector and count of the sectors this prefix keeps in spare VRAM
+    /// pages (`Spill`); the arena part starts after them (`skip` includes them).
+    spill_first: usize,
+    spill_want: usize,
 }
 #[derive(Clone, Copy)]
 struct Bank {
@@ -3057,7 +3223,110 @@ static mut PREFETCH: Prefetch = Prefetch {
     park_lba: 0,
     park_flight: false,
     parked: u32::MAX,
+    spill_first: 0,
+    spill_want: 0,
 };
+/// Rooms whose arena slack is at most this many sectors use spare pages; a room with more keeps the
+/// slack-first prefetch, which starts reading the arena part at once.
+const SPILL_SLACK_MAX: usize = 24;
+/// Spare static pages as prefetch room. A prefix the arena's slack cannot hold keeps its first
+/// sectors in the static pages the resident scene does not use (16 sectors a page: a scene of 13
+/// pages leaves five), read a few sectors at a time through the slack and uploaded between
+/// frames. The gate reads them back into the arena (`restore_spill`) and finds them staged; the
+/// arena part of the prefix starts after them. Each page's words are summed on the way out and
+/// back, so a page something else wrote over is read again from the disc instead. Off with
+/// HK_NO_SPILL.
+const SPILL_ON: bool = option_env!("HK_NO_SPILL").is_none();
+/// The static page the quick map owns is never used.
+const SPILL_PAGE_LIMIT: usize = 18;
+const SPILL_BURST_MAX: usize = 16;
+struct Spill {
+    /// Manifest scene the held sectors belong to (EMPTY: none).
+    scene: usize,
+    /// First group sector held, sectors wanted and sectors in VRAM so far.
+    first: usize,
+    want: usize,
+    done: usize,
+    lba: u32,
+    /// First spare page, and where the bursts are read to: the slack's tail, or bytes the
+    /// module pool lends (`pool`, which `release_claim` gives back).
+    page0: usize,
+    bounce: *mut u32,
+    pool: bool,
+    /// The pool's bytes are lent now (from a burst's start to its upload or end).
+    claimed: bool,
+    bounce_sectors: usize,
+    /// Sectors of the burst in flight or landed and waiting for the GPU.
+    burst: usize,
+    flight: bool,
+    landed: bool,
+    ready: bool,
+    /// Bumped by every plan, so a burst of an older plan is dropped when it lands.
+    plan: u32,
+    flight_plan: u32,
+    /// The scene a plan failed for, which is not tried again.
+    failed: usize,
+    sums: [u32; 20],
+}
+static mut SPILL: Spill = Spill {
+    scene: EMPTY,
+    first: 0,
+    want: 0,
+    done: 0,
+    lba: 0,
+    page0: 0,
+    bounce: core::ptr::null_mut(),
+    pool: false,
+    claimed: false,
+    bounce_sectors: 0,
+    burst: 0,
+    flight: false,
+    landed: false,
+    ready: false,
+    plan: 0,
+    flight_plan: 0,
+    failed: EMPTY,
+    sums: [0; 20],
+};
+/// What the gate takes: first group sector and count of the sectors it restores from VRAM.
+static mut SPILL_TAKEN: (usize, usize) = (0, 0);
+#[no_mangle]
+pub static mut HK_SPILL_SECTORS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SPILL_BURSTS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SPILL_RESTORED: u32 = 0;
+#[no_mangle]
+pub static mut HK_SPILL_BAD: u32 = 0;
+fn spill_state() -> &'static mut Spill {
+    unsafe { &mut *(&raw mut SPILL) }
+}
+/// Forget the plan (a burst in flight lands as one of an older plan and is dropped).
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn spill_reset() {
+    let s = spill_state();
+    if s.claimed && !s.flight {
+        crate::modules::release_claim();
+        s.claimed = false;
+    }
+    s.scene = EMPTY;
+    s.landed = false;
+    s.ready = false;
+    s.burst = if s.flight { s.burst } else { 0 };
+    s.done = 0;
+    s.want = 0;
+    s.plan = s.plan.wrapping_add(1);
+}
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn spill_sum(mut hash: u32, words: *const u32, count: usize) -> u32 {
+    for i in 0..count {
+        // SAFETY: the callers pass `count` words of an arena or pool buffer.
+        hash = hash.rotate_left(5) ^ unsafe { words.add(i).read() };
+    }
+    hash
+}
 #[no_mangle]
 pub static mut HK_PREFETCH_READS: u32 = 0;
 /// Gates that took their runner audio bank from the prefetch's RAM copy.
@@ -3097,7 +3366,9 @@ fn maybe_park() -> bool {
 /// Let a bank read or a park in flight land (the gate starts reads of its own).
 #[inline(never)]
 fn bank_settle() {
-    while (prefetch_state().bank.flight || prefetch_state().park_flight) && unsafe { DRIVE.prefetch } {
+    while (prefetch_state().bank.flight || prefetch_state().park_flight || spill_state().flight)
+        && unsafe { DRIVE.prefetch }
+    {
         crate::input::checkpoint();
         land_prefetch();
     }
@@ -3293,6 +3564,7 @@ const CODE_FIRST: bool = false;
 #[inline(never)]
 fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (usize, usize, bool) {
     bank_settle();
+    spill_upload();
     let p = prefetch_state();
     crate::gate_probe::event(
         12,
@@ -3301,6 +3573,9 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
     );
     // A whole-group prefetch of this room still reading lands where the gate
     // stages (the arena's end), from the same sector: the gate takes it over.
+    unsafe {
+        SPILL_TAKEN = (0, 0);
+    }
     if adopt
         && p.state == Fetch::Reading
         && unsafe { DRIVE.prefetch }
@@ -3309,6 +3584,7 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
         && !p.code_only
         && p.skip + p.sectors == total
         && (p.skip == 0 || skip_now > 0)
+        && p.spill_want == 0
     {
         let skip = p.skip;
         unsafe {
@@ -3341,7 +3617,22 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
     if k > 0 && p.skip > 0 && skip_now == 0 {
         k = 0;
     }
-    let skip = if k > 0 { p.skip } else { skip_now };
+    // A prefix that began in spare VRAM pages is used only with them.
+    if k > 0 && !spill_take(p, scene) {
+        k = 0;
+    }
+    let mut skip = if k > 0 { p.skip } else { skip_now };
+    if k == 0 {
+        // Without an arena part the sectors already in spare VRAM pages still count.
+        let s = spill_state();
+        if s.scene == scene && s.first == skip_now && s.done > 0 {
+            unsafe {
+                SPILL_TAKEN = (s.first, s.done);
+            }
+            skip = s.first + s.done;
+        }
+        spill_reset();
+    }
     // The chunks the idle time already hashed, if this prefetch is the one used.
     let v = unsafe { &*(&raw const VERIFY) };
     unsafe {
@@ -3368,6 +3659,27 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
     p.hint = EMPTY;
     p.generation += 1;
     (skip, k, false)
+}
+/// Whether the prefix `p` can be used: when it began with sectors held in spare VRAM pages, those
+/// are still the plan's and complete, and are left for the gate to restore (`SPILL_TAKEN`).
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn spill_take(p: &Prefetch, scene: usize) -> bool {
+    let s = spill_state();
+    if p.spill_want == 0 {
+        spill_reset();
+        return true;
+    }
+    let ok = s.ready
+        && s.scene == scene
+        && s.first == p.spill_first
+        && s.want == p.spill_want
+        && p.skip == p.spill_first + p.spill_want;
+    unsafe {
+        SPILL_TAKEN = if ok { (s.first, s.want) } else { (0, 0) };
+    }
+    spill_reset();
+    ok
 }
 /// Drop a prefetch whose bytes the arena front up to `bytes` would overwrite.
 #[inline(never)]
@@ -3409,6 +3721,7 @@ fn prefetch_discard() {
     p.want = None;
     p.hint = EMPTY;
     p.generation += 1;
+    spill_reset();
 }
 /// The prefetch of a scene with a code chunk, as far as it has landed: the
 /// scene, the generation, where its staged prefix (code chunk first) starts
@@ -3432,6 +3745,46 @@ fn land_prefetch() {
         return;
     }
     let p = prefetch_state();
+    let sp = spill_state();
+    if sp.flight {
+        // A spare-page burst is in flight.
+        match cd_stream::status() {
+            cd_stream::Status::Done => {
+                d.prefetch = false;
+                sp.flight = false;
+                if sp.flight_plan == sp.plan && sp.scene != EMPTY {
+                    if cd_stream::received() == sp.burst {
+                        sp.landed = true;
+                    } else {
+                        sp.failed = sp.scene;
+                        spill_reset();
+                    }
+                } else {
+                    sp.burst = if sp.landed { sp.burst } else { 0 };
+                    if sp.claimed {
+                        crate::modules::release_claim();
+                        sp.claimed = false;
+                    }
+                }
+            }
+            cd_stream::Status::Failed(diag) => {
+                d.prefetch = false;
+                sp.flight = false;
+                unsafe {
+                    HK_CD_DIAG = diag;
+                }
+                if sp.flight_plan == sp.plan && sp.scene != EMPTY {
+                    sp.failed = sp.scene;
+                    spill_reset();
+                } else if sp.claimed {
+                    crate::modules::release_claim();
+                    sp.claimed = false;
+                }
+            }
+            cd_stream::Status::Idle | cd_stream::Status::Busy => {}
+        }
+        return;
+    }
     if p.park_flight || p.bank.flight {
         // A side transfer (a runner audio bank read or a head park) is in flight.
         match cd_stream::status() {
@@ -3482,6 +3835,97 @@ fn land_prefetch() {
             p.generation += 1;
         }
         cd_stream::Status::Idle | cd_stream::Status::Busy => {}
+    }
+}
+/// Upload a landed spare-page burst once the GPU is idle.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn spill_upload() {
+    let s = spill_state();
+    // Ready for a command and for DMA (GPUSTAT bits 26 and 28): the GPU has finished the last
+    // frame, so the upload does not wait on it.
+    if !s.landed || psx_rt::interrupts::gp1_queue_pending() || !crate::vram_cache::gpu_idle() {
+        return;
+    }
+    let bytes = unsafe { core::slice::from_raw_parts(s.bounce.cast::<u8>(), s.burst * SECTOR_BYTES) };
+    let page = s.done / 16;
+    let seed = if s.done % 16 == 0 { 0 } else { s.sums[page] };
+    s.sums[page] = spill_sum(seed, s.bounce, s.burst * SECTOR_BYTES / 4);
+    crate::vram_cache::spill_write(s.page0 + page, s.done % 16, s.burst, bytes);
+    unsafe {
+        HK_SPILL_SECTORS += s.burst as u32;
+    }
+    s.done += s.burst;
+    s.burst = 0;
+    s.landed = false;
+    if s.claimed {
+        crate::modules::release_claim();
+        s.claimed = false;
+    }
+    if s.done >= s.want {
+        s.ready = true;
+    }
+}
+/// The module pool wants the bytes it lent: stop reading into them and drop the plan.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn spill_abort() {
+    let s = spill_state();
+    if s.flight {
+        cd_stream::cancel();
+        let mut spins = 0u32;
+        while s.flight && unsafe { DRIVE.prefetch } && spins < 4_000_000 {
+            land_prefetch();
+            spins += 1;
+        }
+        s.flight = false;
+    }
+    s.claimed = false;
+    s.pool = false;
+    s.failed = s.scene;
+    spill_reset();
+}
+/// Start the next burst of a spare-page plan, a few sectors through the arena's slack.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn start_spill() -> bool {
+    let sp = spill_state();
+    if sp.scene == EMPTY || sp.ready || sp.flight || sp.landed || sp.done >= sp.want {
+        return false;
+    }
+    if sp.pool {
+        match crate::modules::claim_top(8 * SECTOR_BYTES as u32) {
+            Some(ptr) => {
+                sp.bounce = ptr;
+                sp.claimed = true;
+            }
+            None => return false,
+        }
+    }
+    // A burst stays inside one page, whose sectors sit in consecutive rows.
+    let n = sp
+        .bounce_sectors
+        .min(16 - sp.done % 16)
+        .min(sp.want - sp.done);
+    match unsafe { cd_stream::start(sp.bounce, n, sp.lba + sp.done as u32) } {
+        Ok(()) => {
+            sp.flight = true;
+            sp.flight_plan = sp.plan;
+            sp.burst = n;
+            unsafe {
+                DRIVE.prefetch = true;
+                HK_SPILL_BURSTS += 1;
+            }
+            true
+        }
+        Err(diag) => {
+            unsafe {
+                HK_CD_DIAG = diag;
+            }
+            sp.failed = sp.scene;
+            spill_reset();
+            false
+        }
     }
 }
 fn start_prefetch() -> bool {
@@ -3730,6 +4174,9 @@ pub fn pump() {
         return;
     }
     if start_pool(false) {
+        return;
+    }
+    if start_spill() {
         return;
     }
     if start_prefetch() {

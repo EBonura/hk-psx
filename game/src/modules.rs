@@ -415,6 +415,67 @@ fn find(chunk: &[u32], m: usize) -> Option<Package> {
 const fn window_of(address: u32) -> u32 {
     address.wrapping_add(0x8000) & 0xffff_0000
 }
+/// The pool's top bytes lent to the disc layer as a read buffer for spare-page prefetch
+/// (`disc::Spill`): offset and length, length 0 when nothing is lent. Allocation steers around
+/// it while anything else is free, and takes it back (stopping the reads into it) when not.
+static mut CLAIM: (u32, u32) = (0, 0);
+/// Lend the pool's top `bytes` if no resident module or pending read sits there.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn claim_top(bytes: u32) -> Option<*mut u32> {
+    let at = (POOL_BYTES as u32).checked_sub(bytes)?;
+    if unsafe { CLAIM.1 } != 0 {
+        return (unsafe { CLAIM } == (at, bytes))
+            .then(|| core::ptr::with_exposed_provenance_mut::<u32>(pool() + at as usize));
+    }
+    for (m, s) in slots().iter().enumerate() {
+        if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
+            return None;
+        }
+    }
+    let (r, rb) = unsafe { RESERVE };
+    if rb != 0 && r < at + bytes && at < r + rb {
+        return None;
+    }
+    unsafe {
+        CLAIM = (at, bytes);
+    }
+    Some(core::ptr::with_exposed_provenance_mut::<u32>(pool() + at as usize))
+}
+/// Whether the pool's top `bytes` are free of resident modules and reads now.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn pool_has_room(bytes: u32) -> bool {
+    let Some(at) = (POOL_BYTES as u32).checked_sub(bytes) else {
+        return false;
+    };
+    for (m, s) in slots().iter().enumerate() {
+        if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
+            return false;
+        }
+    }
+    let (r, rb) = unsafe { RESERVE };
+    !(rb != 0 && r < at + bytes && at < r + rb)
+}
+/// Give the lent bytes back.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn release_claim() {
+    unsafe {
+        CLAIM = (0, 0);
+    }
+}
+/// Take the lent bytes back for a module, after telling the disc layer to stop reading into them.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn reclaim() -> bool {
+    if unsafe { CLAIM.1 } == 0 {
+        return false;
+    }
+    crate::disc::spill_abort();
+    release_claim();
+    true
+}
 /// Lowest free offset that holds `bytes`, between the resident slots and
 /// inside one `lui` window.
 fn gap(bytes: u32) -> Option<u32> {
@@ -452,6 +513,11 @@ fn gap_in(bytes: u32, fenced: bool) -> Option<u32> {
             at = r + rb;
             moved = true;
         }
+        let (c, cb) = unsafe { CLAIM };
+        if cb != 0 && c < at + bytes && at < c + cb {
+            at = c + cb;
+            moved = true;
+        }
         if !moved {
             break;
         }
@@ -467,6 +533,11 @@ fn allocate(bytes: u32, keep: u32) -> Option<u32> {
 fn allocate_in(bytes: u32, keep: u32, fenced: bool) -> Option<u32> {
     if let Some(at) = gap_in(bytes, fenced) {
         return Some(at);
+    }
+    if reclaim() {
+        if let Some(at) = gap_in(bytes, fenced) {
+            return Some(at);
+        }
     }
     // Evict only the modules in one place that fits: one that keeps every
     // art package if there is such a place (art is shared by many rooms, grub
@@ -530,6 +601,10 @@ impl Place {
         }
         let (r, rb) = unsafe { RESERVE };
         if rb != 0 && r < at + bytes && at < r + rb {
+            return;
+        }
+        let (c, cb) = unsafe { CLAIM };
+        if cb != 0 && c < at + bytes && at < c + cb {
             return;
         }
         let (mut victims, mut newest, mut count) = (0u32, 0u32, 0usize);
