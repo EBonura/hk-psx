@@ -15,8 +15,12 @@
 //! per profile and written only at a bench; a display setting belongs to the
 //! television, not to a save.
 use psx_gpu::{
-    self as gpu, display::DisplayConfig, material::BlendMode, ot::OrderingTable,
-    prim::QuadGouraudBlended, Resolution, VideoMode, MAX_NODE_WORDS,
+    self as gpu,
+    display::{DisplayConfig, Resolution, VideoMode},
+    material::BlendMode,
+    ot::OrderingTable,
+    prim::QuadGouraudBlended,
+    MAX_NODE_WORDS,
 };
 
 /// Brightness steps either side of the picture as drawn.

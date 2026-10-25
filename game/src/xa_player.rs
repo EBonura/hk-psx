@@ -98,7 +98,7 @@ impl Player {
     #[inline(never)]
     fn begin_read(&mut self, song: Song) -> bool {
         let start = disc_base::shift_lba(song.lba);
-        if cd::try_set_target_lba(start, SPINS).is_none()
+        if crate::cd_token::cd().try_set_target_lba(start, SPINS).is_none()
             || cd::try_command(CMD_READS, &[], SPINS).is_none()
         {
             return false;
@@ -114,7 +114,7 @@ impl Player {
     #[inline(never)]
     pub fn stop(&mut self) {
         if self.state != State::Idle {
-            self.pause_pending = !cd::try_pause_until_complete(PAUSE_SPINS);
+            self.pause_pending = !crate::cd_token::cd().try_pause_until_complete(PAUSE_SPINS);
         }
         self.state = State::Idle;
         self.song = None;
@@ -125,7 +125,7 @@ impl Player {
     pub fn poll(&mut self) -> Event {
         let Some(song) = self.song else {
             if self.pause_pending {
-                self.pause_pending = !cd::try_pause_until_complete(PAUSE_SPINS);
+                self.pause_pending = !crate::cd_token::cd().try_pause_until_complete(PAUSE_SPINS);
             }
             return Event::Idle;
         };
@@ -165,7 +165,7 @@ impl Player {
 /// Absolute LBA the head is reading, if the drive answers (it counts from the
 /// start of the lead-in, two seconds before LBA 0).
 fn head_lba() -> Option<u32> {
-    let p = cd::PlayPosition::parse(&cd::try_play_position(SPINS)?)?;
+    let p = cd::PlayPosition::parse(&crate::cd_token::cd().try_play_position(SPINS)?)?;
     ((p.absolute_min as u32 * 60 + p.absolute_sec as u32) * 75 + p.absolute_frame as u32)
         .checked_sub(150)
 }
