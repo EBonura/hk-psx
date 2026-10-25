@@ -117,3 +117,20 @@ disc data. The system's code is the particle and layer player (`extras`, `emitte
 Costs above are the emulator's model of the GPU; the title frame budget (about 165,000 GPU cycles of quads with the picture and text) was
 measured there. A style change reads the disc with the song stopped: on the console the drive's stop and restart cost about a second
 each way (the fight music measures the same); the fade covers part of it.
+
+## The title as a boot overlay
+
+The title (`menu.rs`) runs once at boot and never comes back (the pause menu's reset does not return to it), so its code is
+not linked into the resident image. It is the code module `title` (host/code_modules.py `MODULES`, `BOOT_MODULES`):
+
+- **Chunk.** The cooked package is a chunk of kind `boot` at the head of the disc's boot group, right before the title art, so
+  the read costs no seek (host/hk-build/disc.rs `disc_order`, game/src/disc.rs `member`).
+- **Load.** `title::open` (game/src/title.rs) calls `Cache::title_code`, which stages the chunk in the arena behind the art's
+  common part, checks it and installs it into the module pool (`modules::install_boot`). `main` does this before `menu_art`.
+- **Calls.** Only the forwarders in title.rs call into the module (`5title` in the allowed callers). `skip_drop` and the statics
+  (`STYLE`, `ART`, `EXTRA`, the `HK_MENU_*` probes) stay resident, as does `menu::state`, which the pause menu shares.
+- **Evict.** `title::close` frees the module right after the loading frame, so the first scene has the whole pool. A failed scene
+  load reopens it for the retry screen and closes it again. If the disc will not give the chunk, the game starts with fresh
+  settings on slot 0.
+- **Diagnostic builds.** `audio-probe` and `card-diag` call `menu::probe_screen` from outside the forwarders; build them with
+  `HK_RESIDENT_MODULES=title`, which links the title resident again.
