@@ -654,6 +654,12 @@ pub fn fragment_spec(local: u16) -> Option<debris::Spec> {
     let object = admitted_bank()?.region(0)?.object(local as usize)?;
     debris::decode(&object, local)
 }
+/// What drawing the piece `local` needs of it (`fragment_spec` without the polygon).
+#[inline(never)]
+pub fn fragment_look(local: u16) -> Option<debris::Look> {
+    let object = admitted_bank()?.region(0)?.object(local as usize)?;
+    debris::decode_look(&object)
+}
 /// The pieces of the scene's Breakable `owner` (a scene-qualified state id), which
 /// a break launches.
 #[inline(never)]
@@ -672,11 +678,29 @@ fn owner_fragments(owner: usize) -> impl Iterator<Item = debris::Spec> {
 #[inline(never)]
 pub fn fragment_frame(region: &Region, local: u16) -> Option<u16> {
     let bank = bank_region(region)?;
-    for at in 0..bank.object_count() {
+    // The map's object index, found once per region: a draw asks for every piece every tick.
+    #[cfg(not(test))]
+    static mut MAP_AT: (usize, usize) = (usize::MAX, 0);
+    #[cfg(not(test))]
+    let first = {
+        let (id, at) = unsafe { MAP_AT };
+        if id == region.global_id {
+            at
+        } else {
+            0
+        }
+    };
+    #[cfg(test)]
+    let first = 0;
+    for at in first..bank.object_count() {
         let object = bank.object(at)?;
         match object.kind() {
             KIND_FRAGMENT => continue,
             KIND_FRAGMENT_FRAMES => {
+                #[cfg(not(test))]
+                unsafe {
+                    MAP_AT = (region.global_id, at);
+                }
                 let mut pairs = object.indices(0);
                 while let (Some(piece), Some(frame)) = (pairs.next(), pairs.next()) {
                     if piece == local {
@@ -1023,7 +1047,7 @@ impl State {
         let debris = if debris_here() {
             self.debris.draw(
                 region.scene,
-                fragment_spec,
+                fragment_look,
                 |piece| fragment_frame(region, piece),
                 room,
                 camera,

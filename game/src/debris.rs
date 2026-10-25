@@ -136,6 +136,35 @@ pub fn decode(object: &Object<'_>, index: u16) -> Option<Spec> {
         angle_offset: Spec::ANGLE_OFFSET,
     })
 }
+/// What drawing a piece needs of its spec: the polygon, which the solver reads, is not among it.
+#[derive(Clone, Copy, Debug)]
+pub struct Look {
+    pub centroid: [i32; 2],
+    pub scale: [i32; 2],
+    pub tint: bool,
+}
+impl From<Spec> for Look {
+    fn from(s: Spec) -> Self {
+        Self {
+            centroid: s.centroid,
+            scale: s.scale,
+            tint: s.tint,
+        }
+    }
+}
+/// The `Look` of a KIND_FRAGMENT object: `decode` without the polygon, which a draw every tick does not need.
+#[cfg_attr(not(test), optimize(size))]
+pub fn decode_look(object: &Object<'_>) -> Option<Look> {
+    if object.kind() != KIND_FRAGMENT {
+        return None;
+    }
+    let slots = object.bounds();
+    Some(Look {
+        centroid: [slots[2], slots[3]],
+        scale: [object.extra(0), object.extra(1)],
+        tint: object.flags() & 256 != 0,
+    })
+}
 #[derive(Clone, Copy, Debug)]
 pub struct Body {
     pub center: [i32; 2],
@@ -820,7 +849,7 @@ impl Pool {
     pub fn draw(
         &mut self,
         scene: usize,
-        spec_of: impl Fn(u16) -> Option<Spec>,
+        look_of: impl Fn(u16) -> Option<Look>,
         frame_of: impl Fn(u16) -> Option<u16>,
         room: &Room,
         camera: (i32, i32),
@@ -834,7 +863,7 @@ impl Pool {
             if p.scene as usize != scene {
                 continue;
             }
-            let (Some(s), Some(frame)) = (spec_of(p.index), frame_of(p.index)) else {
+            let (Some(s), Some(frame)) = (look_of(p.index), frame_of(p.index)) else {
                 continue;
             };
             let f = room.frame(frame as usize);

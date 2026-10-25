@@ -55,6 +55,10 @@ fn pieces(count: u16) -> Vec<Spec> {
 fn resolve(specs: &[Spec]) -> impl Fn(u16) -> Option<Spec> + '_ {
     move |i| specs.iter().copied().find(|s| s.index == i)
 }
+/// What a draw needs of each spec.
+fn looks(specs: &[Spec]) -> impl Fn(u16) -> Option<debris::Look> + '_ {
+    move |i| specs.iter().find(|s| s.index == i).map(|s| (*s).into())
+}
 fn of_owner(specs: &[Spec], owner: u8) -> impl Iterator<Item = Spec> + '_ {
     specs.iter().copied().filter(move |s| s.owner == owner)
 }
@@ -197,19 +201,19 @@ fn original_frames_only_after_activation_and_shared_draw_budget_is_bounded() {
     let specs = pieces(28);
     let cam = (59 * ONE, 12 * ONE);
     let frame = |_: u16| Some(0u16);
-    assert_eq!(p.draw(0, resolve(&specs), frame, &r, cam), 0);
+    assert_eq!(p.draw(0, looks(&specs), frame, &r, cam), 0);
     p.spawn(0, of_owner(&specs, 0), 0, 1);
-    assert_eq!(p.draw(0, resolve(&specs), frame, &r, cam), 4);
-    assert_eq!(p.draw(1, resolve(&specs), frame, &r, cam), 0);
+    assert_eq!(p.draw(0, looks(&specs), frame, &r, cam), 4);
+    assert_eq!(p.draw(1, looks(&specs), frame, &r, cam), 0);
     assert_eq!(
-        p.draw(0, resolve(&specs), |_| None, &r, cam),
+        p.draw(0, looks(&specs), |_| None, &r, cam),
         0,
         "a region with no frame for a piece does not draw it"
     );
     for owner in 1..7 {
         p.spawn(0, of_owner(&specs, owner), 0, 1);
     }
-    let drawn = p.draw(0, resolve(&specs), frame, &r, cam);
+    let drawn = p.draw(0, looks(&specs), frame, &r, cam);
     assert_eq!(drawn, 28);
     let mut impact = impact::Pool::new();
     for i in 0..32 {
@@ -440,20 +444,20 @@ fn a_finishing_piece_that_stays_off_screen_ten_draws_is_freed_and_others_never()
     for (finishing, expected) in [(true, 0), (false, 1)] {
         let (specs, mut p) = dropped_on_the_floor(1, finishing);
         for _ in 0..9 {
-            p.draw(0, resolve(&specs), frame, &r, far);
+            p.draw(0, looks(&specs), frame, &r, far);
         }
         assert_eq!(p.active(), 1, "nine draws are not ten");
-        p.draw(0, resolve(&specs), frame, &r, far);
+        p.draw(0, looks(&specs), frame, &r, far);
         assert_eq!(p.active(), expected);
     }
     // One visible draw resets the count.
     let (specs, mut p) = dropped_on_the_floor(1, true);
     for _ in 0..9 {
-        p.draw(0, resolve(&specs), frame, &r, far);
+        p.draw(0, looks(&specs), frame, &r, far);
     }
-    p.draw(0, resolve(&specs), frame, &r, (0, ONE));
+    p.draw(0, looks(&specs), frame, &r, (0, ONE));
     for _ in 0..9 {
-        p.draw(0, resolve(&specs), frame, &r, far);
+        p.draw(0, looks(&specs), frame, &r, far);
     }
     assert_eq!(p.active(), 1);
 }
