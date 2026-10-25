@@ -1606,7 +1606,7 @@ impl Actor {
     }
     fn acid_flyer(&self) -> Option<AcidFlyerRuntime> {
         if let Runtime::AcidFlyer(f) = self.runtime {
-            crate::modules::require(crate::modules::ACID_FLYER).then_some(f)
+            crate::modules::require(crate::modules::MOSQUITO).then_some(f)
         } else {
             None
         }
