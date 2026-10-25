@@ -181,7 +181,7 @@ fn probe_a(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
 
 /// Absolute LBA the head is reading (the drive counts from the lead-in, 150 sectors early).
 fn head() -> Option<i32> {
-    cd::try_play_position(SPINS)
+    crate::cd_token::cd().try_play_position(SPINS)
         .and_then(|r| cd::PlayPosition::parse(&r))
         .map(|p| {
             (p.absolute_min as i32 * 60 + p.absolute_sec as i32) * 75 + p.absolute_frame as i32
@@ -193,7 +193,7 @@ fn xa_start(lba: u32, channel: u8) -> bool {
     cd::try_unmute(SPINS).is_some()
         && cd::try_set_mode(0x40 | 0x08, SPINS).is_some()
         && cd::try_command(0x0D, &[crate::music::XA_FILE_NUMBER, channel], SPINS).is_some()
-        && cd::try_set_target_lba(lba, SPINS).is_some()
+        && crate::cd_token::cd().try_set_target_lba(lba, SPINS).is_some()
         && cd::try_command(0x1B, &[], SPINS).is_some()
 }
 /// VBlanks until `ready` holds, polling it every other VBlank, or u32::MAX.
@@ -231,7 +231,7 @@ fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
     for cycle in 0..CYCLES {
         idle(180);
         let paused_at = head();
-        let t = wait(600, || cd::try_pause_until_complete(4_000_000));
+        let t = wait(600, || crate::cd_token::cd().try_pause_until_complete(4_000_000));
         crate::disc::cdda_release();
         let started = now();
         let read = cache.probe_far_read();
@@ -301,7 +301,7 @@ fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
         show(fb, &lines[..3 + cycle]);
     }
     spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
-    let _ = cd::try_pause_until_complete(4_000_000);
+    let _ = crate::cd_token::cd().try_pause_until_complete(4_000_000);
     crate::disc::cdda_release();
     unsafe {
         HK_PROBE_PHASE = 3;

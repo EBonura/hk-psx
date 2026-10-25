@@ -201,7 +201,7 @@ pub fn stop() -> bool {
     spu::enable_cd_audio(false);
     // The player's pause is refused while a read is still seeking; this one waits.
     player().stop();
-    let okay = cd::try_pause_until_complete(SPINS);
+    let okay = crate::cd_token::cd().try_pause_until_complete(SPINS);
     if !okay {
         unsafe {
             HK_MUSIC_ERROR = 2;
@@ -825,7 +825,7 @@ fn boss_service(now: u32) {
             spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
             spu::enable_cd_audio(false);
             player().stop();
-            if !cd::try_pause_until_complete(SPINS) {
+            if !crate::cd_token::cd().try_pause_until_complete(SPINS) {
                 unsafe {
                     HK_MUSIC_ERROR = 4;
                 }

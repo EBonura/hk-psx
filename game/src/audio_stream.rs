@@ -248,7 +248,7 @@ pub fn flag_half(bytes: &mut [u8], half: usize) -> bool {
 mod hardware {
     use super::*;
     use psx_spu::{Pitch, SpuAddr, Voice};
-    const IRQ_MASK: u32 = 1 << psx_io::irq::source::SPU;
+    const IRQ_MASK: u32 = 1 << psx_hw::irq::source::SPU;
     #[repr(C, align(4))]
     pub struct Buffer(pub [u8; FIFO_BYTES]);
     /// The FIFO's bytes. The CD writes sectors into it from its interrupt and

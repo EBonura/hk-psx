@@ -8,7 +8,7 @@
 use core::cell::UnsafeCell;
 use psx_io::{cd, irq, timers};
 const CD: u32 = psx_hw::cd::BASE;
-const CD_BIT: u32 = 1 << irq::source::CDROM;
+const CD_BIT: u32 = 1 << psx_hw::irq::source::CDROM;
 const PARAM_POLLS: usize = 32;
 const FIFO_POLLS: usize = 256;
 const TIMEOUT_VBLANKS: u32 = 600;

@@ -22,6 +22,7 @@ mod animation_cache;
 mod audio;
 #[cfg(feature = "audio-probe")]
 mod audio_probe;
+mod cd_token;
 #[cfg(feature = "card-diag")]
 mod card_diag;
 mod bench;
