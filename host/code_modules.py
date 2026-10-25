@@ -75,6 +75,11 @@ def _actor(*fns):
     return tuple(f'*Actor{len(f)}{f}*' for f in fns)
 
 
+def _menu(*fns):
+    """Functions of game/src/menu.rs (the title), not of its `state` submodule (the settings the pause menu shares)."""
+    return tuple(f'*6hk_psx4menu{len(f)}{f}*' for f in fns)
+
+
 MODULES = {
     'false_knight': _sim('false_knight') + _actor('apply_false_knight', 'advance_false_knight', 'strike_false_knight'),
     # Keep the synchronous FnMut adapter closure resident; only the actual
@@ -117,6 +122,14 @@ MODULES = {
     'fsm3_logic': _sim('fsm3_flow', 'fsm3_math', 'fsm3_events', 'fsm3_timers', 'fsm3_playerdata'),
     'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
+    # The title and its front-end pages (game/src/menu.rs): run once at boot, then dead. The boot reads this
+    # package right before the title art (BOOT_MODULES), installs it into the pool for the title, and evicts
+    # it when the first scene is loading (game/src/title.rs). `skip_drop` and the statics stay resident.
+    'title': _menu('run', 'draw', 'draw_menu', 'text_width', 'text', 'centered', 'caps_index', 'caps_width', 'caps',
+                   'centered_caps', 'ornament', 'logo', 'pointer', 'pointers', 'leaf', 'pointer_u', 'mix', 'rd',
+                   'lerp9', 'piece', 'emitter', 'layer', 'extras', 'flourishes', 'unfurl', 'ramp', 'levels',
+                   'hide_frames', 'input_at', 'present_samples', 'present', 'status', 'probe_screen', 'loading',
+                   'retry', 'restore', 'upload_style', 'upload_ornaments', 'upload_font'),
 }
 if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
@@ -153,6 +166,9 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # once he owns an ability that draws one. Up to four packages can be asked for at once (modules.rs CARRIED).
 CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk',
            'art_fx': 'data/art-fx.hk'}
+# Code modules the boot reads and installs itself, each in a chunk of its own at the head of the disc's
+# boot group (just before the title art, so the read costs no seek): not carried by any room.
+BOOT_MODULES = tuple(m for m in ('title',) if m not in ALWAYS_RESIDENT)
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
@@ -176,7 +192,7 @@ FAMILY_MODULE = {0: 'fsm3_logic', 1: 'fsm3_logic', 2: 'fsm3_logic', 3: 'fsm3_log
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
 # Blocker's room is resident.
-CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame')
+CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame', '5title')
 J26, HI16, LO16, W32 = 1, 2, 3, 4
 
 
@@ -327,12 +343,14 @@ def props_art(props_rs, props_hk):
 def package_chunks(table):
     """The rooms' package chunks in id order: every code chunk (heading its
     room's group), then every art chunk (ending it, after the scene data, so
-    it never displaces data; read into the pool on its own, never by a gate).
+    it never displaces data; read into the pool on its own, never by a gate),
+    then the boot's own code (BOOT_MODULES), then the carried data packages.
     Each is (kind, manifest scene, sorted module ids)."""
     code = [('code', s, [k for k in m if k < len(MODULES)]) for s, m in sorted(table.items())]
     art = [('art', s, [k for k in m if k >= len(MODULES)]) for s, m in sorted(table.items())]
+    boot = [('boot', None, [all_names().index(n)]) for n in BOOT_MODULES]
     carried = [('data', None, [all_names().index(n)]) for n in CARRIED]
-    return [c for c in code if c[2]] + [c for c in art if c[2]] + carried
+    return [c for c in code if c[2]] + [c for c in art if c[2]] + boot + carried
 
 
 def art_reserve(raw, stored):
@@ -389,7 +407,7 @@ def manifest_rust(packed, regions_rs, props_rs=None):
     chunks = package_chunks(table)
     codes = [c[1] for c in chunks if c[0] == 'code']
     arts = [c[1] for c in chunks if c[0] == 'art']
-    carried = {c[2][0]: k for k, c in enumerate(chunks) if c[0] == 'data'}
+    carried = {c[2][0]: k for k, c in enumerate(chunks) if c[0] in ('boot', 'data')}
     masks = [sum(1 << k for k in table.get(i, ())) for i in range(n)]
     code = [str(codes.index(i)) if i in codes else 'u8::MAX' for i in range(n)]
     art = [str(len(codes) + arts.index(i)) if i in arts else 'u8::MAX' for i in range(n)]
@@ -414,7 +432,8 @@ def manifest_rust(packed, regions_rs, props_rs=None):
               f'pub const SCENE_ART:[u8;{n}]=[{",".join(art)}];',
               f'pub const CODE_CHUNKS:usize={len(codes)};',
               f'pub const ART_CHUNKS:usize={len(arts)};',
-              f'pub const DATA_CHUNKS:usize={len(carried)};',
+              f'pub const BOOT_CODE_CHUNKS:usize={sum(1 for c in chunks if c[0] == "boot")};',
+              f'pub const DATA_CHUNKS:usize={sum(1 for c in chunks if c[0] == "data")};',
               f'pub const PACKAGE_CHUNKS:usize={len(chunks)};',
               f'pub const CHUNK_SCENE:[usize;{len(chunks)}]=[{",".join("usize::MAX" if c[1] is None else str(c[1]) for c in chunks)}];',
               '/// The chunk of each carried data module (modules::carry), or u8::MAX.',
