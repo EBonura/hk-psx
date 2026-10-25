@@ -1232,7 +1232,6 @@ fn main() {
                 }
                 input::checkpoint();
                 let _ = cache.pump(); // Detailed errors remain in the CD markers.
-                cache.ahead_step(true);
                 input::checkpoint();
                 let now = psx_rt::interrupts::vblank_count();
                 // A simulation slower than real time skips ticks rather than
@@ -1527,7 +1526,6 @@ fn present_spin(sim_clock: u32, cache: &mut disc::Cache) {
         // in small slices so the gate need not (disc.rs).
         render::warm_step(2);
         disc::preverify_step(256);
-        cache.ahead_step(false);
     }
 }
 

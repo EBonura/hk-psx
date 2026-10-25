@@ -379,16 +379,11 @@ pub fn manifest_index(scene_id: usize) -> Option<usize> {
         .iter()
         .position(|d| d.scene_id as usize == scene_id)
 }
-/// Where each scene's static pages and palettes sit beyond the manifest's bases
-/// (spike `vram-ahead`: a scene admitted ahead of its gate takes the unused end
-/// of the page and palette ranges, so the scene it follows stays intact).
-static mut SHIFT_PAGE: [u8; SCENE_COUNT] = [0; SCENE_COUNT];
-static mut SHIFT_PAL: [u16; SCENE_COUNT] = [0; SCENE_COUNT];
-pub fn scene_page_base(scene: usize) -> usize {
-    SCENE_MANIFEST[scene].page_base + if AHEAD_ON { unsafe { SHIFT_PAGE[scene] as usize } } else { 0 }
+pub const fn scene_page_base(scene: usize) -> usize {
+    SCENE_MANIFEST[scene].page_base
 }
-pub fn scene_palette_base(scene: usize) -> usize {
-    SCENE_MANIFEST[scene].palette_base + if AHEAD_ON { unsafe { SHIFT_PAL[scene] as usize } } else { 0 }
+pub const fn scene_palette_base(scene: usize) -> usize {
+    SCENE_MANIFEST[scene].palette_base
 }
 /// Per-texture attributes of the resident scene bank (packer-derived flags
 /// and cores), read through the admitted Scene view.
@@ -2087,22 +2082,8 @@ impl Cache {
         if self.atlas_scene != scene {
             self.loaded_atlases = start;
             self.atlas_scene = scene;
-            // A scene admitted ahead keeps its placement; any other takes the manifest's.
-            let ah = ahead();
-            let keep = AHEAD_ON && ah.started && ah.scene == scene;
-            unsafe {
-                SHIFT_PAGE[scene] = if keep { ah.shift_page } else { 0 };
-                SHIFT_PAL[scene] = if keep { ah.shift_pal } else { 0 };
-            }
         }
         while self.loaded_atlases < end {
-            if ahead_done(scene, self.loaded_atlases) {
-                unsafe {
-                    HK_AHEAD_SKIPPED += 1;
-                }
-                self.loaded_atlases += 1;
-                continue;
-            }
             let a = &ATLASES[self.loaded_atlases];
             let (end, input) = self.stage(ATLAS_INDEX + self.loaded_atlases, st, 0)?;
             let arena = unsafe {
@@ -2136,15 +2117,10 @@ impl Cache {
             }
             crate::gate_probe::set(crate::gate_probe::UPLOAD);
             // Page 18 is the quick map's until a nineteen-page scene takes it.
-            if a.kind == 0 && scene_page_base(scene) + a.first + a.count >= hk_cache::residency::STATIC_PAGES {
+            if a.kind == 0 && a.first + a.count >= hk_cache::residency::STATIC_PAGES {
                 crate::game_map::lose();
             }
-            crate::vram_cache::upload_atlas_at(
-                a,
-                &arena[..a.raw_len],
-                scene_page_base(scene) + a.first,
-                scene_palette_base(scene) + a.first,
-            );
+            crate::vram_cache::upload_atlas(a, &arena[..a.raw_len]);
             self.loaded_atlases += 1;
         }
         Ok(())
@@ -2393,13 +2369,10 @@ impl Cache {
         }
         mark(1, 0);
         bank_settle();
-        ahead_gate_begin(scene_index(region));
         if let Err(error) = self.admit_scenes(scene_index(region)) {
             mark(3, error as u32);
             return Err(error);
         }
-        // Admitted: the scene's placement stays in SHIFT_*, the ahead work is over.
-        ahead().reset();
         self.try_select(region).and_then(|ready| {
             if ready {
                 Ok(())
@@ -2961,6 +2934,7 @@ fn maybe_park() -> bool {
     }
 }
 /// Let a bank read or a park in flight land (the gate starts reads of its own).
+#[inline(never)]
 fn bank_settle() {
     while (prefetch_state().bank.flight || prefetch_state().park_flight) && unsafe { DRIVE.prefetch } {
         crate::input::checkpoint();
@@ -3155,6 +3129,7 @@ const CODE_FIRST: bool = false;
 /// scene's and cancelled otherwise. `skip_now` is what the gate would skip
 /// on its own; a prefetch that skipped code the room no longer has resident
 /// is dropped.
+#[inline(never)]
 fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (usize, usize, bool) {
     bank_settle();
     let p = prefetch_state();
@@ -3234,6 +3209,7 @@ fn prefetch_take(scene: usize, total: usize, skip_now: usize, adopt: bool) -> (u
     (skip, k, false)
 }
 /// Drop a prefetch whose bytes the arena front up to `bytes` would overwrite.
+#[inline(never)]
 fn prefetch_guard(bytes: usize) {
     bank_settle();
     let p = prefetch_state();
@@ -3253,6 +3229,7 @@ fn prefetch_guard(bytes: usize) {
     }
 }
 /// Forget any prefetch (the tail is about to be reused).
+#[inline(never)]
 fn prefetch_discard() {
     bank_settle();
     let p = prefetch_state();
@@ -3406,293 +3383,6 @@ fn start_prefetch() -> bool {
     }
 }
 
-/// Spike `vram-ahead`: decode and upload the next scene's atlases while the Knight
-/// is still in this one. The next scene's group sits compressed in the arena tail
-/// (the prefetch). Each atlas chunk is decoded into the free gap between the
-/// resident scene and that tail and uploaded to pages and palettes the resident
-/// scene does not use, so the gate finds them in place and skips their decode and
-/// upload. Only whole-group prefetches whose pages and palettes fit beside the
-/// resident scene take part.
-/// Off in the shipped disc (feature `vram-ahead` turns it on for the gate study): with the
-/// entry hold overlapping the load's end, the load time it saves on a covered gate hides
-/// under the hold, and it costs 3.4 KB of code in a build with 1.2 KB of headroom to spare.
-pub const AHEAD_ON: bool = cfg!(feature = "vram-ahead");
-/// Decoder steps run per call (each at most DECODE_STEP byte operations).
-const AHEAD_STEPS: usize = match option_env!("HK_AHEAD_STEPS") {
-    Some(s) => parse_usize(s),
-    None => 4,
-};
-/// Highest page the ahead placement may use (page 18 is the quick map's).
-const AHEAD_PAGE_LIMIT: usize = 18;
-struct Ahead {
-    scene: usize,
-    ok: bool,
-    started: bool,
-    next: usize,
-    end: usize,
-    shift_page: u8,
-    shift_pal: u16,
-    done: [bool; 40],
-    decoder: Option<Decoder>,
-    pending_upload: bool,
-    lo: usize,
-}
-static mut AHEAD: Ahead = Ahead {
-    scene: EMPTY,
-    ok: false,
-    started: false,
-    next: 0,
-    end: 0,
-    shift_page: 0,
-    shift_pal: 0,
-    done: [false; 40],
-    decoder: None,
-    pending_upload: false,
-    lo: 0,
-};
-#[no_mangle]
-pub static mut HK_AHEAD_CHUNKS: u32 = 0;
-#[no_mangle]
-pub static mut HK_AHEAD_SCENES: u32 = 0;
-#[no_mangle]
-pub static mut HK_AHEAD_REFUSED: u32 = 0;
-#[no_mangle]
-pub static mut HK_AHEAD_STEPS_RUN: u32 = 0;
-/// Why a plan was refused: not a whole-group prefetch, pages, palettes, gap.
-#[no_mangle]
-pub static mut HK_AHEAD_WHY: [u32; 4] = [0; 4];
-/// Atlas chunks the gates found already uploaded.
-#[no_mangle]
-pub static mut HK_AHEAD_SKIPPED: u32 = 0;
-#[no_mangle]
-pub static mut HK_AHEAD_GATES: u32 = 0;
-fn ahead() -> &'static mut Ahead {
-    unsafe { &mut *(&raw mut AHEAD) }
-}
-impl Ahead {
-    fn reset(&mut self) {
-        self.scene = EMPTY;
-        self.ok = false;
-        self.started = false;
-        self.decoder = None;
-        self.pending_upload = false;
-        self.done = [false; 40];
-    }
-}
-/// Whether atlas `idx` (an index into ATLASES) of `scene` was already decoded and uploaded.
-fn ahead_done(scene: usize, idx: usize) -> bool {
-    let a = ahead();
-    AHEAD_ON && a.started && a.scene == scene && {
-        let (start, _) = SCENE_ATLAS_RANGES[scene];
-        idx >= start && idx - start < a.done.len() && a.done[idx - start]
-    }
-}
-/// A gate for `wanted` begins: an ahead decode in flight is abandoned; finished chunks stay.
-fn ahead_gate_begin(wanted: usize) {
-    unsafe {
-        HK_AHEAD_GATES += 1;
-    }
-    let a = ahead();
-    a.decoder = None;
-    a.pending_upload = false;
-    if a.scene != wanted {
-        if a.started {
-            unsafe {
-                SHIFT_PAGE[a.scene] = 0;
-                SHIFT_PAL[a.scene] = 0;
-            }
-        }
-        a.reset();
-    }
-}
-impl Cache {
-    /// One bounded slice of ahead work; call from idle time in the present loop.
-    /// `upload`: the GPU path is free to take a page (the main loop, between frames);
-    /// the present loop's idle time only decodes.
-    pub fn ahead_step(&mut self, upload: bool) {
-        if !AHEAD_ON {
-            return;
-        }
-        let p = prefetch_state();
-        let a = ahead();
-        let cur = self.resident_scene;
-        if self.loaded_scenes != 1 || cur >= SCENE_COUNT || !self.metadata_admitted() {
-            return;
-        }
-        if p.state != Fetch::Ready || p.scene == EMPTY || p.scene == cur {
-            if a.scene != EMPTY && !a.started {
-                a.reset();
-            }
-            return;
-        }
-        let b = p.scene;
-        if a.scene != b {
-            if a.started && a.scene != cur {
-                // The Knight's destination changed: what was uploaded is simply unused.
-                unsafe {
-                    SHIFT_PAGE[a.scene] = 0;
-                    SHIFT_PAL[a.scene] = 0;
-                }
-            }
-            a.reset();
-            a.scene = b;
-            a.ok = self.ahead_plan(a, p, cur, b);
-            if !a.ok {
-                unsafe {
-                    HK_AHEAD_REFUSED += 1;
-                }
-            }
-        }
-        if !a.ok {
-            return;
-        }
-        crate::gate_probe::ctx(1 + upload as u32);
-        let gpu_busy = crate::render::dma_pending() || psx_rt::interrupts::gp1_queue_pending();
-        if gpu_busy && upload {
-            return;
-        }
-        let (start, _) = SCENE_ATLAS_RANGES[b];
-        let base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
-        for _ in 0..if upload { AHEAD_STEPS } else { 1 } {
-            if a.next >= a.end {
-                return;
-            }
-            let idx = a.next;
-            let at = &ATLASES[idx];
-            let first = match self.entry(ATLAS_INDEX + idx) {
-                Ok(e) => (e.sector_offset - self.group_bases[1 + b]) as usize,
-                Err(_) => {
-                    a.ok = false;
-                    return;
-                }
-            };
-            let e = self.entry(ATLAS_INDEX + idx).ok().unwrap();
-            let chunk = base_off + (first - p.skip) * SECTOR_BYTES;
-            let end = chunk + e.byte_size as usize;
-            let arena = unsafe {
-                core::slice::from_raw_parts_mut(
-                    (&raw mut BUFFERS.words).cast::<u8>().add(a.lo),
-                    end - a.lo,
-                )
-            };
-            if a.decoder.is_none() && !a.pending_upload {
-                a.decoder = Some(
-                    Decoder::new_bytes(at.stored_len, at.stored_fnv, at.raw_len, at.raw_fnv)
-                        .at(chunk - a.lo),
-                );
-                a.started = true;
-                unsafe {
-                    SHIFT_PAGE[b] = a.shift_page;
-                    SHIFT_PAL[b] = a.shift_pal;
-                }
-            }
-            if let Some(d) = a.decoder.as_mut() {
-                unsafe {
-                    HK_AHEAD_STEPS_RUN += 1;
-                }
-                match d.step(arena, DECODE_STEP) {
-                    Ok(Some(len)) if len == at.raw_len => {
-                        a.decoder = None;
-                        a.pending_upload = true;
-                    }
-                    Ok(Some(_)) | Err(_) => {
-                        a.decoder = None;
-                        a.ok = false;
-                        return;
-                    }
-                    Ok(None) => continue,
-                }
-            }
-            if a.pending_upload {
-                if !upload || gpu_busy {
-                    return;
-                }
-                crate::gate_probe::ctx(3);
-                crate::vram_cache::upload_atlas_at(
-                    at,
-                    &arena[..at.raw_len],
-                    scene_page_base(b) + at.first,
-                    scene_palette_base(b) + at.first,
-                );
-                a.pending_upload = false;
-                a.done[idx - start] = true;
-                a.next += 1;
-                unsafe {
-                    HK_AHEAD_CHUNKS += 1;
-                    if a.next >= a.end {
-                        HK_AHEAD_SCENES += 1;
-                    }
-                }
-                // One chunk's upload is this call's work.
-                return;
-            }
-        }
-    }
-    /// Whether scene `b`, held whole in the prefetch, can be decoded ahead beside `cur`.
-    fn ahead_plan(&self, a: &mut Ahead, p: &Prefetch, cur: usize, b: usize) -> bool {
-        let why = |i: usize| unsafe { HK_AHEAD_WHY[i] += 1 };
-        if !self.tail_fits(b) || p.skip + p.sectors != p.total || p.total != self.group_sectors(b) {
-            why(0);
-            return false;
-        }
-        let (start, end) = SCENE_ATLAS_RANGES[b];
-        if end - start > a.done.len() {
-            return false;
-        }
-        let (mut pb, mut cb) = (0usize, 0usize);
-        for x in &ATLASES[start..end] {
-            if x.kind == 0 {
-                pb += x.count;
-            } else {
-                cb += x.count;
-            }
-        }
-        let (mut pa, mut ca) = (0usize, 0usize);
-        let (cs, ce) = SCENE_ATLAS_RANGES[cur];
-        for x in &ATLASES[cs..ce] {
-            if x.kind == 0 {
-                pa += x.count;
-            } else {
-                ca += x.count;
-            }
-        }
-        let (sa_p, sa_c) = unsafe { (SHIFT_PAGE[cur] as usize, SHIFT_PAL[cur] as usize) };
-        let page = if sa_p >= pb {
-            0
-        } else if sa_p + pa + pb <= AHEAD_PAGE_LIMIT {
-            AHEAD_PAGE_LIMIT - pb
-        } else {
-            why(1);
-            return false;
-        };
-        let pal = if sa_c >= cb {
-            0
-        } else if sa_c + ca + cb <= hk_cache::residency::SCENE_CLUTS {
-            hk_cache::residency::SCENE_CLUTS - cb
-        } else {
-            why(2);
-            return false;
-        };
-        let resident = ((SCENE_MANIFEST[cur].raw_len + 3) & !3) + self.metadata_len;
-        let mut base_off = (p.base as usize) - unsafe { (&raw const BUFFERS.words) as usize };
-        // The runner audio bank, when one rides below the prefix, is the tail's floor.
-        if p.bank.scene == b && p.bank.sectors > 0 {
-            base_off = base_off.min(p.bank.at);
-        }
-        // The largest chunk decodes into the gap between the resident scene and the tail.
-        let raw_max = ATLASES[start..end].iter().map(|x| x.raw_len).max().unwrap_or(0);
-        if base_off < resident + raw_max + 64 {
-            why(3);
-            return false;
-        }
-        a.next = start;
-        a.end = end;
-        a.shift_page = page as u8;
-        a.shift_pal = pal as u16;
-        a.lo = resident;
-        true
-    }
-}
 /// The one drive. Room loads, area music refills and XA all go through
 /// here, so no two of them ever overlap. A refill runs in the background from
 /// the CD interrupt; a room read waits for one in flight to land, and during a
