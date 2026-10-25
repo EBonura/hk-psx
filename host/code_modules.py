@@ -149,8 +149,10 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # name -> the cooked file, read whole (repo-relative).
 # The Knight's death and respawn clips are carried too (host/ability_art.py STREAM_PACKS, the same names
 # and files, in that order): game/src/frame.rs `carry_streamed_art` asks for them when a hit could kill
-# and when he has died. Up to four packages can be asked for at once (modules.rs CARRIED).
-CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk'}
+# and when he has died; `art_fx` (the Knight's ability effects, game/src/ability_fx.rs) follows him through every scene
+# once he owns an ability that draws one. Up to four packages can be asked for at once (modules.rs CARRIED).
+CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk',
+           'art_fx': 'data/art-fx.hk'}
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.

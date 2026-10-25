@@ -183,6 +183,7 @@ static mut CARRIED: [(u8, u16); 4] = [(u8::MAX, u16::MAX); 4];
 /// (`None`). A gate into that scene reads it with the scene's art; it is pinned
 /// while the scene is current and evictable otherwise. Cheap: call it whenever
 /// the answer may have changed.
+#[inline(never)]
 pub fn carry(m: usize, scene: Option<usize>) {
     let slots = unsafe { &mut *(&raw mut CARRIED) };
     let s = scene.map_or(u16::MAX, |s| s as u16);

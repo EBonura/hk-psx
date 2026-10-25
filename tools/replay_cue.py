@@ -38,6 +38,8 @@ WATCHES+='HK_SCRIPT_ACTIVE HK_SCRIPT_TRANSITIONS HK_SCRIPT_WRITES HK_SCRIPT_FLAG
 # Door's per-hit reaction and the camera shake an ordinary break asks for.
 WATCHES+='HK_SAVE_UI HK_CARD_FAULT HK_CARD_FAULT_EXCHANGE HK_CARD_RETRIES HK_CARD_FRAMES HK_CARD_LAST HK_CARD_WRITE_VBLANKS HK_GREAT_DOOR_FX HK_BREAK_SHAKES'.split()
 WATCHES+=['HK_ABILITY_DRAWN']
+# The Knight's ability effects (game/src/ability_fx.rs): raised, and raised while their art was not in the pool.
+WATCHES+=['HK_FX_RAISED','HK_FX_LATE']
 # The Knight's look clips and the gate arrivals' fall from the end of the walk-in to the ground.
 WATCHES+='HK_LOOK_UP_TICKS HK_LOOK_DOWN_TICKS HK_LOOK_ENDS HK_GATE_ENTRIES HK_GATE_ENTRY_DROP_MAX'.split()
 WATCHES+='HK_HARD_LANDINGS HK_HARD_LOCK_TICKS HK_OPENING_CRASHES'.split()

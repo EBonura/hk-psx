@@ -179,6 +179,26 @@ impl Game {
             }
         }
     }
+    /// Carry the ability effects (`art_fx`) into the scene while the Knight owns an ability that
+    /// draws one, so every gate reads them with the scene's own art. Asked again only when the scene
+    /// or the answer changes: nearly every frame it is one compare.
+    #[cfg(not(test))]
+    #[inline(never)]
+    pub fn carry_ability_art(&self, current: usize) {
+        static mut ASKED: usize = usize::MAX;
+        let wants = ability_fx::wanted(&self.player, self.cast.has_fireball);
+        let key = current << 1 | usize::from(wants);
+        if unsafe { ASKED } == key {
+            return;
+        }
+        unsafe {
+            ASKED = key;
+        }
+        crate::modules::carry(
+            crate::modules::ART_FX,
+            crate::disc::manifest_index(current).filter(|_| wants),
+        );
+    }
     /// Screen darkness for the death fade, 0 (none) to 255 (black).
     pub fn death_shade(&self) -> u8 {
         if !self.vitals.dead {
@@ -446,7 +466,9 @@ pub fn render(
     let pickup_draws =
         game.pickups
             .append_needed(room, game.region_id, &mut needed, &mut needed_len);
-    // Last of all: the slashes are the one thing that may go undrawn when the cache is spoken for.
+    // The ability effects and then the slashes are the things that may go undrawn when the cache is
+    // spoken for.
+    let fx = !game.vitals.dead && !game.door.hidden() && ability_fx::request(&mut needed, &mut needed_len);
     let slashes = hit_fx::request(&mut needed, &mut needed_len);
     if early {
         render::bind_animation(room, &needed[..needed_len], true);
@@ -512,6 +534,10 @@ pub fn render(
     // time (Vitals::invulnerable_pulse), whatever the frame rate.
     let pulse = game.vitals.invulnerable_pulse();
     let tint = (128 - u32::from(pulse) * 128 / u32::from(hk_sim::PULSE_TICKS)) as u8;
+    // The Dash Burst and the wings sit a hair behind the Knight (local z 0.001).
+    if fx {
+        prims += ability_fx::draw(&game.player, camera);
+    }
     if (!game.vitals.dead || ability_frame.is_some()) && !game.door.hidden() {
         prims += match ability_frame {
             Some(i) => ability_art::draw(
@@ -1009,6 +1035,7 @@ pub fn simulate(
 ) {
     battle_gates::tick();
     hit_fx::tick();
+    ability_fx::tick();
     drip::tick(r.scene);
     // What the enemies see is the camera as the previous tick left it: in the
     // original their FSMs run in Update and read the camera transform its
@@ -1058,6 +1085,7 @@ pub fn simulate(
     } else if game.vitals.needs_death_respawn() {
         game.death_hold = 0;
         hit_fx::clear();
+        ability_fx::clear();
         // The screen is already black; the load carries on from there (exit_fade.rs).
         exit_fade::arm(255, 1);
         // A fight lost ends its XA song; the arena resets for the next try.
@@ -1166,6 +1194,7 @@ pub fn simulate(
         // `Fireball Top`'s `Cast Left`/`Cast Right` play the cast as the ball leaves.
         if was_antic && game.cast.phase == hk_sim::CastPhase::Recoil {
             ability_sound(audio::FIREBALL);
+            ability_fx::cast(&game.player);
         }
         let focus_events = game.focus.step(
             FOCUS_PARAMS,
@@ -1432,6 +1461,7 @@ pub fn simulate(
             }
         }
         hero_sounds(&before, &game.player);
+        ability_fx::on_edges(&before, &game.player);
         great_door::probe(
             game.door.entering(),
             game.player.grounded,
@@ -1860,6 +1890,7 @@ pub fn simulate(
             room.counts[5],
             game.state.edge_reader(r, room),
         );
+        ability_fx::emit(r.scene, &game.player, &game.cast.ball);
         game.enemies.take_geo_deaths(r.scene, |source, x, y| {
             let Some(e) = world::geo_enemy(r.scene, source) else {
                 return false;
@@ -2135,6 +2166,7 @@ fn take_gate(
         (g.spawn, g.target_region)
     };
     hit_fx::clear();
+    ability_fx::clear();
     game.geo.leave_scene(r.scene, geo::GEO_PARAMS);
     game.geo.reset_enemies(r.scene);
     game.vitals.add_blue_health(game.life.leave_scene());

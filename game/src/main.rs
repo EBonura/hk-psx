@@ -17,6 +17,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 /// fall in the shaft.
 const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
 mod ability_art;
+mod ability_fx;
 mod ambience;
 mod animation_cache;
 mod audio;
@@ -1398,6 +1399,8 @@ fn main() {
             // a slice per frame (modules.rs).
             game.shade.carry(Some(r.scene));
             game.carry_streamed_art(r.scene);
+            // Into the scene a gate leads to as soon as the Knight has chosen it, so the gate reads it.
+            game.carry_ability_art(target.map_or(r.scene, world::scene_of));
             modules::service();
             // Guess the next gate every fourth frame and let the drive read
             // that scene ahead; an exit fade has already named its gate.

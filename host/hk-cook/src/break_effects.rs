@@ -2046,6 +2046,7 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         &[(4650, "Dust L"), (5097, "Dust R")],
         Some(HERO_DUST_BURST),
         true,
+        None,
         (
             "Knight / Focus Effects",
             "Dust L and Dust R, per Focus tick",
@@ -2060,7 +2061,32 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         &[(7585, "Can Focus Particles")],
         None,
         false,
+        None,
         ("Knight", "Can Focus Particles, once per Can Heal"),
+    )?;
+    collect_hero_effect(
+        source,
+        gravity,
+        &scenes,
+        &mut c,
+        HERO_DASH_ASH_OWNER,
+        &[(7105, "Dash Ash")],
+        Some(HERO_DASH_ASH_BURST),
+        true,
+        Some(HERO_DASH_ASH_MIRROR_OWNER),
+        ("Knight / Effects", "Dash Ash, per dash tick"),
+    )?;
+    collect_hero_effect(
+        source,
+        gravity,
+        &scenes,
+        &mut c,
+        HERO_SLIDE_DUST_OWNER,
+        &[(4838, "Wallslide Dust")],
+        Some(HERO_SLIDE_DUST_BURST),
+        true,
+        None,
+        ("Knight / Effects", "Wallslide Dust, per wall slide tick"),
     )?;
     if c.styles.len() > 253 {
         return err("particle style IDs");
@@ -2081,6 +2107,19 @@ const HERO_DUST_BURST: i64 = 6;
 /// full, and the system's own FSM plays it once (0.25 s at 200 a second: fifty motes). Cooked as
 /// authored and raised by the guest on that cue, at the Knight, like the dust.
 pub const HERO_MOTES_OWNER: i64 = 0xFFFE;
+/// The Knight's `Dash Ash` (resources.assets:7105, child of `Effects`): `HeroDash` turns its emission on
+/// (200 a second, over a circle of radius 0.73 at (0.47, -0.8), behind the Knight when he faces left)
+/// and the end of the dash turns it off. Cooked as the burst of sixteen a tenth of a second of that
+/// emission makes (a dash is 0.25 s: three of them), at the Knight's own place; the guest raises one
+/// every sixth tick of a dash, from the owner that matches his facing
+/// (`HERO_DASH_ASH_MIRROR_OWNER` has the offset on the other side).
+pub const HERO_DASH_ASH_OWNER: i64 = 0xFFFD;
+pub const HERO_DASH_ASH_MIRROR_OWNER: i64 = 0xFFFC;
+const HERO_DASH_ASH_BURST: i64 = 16;
+/// The Knight's `Wallslide Dust` (resources.assets:4838): 100 a second while he slides down a wall,
+/// ten every sixth tick.
+pub const HERO_SLIDE_DUST_OWNER: i64 = 0xFFFB;
+const HERO_SLIDE_DUST_BURST: i64 = 10;
 
 /// Systems of the Knight's own, cooked for every scene at the Knight's place. The emitters'
 /// transforms are taken relative to the parent of the first part (`Focus Effects` for the dust,
@@ -2095,6 +2134,7 @@ fn collect_hero_effect(
     parts: &[(i64, &str)],
     emit: Option<i64>,
     unloop: bool,
+    mirror: Option<i64>,
     labels: (&str, &str),
 ) -> Result<()> {
     let file = source.file("resources.assets").map_err(|e| e.to_string())?;
@@ -2157,6 +2197,21 @@ fn collect_hero_effect(
                 origin,
                 basis,
             });
+            // The same system with its offset on the other side of the Knight (a child turns with
+            // his facing; the guest has no mirror, so each side is an owner of its own).
+            if let Some(owner) = mirror {
+                let mut origin = origin;
+                origin[0] = -origin[0];
+                c.emitters.push(EmitterRow {
+                    scene,
+                    owner,
+                    source: e.system.path_id(),
+                    style,
+                    angle_offset: 0,
+                    origin,
+                    basis,
+                });
+            }
             c.texture(&e.texture_id, &e.texture);
         }
     }

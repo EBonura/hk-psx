@@ -20,9 +20,13 @@ static DATA: &[u8] = include_bytes!(concat!(
     "/../data/ability-art.hk"
 ));
 /// The carried module of each streamed pack, in `STREAM_PACKS` order
-/// (host/ability_art.py): the Death clip, then the respawn clips.
+/// (host/ability_art.py): the Death clip, the respawn clips, then the ability effects.
 #[cfg(not(test))]
-const STREAMS: [usize; 2] = [crate::modules::ART_DEATH, crate::modules::ART_WAKE];
+const STREAMS: [usize; 3] = [
+    crate::modules::ART_DEATH,
+    crate::modules::ART_WAKE,
+    crate::modules::ART_FX,
+];
 /// Bytes of one streamed frame record at the head of a pack: the guest `Frame` field for field
 /// (offset u32, width and height u16, palette u32, four bounds i32).
 const RECORD_BYTES: usize = 28;
@@ -76,6 +80,17 @@ pub const WAKE_TO_SIT: usize = 32;
 /// The respawn at the new-game spawn: the lying pose, then getting up (`Wake Up Ground`).
 pub const WAKE_GROUND_LIE: usize = 33;
 pub const WAKE_GROUND_RISE: usize = 34;
+/// The ability effects, the last streamed pack (`host/ability_art.py` FX_CLIPS, `art_fx`): the Dash
+/// Burst, the double jump's wings and the wall jump's puff, each drawn at the Knight
+/// (`ability_fx.rs`).
+pub const DASH_EFFECT: usize = 35;
+pub const WINGS_EFFECT: usize = 36;
+pub const WALL_PUFF: usize = 37;
+/// Vengeful Spirit's cast (`Fireball Top`'s blast) and the ball's wall impact.
+pub const FIREBALL_BLAST: usize = 38;
+pub const WALL_IMPACT: usize = 39;
+/// The double jump's `White Flash DJ`.
+pub const FLASH_EFFECT: usize = 40;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -115,6 +130,7 @@ fn pack(k: usize) -> Option<&'static [u8]> {
         [
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-death.hk"))[..],
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-wake.hk"))[..],
+            &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-fx.hk"))[..],
         ]
         .get(k)
         .copied()
@@ -158,6 +174,7 @@ fn frame_record(index: usize) -> Option<Frame> {
     locate(index).map(|(frame, _)| frame)
 }
 /// Whether `clip` can be drawn now: always for a linked clip, for a streamed one once its pack is resident.
+#[inline(never)]
 pub fn ready(clip: usize) -> bool {
     let first = ABILITY_CLIPS[clip].start;
     first < ABILITY_FRAMES.len() || stream_of(first).is_some_and(|(k, _)| pack(k).is_some())
@@ -268,12 +285,12 @@ mod presentation {
         }
     }
     /// Draw one ability frame at the Knight, mirrored by its facing.
-    #[inline(never)]
+    #[inline]
     pub fn draw(index: usize, x: i32, y: i32, facing: i32, camera: (i32, i32), tint: u8) -> u32 {
-        draw_with(index, x, y, facing, camera, tint, BlendMode::Average)
+        draw_with(index, x, y, facing, camera, (tint, tint, tint), BlendMode::Average)
     }
     /// A Focus effect frame: the original's Screen blend is the GPU's Add.
-    #[inline(never)]
+    #[inline]
     pub fn draw_additive(
         index: usize,
         x: i32,
@@ -282,7 +299,20 @@ mod presentation {
         camera: (i32, i32),
         tint: u8,
     ) -> u32 {
-        draw_with(index, x, y, facing, camera, tint, BlendMode::Add)
+        draw_with(index, x, y, facing, camera, (tint, tint, tint), BlendMode::Add)
+    }
+    /// An ability effect (`ability_fx.rs`): additive light of the colour `rgb`, 128 being the
+    /// texel's own level.
+    #[inline]
+    pub fn draw_light(
+        index: usize,
+        x: i32,
+        y: i32,
+        facing: i32,
+        camera: (i32, i32),
+        rgb: (u8, u8, u8),
+    ) -> u32 {
+        draw_with(index, x, y, facing, camera, rgb, BlendMode::Add)
     }
     /// One slash frame at a world point, turned `sin`/`cos` (Q12) about its own origin and grown by
     /// `scale` sixteenths. The frame's bounds are in the sprite's own orientation, so this is not
@@ -312,16 +342,16 @@ mod presentation {
                 120 - hk_sim::fixed::project(at[1] + ry, camera.1, crate::KNIGHT_SCALE as i32, 28),
             )
         });
-        submit(index, frame, vertices, BlendMode::Add, tint)
+        submit(index, frame, vertices, BlendMode::Add, (tint, tint, tint))
     }
-    #[inline(always)]
+    #[inline(never)]
     fn draw_with(
         index: usize,
         x: i32,
         y: i32,
         facing: i32,
         camera: (i32, i32),
-        tint: u8,
+        tint: (u8, u8, u8),
         blend: BlendMode,
     ) -> u32 {
         let Some(frame) = frame_record(index) else {
@@ -349,7 +379,7 @@ mod presentation {
         frame: Frame,
         vertices: [(i32, i32); 4],
         blend: BlendMode,
-        tint: u8,
+        tint: (u8, u8, u8),
     ) -> u32 {
         if vertices.iter().all(|p| p.0 < 0)
             || vertices.iter().all(|p| p.0 >= 320)
@@ -366,19 +396,19 @@ mod presentation {
         let template = QuadTextured::with_material(
             [(0, 0); 4],
             [(u, v), (right, v), (u, bottom), (right, bottom)],
-            TextureMaterial::blended(clut, tpage, (tint, tint, tint), blend),
+            TextureMaterial::blended(clut, tpage, tint, blend),
         );
         // `resident_quad` draws at the texel's own level whatever the template's tint: only the
         // additive (Focus, slash) draws pass theirs on, since the flash fades through it.
         let level = if matches!(blend, BlendMode::Add) {
             tint
         } else {
-            128
+            (128, 128, 128)
         };
         crate::render::resident_quad_tinted(
             &template,
             vertices.map(|(x, y)| (x as i16, y as i16)),
-            (level, level, level),
+            level,
         );
         unsafe {
             HK_ABILITY_DRAWN = HK_ABILITY_DRAWN.saturating_add(1);
@@ -387,4 +417,4 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, draw_additive, draw_slash, upload, upload_frame};
+pub use presentation::{draw, draw_additive, draw_light, draw_slash, upload, upload_frame};
