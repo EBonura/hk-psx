@@ -38,7 +38,7 @@ pub fn page(slot: usize) -> (u16, u16) {
     (x, y)
 }
 /// Where a slot's texels go, for an upload of `width` by `height` pixels.
-fn dest(slot: usize, width: u16, height: u16) -> VramRect {
+pub(crate) fn dest(slot: usize, width: u16, height: u16) -> VramRect {
     let (x, y, u, v) = residency::slot_placement(slot);
     VramRect::new(x + u / 4, y + v, width.div_ceil(4), height)
 }
@@ -65,7 +65,7 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 // A boss's parts sit above the props' keys and stream from the boss's bank in the scene (boss_bank.rs).
                 #[cfg(feature = "hornet")]
                 if key >= crate::boss_bank::KEY_BASE {
-                    return crate::boss_bank::upload(room, (key - crate::boss_bank::KEY_BASE) as usize, |w, h| dest(slot, w, h));
+                    return crate::boss_bank::upload(room, (key - crate::boss_bank::KEY_BASE) as usize, slot);
                 }
                 if key >= crate::dialogue_art::KEY_BASE {
                     // The text panel's ornaments, above the props: linked RAM.

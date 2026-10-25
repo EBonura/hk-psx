@@ -32,6 +32,11 @@ pub struct State {
     convo_page: u8,
     /// The pad of the last tick, for the panel's presses.
     convo_prev: u16,
+    /// The Cloak was already the Knight's when the room began (no item get), and the ticks its item-get panel has left.
+    cloak_seen: bool,
+    cloak_ticks: u16,
+    /// The boss bank reader's index and draw queue (boss_bank.rs).
+    boss: crate::boss_bank::Mem,
     /// The panel closed since the fight last looked: `CONVO_FINISH`.
     done: bool,
 }
@@ -62,6 +67,16 @@ fn state_block() -> Option<&'static mut State> {
     debug_assert!(p as usize % 4 == 0);
     // SAFETY: the room's state block, aligned and `STATE_BYTES` long; nothing else touches it.
     Some(unsafe { &mut *(p as *mut State) })
+}
+
+/// The bank reader's memory, in the room's state block.
+#[inline(always)]
+pub fn boss_mem() -> &'static mut crate::boss_bank::Mem {
+    match state_block() {
+        Some(s) => &mut s.boss,
+        // SAFETY: the reader runs only while the drawing module is resident, and that module is carried with the data package.
+        None => unsafe { core::hint::unreachable_unchecked() },
+    }
 }
 
 /// Point the trees at their cooked bytes in the data package: the host cooker's order and padding.
@@ -114,7 +129,15 @@ pub fn tick(
         s.ready = MAGIC;
         s.convo_open = false;
         s.done = false;
+        s.cloak_seen = crate::persist::player(crate::persist::HAS_DASH);
+        s.cloak_ticks = 0;
     }
+    // `Shiny Control`'s big item: the Cloak taken in this room is announced.
+    if !s.cloak_seen && crate::persist::player(crate::persist::HAS_DASH) {
+        s.cloak_seen = true;
+        s.cloak_ticks = 60 * 8;
+    }
+    s.cloak_ticks = s.cloak_ticks.saturating_sub(1);
     unsafe {
         let wait = super::HK_HORNET_CLOAK_WAIT;
         if wait != 0 && wait != u16::MAX {
@@ -289,10 +312,13 @@ pub fn convo_tick(bits: u16) {
     let Some(s) = state_block() else { return };
     let pressed = bits & !s.convo_prev;
     s.convo_prev = bits;
+    let (cross, circle) = (0x4000, 0x2000);
+    if s.cloak_ticks != 0 && pressed & (cross | circle) != 0 {
+        s.cloak_ticks = 0;
+    }
     if !s.convo_open {
         return;
     }
-    let (cross, circle) = (0x4000, 0x2000);
     if pressed & circle != 0 || (pressed & cross != 0 && s.convo_page as usize + 1 >= HORNET_CONVO.len()) {
         s.convo_open = false;
         s.done = true;
@@ -304,7 +330,17 @@ pub fn convo_tick(bits: u16) {
 /// Her greeting's panel for this frame, composed after the HUD's (`dialogue::prepare`). True while it is up.
 #[inline(never)]
 pub fn convo_prepare() -> bool {
+    use crate::dialogue::{panel_box, panel_text, panel_width};
     let Some(s) = state_block() else { return false };
+    if s.cloak_ticks != 0 && !s.convo_open {
+        // The conversation box's line pitch.
+        const ROW: i16 = 16;
+        let y = panel_box(HORNET_ITEM.len() as i16);
+        for (i, line) in HORNET_ITEM.iter().enumerate() {
+            panel_text(160 - panel_width(line) / 2, y + i as i16 * ROW, line);
+        }
+        return true;
+    }
     if !s.convo_open {
         return false;
     }
