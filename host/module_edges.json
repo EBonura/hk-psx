@@ -367,6 +367,11 @@
   [
     "hk_psx::world::State::tick_debris",
     "debris",
+    "hk_psx::world::debris::unit"
+  ],
+  [
+    "hk_psx::world::State::tick_debris",
+    "debris",
     "hk_psx::world::fragment_spec"
   ],
   [

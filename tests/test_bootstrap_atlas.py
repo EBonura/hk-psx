@@ -45,7 +45,7 @@ impl Recorded {
 thread_local!{static LOG:RefCell<Recorded>=RefCell::new(Recorded::new());}
 fn reset(){LOG.with(|l|*l.borrow_mut()=Recorded::new());}
 mod render{pub fn dma_pending()->bool{super::LOG.with(|l|l.borrow().dma)}}
-pub mod interrupts{pub fn gp1_queue_pending()->bool{super::LOG.with(|l|l.borrow().queued)}}
+pub mod interrupts{pub fn is_display_control_queued()->bool{super::LOG.with(|l|l.borrow().queued)}}
 mod input{pub fn checkpoint(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Checkpoint));}}
 mod texture_upload {
     pub fn upload(r:super::VramRect,bytes:&[u8]) {
@@ -63,8 +63,8 @@ mod texture_upload {
 }
 pub mod gpu {
     pub mod gp0{pub const CLEAR_CACHE:u32=0x01000000;}
-    pub fn wait_cmd_ready(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Wait));}
-    pub fn write_gp0(word:u32){assert_eq!(word,gp0::CLEAR_CACHE);super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Clear));}
+    pub fn wait_command_ready(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Wait));}
+    pub fn write_command(word:u32){assert_eq!(word,gp0::CLEAR_CACHE);super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Clear));}
     pub struct Stat(pub u32);
     impl Stat{pub fn bits(&self)->u32{self.0}}
     pub fn status()->Stat{Stat(u32::MAX)}

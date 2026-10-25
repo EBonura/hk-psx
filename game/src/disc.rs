@@ -4075,7 +4075,7 @@ fn spill_upload() {
     let s = spill_state();
     // Ready for a command and for DMA (GPUSTAT bits 26 and 28): the GPU has finished the last
     // frame, so the upload does not wait on it.
-    if !s.landed || psx_rt::interrupts::gp1_queue_pending() || !crate::vram_cache::gpu_idle() {
+    if !s.landed || psx_rt::interrupts::is_display_control_queued() || !crate::vram_cache::gpu_idle() {
         return;
     }
     let bytes = unsafe { core::slice::from_raw_parts(s.bounce.cast::<u8>(), s.burst * SECTOR_BYTES) };

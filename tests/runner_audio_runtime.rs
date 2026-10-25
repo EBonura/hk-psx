@@ -24,8 +24,8 @@ impl Voice {
  pub fn set_start_addr(&self,a:SpuAddr){record(Event::Start(self.0,a.0));}
  pub fn set_loop_addr(&self,_:SpuAddr){}
  pub fn configure_sample(&self,a:SpuAddr,_:u32,_:Volume,_:Adsr){self.set_start_addr(a);}
- pub fn key_on(n:u32){record(Event::On(n));}
- pub fn key_off(n:u32){record(Event::Off(n));}
+ pub fn start(n:u32){record(Event::On(n));}
+ pub fn release(n:u32){record(Event::Off(n));}
 }
 mod input {pub fn checkpoint(){}}
 #[path="../game/src/runner_audio.rs"] mod audio;

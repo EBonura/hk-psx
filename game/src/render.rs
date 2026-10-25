@@ -1435,7 +1435,7 @@ pub fn clut_word(palette: u16) -> u16 {
         palette / hk_cache::residency::CLUTS,
         palette % hk_cache::residency::CLUTS,
     );
-    Clut::new(x, y).uv_clut_word()
+    Clut::new(x, y).uv_word()
 }
 /// `texture_flash` for a quad that has a template of its own rather than a room texture: the same silhouette CLUT, Add blend and
 /// optional-allowance rules.
@@ -1455,7 +1455,7 @@ pub fn resident_quad_flash(template: &QuadTextured, verts: [(i16, i16); 4], tint
         let mut words = quad_words(template, verts, tint, None, 128);
         words[0] |= 1 << 25;
         words[2] = (words[2] & 0xffff)
-            | ((Clut::new(FLASH_CLUT_X, FLASH_CLUT_Y).uv_clut_word() as u32) << 16);
+            | ((Clut::new(FLASH_CLUT_X, FLASH_CLUT_Y).uv_word() as u32) << 16);
         words[4] = (words[4] & !(3 << 21)) | (1 << 21);
         PACKETS[USED].write_plain(words);
         USED += 1;

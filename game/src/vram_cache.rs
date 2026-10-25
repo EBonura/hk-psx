@@ -124,10 +124,10 @@ pub fn spill_write(page: usize, first: usize, sectors: usize, bytes: &[u8]) {
 pub unsafe fn spill_read(page: usize, first: usize, sectors: usize, dst: *mut u32) -> bool {
     let (x, y) = residency::page_xy(page);
     let y = y + (first * 16) as u16;
-    psx_io::gpu::wait_cmd_ready();
-    psx_io::gpu::write_gp0(0xC000_0000);
-    psx_io::gpu::write_gp0(u32::from(y) << 16 | u32::from(x));
-    psx_io::gpu::write_gp0(((sectors * 16) as u32) << 16 | 64);
+    psx_io::gpu::wait_command_ready();
+    psx_io::gpu::write_command(0xC000_0000);
+    psx_io::gpu::write_command(u32::from(y) << 16 | u32::from(x));
+    psx_io::gpu::write_command(((sectors * 16) as u32) << 16 | 64);
     for i in 0..sectors * 512 {
         let mut spins = 0u32;
         // GPUSTAT bit 27: ready to send VRAM to the CPU.

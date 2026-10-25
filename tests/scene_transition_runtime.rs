@@ -53,8 +53,8 @@ pub mod gpu { pub mod gp1 {
 }}
 pub mod interrupts {
     pub fn vblank_count() -> u32 { super::device(|h| h.tick) }
-    pub fn gp1_queue_pending() -> bool { super::device(|h| h.queued.is_some()) }
-    pub fn queue_gp1_at_vblank(command: u32) {
+    pub fn is_display_control_queued() -> bool { super::device(|h| h.queued.is_some()) }
+    pub fn queue_display_control_at_vblank(command: u32) {
         assert!(command == 0x03000000 || command == 0x03000001);
         let enabled = command == 0x03000000;
         super::device(|h| {

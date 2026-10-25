@@ -265,9 +265,9 @@ pub fn park(lba: u32) -> Result<(), u32> {
         }
         let absolute = psx_io::disc_base::shift_lba(lba).saturating_add(150);
         let params = [
-            cdrom::bin_to_bcd((absolute / (60 * 75)) as u8),
-            cdrom::bin_to_bcd(((absolute / 75) % 60) as u8),
-            cdrom::bin_to_bcd((absolute % 75) as u8),
+            cd::bin_to_bcd((absolute / (60 * 75)) as u8),
+            cd::bin_to_bcd(((absolute / 75) % 60) as u8),
+            cd::bin_to_bcd((absolute % 75) as u8),
         ];
         *t = Transfer {
             phase: Phase::Idle,
@@ -282,9 +282,9 @@ pub fn park(lba: u32) -> Result<(), u32> {
         };
         unsafe {
             index(0);
-            psx_io::write8(CD + 3, 0);
+            psx_io::write_u8(CD + 3, 0);
         }
-        command(t, cdrom::CMD_SETLOC, &params, Phase::Setloc);
+        command(t, psx_hw::cd::CMD_SETLOC, &params, Phase::Setloc);
         if t.phase == Phase::Failed {
             Err(t.error)
         } else {

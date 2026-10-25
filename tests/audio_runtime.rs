@@ -36,8 +36,8 @@ impl Voice {
         t.gains[self.0 as usize]=left.0;t.events.push(Event::Gain(self.0,left.0));
     }
     pub fn set_pitch(self,pitch:Pitch){TRACE.lock().unwrap().events.push(Event::Pitch(self.0,pitch.0));}
-    pub fn key_off(mask:u32){voice(mask);TRACE.lock().unwrap().events.push(Event::Off(mask));}
-    pub fn key_on(mask:u32){
+    pub fn release(mask:u32){voice(mask);TRACE.lock().unwrap().events.push(Event::Off(mask));}
+    pub fn start(mask:u32){
         let index=voice(mask);let mut t=TRACE.lock().unwrap();let gain=t.gains[index];
         t.events.push(Event::On(mask,gain));
     }

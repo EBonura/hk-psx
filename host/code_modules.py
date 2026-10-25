@@ -75,7 +75,10 @@ ROOM_MODULE_IDS = 56
 # window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
 # now refuses a module wider than the widest window the pool holds).
 STACK_FLOOR = 0x801FFF00 - 0xC000
-POOL_BYTES = 0x1A800
+# 0x1B000 (+2 KiB) at the repin to SDK main c75f63928 (2026-11-06): the same module sources compile larger (debris +740 B,
+# aspid +424, climber +224, fsm3_body +180: `debris::unit` is no longer inlined, same toolchain), and the worst room (10, nine carried
+# modules) then needed 105,768 of the 104,448 B the old pool leaves after the fence.
+POOL_BYTES = 0x1B000
 
 def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)

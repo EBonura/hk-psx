@@ -207,7 +207,15 @@ pub fn play(
     // `boot`, which is in the arena).
     unsafe { core::ptr::copy_nonoverlapping(record.add(20), load_at as *mut u8, bytes as usize) };
     psx_rt::cache::flush_instruction_cache();
-    let call = |mode: u32| call_program(pc, gp, sp, mode);
+    // The blob starts at psx-rt's `_start`, which on SDK main puts the machine in the documented entry state
+    // (interrupts off, DMA, DPCR, DICR, root counters, SIO0 and the SPU's volumes and enables reset): the
+    // program's own capture then runs too late to hold the game's. Take the game's here and put it back.
+    let call = |mode: u32| {
+        let state = Machine::capture();
+        let result = call_program(pc, gp, sp, mode);
+        state.restore();
+        result
+    };
     if call(MODE_POEM) == RESULT_YIELD {
         begin_ticks(sp);
         load();
@@ -221,6 +229,81 @@ pub fn play(
     unsafe { core::ptr::write_volatile(hand!(h, magic), 0) };
     // The blob left the GPU reset, the display where the title put it and the frame buffers black.
     *fb = psx_gpu::framebuf::FrameBuffer::new(320, 240);
+}
+
+/// The registers the blob's entry state rewrites and the game's drivers rely on.
+struct Machine {
+    status: u32,
+    mask: u32,
+    dpcr: u32,
+    dicr: u32,
+    timers: [u32; 3],
+    sio0: [u16; 3],
+    spu: [u16; 7],
+}
+const TIMER_MODES: [u32; 3] = [0x1F80_1104, 0x1F80_1114, 0x1F80_1124];
+/// SIO0 MODE, CTRL and BAUD.
+const SIO0: [u32; 3] = [0x1F80_1048, 0x1F80_104A, 0x1F80_104E];
+/// The SPU's main volume (left, right), CD input volume (left, right), external input volume and SPUCNT.
+const SPU_REGISTERS: [u32; 7] = [
+    0x1F80_1D80,
+    0x1F80_1D82,
+    0x1F80_1DB0,
+    0x1F80_1DB2,
+    0x1F80_1DB4,
+    0x1F80_1DB6,
+    0x1F80_1DAA,
+];
+const DPCR: u32 = 0x1F80_10F0;
+const DICR: u32 = 0x1F80_10F4;
+
+impl Machine {
+    #[inline(never)]
+    #[optimize(size)]
+    fn capture() -> Machine {
+        let status: u32;
+        // SAFETY: reads COP0 SR into $8; the nop covers MFC0's load delay.
+        unsafe { core::arch::asm!("mfc0 $8, $12", "nop", out("$8") status, options(nostack, preserves_flags)) };
+        // SAFETY: plain register reads while the game is stopped in this call, nothing running on the devices.
+        unsafe {
+            Machine {
+                status,
+                mask: psx_io::irq::mask(),
+                dpcr: psx_io::read_u32(DPCR),
+                dicr: psx_io::read_u32(DICR),
+                timers: TIMER_MODES.map(|a| psx_io::read_u32(a)),
+                sio0: SIO0.map(|a| psx_io::read_u16(a)),
+                spu: SPU_REGISTERS.map(|a| psx_io::read_u16(a)),
+            }
+        }
+    }
+
+    #[inline(never)]
+    #[optimize(size)]
+    fn restore(&self) {
+        // SAFETY: the blob has returned: no DMA running, the drive quiet, the game's exception vector back
+        // in place (the program restores it); interrupts stay off until everything else is back.
+        unsafe {
+            let off = self.status & !1;
+            core::arch::asm!("mtc0 $8, $12", "nop", in("$8") off, options(nostack, preserves_flags));
+            psx_io::irq::set_mask(0);
+            psx_io::irq::acknowledge(u32::MAX);
+            psx_io::write_u32(DPCR, self.dpcr);
+            psx_io::write_u32(DICR, self.dicr);
+            for (a, v) in TIMER_MODES.iter().zip(self.timers) {
+                psx_io::write_u32(*a, v);
+            }
+            for (a, v) in SIO0.iter().zip(self.sio0) {
+                psx_io::write_u16(*a, v);
+            }
+            for (a, v) in SPU_REGISTERS.iter().zip(self.spu) {
+                psx_io::write_u16(*a, v);
+            }
+            psx_io::irq::acknowledge(u32::MAX);
+            psx_io::irq::set_mask(self.mask);
+            core::arch::asm!("mtc0 $8, $12", "nop", in("$8") self.status, options(nostack, preserves_flags));
+        }
+    }
 }
 
 /// One call of the program in `mode`; what it reports.
