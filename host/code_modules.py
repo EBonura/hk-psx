@@ -64,7 +64,7 @@ MAX_IMPORTS = 256
 # 100 KiB since the FSM v2 kernel (2026-10-17, was 92 KiB since the 2026-10-02 merge): at 96 KiB the merged resident image
 # overflowed RAM by 2,944 bytes. The worst room plus the carried Shade art
 # needs 80,972 bytes, under this less the 4 KiB window fence.
-POOL_BYTES = 0x19000
+POOL_BYTES = 0x1A800
 STACK_FLOOR = 0x801FFF00 - 0xC000
 
 def _sim(*mods):

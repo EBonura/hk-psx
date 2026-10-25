@@ -3092,36 +3092,50 @@ fn generate(curves: &[String], manifest: &[Chunk], widest: [usize; 5]) -> Result
         "// Generated from Windows source; source IDs/hashes in ignored break-effects report."
             .to_string(),
     ];
-    for (n, key) in curves.iter().enumerate() {
+    // A curve is three tables (size, opacity, spin) of 33 samples. Few distinct tables of each kind
+    // serve all the styles (most spin is zero, most opacity is constant), so each is stored once and a
+    // curve names its three.
+    let mut tables: [Vec<String>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut rows = Vec::new();
+    for key in curves {
         let samples: Vec<J> = serde_json::from_str(key).map_err(|e| e.to_string())?;
-        let l = |v: &J| {
-            format!(
-                "[{}]",
-                v.as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|x| x.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )
-        };
-        let text: Vec<String> = samples
-            .iter()
-            .map(|s| {
-                format!(
-                    "Sample{{size:{},alpha:{},spin:{}}}",
-                    l(&s["size"]),
-                    l(&s["alpha"]),
-                    l(&s["spin"])
-                )
-            })
-            .collect();
-        out.push(format!("static CURVE_{n}:&[Sample]=&[{}];", text.join(",")));
+        if samples.len() != 33 {
+            return err(format!("a particle curve has {} samples, not 33", samples.len()));
+        }
+        let mut named = [0usize; 3];
+        for (kind, field) in ["size", "alpha", "spin"].iter().enumerate() {
+            let text = samples
+                .iter()
+                .map(|s| {
+                    let pair = s[*field].as_array().unwrap();
+                    format!("[{},{}]", pair[0], pair[1])
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            named[kind] = match tables[kind].iter().position(|t| *t == text) {
+                Some(n) => n,
+                None => {
+                    tables[kind].push(text);
+                    tables[kind].len() - 1
+                }
+            };
+        }
+        rows.push(named);
+    }
+    for (kind, (name, element)) in [("SIZE", "i32"), ("ALPHA", "u8"), ("SPIN", "i32")]
+        .iter()
+        .enumerate()
+    {
+        for (n, text) in tables[kind].iter().enumerate() {
+            out.push(format!("static {name}_{n}:[[{element};2];33]=[{text}];"));
+        }
     }
     out.push(format!(
-        "pub static CURVES:&[&[Sample]]=&[{}];",
-        (0..curves.len())
-            .map(|n| format!("CURVE_{n}"))
+        "pub static CURVES:&[Curve]=&[{}];",
+        rows.iter()
+            .map(|[size, alpha, spin]| format!(
+                "Curve{{size:&SIZE_{size},alpha:&ALPHA_{alpha},spin:&SPIN_{spin}}}"
+            ))
             .collect::<Vec<_>>()
             .join(",")
     ));
