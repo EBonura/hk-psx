@@ -98,8 +98,8 @@ MODULES = {
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',
                                                 'strike_gruz'),
-    'acid_flyer': _sim('acid_flyer') + _actor('advance_acid_flyer'),
-    'mosquito': _sim('mosquito') + _actor('advance_mosquito'),
+    # The Mosquito's module also holds the Acid Flyer (one room, 1.6 KB): the resident mask has 32 bits.
+    'mosquito': _sim('mosquito', 'acid_flyer') + _actor('advance_mosquito', 'advance_acid_flyer'),
     'moss_walker': _sim('moss_walker') + _actor('advance_moss_walker'),
     'baldur': _sim('baldur') + _actor('advance_baldur'),
     'aspid': _sim('aspid') + _actor('advance_aspid'),
@@ -185,7 +185,7 @@ BOOT_MODULES = tuple(m for m in ('title',) if m not in ALWAYS_RESIDENT)
 KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': 'false_knight', 'Mawlek': 'mawlek', 'HuskGuard': 'husks', 'ZombieShield': 'husks',
                'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
-               'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
+               'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'mosquito', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
                # (blocker_roller.rs), so its rooms carry both.
                'Blocker': ('blocker', 'baldur')}
