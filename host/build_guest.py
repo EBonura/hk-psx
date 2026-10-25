@@ -113,7 +113,14 @@ def boot_art():
     intro=ROOT/'data/intro.exe'
     intro_at=(0,0)
     if os.environ.get('HK_INTRO')=='1' and intro.is_file():
-        data=intro.read_bytes();intro_at=(len(blob),len(data));blob+=data+bytes(-len(data)%4)
+        import struct
+        exe=intro.read_bytes()
+        pc0,gp0,load,size=struct.unpack_from('<4I',exe,0x10);sp=sum(struct.unpack_from('<2I',exe,0x30))&0xffffffff
+        # game/src/intro.rs launch trusts this: the image lies inside the room-module pool (empty at the title) and
+        # its stack starts under the mailbox.
+        if exe[:8]!=b'PS-X EXE' or load<0x801DB000 or load+size>0x801F3F00 or sp>0x801FFFE0 or len(exe)<0x800+size:
+            raise ValueError(f'data/intro.exe does not fit the pool: load {load:#x} size {size:#x} sp {sp:#x}')
+        data=struct.pack('<5I',load,size,pc0,gp0,sp)+exe[0x800:0x800+size];intro_at=(len(blob),len(data));blob+=data+bytes(-len(data)%4)
     def fnv32(data):
         h=0x811c9dc5
         for byte in data:h=((h^byte)*0x01000193)&0xffffffff

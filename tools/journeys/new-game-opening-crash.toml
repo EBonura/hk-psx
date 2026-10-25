@@ -4,10 +4,10 @@
 #
 #   psoxide-gate run tools/journeys/new-game-opening-crash.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
-# from the repository root, with build/hk-psx.map the link map of that disc. Plain disc or route-input disc (no shoulder hold).
+# from the repository root, with build/hk-psx.map the link map of that disc. The route-input disc (no shoulder hold pressed, so the drop plays; the shipping disc plays the movies first).
 name = "new-game-opening-crash"
 title = "new game: the first landing is the opening crash and holds him"
-disc = ["lib/Hollow Knight (hk-psx).cue"]
+disc = ["lib-test/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
 

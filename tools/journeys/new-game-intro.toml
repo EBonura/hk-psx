@@ -1,0 +1,104 @@
+# New Game on the shipping disc: the opening movies play with their sound, the first press of any button
+# shows "Press any button to skip" (the original's popup), a second press skips the rest, and the game
+# comes back and drops in from King's Pass's top gate. Route-split: no pad tape.
+#
+#   psoxide-gate run tools/journeys/new-game-intro.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc (`symbols` resolves against the
+# working directory). The disc is the shipping one (no `route-input` feature): that is the one with the movies.
+name = "new-game-intro"
+title = "new game: movies, skip prompt, skip, drop"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+# The title's page sequence opens input at about 245 ticks; 300 leaves a margin.
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "the player is loaded and the Prologue is on screen"
+wait = 600
+checkpoint = "prologue"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "any button: the prompt appears (Triangle: a button the game itself does not use to start)"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+checkpoint = "prompt"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "a second press while it shows skips the rest"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the game comes back and drops in (region 79 = the top view of the shaft)"
+timeout = 7200
+[step.wait_until]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "eq"
+value = 79
+
+[[step]]
+label = "the Knight is at the top of the shaft"
+timeout = 600
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000
+
+[[step]]
+label = "he has landed on the ledge and stays there"
+timeout = 1200
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "lt"
+value = 800_000
+
+[[step]]
+label = "settled on the ledge, unhurt and with the title's choices"
+wait = 180
+checkpoint = "landed"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0
+[[step.assert]]
+kind = "ram"
+sym = "HK_HEALTH"
+op = "ge"
+value = 5

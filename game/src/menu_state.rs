@@ -14,7 +14,9 @@ pub const CROSS: u16 = 1 << 14;
 include!("../../data/font_layout.rs");
 pub const BRIGHT_STEPS: i8 = 5;
 pub const SCREEN_RANGE: i8 = 16;
+/// Word aligned so that the opening movies' mailbox (intro.rs) moves it in whole words.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(align(4))]
 pub struct Settings {
     pub sfx: u8,
     pub ambience: u8,

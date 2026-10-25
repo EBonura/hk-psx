@@ -4,10 +4,10 @@
 #   psoxide-gate run tools/journeys/new-game-lands.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
 # from the repository root, with build/hk-psx.map the link map of that disc (`symbols` resolves against the
-# working directory). The disc is the plain one (no opening movies); new-game-lands-intro.toml is the same journey on a disc built with `build --intro`.
+# working directory). The disc is the route-input one (no opening movies, and no shoulder hold pressed here, so the drop plays); new-game-intro.toml is the same drop on the shipping disc, after the movies.
 name = "new-game-lands"
 title = "new game: the drop lands and stays"
-disc = ["lib/Hollow Knight (hk-psx).cue"]
+disc = ["lib-test/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
 

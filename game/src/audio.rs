@@ -143,6 +143,8 @@ pub fn upload_world(bank: &[u8]) {
 }
 
 /// Apply to already playing voices too, including exact mute.
+// Called from the title menu and the resume from the opening movies: one copy, not one in each.
+#[inline(never)]
 pub fn set_volume(level: u8) {
     unsafe {
         LEVEL = level.min(10);

@@ -131,6 +131,8 @@ struct Options {
     cdda: Vec<PathBuf>,
     /// `build`/`disc`: the opening movies on a new game (a build with this flag has the player in its boot art).
     intro: bool,
+    /// `build`/`disc`: a shipping build without them.
+    no_intro: bool,
 }
 
 /// The repository root: this package lives in host/hk-build.
@@ -736,17 +738,50 @@ fn assets_cached(root: &Path, force: bool) -> Result<bool> {
     Ok(false)
 }
 
-/// The opening movies for a disc built with `--intro`: cooked here when they are
+/// Whether a build carries the opening movies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IntroPlan {
+    /// A test disc (any guest feature, such as `route-input`, whose replays press New Game by poll
+    /// count and must not meet a movie first) or `--no-intro`.
+    Without,
+    /// `--intro`: the build fails when the movies cannot be cooked.
+    Required,
+    /// The shipping disc: the movies when this machine can cook them, a warning when it cannot.
+    IfPossible,
+}
+
+/// True when the guest is built without features: the shipping disc.
+fn shipping_guest() -> bool {
+    std::env::var_os("HK_GUEST_FEATURES").is_none_or(|f| f.is_empty())
+}
+
+fn intro_plan(options: &Options, shipping: bool) -> IntroPlan {
+    if options.no_intro {
+        IntroPlan::Without
+    } else if options.intro {
+        IntroPlan::Required
+    } else if shipping {
+        IntroPlan::IfPossible
+    } else {
+        IntroPlan::Without
+    }
+}
+
+/// The opening movies for a disc that carries them: cooked here when they are
 /// not yet, and the player compiled into `data/intro.exe` for the guest build.
-fn intro_stage(root: &Path, wanted: bool) -> Result<Option<disc::Intro>> {
-    if !wanted {
+fn intro_stage(root: &Path, plan: IntroPlan) -> Result<Option<disc::Intro>> {
+    if plan == IntroPlan::Without {
         return Ok(None);
     }
     let movies = match intro::cooked(root) {
         Some(movies) => movies,
         None => {
             intro::cook(root, &selected_source(root)?)?;
-            intro::cooked(root).ok_or("no intro movies were cooked")?
+            match (intro::cooked(root), plan) {
+                (Some(movies), _) => movies,
+                (None, IntroPlan::Required) => return Err("no intro movies were cooked".into()),
+                (None, _) => return Ok(None),
+            }
         }
     };
     intro::compile(root, &root.join(".psoxide"))?;
@@ -868,7 +903,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     }
     // `--intro`: the player compiled into data/intro.exe and HK_INTRO set before
     // the guest build reads them; the movies go onto the disc packed below.
-    let intro = intro_stage(root, options.intro)?;
+    let intro = intro_stage(root, intro_plan(options, shipping_guest()))?;
     let pgo = mode == BuildMode::Pgo;
     // The glyph strip and its advances (data/font-metrics.json) come out of this stage; the
     // title art cooked next carries the advances. A fifth of a second, so it runs every build.
@@ -940,7 +975,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     python_step(root, "host/build_report.py", &report_args)?;
     // The doc pins the shipping build. A disc built with guest features (the route-input test
     // disc, card-diag) has other figures and must not rewrite it.
-    let shipping = std::env::var_os("HK_GUEST_FEATURES").is_none_or(|f| f.is_empty());
+    let shipping = shipping_guest();
     if !pgo && shipping && budget_doc::sync(root)? {
         println!("docs/BUDGET.md: pinned figures rewritten from .hkpsx/build-normal.json (commit the doc with this change)");
     }
@@ -2037,9 +2072,9 @@ fn usage() -> ! {
          disc      pack the disc from the guest build in --work (default build/) into --library\n          \
          (default the disc library): WORLD.PAK and the XA songs, plus any --cdda-track\n          \
          --library applies to build, pgo, validate and disc\n\
-         disc --intro  the same disc with the opening-cinematics program as its boot executable and the\n          \
-         game as the root file HKGAME.EXE (needs intro-cook; the replay gates use the plain disc)\n\
-         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook)"
+         disc --intro  the same disc with the opening movies (the shipping disc has them already; a\n          \
+         disc built with guest features, the replay gates' route-input one, or --no-intro, has not)\n\
+         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe"
     );
     std::process::exit(2)
 }
@@ -2139,6 +2174,7 @@ fn main() {
         library: None,
         cdda: Vec::new(),
         intro: false,
+        no_intro: false,
     };
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -2171,6 +2207,7 @@ fn main() {
             }
             "--prune" => options.prune = true,
             "--intro" => options.intro = true,
+            "--no-intro" => options.no_intro = true,
             "--work" => options.work = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--library" => {
                 options.library = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
@@ -2211,7 +2248,7 @@ fn main() {
                 xa: vec![root.join("data/music.xa")],
                 cdda: options.cdda.clone(),
             };
-            intro_stage(&root, options.intro).and_then(|stage| {
+            intro_stage(&root, intro_plan(&options, shipping_guest())).and_then(|stage| {
                 disc::package(
                     &root,
                     &work.join("hk-psx-patched.exe"),
@@ -2222,15 +2259,14 @@ fn main() {
                 )
             })
         }
-        "intro-cook" => selected_source(&root).and_then(|source| {
-            intro::cook(&root, &source).and_then(|cooked| {
-                if cooked {
-                    Ok(())
-                } else {
-                    Err("no intro movies were cooked".into())
-                }
-            })
-        }),
+        "intro-cook" => {
+            if options.recook {
+                let _ = std::fs::remove_dir_all(intro::dir(&root));
+            }
+            // The movies when they are not cooked yet, and the player, so that a guest build that
+            // follows has data/intro.exe.
+            intro_stage(&root, IntroPlan::Required).map(|_| ())
+        }
         _ => usage(),
     };
     if let Err(error) = result {
@@ -2242,6 +2278,40 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn options(intro: bool, no_intro: bool) -> Options {
+        Options {
+            hollow_knight: None,
+            sdk_source: None,
+            emulator_source: None,
+            frontend: None,
+            gate: None,
+            telemetry: false,
+            recook: false,
+            validate: false,
+            tapes: Vec::new(),
+            jobs: None,
+            prune: false,
+            work: None,
+            library: None,
+            cdda: Vec::new(),
+            intro,
+            no_intro,
+        }
+    }
+
+    #[test]
+    fn the_shipping_disc_carries_the_movies_and_a_test_disc_does_not() {
+        // No guest feature: the disc a player gets.
+        assert_eq!(intro_plan(&options(false, false), true), IntroPlan::IfPossible);
+        // A route-input (or any featured) disc is pressed through by poll count and must not meet a movie.
+        assert_eq!(intro_plan(&options(false, false), false), IntroPlan::Without);
+        // `--intro` asks for them whatever the features, and fails when they cannot be cooked.
+        assert_eq!(intro_plan(&options(true, false), false), IntroPlan::Required);
+        assert_eq!(intro_plan(&options(true, false), true), IntroPlan::Required);
+        // `--no-intro` wins on a shipping disc.
+        assert_eq!(intro_plan(&options(false, true), true), IntroPlan::Without);
+    }
 
     #[test]
     fn external_profile_frontend_is_hash_bound_and_records_external_identity() {
@@ -2459,6 +2529,7 @@ mod tests {
             library: Some(library.clone()),
             cdda: Vec::new(),
             intro: false,
+            no_intro: false,
         };
         assert_eq!(selected_library(&options), library);
         assert_ne!(selected_library(&options), disc_library());

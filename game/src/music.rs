@@ -86,6 +86,8 @@ pub static mut HK_MUSIC_LEVEL: u32 = 10;
 pub static mut HK_MUSIC_POSITION_SECTORS: u32 = 0;
 /// Spins the drive gets to answer a pause.
 const SPINS: u32 = 4_000_000;
+// Called from the title menu and the resume from the opening movies: one copy, not one in each.
+#[inline(never)]
 pub fn set_volume(level: u8) {
     unsafe {
         LEVEL = level.min(10);
@@ -386,6 +388,7 @@ fn switch_track(a: &mut Area, track: u8, family: u8) {
     }
 }
 /// Enter a new (family, snapshot) state, from a scene or a music region.
+#[inline(never)]
 fn apply(state: MusicState, delay: u32) {
     let a = area();
     let now = psx_rt::interrupts::vblank_count();
