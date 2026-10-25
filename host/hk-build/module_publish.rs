@@ -83,6 +83,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                         "5frame6render",
                         "8dialogue",
                         "5frame",
+                        "5title",
                     ]
                     .iter()
                     .any(|p| caller.name.contains(p))
