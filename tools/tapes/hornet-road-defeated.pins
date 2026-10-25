@@ -1,6 +1,6 @@
 card = hornet-road-defeated.mcd
-pacing = 2467
-frame_time = 369
+pacing = 2713
+frame_time = 280
 long_frames = 2
 # The same walk on a card whose only difference is hornet1Defeated (PlayerData
 # bit 26): the shiny is offered, UP takes it, hasDash (bit 2) is saved and the
