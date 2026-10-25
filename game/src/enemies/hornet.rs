@@ -168,7 +168,10 @@ pub fn tick(
     };
     let (mut hits, mut kills, mut hurt, mut convo) = (0u16, 0u16, None, false);
     let scene = region.scene;
-    let edge = |i: usize| world.edge(region, room, i);
+    // The terrain as the actors read it (one copy per room and epoch, `actor_edges`): `State::edge` is used by nothing else, and
+    // keeping it linked for her cost 1,768 bytes of resident code.
+    let (edges, _) = super::actor_edges(world, region, room, region, room);
+    let edge = |i: usize| edges.get(i).copied().unwrap_or([0; 4]);
     s.fight.step(&input, room.counts[5], &edge, &mut |e| {
         if let Effect::Persist { field, value } = e {
             if field == hf::field::HORNET1_DEFEATED && value != 0 {
