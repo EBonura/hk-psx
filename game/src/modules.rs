@@ -177,7 +177,20 @@ pub const fn scene_modules(scene: usize) -> u32 {
 }
 /// Carried data: (module, manifest scene) pairs gameplay asked for, which the
 /// scene's gate loads like its own art (`carry`).
-static mut CARRIED: [(u8, u16); 4] = [(u8::MAX, u16::MAX); 4];
+const CARRY_SLOTS: usize = 5;
+static mut CARRIED: [(u8, u16); CARRY_SLOTS] = [(u8::MAX, u16::MAX); CARRY_SLOTS];
+/// Per manifest scene, which of the optional carried packs (the Knight's ability effects, `art_fx`
+/// then `art_fx_spell`) fit in the pool beside the scene's own modules: bits 0 and 1 beside the Death
+/// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee).
+/// The build writes it into the image (host/hk-build/module_publish.rs).
+#[no_mangle]
+pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()];
+/// The optional packs that fit in `scene` now: `HK_FX_FIT`'s light row, or its full row while the
+/// Shade's art is wanted there (`shade`).
+pub fn fx_fit(scene: usize, shade: bool) -> u8 {
+    let fit = unsafe { HK_FX_FIT[scene] };
+    (if shade { fit >> 2 } else { fit }) & 3
+}
 /// Ask for carried data module `m` (one with its own chunk, host/code_modules.py
 /// `CARRIED`) to be resident whenever manifest scene `scene` is, or for no scene
 /// (`None`). A gate into that scene reads it with the scene's art; it is pinned
@@ -196,6 +209,7 @@ pub fn carry(m: usize, scene: Option<usize>) {
     }
 }
 /// Every module `scene` needs: its rooms' own and what is carried into it.
+#[inline(never)]
 fn wanted(scene: usize) -> u32 {
     let mut w = scene_modules(scene);
     for &(m, s) in unsafe { &*(&raw const CARRIED) } {
@@ -1384,7 +1398,7 @@ pub fn admit_art(scene: usize) -> bool {
     }
     let t0 = hblanks();
     // The room's art chunk, then each carried package, one fetch at a time.
-    for _ in 0..1 + 4 {
+    for _ in 0..1 + CARRY_SLOTS {
         if !art_missing(scene) {
             break;
         }

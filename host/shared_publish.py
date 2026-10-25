@@ -42,7 +42,7 @@ def publish(root, elf, link_map, out, scene_code, art):
     for name,blob in blobs.items(): (inputs/(name+'.blob')).write_bytes(blob)
     chunks=[{'kind':kind,'scene_index':scene,'modules':mods,'stem':f'{kind}_{scene}' if scene is not None else f'{kind}_{cm.all_names()[mods[0]]}'} for kind,scene,mods in cm.package_chunks(scene_code)]
     config=out/'transport-config.json'
-    config.write_text(json.dumps({'names':cm.all_names(),'code_count':len(cm.MODULES),'data':{name:str(inputs/(name+'.blob')) for name in blobs},'chunks':chunks,'rooms':list(scene_code.values()),'carried':[cm.all_names().index(n) for n in cm.CARRIED],'pool':cm.POOL_BYTES,'pool_base':cm.pool_base()}))
+    config.write_text(json.dumps({'names':cm.all_names(),'code_count':len(cm.MODULES),'data':{name:str(inputs/(name+'.blob')) for name in blobs},'chunks':chunks,'rooms':list(scene_code.values()),'room_scenes':list(scene_code.keys()),'carried':[cm.all_names().index(n) for n in cm.CARRIED if n not in cm.OPTIONAL],'optional':[cm.all_names().index(n) for n in cm.OPTIONAL],'pool':cm.POOL_BYTES,'pool_base':cm.pool_base()}))
     run('assemble',elf,config,publication/'final',out)
     import lz4.block
     for chunk in chunks:

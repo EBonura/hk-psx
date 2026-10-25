@@ -571,6 +571,60 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         }
         table.push((need, index, listed, shadeless));
     }
+    // The guest decides which optional carried packages (the Knight's ability effects) it asks for into a
+    // scene (`modules::fx_fit`): `HK_FX_FIT`, per manifest scene, one bit for each optional pack that fits
+    // beside the scene's own modules and the Death and respawn clips (bits 0, 1) or beside those and the
+    // Shade's art too (bits 2, 3), filled in the order the packs are listed.
+    {
+        let scenes = config["room_scenes"].as_array().ok_or("room_scenes")?;
+        let optional: Vec<u32> = config["optional"]
+            .as_array()
+            .ok_or("optional")?
+            .iter()
+            .map(|id| {
+                let id = id.as_u64().ok_or("optional id")? as usize;
+                // A package takes whole sectors after its header, and a compressed chunk a sector more.
+                Ok(((sizes.get(id).ok_or("optional module")? + 20).div_ceil(2048) as u32 + 1) * 2048)
+            })
+            .collect::<std::result::Result<_, Box<dyn std::error::Error>>>()?;
+        if optional.len() > 2 {
+            return Err("HK_FX_FIT holds two optional packs".into());
+        }
+        let symbol = symbols
+            .iter()
+            .find(|s| s.name == "HK_FX_FIT")
+            .ok_or("HK_FX_FIT symbol")?;
+        let limit = config["pool"].as_u64().unwrap_or(0x17000) as u32 - 0x1000;
+        // The Death clip and the respawn clips: what a room carries with no Shade (`carried_without_shade`).
+        let light = carried_without_shade;
+        for (position, scene) in scenes.iter().enumerate() {
+            let scene = scene.as_u64().ok_or("room scene")? as usize;
+            let (need, shadeless) = table
+                .iter()
+                .find(|e| e.1 == position)
+                .map(|e| (e.0, e.3))
+                .ok_or("room need")?;
+            let mut bits = 0u8;
+            // A room without a Shade (Hornet's) never carries it: both rows are the light one.
+            let full = if shadeless { light } else { carried };
+            for (row, beside) in [light, full].into_iter().enumerate() {
+                let mut room = limit.saturating_sub(need + beside);
+                for (k, bytes) in optional.iter().enumerate() {
+                    if *bytes <= room {
+                        bits |= 1 << (2 * row + k);
+                        room -= bytes;
+                    }
+                }
+            }
+            if scene + 1 > symbol.bytes as usize {
+                return Err("fx fit capacity".into());
+            }
+            let offset = 2048
+                + symbol.address.checked_sub(load).ok_or("fx fit load")? as usize
+                + scene;
+            *runtime.get_mut(offset).ok_or("fx fit bounds")? = bits;
+        }
+    }
     table.sort_by(|a, b| b.cmp(a));
     let mut report_rooms = Vec::new();
     let carried_in = |shadeless: bool| if shadeless { carried_without_shade } else { carried };
@@ -587,6 +641,20 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
             (limit as i64) - ((need + carried) as i64),
             listed.join(" ")
         );
+    }
+    // Optional carried packages are not part of the guarantee above: the guest asks for one only when it fits
+    // beside the room and whatever else is wanted (modules.rs `fits`), so they are reported, not summed.
+    if let Some(optional) = config["optional"].as_array() {
+        let listed: Vec<String> = optional
+            .iter()
+            .filter_map(|id| id.as_u64().map(|id| id as usize))
+            .filter_map(|id| {
+                sizes
+                    .get(id)
+                    .map(|size| format!("{}={}", names[id].as_str().unwrap_or("?"), (size + 20).div_ceil(2048) * 2048))
+            })
+            .collect();
+        eprintln!("pool fit: optional carried (asked for only where they fit): {}", listed.join(" "));
     }
     if let Some((need, _, _, shadeless)) = table.first() {
         let total = need.checked_add(carried_in(*shadeless)).ok_or("carried sum")?;

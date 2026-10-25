@@ -12,7 +12,7 @@ outputs under data/.
 """
 import hashlib, json, math, struct
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageChops
 from source import Source, ROOT, dump
 from cook import tk_sprite, FOCAL, CAM_Z
 from materials import quantize_alpha_coverage
@@ -68,32 +68,40 @@ CRASH_CLIPS = ('Super Hard Land', 'Collect Normal 3')
 # 10 fps, played once); `Sit Fall Asleep` is what Bench Control's Init Resting plays for the 1.2 s
 # after a death respawn and `Wake To Sit` (9 frames at 12 fps) is its Startle.
 DEATH_CLIPS = ('Death', 'Sit Fall Asleep', 'Wake To Sit')
-# The Knight's ability effects (pack `art_fx`, carried while an ability that draws one is owned): a child of the
-# Knight prefab (the Dash Burst, Double J Wings and Wall Puff objects of its `Effects` child) or a prefab
-# the HeroController spawns, drawn at the Knight like the Focus effects. Each is (name, source, clip, local
-# x, local y, local scale x, local scale y, shrink). The transforms are the prefab's own (`pfx` of the
-# Knight, resources.assets:3916), except the Dash Burst's position, which `HeroController.HeroDash` sets on
-# every ordinary dash (4.11, -0.55), and its x scale is the prefab's (-1.509: the streaks trail behind).
-# `source` is 'knight' (the Knight's own tk2d library) or a library path id of resources.assets.
-# The effects are white light in the original (Dash Effect is `Sprites/Default-ColorFlash`, the wings
-# `UI/BlendModes/LinearDodge`, the puff a pale dust): each frame's brightness is fitted to the grey ramp
-# of the bright palette (no palette row is spared for them) and drawn adding, tinted by the guest.
-FX_CLIPS = (('Dash Effect', 'knight', 'Dash Effect', 4.11, -0.55, -1.509, 1.509, (3, 2)),
-            ('Double Jump Wings', 'knight', 'Double Jump Wings 2', 0.22, -0.064, 1.0, 1.0, (2, 2)),
-            ('Wall Puff', 23373, 'Wall Puff', 0.91, -0.32, 1.421, 1.421, (2, 2)),
+# The Knight's ability effects (packs `art_fx` and `art_fx_spell`, carried while an ability that draws one is owned): a
+# child of the Knight prefab (the Dash Burst, Double J Wings and Wall Puff objects of its `Effects` child) or a prefab
+# the HeroController spawns, drawn at the Knight like the Focus effects. Each is (name, source, clip, local x, local y,
+# local scale x, local scale y, density). The transforms are the prefab's own (`pfx` of the Knight,
+# resources.assets:3916), except the Dash Burst's position, which `HeroController.HeroDash` sets on every ordinary
+# dash (4.11, -0.55), and its x scale is the prefab's (-1.509: the streaks trail behind). `source` is 'knight' (the
+# Knight's own tk2d library) or a library path id of resources.assets. `density` is screen pixels per texel at the
+# frame's drawn size (1.0 is the Knight's own density, one texel a pixel), so a child's scale does not coarsen it.
+# The effects are light on black in the original (Dash Effect is `Sprites/Default-ColorFlash`, the wings
+# `UI/BlendModes/LinearDodge`, the puff a pale dust): each frame keeps its colour premultiplied by its alpha, is cut
+# to 64x64 parts (one animation slot each) and drawn adding.
+FX_CLIPS = (('Dash Effect', 'knight', 'Dash Effect', 4.11, -0.55, -1.509, 1.509, 1.0),
+            ('Double Jump Wings', 'knight', 'Double Jump Wings 2', 0.22, -0.064, 1.0, 1.0, 1.0),
+            ('Wall Puff', 23373, 'Wall Puff', 0.91, -0.32, 1.421, 1.421, 1.0),
+            # `White Flash DJ` (resources.assets:4989): the original lays `white_light` (a flat, half-clear
+            # rectangle of white) 2.3 times its size at (0, -0.54); what the eye takes from it is a small blue
+            # aura, which is cooked as one round glow (AURA_*) of that reach and place.
+            ('Double Jump Flash', 'aura', None, 0.0, -0.54, 1.0, 1.0, 1.5),
             # Vengeful Spirit (tk2d library 23262, drawn facing right): `Fireball Top`'s `Fireball Blast`
             # (a child at (1.13, 0), scale 2) as the ball leaves, and the ball's own `Wall Impact`
             # child (1.709, 0), scale 2.5, when a wall stops it.
-            ('Fireball Blast', 23262, 'Blast', 1.13, 0.0, 2.0, 2.0, (2, 2)),
-            ('Fireball Wall Impact', 23262, 'Fireball Wall Impact', 1.709, 0.0, 2.5, 2.5, (2, 2)),
-            # `White Flash DJ` (resources.assets:4989): the `white_light` disc of scale 2.301 at (0, -0.54).
-            # Not a tk2d clip: its one frame is the Heal flash's source image, `FX_FLASH_*`.
-            ('Double Jump Flash', 'flash', None, 0.0, -0.54, 2.301, 2.301, (1, 1)))
-# The Heal flash's image and the scale it was cooked at (host/hk-cook focus): `white_light` at scale 10.
-FX_FLASH_SCALE = 10.0
-FX_FLASH_SIZE = (24, 18)
+            ('Fireball Blast', 23262, 'Blast', 1.13, 0.0, 2.0, 2.0, 1.7),
+            ('Fireball Wall Impact', 23262, 'Fireball Wall Impact', 1.709, 0.0, 2.5, 2.5, 1.35))
+# A frame is cut to parts of at most this many texels a side: the animation slot.
+FX_PART = 64
+# The double jump's aura: its radius in world units, the colour at its centre (0..255) and how fast it falls off.
+AURA_RADIUS = 1.6
+AURA_RGB = (42, 70, 160)
+# A frame's outer edge fades to black over this many texels, so no quad shows a rectangle's edge.
+FX_EDGE_FADE = 2.5
 # Brightness (0..255, premultiplied) a texel needs to be anything but transparent.
-FX_THRESHOLD = 24
+FX_THRESHOLD = 14
+# Weight of the Burst's and the Soul Burst's own pixels against the effects' when the shared bright palette is fitted.
+FX_PALETTE_BURST_WEIGHT = 6
 
 # Frames the guest keeps on the disc, not in linked RAM (game/src/ability_art.rs `STREAMS`). They are the
 # last frames, so the resident table ends where the first pack starts. Each pack is a carried data module
@@ -103,7 +111,8 @@ FX_THRESHOLD = 24
 # after the last pack's and a row here, and a module of its name to CARRIED.
 STREAM_PACKS = (('art_death', 'data/art-death.hk', ('Death',)),
                 ('art_wake', 'data/art-wake.hk', ('Sit Fall Asleep', 'Wake To Sit', 'Wake Up Ground Lie', 'Wake Up Ground Rise')),
-                ('art_fx', 'data/art-fx.hk', tuple(name for name, *_ in FX_CLIPS)))
+                ('art_fx', 'data/art-fx.hk', ('Dash Effect', 'Double Jump Wings', 'Wall Puff', 'Double Jump Flash')),
+                ('art_fx_spell', 'data/art-fx-spell.hk', ('Fireball Blast', 'Fireball Wall Impact')))
 # One streamed frame's record at the head of its pack: offset into the pack's coded texels (u32), width and
 # height (u16), palette (u32) and the four bounds (i32, Q16): the guest's `Frame` field for field.
 STREAM_RECORD = '<IHHIiiii'
@@ -237,6 +246,87 @@ def quantize_additive(image, threshold=24):
     for i, index in enumerate(indices):
         packed[(i // w) * ((w + 1) // 2) + (i % w) // 2] |= index << ((i % w & 1) * 4)
     return w, h, struct.pack('<16H', *(palette + [0] * (16 - len(palette)))), bytes(packed)
+
+def fit_palette(colours, count=15):
+    """`count` colours for premultiplied light, by median cut: (r, g, b) in 5-bit steps."""
+    rgb = Image.new('RGB', (len(colours), 1))
+    rgb.putdata(colours)
+    q = rgb.quantize(colors=count, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    table = q.getpalette()
+    return [tuple(c >> 3 << 3 for c in table[i * 3:i * 3 + 3]) for i in sorted(set(q.tobytes()))]
+
+def palette_words(entries):
+    """A 16-entry additive palette: index 0 clear, every other entry semi-transparent."""
+    words = [0] + [(r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) | 0x8000 for r, g, b in entries]
+    return struct.pack('<16H', *(words + [0] * (16 - len(words))))
+
+def nearest_entry(colour, entries, cache):
+    """The 1-based palette index nearest `colour` in RGB."""
+    if colour not in cache:
+        cache[colour] = 1 + min(range(len(entries)), key=lambda k: sum((a - b) ** 2 for a, b in zip(colour, entries[k])))
+    return cache[colour]
+
+def pack_indices(indices, w, h):
+    packed = bytearray(((w + 1) // 2) * h)
+    for i, index in enumerate(indices):
+        packed[(i // w) * ((w + 1) // 2) + (i % w) // 2] |= index << ((i % w & 1) * 4)
+    return bytes(packed)
+
+def light(colour):
+    """A premultiplied colour's brightness (0..255)."""
+    return (colour[0] * 77 + colour[1] * 150 + colour[2] * 29) / 256
+
+def quantize_additive_shared(image, threshold, extra, weight):
+    """`quantize_additive` for a palette the effects share: it is fitted to the sheet's own light
+    (counted `weight` times) and to `extra`, the effects' samples, and each texel takes the
+    nearest entry."""
+    w, h = image.size
+    lit = []
+    for r, g, b, a in image.convert('RGBA').getdata():
+        r, g, b = (c * a // 255 for c in (r, g, b))
+        lit.append((r, g, b) if max(r, g, b) >= threshold else None)
+    own = [c for c in lit if c is not None]
+    entries = fit_palette(own * weight + list(extra))
+    cache = {}
+    indices = [0 if c is None else nearest_entry(c, entries, cache) for c in lit]
+    return w, h, palette_words(entries), pack_indices(indices, w, h)
+
+def fx_parts(image, box, scale, density, premultiplied=False):
+    """One effect frame as light on black: its colour premultiplied by its alpha, cut to `density`
+    screen pixels a texel at the size `box` (world units, corners as the draw takes them) shows it
+    at, faded to nothing over `FX_EDGE_FADE` texels at the frame's edge, then split into parts of
+    at most FX_PART texels a side (one animation slot each; a part with no light is dropped).
+    Returns [(part image, its box)]: parts abut exactly, sharing the float their edge is computed from."""
+    w = max(1, round(abs(box[2] - box[0]) * scale / density))
+    h = max(1, round(abs(box[3] - box[1]) * scale / density))
+    if premultiplied:
+        lit = image.convert('RGB').resize((w, h), Image.Resampling.LANCZOS)
+    else:
+        r, g, b, a = image.convert('RGBA').split()
+        lit = Image.merge('RGB', [ImageChops.multiply(c, a) for c in (r, g, b)]).resize((w, h), Image.Resampling.LANCZOS)
+    ramp = lambda n: [min(1.0, min(i + 0.5, n - i - 0.5) / FX_EDGE_FADE) for i in range(n)]
+    fx, fy = ramp(w), ramp(h)
+    mask = Image.new('L', (w, h))
+    mask.putdata([round(255 * fy[y] * fx[x]) for y in range(h) for x in range(w)])
+    lit = Image.merge('RGB', [ImageChops.multiply(c, mask) for c in lit.split()])
+    nx, ny = -(-w // FX_PART), -(-h // FX_PART)
+    tw, th = -(-w // nx), -(-h // ny)
+    parts = []
+    for ty in range(0, h, th):
+        for tx in range(0, w, tw):
+            x1, y1 = min(w, tx + tw), min(h, ty + th)
+            part = lit.crop((tx, ty, x1, y1))
+            # Only the texels that carry light are kept: the part is cut to their box, so the upload and the
+            # GPU's texel fetches skip the clear margins.
+            lit_box = part.convert('L').point(lambda v: 255 if v >= FX_THRESHOLD else 0).getbbox()
+            if lit_box is None:
+                continue
+            tx, ty, x1, y1 = tx + lit_box[0], ty + lit_box[1], tx + lit_box[2], ty + lit_box[3]
+            part = lit.crop((tx, ty, x1, y1))
+            across = lambda t: box[0] + (box[2] - box[0]) * t / w
+            down = lambda t: box[3] + (box[1] - box[3]) * t / h
+            parts.append((part, [across(tx), down(y1), across(x1), down(ty)]))
+    return parts
 
 def shelf(sizes, limit=256):
     """Shelf packing into one quantizer sheet; None when the set does not fit."""
@@ -385,38 +475,46 @@ def cook():
             sprite(frame['spriteCollection'], frame['spriteId'], None, GROUND_SHRINK)
         clips.append(dict(name=name, start=start, count=len(frames), fps=18, wrap=2, loop=0))
 
-    # The ability effects (FX_CLIPS), last so no earlier index moves; they have no palette of their own.
+    # The ability effects (FX_CLIPS), last so no earlier index moves. A clip's `count` is its frames and its
+    # `parts` the images they were cut into; `fx_frame_first` says where each frame's parts start.
     fx_names = {name for name, *_ in FX_CLIPS}
-    for name, library, clip_name, lx, ly, kx, ky, shrink in FX_CLIPS:
-        if library == 'flash':
-            focus_dir = ROOT / '.hkpsx/ability-focus-rust'
-            heal = json.loads((focus_dir / 'frames.json').read_text())[5]
-            with Image.open(focus_dir / heal['name']) as image:
-                glow = image.convert('RGBA').resize(FX_FLASH_SIZE, Image.Resampling.LANCZOS)
-            # The source's alpha runs to a quarter at the rim of its rectangle, which a rectangle of
-            # light would show: fade it out to nothing at the ellipse through the edges' middles.
-            w, h = glow.size
-            alpha = glow.getchannel('A')
-            for y in range(h):
-                for x in range(w):
-                    r2 = ((x + 0.5) / w * 2 - 1) ** 2 + ((y + 0.5) / h * 2 - 1) ** 2
-                    alpha.putpixel((x, y), round(alpha.getpixel((x, y)) * max(0.0, 1 - r2)))
-            glow.putalpha(alpha)
-            images.append(glow)
-            k = kx / FX_FLASH_SCALE
-            x0, y0, x1, y1 = heal['box']
-            boxes.append([lx + k * x0, ly + k * y0, lx + k * x1, ly + k * y1])
-            art_sources.append(heal['source'])
-            clips.append(dict(name=name, start=len(images) - 1, count=1, fps=1, wrap=2, loop=0))
+    fx_frame_first, fx_clip_frames, fx_samples = [], [], []
+    for name, library, clip_name, lx, ly, kx, ky, density in FX_CLIPS:
+        if library == 'aura':
+            start = len(images)
+            fx_clip_frames.append(len(fx_frame_first))
+            fx_frame_first.append(len(images))
+            n = max(1, round(2 * AURA_RADIUS * scale / density))
+            glow = Image.new('RGB', (n, n))
+            glow.putdata([tuple(round(c * max(0.0, 1 - ((x + 0.5) / n * 2 - 1) ** 2 - ((y + 0.5) / n * 2 - 1) ** 2) ** 2)
+                                for c in AURA_RGB) for y in range(n) for x in range(n)])
+            box = [lx - AURA_RADIUS, ly - AURA_RADIUS, lx + AURA_RADIUS, ly + AURA_RADIUS]
+            for part, part_box in fx_parts(glow, box, scale, density, premultiplied=True):
+                images.append(part)
+                boxes.append(part_box)
+                art_sources.append('resources.assets:1987')
+                fx_samples += [c for c in part.getdata() if light(c) >= FX_THRESHOLD]
+            clips.append(dict(name=name, start=start, count=1, parts=len(images) - start, fps=1, wrap=2, loop=0))
             continue
         clip = by_name[clip_name] if library == 'knight' else next(
             c for c in source.read(resources.objects[library])['clips'] if c['name'] == clip_name)
         assert clip['wrapMode'] == 2, f'{clip_name} no longer plays once'
         start = len(images)
+        fx_clip_frames.append(len(fx_frame_first))
         for frame in clip['frames']:
-            sprite(frame['spriteCollection'], frame['spriteId'], (lx, ly, kx, ky), shrink)
-        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+            obj = source.ref(resources, frame['spriteCollection'])
+            image, box = tk_sprite(source, obj.assets_file, source.read(obj), frame['spriteId'], textures)
+            fx_frame_first.append(len(images))
+            # A child's local transform; a negative scale turns the corners round, which draws the frame mirrored.
+            placed = (lx + kx * box[0], ly + ky * box[1], lx + kx * box[2], ly + ky * box[3])
+            for part, part_box in fx_parts(image, placed, scale, density):
+                images.append(part)
+                boxes.append(part_box)
+                art_sources.append(f'{source.sid(obj)}:{frame["spriteId"]}')
+                fx_samples += [c for c in part.getdata() if light(c) >= FX_THRESHOLD]
+        clips.append(dict(name=name, start=start, count=len(clip['frames']), parts=len(images) - start,
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=0))
+    fx_frame_first.append(len(images))
 
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
@@ -466,8 +564,8 @@ def cook():
     for pack, _, names in STREAM_PACKS:
         first, last = by_clip[names[0]], by_clip[names[-1]]
         for a, b in zip(names, names[1:]):
-            assert by_clip[a]['start'] + by_clip[a]['count'] == by_clip[b]['start'], f'{pack}: {a} and {b} are not contiguous'
-        pack_ranges.append((first['start'], last['start'] + last['count']))
+            assert by_clip[a]['start'] + by_clip[a].get('parts', by_clip[a]['count']) == by_clip[b]['start'], f'{pack}: {a} and {b} are not contiguous'
+        pack_ranges.append((first['start'], last['start'] + last.get('parts', last['count'])))
     for (_, end), (start, _) in zip(pack_ranges, pack_ranges[1:]):
         assert end == start, 'the streamed packs are not back to back'
     resident_frames = pack_ranges[0][0]
@@ -487,7 +585,7 @@ def cook():
             packed = (focus_art / 'flash-sheet.4bpp').read_bytes()
             assert len(palette) == 32 and len(packed) == 256 * 256 // 2
         else:
-            sw, _, palette, packed = (lambda s: quantize_additive(s, BURST_BRIGHT_THRESHOLD) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
+            sw, _, palette, packed = (lambda s: quantize_additive_shared(s, BURST_BRIGHT_THRESHOLD, fx_samples, FX_PALETTE_BURST_WEIGHT) if clut_index == bright_clut else quantize_additive(s) if clut_index >= additive_from else quantize_alpha_coverage(s, 128))(sheet)
         palettes.append(palette)
         for i, (x0, y0) in zip(group, positions):
             image = images[i]
@@ -510,32 +608,28 @@ def cook():
             target.extend(coded)
             raw_bytes += len(texels)
 
-    # The effect frames carry no palette: each texel's premultiplied brightness takes the nearest level of
-    # the bright palette's grey ramp (an additive palette, every entry semi-transparent), and the guest
-    # colours the light with its draw tint.
-    ramp = [((word & 31) * 77 + (word >> 5 & 31) * 150 + (word >> 10 & 31) * 29) / 256 / 31
-            for word in struct.unpack('<16H', palettes[bright_clut])]
-    levels = [(level, k) for k, level in enumerate(ramp) if k and level > 0]
-    top = max(level for level, _ in levels)
+    # The effect parts carry no palette of their own: each texel takes the nearest entry of the bright
+    # palette, which was fitted to them (and to the Burst), in colour.
+    entries = [tuple((word >> shift & 31) * 255 // 31 for shift in (0, 5, 10))
+               for word in struct.unpack('<16H', palettes[bright_clut])[1:] if word]
+    nearest_cache = {}
     for clip in clips:
         if clip['name'] not in fx_names:
             continue
-        for i in range(clip['start'], clip['start'] + clip['count']):
-            image = images[i].convert('RGBA')
+        for i in range(clip['start'], clip['start'] + clip['parts']):
+            image = images[i]
             w, h = image.size
             data = list(image.getdata())
             stride = (w + 3) // 4 * 2
             texels = bytearray(stride * h)
             for y in range(h):
                 for x in range(w):
-                    r, g, b, a = data[y * w + x]
-                    light = (r * 77 + g * 150 + b * 29) / 256 * a / 255
-                    if light >= FX_THRESHOLD:
-                        index = min(levels, key=lambda e: abs(e[0] - min(light / 255, top)))[1]
-                        texels[y * stride + x // 2] |= index << ((x & 1) * 4)
+                    colour = data[y * w + x]
+                    if light(colour) >= FX_THRESHOLD:
+                        texels[y * stride + x // 2] |= nearest_entry(colour, entries, nearest_cache) << ((x & 1) * 4)
             coded = packbits(bytes(texels))
             assert unpackbits(coded) == bytes(texels)
-            assert len(texels) <= SLOT_BYTES and w <= 64 and h <= 64, f'effect frame {i} ({w}x{h}) exceeds one 64x64 animation slot'
+            assert len(texels) <= SLOT_BYTES and w <= FX_PART and h <= FX_PART, f'effect part {i} ({w}x{h}) exceeds one 64x64 animation slot'
             target = next(blob for k, (start, end) in enumerate(pack_ranges) if start <= i < end for blob in (pack_blobs[k],))
             frames[i] = dict(offset=len(target), width=w, height=h, bounds=boxes[i], clut=bright_clut)
             target.extend(coded)
@@ -571,6 +665,11 @@ def cook():
         'pub const STREAM_PACKS:&[(usize,usize)]=&[' + ','.join(f'({start},{end - start})' for start, end in pack_ranges) + '];',
     ]
     lines.append(f'pub const FOCUS_EFFECT_LOOP_START:usize={effect_loop};')
+    # The effect clips' frames: a frame is `FX_FRAMES[n]..FX_FRAMES[n + 1]` of the parts it was cut into, and clip
+    # `FX_FIRST_CLIP + k` starts at frame `FX_CLIP_FRAMES[k]`.
+    lines.append(f'pub const FX_FIRST_CLIP:usize={clips.index(by_clip[FX_CLIPS[0][0]])};')
+    lines.append('pub const FX_CLIP_FRAMES:&[u16]=&[' + ','.join(map(str, fx_clip_frames)) + '];')
+    lines.append('pub const FX_FRAMES:&[u16]=&[' + ','.join(map(str, fx_frame_first)) + '];')
     code = '\n'.join(lines) + '\n'
     (ROOT / 'data/ability-art.rs').write_text(code)
     report = {'clips': clips, 'frames': len(frames), 'palettes': len(palettes),

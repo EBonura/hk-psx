@@ -22,10 +22,11 @@ static DATA: &[u8] = include_bytes!(concat!(
 /// The carried module of each streamed pack, in `STREAM_PACKS` order
 /// (host/ability_art.py): the Death clip, the respawn clips, then the ability effects.
 #[cfg(not(test))]
-const STREAMS: [usize; 3] = [
+const STREAMS: [usize; 4] = [
     crate::modules::ART_DEATH,
     crate::modules::ART_WAKE,
     crate::modules::ART_FX,
+    crate::modules::ART_FX_SPELL,
 ];
 /// Bytes of one streamed frame record at the head of a pack: the guest `Frame` field for field
 /// (offset u32, width and height u16, palette u32, four bounds i32).
@@ -80,17 +81,18 @@ pub const WAKE_TO_SIT: usize = 32;
 /// The respawn at the new-game spawn: the lying pose, then getting up (`Wake Up Ground`).
 pub const WAKE_GROUND_LIE: usize = 33;
 pub const WAKE_GROUND_RISE: usize = 34;
-/// The ability effects, the last streamed pack (`host/ability_art.py` FX_CLIPS, `art_fx`): the Dash
-/// Burst, the double jump's wings and the wall jump's puff, each drawn at the Knight
-/// (`ability_fx.rs`).
+/// The ability effects, the last streamed packs (`host/ability_art.py` FX_CLIPS): in `art_fx` the Dash
+/// Burst, the double jump's wings and flash and the wall jump's puff, each drawn at the Knight (`ability_fx.rs`);
+/// in `art_fx_spell` Vengeful Spirit's cast (`Fireball Top`'s blast) and the ball's wall impact. A
+/// frame of one of these clips is cut to parts of one animation slot each (`fx_parts`), and a clip's
+/// `start` and `count` are in whole frames of the clip, not parts.
 pub const DASH_EFFECT: usize = 35;
 pub const WINGS_EFFECT: usize = 36;
 pub const WALL_PUFF: usize = 37;
-/// Vengeful Spirit's cast (`Fireball Top`'s blast) and the ball's wall impact.
-pub const FIREBALL_BLAST: usize = 38;
-pub const WALL_IMPACT: usize = 39;
-/// The double jump's `White Flash DJ`.
-pub const FLASH_EFFECT: usize = 40;
+/// The double jump's `White Flash DJ`: a small round glow of blue light.
+pub const FLASH_EFFECT: usize = 38;
+pub const FIREBALL_BLAST: usize = 39;
+pub const WALL_IMPACT: usize = 40;
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -119,6 +121,11 @@ pub fn clip_ticks(clip: usize) -> u32 {
     let c = ABILITY_CLIPS[clip];
     (c.count as u32 * 60).div_ceil(u32::from(c.fps))
 }
+/// The parts (indices of `size`, `draw_light`) frame `frame` of effect clip `clip` was cut into.
+pub fn fx_parts(clip: usize, frame: usize) -> core::ops::Range<usize> {
+    let first = FX_CLIP_FRAMES[clip - FX_FIRST_CLIP] as usize + frame;
+    FX_FRAMES[first] as usize..FX_FRAMES[first + 1] as usize
+}
 /// The bytes of streamed pack `k`, when it is resident (the pool holds it), without counting a miss.
 fn pack(k: usize) -> Option<&'static [u8]> {
     #[cfg(not(test))]
@@ -131,6 +138,7 @@ fn pack(k: usize) -> Option<&'static [u8]> {
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-death.hk"))[..],
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-wake.hk"))[..],
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-fx.hk"))[..],
+            &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-fx-spell.hk"))[..],
         ]
         .get(k)
         .copied()
@@ -195,50 +203,6 @@ fn coded(index: usize) -> Option<&'static [u8]> {
     let (frame, base) = locate(index)?;
     Some(&base[frame.offset..])
 }
-/// Bytes of a frame in order, decoded from its run-length code. A token below 0x80 is a
-/// literal of token + 1 bytes; from 0x80 it is a run of (token & 0x7f) + 2 copies of the
-/// next byte.
-struct Unpack {
-    src: &'static [u8],
-    at: usize,
-    literal: usize,
-    run: usize,
-    value: u8,
-}
-impl Unpack {
-    fn new(src: &'static [u8]) -> Self {
-        Unpack {
-            src,
-            at: 0,
-            literal: 0,
-            run: 0,
-            value: 0,
-        }
-    }
-    fn next(&mut self) -> u8 {
-        if self.run == 0 && self.literal == 0 {
-            let token = self.src[self.at];
-            self.at += 1;
-            if token < 0x80 {
-                self.literal = token as usize + 1
-            } else {
-                self.run = (token & 0x7f) as usize + 2;
-                self.value = self.src[self.at];
-                self.at += 1
-            }
-        }
-        if self.run != 0 {
-            self.run -= 1;
-            self.value
-        } else {
-            self.literal -= 1;
-            let b = self.src[self.at];
-            self.at += 1;
-            b
-        }
-    }
-}
-
 #[cfg(not(test))]
 mod presentation {
     use super::*;
@@ -256,23 +220,12 @@ mod presentation {
     /// Returns the decoded byte count.
     pub fn upload_frame(index: usize, rect: VramRect) -> Option<u32> {
         let len = texel_bytes(index)?;
-        let mut stream = Unpack::new(coded(index)?);
+        let src = coded(index)?;
         psx_io::gpu::wait_cmd_ready();
         psx_io::gpu::write_gp0(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
         psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.x, rect.y));
         psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.w, rect.h));
-        let mut left = len;
-        while left > 0 {
-            let mut word = 0u32;
-            for shift in 0..4 {
-                if left == 0 {
-                    break;
-                }
-                word |= u32::from(stream.next()) << (shift * 8);
-                left -= 1;
-            }
-            psx_io::gpu::write_gp0(word);
-        }
+        crate::unpack::decode_words(src, len, psx_io::gpu::write_gp0);
         Some(len as u32)
     }
     pub fn upload() {
@@ -418,3 +371,4 @@ mod presentation {
 }
 #[cfg(not(test))]
 pub use presentation::{draw, draw_additive, draw_light, draw_slash, upload, upload_frame};
+

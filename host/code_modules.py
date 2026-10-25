@@ -175,7 +175,10 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # and when he has died; `art_fx` (the Knight's ability effects, game/src/ability_fx.rs) follows him through every scene
 # once he owns an ability that draws one. Up to four packages can be asked for at once (modules.rs CARRIED).
 CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk',
-           'art_fx': 'data/art-fx.hk'}
+           'art_fx': 'data/art-fx.hk', 'art_fx_spell': 'data/art-fx-spell.hk'}
+# Carried packages the pool-fit guarantee leaves out: the guest asks for one only where it fits beside the room's own
+# modules and whatever else is wanted (game/src/modules.rs `fx_fit`), and does without it where it does not.
+OPTIONAL = ('art_fx', 'art_fx_spell')
 # Code modules the boot reads and installs itself, each in a chunk of its own at the head of the disc's
 # boot group (just before the title art, so the read costs no seek): not carried by any room.
 BOOT_MODULES = tuple(m for m in ('title',) if m not in ALWAYS_RESIDENT)
@@ -822,7 +825,7 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
     shadeless = {scene for scene, mods in room_scenes().items() if 'hornet' in mods}
     sector = lambda n: -(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048
     for scene, mods in scene_table.items():
-        names = [n for n in CARRIED if n in report['modules'] and not (n == 'art_shade' and scene in shadeless)]
+        names = [n for n in CARRIED if n in report['modules'] and n not in OPTIONAL and not (n == 'art_shade' and scene in shadeless)]
         carried = sorted((sector(n) for n in names), reverse=True)[:3]
         own = sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods)
         if carried and own + sum(carried) > POOL_BYTES - 0x1000:

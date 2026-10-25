@@ -11,27 +11,46 @@ where each piece lives. Source records are from the installed Windows build (`re
 | Shade Cloak dash | `Shadow Burst`, `Shadow Ring`, `Shadow Dash Blobs`, `Sharp Shadow` | not presented (the body pose and the sound are) |
 | Mantis Claw wall slide | `Wallslide Dust`: 100 a second while he slides | owner `0xFFFB`, ten particles every sixth tick of a slide |
 | Mantis Claw wall jump | `Wall Puff` (6 frames at 20 fps) | `art_fx` clip `Wall Puff`, at the Knight |
-| Monarch Wings double jump | `Double J Wings` (`Double Jump Wings 2`, 6 frames at 16 fps), `White Flash DJ` (holds 0.125 s, fades in 0.4 s), `Double J Feather` (moth feathers, 65 a second for 0.4 s) | the wings and the flash from `art_fx`; the feathers are not presented (their texture is not in a scene's particle art) |
-| Vengeful Spirit | `Fireball Top`: `Fireball Blast`, `particles`, `white_light`; the ball sheds soul orbs (80 a second); `Wall Impact` when a wall stops it, `Ball End` when it expires | `Fireball Blast` and `Wall Impact` from `art_fx`, `Ball End` (linked art); the orbs are not presented (a cloud of about thirty more quads in a spell fight, which tipped the Baldur fight from 2 to 3 vblanks a frame on 150 of its frames) |
+| Monarch Wings double jump | `Double J Wings` (`Double Jump Wings 2`, 6 frames at 16 fps), `White Flash DJ` (holds 0.125 s, fades in 0.4 s), `Double J Feather` (moth feathers, 65 a second for 0.4 s) | the wings from `art_fx`; the flash as a small round glow of blue light (one cooked frame, 3.2 units across, held 8 ticks and faded over 24); the feathers are not presented (their texture is not in a scene's particle art) |
+| Vengeful Spirit | `Fireball Top`: `Fireball Blast`, `particles`, `white_light`; the ball sheds soul orbs (80 a second); `Wall Impact` when a wall stops it, `Ball End` when it expires | `Fireball Blast` and `Wall Impact` from `art_fx_spell`, `Ball End` (linked art); the orbs are not presented (a cloud of about thirty more quads in a spell fight, which tipped the Baldur fight from 2 to 3 vblanks a frame on 150 of its frames) |
 | Focus, heal | Lines Anim, Burst, White Flash R, Dust, Can Focus Particles | already presented (`focus_fx.rs`) |
 | Desolate Dive, Howling Wraiths, nail arts | `Q Slam`, `Scr Heads`, `Cyclone Slash`, `Great Slash`, `Dash Slash` | the abilities are not in the port |
 | Crystal Heart | the `SD *` effects | not presented (the body poses are) |
 
 ## How it is built
 
-The clips are cooked by `host/ability_art.py` (`FX_CLIPS`) as the third streamed pack, `art_fx`
-(`data/art-fx.hk`, a carried module like the Death and respawn art, docs/DEATH.md "Streamed art"). Every
-palette row of the VRAM block is taken, so the frames carry none: each texel's premultiplied brightness is
-fitted to the grey ramp of the bright palette (the Burst's), and the guest draws them adding with a tint
-(`ability_art::draw_light`). The pack stays within three sectors, so the pool-fit check, which holds the three
-largest carried packages at once, does not grow.
+The clips are cooked by `host/ability_art.py` (`FX_CLIPS`) as the last two streamed packs, `art_fx` (dash, wings,
+the double jump's glow, wall puff) and `art_fx_spell` (cast blast, wall impact): carried modules like the Death and
+respawn art (docs/DEATH.md "Streamed art"). Each frame is cut at `density` screen pixels a texel at the size it is
+drawn (1.0, the Knight's own, for the dash, the wings and the puff; 1.7 for the cast blast and 1.35 for the wall
+impact, whose frames are screen-sized), its colour premultiplied by its alpha before the resize, faded to black over
+2.5 texels at the frame's edge (so no quad shows a rectangle), and cut into parts of at most 64x64 texels, one
+animation slot each; a part is cropped to the texels that carry light and dropped when none does. The texels are
+indices of the bright palette row (CLUT y487), refitted on the effects' own colour (the original's navy-to-white ramp
+with a violet rim) and, at a sixth of the weight, on the Focus Burst and Soul Burst frames that share it. The first
+cooked version stored them as a grey ramp tinted by the guest, at 2 to 5 screen pixels a texel (the pack had to stay
+inside three sectors), which showed as blocks and clipped cores.
 
-The guest (`game/src/ability_fx.rs`) raises an effect on the state edge that starts it (`on_edges`, the
-cast, the ball's end), ages it every tick, and draws it at the Knight (children of the Knight prefab) or at the
-place it was spawned (the spell effects, facing the way they were cast). `Game::carry_ability_art` asks for the
-pack into the scene he is in, and into the scene a gate leads to as soon as he has chosen it, whenever he
-owns an ability that draws one. An effect whose pack has not arrived is not raised (`HK_FX_LATE`; the pool holds three carried packages at most, so while the Shade's art, the Death clip and the respawn clips are all carried, in a boss fight lost in the Shade's own room, the pack waits for one of them to leave), and the
-effects are the first thing in a frame to go undrawn when the animation cache's slots are spoken for.
+What the density costs: every part of a frame is an animation-cache miss, uploaded through the GPU port when the
+effect frame changes (about every second tick). Vengeful Spirit's blast and impact at 1.25 pixels a texel (four parts
+a frame) took the Baldur fight (route baldur-spell, 54 casts) from 3.54 to 3.55 vblanks a frame; at 1.7 and 1.35 they
+are two parts a frame and the route is back at 3.54. The packs are 12,343 and 12,986 bytes.
+
+Those sizes are more than the three sectors the pool-fit check counts per carried package, so the two packs are
+*optional* (`host/code_modules.py` `OPTIONAL`): the build's guarantee (the worst room beside the three largest of the
+Shade's art, the Death clip and the respawn clips) leaves them out. `hk-module-publish` writes `HK_FX_FIT` per
+manifest scene: which of the two packs fit beside the scene's own modules and the Death and respawn clips, and which
+fit beside the Shade's art too. The guest asks for a pack only where it fits (`modules::fx_fit`, frame.rs
+`carry_ability_art`; the Shade's row while its art is wanted there), so the guarantee is never spent on them. Where a
+pack does not fit the effect is not drawn (`HK_FX_LATE` counts the casts that wanted one).
+
+The guest (`game/src/ability_fx.rs`) raises an effect on the state edge that starts it (`on_edges`, the cast, the
+ball's end), ages it every tick, and draws every part of its frame at the Knight (children of the Knight prefab) or
+at the place it was spawned (the spell effects, facing the way they were cast). `Game::carry_ability_art` asks for
+each pack into the scene he is in, and into the scene a gate leads to as soon as he has chosen it, whenever he owns
+an ability that draws one of its effects. The effects are the first thing in a frame to go undrawn when the animation
+cache's slots are spoken for (`request`). The parts are decoded straight into the GPU port a word at a time
+(`game/src/unpack.rs`, with its own test).
 
 The dust is the break-effects cooker's (docs/BREAK_EFFECTS.md): the Knight's owners are cooked into every scene
 (`host/hk-cook/src/break_effects.rs`, `HERO_*_OWNER`), at no resident cost beyond the style and emitter rows.
