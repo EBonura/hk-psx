@@ -1,8 +1,9 @@
-# The hand-off measured: New Game on the shipping disc, left alone. The game's vblank counter stops while the movie
-# program runs (the program installs its own handler) and starts again when it returns into the game, so the tick
-# at which the counter passes its frozen value (353 at launch on this build, 360 leaves a margin) is the end of the
-# last movie, and the Knight at the top of the shaft is the first gameplay frame. The ticks between the two are the
-# new game's scene load: 335 (5.6 s) now, against 790 (13.2 s) when the program chain-loaded the game back.
+# The hand-off measured: New Game on the shipping disc, left alone. The game starts loading the first scene during
+# the poem (disc.rs `preload`), so its VBlank counter no longer marks the end of the movies: the game sets
+# HK_GAME_MODE to 2 when it begins to admit the first scene, which is the moment the last movie frame is gone, and the
+# Knight at the top of the shaft is the first gameplay frame. The ticks between the two are what is left of the new
+# game's scene load (route log: tools in the lane notes): 136 at the first version (2.3 s), 343 (5.7 s) before the
+# poem carried the load, 790 (13.2 s) when the program chain-loaded the game back.
 #
 #   psoxide-gate run tools/journeys/new-game-handoff.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
@@ -32,16 +33,16 @@ press = ["cross"]
 hold = 3
 
 [[step]]
-label = "the game's vblank counter runs again: the program has returned"
+label = "the movies are over: the game starts admitting the first scene"
 timeout = 12000
 checkpoint = "return"
 golden = false
 no_matrix = true
 [step.wait_until]
 kind = "ram"
-sym = "__psx_rt_vblank_count"
-op = "gt"
-value = 360
+sym = "HK_GAME_MODE"
+op = "eq"
+value = 2
 
 [[step]]
 label = "first gameplay frame: the Knight at the top of the shaft"

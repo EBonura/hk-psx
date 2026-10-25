@@ -21,6 +21,12 @@
 //! game, which carries on into the new game with everything it had loaded:
 //! no reload of the game's executable, no second boot.
 //!
+//! The program is called three ways (the mailbox's mode word, [`Mode`]): to play the poem with its piano
+//! until the piano is over, then to play the movies, then, when the player skipped, only to put the screen
+//! back. Between the first and the second call the game loads the first scene while the poem goes on: the
+//! program's [`hk_poem_tick`] draws the poem's frames from inside the game's loader (game/src/intro.rs),
+//! which keeps the program's image in the pool and its state in the hand-off block.
+//!
 //! The movies are the ones the original plays, cooked by host/hk-intro-cook
 //! from the player's own install. A disc built without them boots a game with
 //! no blob.
@@ -97,8 +103,36 @@ const STALL_VBLANKS: u32 = 120;
 /// stack pointer to come back with, the address to return to, the RAM the movie buffers may use (the scene
 /// arena) and its length, the disc's base sector and CD-DA track base that the SDK's file lookup needs, and
 /// the picture's position the title's screen setting chose.
-const MAILBOX: *const u32 = 0x801F_FFC0 as *const u32;
+const MAILBOX: *mut u32 = 0x801F_FFC0 as *mut u32;
 const MAGIC: u32 = 0x484B_4E47; // "HKNG"
+/// More of the hand-off, below the mailbox: the game's words for the poem's steps (game/src/intro.rs), and
+/// below them the poem's state between steps.
+const CARRY: *mut poem::Carry = 0x801F_FF40 as *mut poem::Carry;
+const _: () = assert!(core::mem::size_of::<poem::Carry>() <= 64);
+
+/// What the game asks of a call (mailbox word 10).
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Mode {
+    /// Play the poem and its piano until the piano is over.
+    Poem,
+    /// Play the movies, then put the screen back.
+    Movies,
+    /// Put the screen back.
+    Screen,
+}
+
+/// What a call tells the game (mailbox word 11).
+const RESULT_DONE: u32 = 0;
+const RESULT_SKIPPED: u32 = 1;
+/// The piano is over and the poem is not.
+const RESULT_YIELD: u32 = 2;
+
+mod buffers;
+
+/// The three display buffers the movies play into.
+pub(crate) fn movie_buffers() -> [(u16, u16); 3] {
+    buffers::MOVIE_BUFFERS
+}
 
 /// What the game handed over.
 struct Handoff {
@@ -108,6 +142,7 @@ struct Handoff {
     arena_bytes: usize,
     /// The screen position (x, y) of the title's Options, in the display's own units.
     screen: (i16, i16),
+    mode: Mode,
 }
 
 impl Handoff {
@@ -121,11 +156,18 @@ impl Handoff {
             arena: word(4) as usize,
             arena_bytes: word(5) as usize,
             screen: (word(8) as i32 as i16, word(9) as i32 as i16),
+            mode: match word(10) {
+                1 => Mode::Movies,
+                2 => Mode::Screen,
+                _ => Mode::Poem,
+            },
         })
     }
 
-    /// Leave for the game: the stack it called from, then the code after its call.
-    fn leave(&self) -> ! {
+    /// Leave for the game with `result`: the stack it called from, then the code after its call.
+    fn leave(&self, result: u32) -> ! {
+        // SAFETY: the mailbox word the game reads after the call.
+        unsafe { core::ptr::write_volatile(MAILBOX.add(11), result) };
         // SAFETY: the game's `hk_intro_enter` saved its registers on the stack at `saved_sp` and put the
         // address of its restore code in the mailbox; that code reloads them and returns to its caller.
         unsafe {
@@ -204,7 +246,7 @@ impl Prompt {
         if !psx_vram::dma_copy_to_vram_done() {
             return;
         }
-        for (x, y) in player::DEFAULT_BUFFERS {
+        for (x, y) in movie_buffers() {
             draw_bar(x, y, level);
         }
         self.drawn = Some(level);
@@ -260,9 +302,13 @@ pub(crate) struct Skip {
 impl Skip {
     /// The player's per-VBlank poll: `true` when the player skips the rest.
     fn poll(&mut self) -> bool {
+        self.poll_at(interrupts::vblank_count())
+    }
+
+    /// [`Skip::poll`] at VBlank `now` of whichever counter the caller keeps.
+    fn poll_at(&mut self, now: u32) -> bool {
         // The pad answers once per VBlank at most; the player calls this far
         // more often.
-        let now = interrupts::vblank_count();
         if now == self.last_vblank {
             return false;
         }
@@ -281,9 +327,9 @@ impl Skip {
 
     /// The poll for a screen that redraws itself every frame (the poem), which draws the prompt itself
     /// ([`Skip::prompt_brightness`]) instead of leaving it in the movies' display buffers.
-    pub(crate) fn poll_without_bars(&mut self) -> bool {
+    pub(crate) fn poll_without_bars_at(&mut self, now: u32) -> bool {
         self.bars = false;
-        self.poll()
+        self.poll_at(now)
     }
 
     /// How bright the prompt is at VBlank `now`, 0 when it is not showing.
@@ -318,7 +364,7 @@ fn play_movie(skip: &mut Skip, cooked: &Cooked, memory: &mut [u32]) -> Option<St
         // 15-bit: the picture can be drawn over, and the player leaves the
         // display as it found it.
         depth: Depth::Rgb15,
-        buffers: player::DEFAULT_BUFFERS,
+        buffers: movie_buffers(),
         screen_width: 320,
         screen_height: 240,
         // The cook sized the sound's delay for this headroom (hk-intro-cook).
@@ -441,17 +487,94 @@ fn main() {
     let arena = unsafe {
         core::slice::from_raw_parts_mut(handoff.arena as *mut u32, handoff.arena_bytes / 4)
     };
-    if poem::play(&mut skip, peripherals.cd) == poem::End::Finished {
-        for movie in &MOVIES {
-            // A skip ends the whole sequence, as it does in the original, not just
-            // the movie that is playing.
-            if play_movie(&mut skip, movie, arena) != Some(Stop::End) {
-                break;
+    let mut result = RESULT_DONE;
+    if handoff.mode != Mode::Poem {
+        // SAFETY: the block the game reserved for the poem's state.
+        poem::report_carried(unsafe { &mut *CARRY });
+    }
+    match handoff.mode {
+        Mode::Poem => {
+            // SAFETY: the block the game reserved for the poem's state; nothing else touches it.
+            let carry = unsafe { &mut *CARRY };
+            match poem::play(&mut skip, peripherals.cd, carry) {
+                poem::First::Ended(poem::End::Finished) => {}
+                poem::First::Ended(poem::End::Skipped) => result = RESULT_SKIPPED,
+                poem::First::Yield => {
+                    // The game calls `hk_poem_tick` with its own global pointer; both addresses are ours.
+                    let gp: u32;
+                    // SAFETY: reads the global pointer register.
+                    unsafe { core::arch::asm!("move {0}, $28", out(reg) gp, options(nomem, nostack)) };
+                    // SAFETY: mailbox words the game reads after the call.
+                    unsafe {
+                        core::ptr::write_volatile(MAILBOX.add(12), hk_poem_tick_entry as *const () as usize as u32);
+                        core::ptr::write_volatile(MAILBOX.add(13), gp);
+                    }
+                    result = RESULT_YIELD;
+                }
+            }
+            // The screen stays as the poem left it: the game's loader keeps drawing it, or the movies
+            // follow; the GPU is the program's to reset when they start.
+            // SAFETY: the poem has returned: no DMA is running and the drive is paused.
+            unsafe { saved.restore(&mut psx_io::periph::Cd::steal()) };
+            handoff.leave(result)
+        }
+        Mode::Movies => {
+            for movie in &MOVIES {
+                // A skip ends the whole sequence, as it does in the original, not just
+                // the movie that is playing.
+                match play_movie(&mut skip, movie, arena) {
+                    Some(Stop::End) => {}
+                    Some(Stop::Skipped) => {
+                        result = RESULT_SKIPPED;
+                        break;
+                    }
+                    _ => break,
+                }
             }
         }
+        Mode::Screen => {}
     }
     hand_back_the_screen(&mut gpu, display, &mut skip);
     // SAFETY: the player and the poem have returned: no DMA is running and the drive is paused.
     unsafe { saved.restore(&mut psx_io::periph::Cd::steal()) };
-    handoff.leave()
+    handoff.leave(result)
+}
+
+/// One step of the poem for the game's loader (game/src/intro.rs `tick`): the game calls it, through the same
+/// `hk_intro_enter` stub as the program itself, with its own VBlank count in the mailbox's mode word, between
+/// the pieces of the first scene's load; it draws the poem's next frame once a VBlank has come. The result
+/// (0 while the poem goes on, 1 once it ended, 2 when the player skipped) goes back in the mailbox.
+#[no_mangle]
+pub extern "C" fn hk_poem_tick(now: u32) -> u32 {
+    // SAFETY: the block the game reserved for the poem's state; only the game's loader calls this, one
+    // call at a time.
+    poem::tick(unsafe { &mut *CARRY }, now)
+}
+
+// The entry the game calls for a step: `hk_intro_enter` has put the program's stack and global pointer in
+// place and jumps here; the step runs and the program leaves the way `Handoff::leave` does, through the
+// stack pointer and address the stub saved in the mailbox.
+#[cfg(target_arch = "mips")]
+core::arch::global_asm!(
+    r#"
+    .set noreorder
+    .set noat
+    .section .text.hk_poem_tick_entry
+    .globl hk_poem_tick_entry
+hk_poem_tick_entry:
+    lui $8, 0x8020
+    lw $4, -0x40+40($8)
+    jal hk_poem_tick
+    nop
+    lui $8, 0x8020
+    sw $2, -0x40+44($8)
+    lw $25, -0x40+12($8)
+    lw $29, -0x40+8($8)
+    jr $25
+    nop
+"#
+);
+
+extern "C" {
+    fn hk_poem_tick_entry();
 }

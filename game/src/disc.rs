@@ -471,6 +471,46 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
     })
 }
 /// FNV-1a over `bytes`, servicing the pad between blocks (the title's art chunks are 100 KB and more).
+/// Whether the opening movies' display buffers (`intro::MOVIE_BUFFERS`, 320 by 240 halfwords each, which the
+/// player clears and fills) cover any VRAM that scene `scene`'s atlases are uploaded to. The first scene's
+/// atlases go up before the movies, so main.rs asserts at build time that none is lost.
+#[cfg(feature = "intro")]
+pub const fn scene_clobbered(scene: usize) -> bool {
+    let (mut i, end) = (SCENE_ATLAS_RANGES[scene].0 as usize, SCENE_ATLAS_RANGES[scene].1 as usize);
+    while i < end {
+        let a = &ATLASES[i];
+        let mut k = a.first;
+        while k < a.first + a.count {
+            // The page and palette layouts of hk_cache::residency (`page_xy`, `clut_xy`), as consts.
+            let (x, y, w, h) = if a.kind == 0 {
+                (384 + (k % 10) * 64, (k / 10) * 256, 64, 256)
+            } else {
+                let (bank, p) = (k / hk_cache::residency::CLUTS, k % hk_cache::residency::CLUTS);
+                match bank {
+                    0 if p < 400 => ((p % 20) * 16, 480 + p / 20, 16, 1),
+                    0 => (336, 480 + (p - 400), 16, 1),
+                    1 => (320 + (p % 4) * 16, 256 + p / 4, 16, 1),
+                    2 => (320 + (p % 4) * 16, 360 + p / 4, 16, 1),
+                    _ => (352 + (p % 2) * 16, 32 + p / 2, 16, 1),
+                }
+            };
+            let mut b = 0;
+            while b < crate::intro::MOVIE_BUFFERS.len() {
+                let (bx, by) = (
+                    crate::intro::MOVIE_BUFFERS[b].0 as usize,
+                    crate::intro::MOVIE_BUFFERS[b].1 as usize,
+                );
+                if x < bx + 320 && bx < x + w && y < by + 240 && by < y + h {
+                    return true;
+                }
+                b += 1;
+            }
+            k += 1;
+        }
+        i += 1;
+    }
+    false
+}
 fn fnv(bytes: &[u8]) -> u32 {
     let mut hash = 0x811c9dc5u32;
     for block in bytes.chunks(1024) {
@@ -514,7 +554,16 @@ pub struct Cache {
     metadata_view: Option<WorldMeta<'static>>,
     /// Manifest index of the scene whose effect texels sit in the effect VRAM rects.
     effect_scene: usize,
+    /// The scene whose sound effects, coverage, effect art and atlases `preload` put in place before the
+    /// opening movies took the arena, or `PRELOAD_NONE`. The scene's admission consumes it.
+    #[cfg(feature = "intro")]
+    preloaded: u16,
+    /// `preload` is running the admission: it stops after the atlases and leaves the code to the real one.
+    #[cfg(feature = "intro")]
+    early: bool,
 }
+#[cfg(feature = "intro")]
+const PRELOAD_NONE: u16 = u16::MAX;
 #[no_mangle]
 pub static mut HK_SCENE_LOADS: u32 = 0;
 #[no_mangle]
@@ -601,6 +650,19 @@ fn mark(state: u32, error: u32) {
         core::ptr::write_volatile(&raw mut HK_ROOM_LOAD_ERROR, error);
     }
 }
+/// The loader's cooperative checkpoint: the input and music services and, while the opening poem is on
+/// screen during the first scene's early load, the poem's next frame (intro.rs `tick`). Only the admission
+/// calls it: nothing a scratchpad stack entry reaches may, because the poem's frame is drawn by the opening
+/// program through a pointer, which the stack guard cannot bound. A call, not inline code, in the build that
+/// has the poem: the admission has a few dozen of them.
+#[cfg_attr(feature = "intro", inline(never))]
+#[cfg_attr(feature = "intro", optimize(size))]
+#[cfg_attr(not(feature = "intro"), inline(always))]
+fn checkpoint() {
+    crate::input::checkpoint();
+    #[cfg(feature = "intro")]
+    crate::intro::tick();
+}
 /// The pad poll a seek or a sector wait takes between looks (a named function so the
 /// `dyn FnMut` shims stay two jumps).
 #[inline(never)]
@@ -669,6 +731,10 @@ impl Cache {
             split_b: None,
             metadata_view: None,
             effect_scene: EMPTY,
+            #[cfg(feature = "intro")]
+            preloaded: PRELOAD_NONE,
+            #[cfg(feature = "intro")]
+            early: false,
         }
     }
     #[cfg_attr(not(test), optimize(size))]
@@ -1192,7 +1258,7 @@ impl Cache {
                 let n = (held * SECTOR_BYTES - done).min(16384);
                 arena.copy_within(from + done..from + done + n, to + done);
                 done += n;
-                crate::input::checkpoint();
+                checkpoint();
             }
         }
         if pre < total {
@@ -1282,7 +1348,7 @@ impl Cache {
                                 break;
                             }
                             cd_stream::Status::Busy => {
-                                crate::input::checkpoint();
+                                checkpoint();
                                 core::hint::spin_loop();
                             }
                         }
@@ -1312,7 +1378,7 @@ impl Cache {
                     loop {
                         match cd_stream::status() {
                             cd_stream::Status::Busy => {
-                                crate::input::checkpoint();
+                                checkpoint();
                                 core::hint::spin_loop();
                             }
                             cd_stream::Status::Failed(diag) => {
@@ -1378,7 +1444,7 @@ impl Cache {
                             break;
                         }
                         cd_stream::Status::Busy => {
-                            crate::input::checkpoint();
+                            checkpoint();
                             core::hint::spin_loop();
                         }
                     }
@@ -1425,7 +1491,7 @@ impl Cache {
         }
         scene_sectors(entry.sector_count as usize);
         loop {
-            crate::input::checkpoint();
+            checkpoint();
             match cd_stream::status() {
                 cd_stream::Status::Done => {
                     crate::gate_probe::set(crate::gate_probe::OTHER);
@@ -1484,7 +1550,7 @@ impl Cache {
                 let mut hash=0x811c9dc5u32;
                 let mut offset=0;
                 while offset<size {
-                    crate::input::checkpoint();
+                    checkpoint();
                     if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
                     let n=(size-offset).min(SECTOR_BYTES);
                     let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
@@ -1520,7 +1586,7 @@ impl Cache {
         // and coverage decoders do through the decoder's own checksum.
         let mut hash = 0x811c9dc5u32;
         for block in bytes.chunks(1024) {
-            crate::input::checkpoint();
+            checkpoint();
             for &byte in block {
                 hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
             }
@@ -1538,6 +1604,8 @@ impl Cache {
     /// invariant. SPU order matters and is preserved: `audio::init` already
     /// reset the SPU before the title screen, and nothing below resets it, so
     /// the SFX bank goes first, then ambience, Focus, Geo and Runner above it.
+    #[cfg_attr(feature = "intro", inline(never))]
+    #[cfg_attr(all(feature = "intro", not(test)), optimize(size))]
     pub fn prepare_ambience(&mut self) -> Result<(), LoadError> {
         if crate::audio::ready()
             && crate::ambience::is_ready()
@@ -1728,7 +1796,7 @@ impl Cache {
             hash = checksum;
         } else {
             for block in bytes.chunks(1024) {
-                crate::input::checkpoint();
+                checkpoint();
                 for &byte in block {
                     hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
                 }
@@ -1793,7 +1861,7 @@ impl Cache {
             .at(input)
             .hashed(preverified(c.chunk_id - 1));
         loop {
-            crate::input::checkpoint();
+            checkpoint();
             unsafe {
                 HK_ROOM_DECODE_PHASE = decoder.phase_id();
             }
@@ -1825,7 +1893,7 @@ impl Cache {
         let mut check = CoverageValidation::new(&arena[..c.raw_len], expected)
             .map_err(|_| LoadError::Coverage)?;
         loop {
-            crate::input::checkpoint();
+            checkpoint();
             if check.step(32).map_err(|_| LoadError::Coverage)? {
                 break;
             }
@@ -1841,7 +1909,7 @@ impl Cache {
             .chunks(1024)
             .zip(destination.chunks_mut(1024))
         {
-            crate::input::checkpoint();
+            checkpoint();
             destination.copy_from_slice(source);
         }
         self.coverage_scene = scene;
@@ -1857,6 +1925,7 @@ impl Cache {
     /// the fixed effect VRAM rects. Runs before the scene decode owns the arena;
     /// VRAM keeps the texels, so nothing stays resident in RAM.
     #[inline(never)]
+    #[cfg_attr(all(feature = "intro", not(test)), optimize(size))]
     fn prepare_effect_art(&mut self, scene: usize, st: Stage) -> Result<(), LoadError> {
         self.init()?;
         let f = EFFECT_ART_MANIFEST[SCENE_MANIFEST[scene].scene_id as usize];
@@ -1880,7 +1949,7 @@ impl Cache {
                 EFFECT_INDEX + SCENE_MANIFEST[scene].scene_id as usize,
             ));
         loop {
-            crate::input::checkpoint();
+            checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
             match decoder.step(arena, DECODE_STEP) {
                 Ok(Some(len)) => {
@@ -1950,7 +2019,7 @@ impl Cache {
             .at(input)
             .hashed(preverified(m.chunk_id - 1));
         loop {
-            crate::input::checkpoint();
+            checkpoint();
             crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
             match decoder.step(tail, DECODE_STEP) {
                 Ok(Some(len)) => {
@@ -1981,7 +2050,7 @@ impl Cache {
         let mut previous_global = 0;
         let mut mapped = 0;
         for region in bank.regions() {
-            crate::input::checkpoint();
+            checkpoint();
             let global = region.global_id() as usize;
             if global <= previous_global
                 || global > REGION_SCENE_LOCAL.len()
@@ -2059,7 +2128,7 @@ impl Cache {
                 .at(input)
                 .hashed(preverified(ATLAS_INDEX + self.loaded_atlases));
             loop {
-                crate::input::checkpoint();
+                checkpoint();
                 unsafe {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
@@ -2157,6 +2226,10 @@ impl Cache {
         self.coverage_len = 0;
         self.revoke_metadata();
         self.effect_scene = EMPTY;
+        #[cfg(feature = "intro")]
+        {
+            self.preloaded = PRELOAD_NONE;
+        }
         unsafe {
             HK_COVERAGE_SCENE = 0;
             HK_COVERAGE_BYTES = 0;
@@ -2196,21 +2269,38 @@ impl Cache {
             self.prepare_scene_ambience(wanted)?;
             self.prepare_map(wanted)?;
         }
-        let st = if self.loaded_scenes == 0 {
+        // What `preload` put in place before the opening movies took the arena is used once, by this
+        // admission; the rest of the group is read chunk by chunk, as a group too large for the arena is.
+        #[cfg(feature = "intro")]
+        let (early, preloaded) = (
+            self.early,
+            core::mem::replace(&mut self.preloaded, PRELOAD_NONE) == wanted as u16,
+        );
+        #[cfg(not(feature = "intro"))]
+        let (early, preloaded) = (false, false);
+        let st = if early || preloaded {
+            Stage::Read
+        } else if self.loaded_scenes == 0 {
             self.stage_group(wanted)?
         } else {
             Stage::Read
         };
-        // The code chunk heads the group, so it is consumed first, in disc order.
-        if self.loaded_scenes == 0 {
+        // The code chunk heads the group, so it is consumed first, in disc order. The early pass leaves it:
+        // the code installs into the pool, where the opening program is.
+        if self.loaded_scenes == 0 && !early {
             self.prepare_code(wanted, st)?;
         }
-        if self.loaded_scenes == 0 {
+        if self.loaded_scenes == 0 && !preloaded {
             self.prepare_scene_sfx(wanted, st)?;
         }
         self.prepare_coverage(wanted, st)?;
         self.prepare_effect_art(wanted, st)?;
         self.prepare_atlases(wanted, st)?;
+        #[cfg(feature = "intro")]
+        if early {
+            self.preloaded = wanted as u16;
+            return Ok(());
+        }
         while self.loaded_scenes < if SCENE_GATE_LOAD { 1 } else { SCENE_COUNT } {
             let index = if SCENE_GATE_LOAD {
                 wanted
@@ -2229,7 +2319,7 @@ impl Cache {
                 && crate::modules::art_missing(wanted)
             {
                 while matches!(cd_stream::status(), cd_stream::Status::Busy) {
-                    crate::input::checkpoint();
+                    checkpoint();
                 }
                 unsafe {
                     GROUP_LANDED = cd_stream::received();
@@ -2250,7 +2340,7 @@ impl Cache {
                 .at(input)
                 .hashed(preverified(index));
             loop {
-                crate::input::checkpoint();
+                checkpoint();
                 unsafe {
                     HK_ROOM_DECODE_PHASE = decoder.phase_id();
                 }
@@ -2326,6 +2416,24 @@ impl Cache {
             }
         }
         Ok(())
+    }
+    /// The part of the first scene's admission that does not need the scene arena for good, done while
+    /// the opening poem plays (intro.rs): the bootstrap's sound banks, the scene's ambience, sound effects,
+    /// coverage, effect art and atlases. The movies then take the arena, and the admission itself (`select`)
+    /// finds this done and reads what is left: the scene, its metadata and its code. Every step checks what
+    /// it reads as the admission does; a failure leaves the rest to it.
+    #[cfg(feature = "intro")]
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
+    pub fn preload(&mut self, scene: usize) -> Result<(), LoadError> {
+        self.prepare_ambience()?;
+        if self.loaded_scenes != 0 {
+            return Err(LoadError::RoomMismatch);
+        }
+        self.early = true;
+        let result = self.admit_scenes(scene);
+        self.early = false;
+        result
     }
     /// Exclusive admission at title or a drained scene gate; spatial selection uses try_select().
     pub fn select(&mut self, region: usize) -> Result<(), LoadError> {

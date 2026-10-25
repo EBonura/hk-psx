@@ -12,7 +12,7 @@
 //! starts it a second into the sequence, and the file opens with silence so that its first note lands at
 //! 3.53 s whatever the drive's start takes within a few tenths of a second.
 
-use psx_io::cd::xa::{DriveSpeed, File, Player};
+use psx_io::cd::xa::{DriveSpeed, Event, File, Player};
 use psx_io::gpu::{try_wait_command_ready, write_command, write_display_control};
 use psx_io::periph::Cd;
 use psx_rt::{interrupts, tty};
@@ -116,55 +116,64 @@ fn draw_frame(x: u16, y: u16, ms: u32) {
     }
 }
 
-/// Plays the poem and its piano over the two first display buffers. `cd` is the drive's token.
-pub fn play(skip: &mut Skip, cd: Cd) -> End {
-    let [(x0, y0), (x1, y1), _] = player::DEFAULT_BUFFERS;
-    let buffers = [(x0, y0), (x1, y1)];
-    let mut piano = player::find_root_file("HKPOEM.XA").map(|(lba, bytes)| {
-        let file = File::new(lba, bytes / 2048, cooked::poem::XA_FILE, DriveSpeed::Single);
-        let mut p = Player::new(cd);
-        p.set_volume(0x80, 0x80);
-        (p, file.song(cooked::poem::XA_CHANNEL), false)
-    });
-    psx_spu::set_cd_volume(CdVolume::MAX, CdVolume::MAX);
-    psx_spu::enable_cd_audio(true);
+/// How long the piano has to ring out after the drive reached the end of its file before the poem
+/// hands the drive and the CPU to the game: the sound is decoded a few sectors behind the head.
+const PIANO_RING_OUT_VBLANKS: u32 = 30;
 
-    let start = interrupts::vblank_count();
-    let mut last = start;
-    let mut shown: Option<usize> = None;
-    let mut back = 0;
-    let (mut frames, mut slowest, mut seen) = (0u32, 0u32, start);
-    let end = loop {
-        interrupts::wait_vblank();
-        let now = interrupts::vblank_count();
-        if now == last {
-            continue;
-        }
-        last = now;
-        frames += 1;
-        slowest = slowest.max(now.wrapping_sub(seen));
-        seen = now;
+/// What the poem is between VBlanks. In the program's own loop ([`play`]) it lives on the stack; once the
+/// piano is over the game takes the machine back to load the first scene while the poem goes on, and
+/// the state rides in the hand-off block ([`Carry`]) between the game's calls of [`tick`].
+struct Run {
+    /// The poem's time, in milliseconds, at VBlank `origin` of whichever counter is in use.
+    base_ms: u32,
+    origin: u32,
+    last: u32,
+    /// The display buffer the last frame went into and is waiting to be shown.
+    shown: Option<usize>,
+    back: usize,
+    frames: u32,
+    slowest: u32,
+    seen: u32,
+}
+
+impl Run {
+    fn new(now: u32) -> Run {
+        Run { base_ms: 0, origin: now, last: now, shown: None, back: 0, frames: 0, slowest: 0, seen: now }
+    }
+
+    /// The poem's time at VBlank `now`.
+    fn ms(&self, now: u32) -> u32 {
+        self.base_ms + millis(now.wrapping_sub(self.origin))
+    }
+
+    /// One VBlank of the poem: show the frame drawn last time, end the poem if it is over or skipped, let
+    /// `between` act (the piano), then draw the next frame. `None` while it goes on.
+    fn frame(&mut self, skip: &mut Skip, now: u32, mut between: impl FnMut(u32)) -> Option<End> {
+        let buffers = buffers();
+        self.last = now;
+        self.frames += 1;
+        self.slowest = self.slowest.max(now.wrapping_sub(self.seen));
+        self.seen = now;
         // The frame drawn last time goes up at the blank edge, before anything else is done.
-        if let Some(finished) = shown {
+        if let Some(finished) = self.shown.take() {
             let (x, y) = buffers[finished];
             write_display_control(0x0500_0000 | u32::from(x) | u32::from(y) << 10);
+            self.shown = Some(finished);
         }
-        let ms = millis(now.wrapping_sub(start));
+        let ms = self.ms(now);
         if ms >= prompt_text::POEM_END_MS {
-            break End::Finished;
+            return Some(End::Finished);
         }
-        if skip.poll_without_bars() {
-            break End::Skipped;
+        if skip.poll_without_bars_at(now) {
+            return Some(End::Skipped);
         }
-        if let Some((player, song, started)) = piano.as_mut() {
-            if !*started && ms >= PIANO_START_MS {
-                *started = true;
-                // A drive that refuses is a poem without its piano, not a stuck console.
-                let _ = player.play(*song, false);
-            }
-            player.poll();
+        between(ms);
+        // The game's loader may have a transfer to VRAM in flight (its atlases go up while the poem runs);
+        // the GPU's port is not ours until it is done, and the frame waits for the next VBlank.
+        if !psx_vram::dma_copy_to_vram_done() {
+            return None;
         }
-        let (x, y) = buffers[back];
+        let (x, y) = buffers[self.back];
         draw_frame(x, y, ms);
         let prompt = skip.prompt_brightness(now);
         if prompt != 0 {
@@ -175,17 +184,213 @@ pub fn play(skip: &mut Skip, cd: Cd) -> End {
         while psx_io::gpu::status().bits() & GPU_IDLE != GPU_IDLE && spins != 0 {
             spins -= 1;
         }
-        shown = Some(back);
-        back ^= 1;
+        self.shown = Some(self.back);
+        self.back ^= 1;
+        None
+    }
+
+    fn report(&self) {
+        tty::print("INTRO poem frames=");
+        crate::print_decimal(self.frames);
+        tty::print(" slowest_vblanks=");
+        crate::print_decimal(self.slowest);
+        tty::println("");
+    }
+}
+
+/// The two display buffers the poem alternates between: the first two of the movies' three.
+fn buffers() -> [(u16, u16); 2] {
+    let [a, b, _] = crate::movie_buffers();
+    [a, b]
+}
+
+/// How the first part of the poem ended.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum First {
+    /// The poem ended or was skipped.
+    Ended(End),
+    /// The piano is over and the poem is not: the game goes on loading while [`tick`] draws the rest.
+    Yield,
+}
+
+/// Plays the poem and its piano over the first two display buffers until the piano is over (or the poem
+/// is, or the player skips). `cd` is the drive's token. A `Yield` leaves the poem's state in `carry`.
+pub fn play(skip: &mut Skip, cd: Cd, carry: &mut Carry) -> First {
+    let mut piano = player::find_root_file("HKPOEM.XA").map(|(lba, bytes)| {
+        let file = File::new(lba, bytes / 2048, cooked::poem::XA_FILE, DriveSpeed::Single);
+        let mut p = Player::new(cd);
+        p.set_volume(0x80, 0x80);
+        (p, file.song(cooked::poem::XA_CHANNEL), false)
+    });
+    psx_spu::set_cd_volume(CdVolume::MAX, CdVolume::MAX);
+    psx_spu::enable_cd_audio(true);
+
+    let start = interrupts::vblank_count();
+    let mut run = Run::new(start);
+    // VBlanks since the drive reached the end of the piano's file (None while it plays).
+    let mut ringing: Option<u32> = piano.is_none().then_some(PIANO_RING_OUT_VBLANKS);
+    let end = loop {
+        interrupts::wait_vblank();
+        let now = interrupts::vblank_count();
+        if now == run.last {
+            continue;
+        }
+        let over = run.frame(skip, now, |ms| {
+            if let Some((player, song, started)) = piano.as_mut() {
+                if !*started && ms >= PIANO_START_MS {
+                    *started = true;
+                    // A drive that refuses is a poem without its piano, not a stuck console.
+                    let _ = player.play(*song, false);
+                }
+                if player.poll() == Event::Finished || (*started && !player.is_playing()) {
+                    ringing.get_or_insert(0);
+                }
+            }
+        });
+        if let Some(end) = over {
+            break First::Ended(end);
+        }
+        if let Some(n) = ringing.as_mut() {
+            *n += 1;
+            if *n > PIANO_RING_OUT_VBLANKS {
+                break First::Yield;
+            }
+        }
     };
-    tty::print("INTRO poem frames=");
-    crate::print_decimal(frames);
-    tty::print(" slowest_vblanks=");
-    crate::print_decimal(slowest);
-    tty::println("");
+    run.report();
     if let Some((mut player, _, _)) = piano {
         player.stop();
         let _ = player.release();
     }
+    if end == First::Yield {
+        *carry = Carry::from_run(&run, skip, interrupts::vblank_count());
+    }
     end
+}
+
+/// The poem's state between the game's calls of [`tick`], in the hand-off block (the program's own memory is
+/// not kept between its calls): every field a word, none of them a counter of this program's VBlank handler,
+/// which stops when the program returns, so times are kept as ages.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Carry {
+    /// The poem's time at the last yield, in milliseconds.
+    base_ms: u32,
+    /// The game's VBlank count at the first tick (0 before it).
+    origin: u32,
+    last: u32,
+    /// 0 or 1: the buffer to show at the next edge; `NONE` for none.
+    shown: u32,
+    back: u32,
+    frames: u32,
+    slowest: u32,
+    held: u32,
+    /// The VBlank the skip prompt began at, or `NONE`; until the first tick, how many VBlanks before the yield.
+    prompt_at: u32,
+    /// The brightness the prompt's bars hold, or `NONE`.
+    prompt_drawn: u32,
+    /// Set by the first tick.
+    started: u32,
+    /// `VALID` while the block holds a poem state (it holds whatever was in RAM at power-on otherwise).
+    valid: u32,
+}
+
+const NONE: u32 = u32::MAX;
+const VALID: u32 = 0x504F_454D;
+
+impl Carry {
+    fn from_run(run: &Run, skip: &Skip, now: u32) -> Carry {
+        Carry {
+            base_ms: run.ms(now),
+            origin: 0,
+            last: 0,
+            shown: run.shown.map_or(NONE, |b| b as u32),
+            back: run.back as u32,
+            frames: run.frames,
+            slowest: run.slowest,
+            held: u32::from(skip.held),
+            prompt_at: skip.prompt.since.map_or(NONE, |at| now.wrapping_sub(at)),
+            prompt_drawn: skip.prompt.drawn.unwrap_or(NONE),
+            started: 0,
+            valid: VALID,
+        }
+    }
+}
+
+/// What the poem drew while the game loaded the first scene behind it: frames and the longest gap, in VBlanks,
+/// between two steps (the loader's checkpoints are not that regular). Printed when the program is called again.
+pub fn report_carried(carry: &mut Carry) {
+    if carry.valid != VALID || carry.started == 0 {
+        return;
+    }
+    carry.valid = 0;
+    tty::print("INTRO poem during the load frames=");
+    crate::print_decimal(carry.frames);
+    tty::print(" slowest_vblanks=");
+    crate::print_decimal(carry.slowest);
+    tty::println("");
+}
+
+/// One step of the poem, called by the game from inside its loader (game/src/intro.rs) with the game's own
+/// VBlank count: does nothing until a new VBlank has come, then shows the frame drawn last time, polls the
+/// pad and draws the next frame. Returns 0 while the poem goes on, 1 when it ended and 2 when the player
+/// skipped. The state lives in `carry`; the pad's and the GPU's registers are all it touches.
+pub fn tick(carry: &mut Carry, now: u32) -> u32 {
+    if carry.started == 0 {
+        carry.started = 1;
+        carry.origin = now;
+        carry.last = now;
+        if carry.prompt_at != NONE {
+            // It was an age; from now on it is a VBlank of the game's counter.
+            carry.prompt_at = now.wrapping_sub(carry.prompt_at);
+        }
+    }
+    if now == carry.last {
+        return 0;
+    }
+    // SAFETY: the program owns the pad port while the poem runs; the game's input sampler is idle until
+    // the first scene is up.
+    let mut skip = Skip {
+        port: unsafe { psx_io::periph::ControllerPort::steal() },
+        held: carry.held as u16,
+        last_vblank: carry.last,
+        prompt: crate::Prompt {
+            since: (carry.prompt_at != NONE).then_some(carry.prompt_at),
+            drawn: (carry.prompt_drawn != NONE).then_some(carry.prompt_drawn),
+        },
+        bars: false,
+    };
+    let mut run = Run {
+        base_ms: carry.base_ms,
+        origin: carry.origin,
+        last: carry.last,
+        shown: (carry.shown != NONE).then_some(carry.shown as usize),
+        back: carry.back as usize,
+        frames: carry.frames,
+        slowest: carry.slowest,
+        seen: carry.last,
+    };
+    let over = run.frame(&mut skip, now, |_| {});
+    carry.last = now;
+    carry.shown = run.shown.map_or(NONE, |b| b as u32);
+    carry.back = run.back as u32;
+    carry.frames = run.frames;
+    carry.slowest = run.slowest;
+    carry.held = u32::from(skip.held);
+    carry.prompt_at = skip.prompt.since.unwrap_or(NONE);
+    carry.prompt_drawn = skip.prompt.drawn.unwrap_or(NONE);
+    match over {
+        None => 0,
+        Some(End::Finished) => 1,
+        Some(End::Skipped) => {
+            // The game finishes its load before it puts the screen back: black meanwhile, not the frame the
+            // player skipped over.
+            if psx_vram::dma_copy_to_vram_done() {
+                let (x, y) = buffers()[run.back];
+                clear(x, y);
+                write_display_control(0x0500_0000 | u32::from(x) | u32::from(y) << 10);
+            }
+            2
+        }
+    }
 }

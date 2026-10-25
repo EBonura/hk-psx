@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |785,232|
+| Linked code |785,136|
 | Code-to-data alignment |0|
 | Linked data, including menu and HUD |284,552|
 | BSS, including shared scene arena and runtime pools |800,544|
-| Total static span |1,870,336|
+| Total static span |1,870,240|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |111,872|
+| Unallocated gap before reserved stack |111,968|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |9,472|
+| Free RAM below the module pool |9,568|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -148,8 +148,9 @@ The 2026-10-24 streamed death art pass (docs/DEATH.md, "Streamed art") moved the
 The 2026-10-25 ability effects pass (docs/ABILITY_EFFECTS.md: the Knight's dash burst, wall puff, double jump wings and flash, Vengeful Spirit's blast and impact, and the dash's and the wall slide's dust) took 3,640 of the 12,648 bytes that were free below the module pool, leaving 9,008: linked code 782,988 to 785,684 (+2,696: `ability_fx.rs` 2,850 bytes with its state, the carry and frame calls in `frame.rs`, `modules::carry` and `ability_art::ready` out of line, and one shared draw body for the three ability draws, which were two bodies before), linked data 283,688 to 284,552 (+864: the two new break-effect curves), BSS +72. The art is a carried pack of its own, `art_fx` (5,890 bytes, three sectors), which does not grow the pool-fit sum (the Shade's package and two of three sectors); no palette row and no VRAM is spent.
 
 The 2026-10-25 opening-movies hand-off (docs/INTRO.md: the movie program is called from the running game and returns into it, instead of chain-loading `PSX.EXE` and booting twice; the poem and its piano play before the movies) took linked code from 785,684 to 785,232 bytes: the mailbox settings copy, `take` and the resume path in `main` are gone, `intro::play` and its 156-byte enter/leave stub replace `launch`; 9,472 bytes are free below the module pool (9,008 on the main it was cut from). The three `#[inline(never)]` marks on `audio::set_volume`, `music::set_volume` and `music::apply` stay: without them the same tree linked 1,004 bytes larger. The program itself is in the boot art chunk and costs no RAM; its movie buffers (412 KB for the Prologue) are the scene arena, idle between the title and the first scene's load.
+The 2026-10-25 first-scene prefetch (docs/INTRO.md: the first scene's sound banks, ambience clips, sound effects, coverage, effect art and atlases load while the opening poem plays, so only the scene, its metadata and its code wait for the movies) took linked code from 785,232 to 785,136 bytes (-96) and left linked data and BSS where they were, so 9,568 bytes are free below the module pool (9,472 before). The shipping disc's new code is `intro::play`'s three calls and the poem's step (`intro::tick`, `call_program`, about 400 bytes), `Cache::preload` and the early branch of `admit_scenes` (about 150), and a call at each of the admission's checkpoints (`disc::checkpoint`, 40); it is paid for by `prepare_ambience` (4,108 bytes, which `main` had inlined in a speed-optimised copy of about 4,540) going out of line under `optimize(size)` for the build that has the poem, and by `prepare_effect_art` under `optimize(size)` there as well. The route-input twin and every other build without the `intro` feature link the same bytes as before (the twin's disc is byte for byte the main's). The hand-off block is the last 192 bytes of RAM above the game's initial stack pointer (the 256 bytes over it are nobody's), no linked data.
 
-Static data ends at `0x801d8a00`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d89a0`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

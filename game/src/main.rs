@@ -776,6 +776,13 @@ pub static mut HK_BOUNDARY_WAIT_TICKS: u32 = 0;
 pub static mut HK_BOUNDARY_WAIT_MAX: u32 = 0;
 #[no_mangle]
 pub static mut HK_PAD_POLL_MAX_VBLANK_GAP: u32 = 0;
+/// The first scene's load as far as the opening movies allow, run during the opening poem (intro.rs).
+#[cfg(feature = "intro")]
+#[optimize(size)]
+fn preload_first_scene() {
+    let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
+}
+
 #[no_mangle]
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
@@ -858,10 +865,14 @@ fn main() {
     });
     // A new game on a disc that carries the movies plays them first (intro.rs) and carries on from here
     // when they are over: the title's choices, the card's slots and everything loaded stay as they are.
+    // The first scene's atlases go up while the poem plays: none of them may lie where the movies draw.
+    #[cfg(feature = "intro")]
+    const _: () = assert!(!disc::scene_clobbered(disc::scene_index(NEW_GAME_ENTRY.2)));
     #[cfg(feature = "intro")]
     if saved.is_none() {
         if let Some(boot) = art {
-            intro::play(boot, &mut fb, (settings.screen_x, settings.screen_y));
+            // While the poem plays the first scene's load goes as far as the movies allow (disc.rs `preload`).
+            intro::play(boot, &mut fb, (settings.screen_x, settings.screen_y), preload_first_scene);
         }
     }
     // Sly's half of PlayerData before the charm board, and both before the
