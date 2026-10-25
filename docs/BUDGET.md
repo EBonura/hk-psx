@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |782,988|
-| Code-to-data alignment |4|
-| Linked data, including menu and HUD |283,688|
-| BSS, including shared scene arena and runtime pools |800,472|
-| Total static span |1,867,160|
+| Linked code |785,684|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |284,552|
+| BSS, including shared scene arena and runtime pools |800,544|
+| Total static span |1,870,800|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |115,048|
+| Unallocated gap before reserved stack |111,408|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |12,648|
+| Free RAM below the module pool |9,008|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -145,7 +145,9 @@ The 2026-10-24 texture-placement pass (scene atlas textures placed by draw order
 
 The 2026-10-24 streamed death art pass (docs/DEATH.md, "Streamed art") moved the Knight's death and respawn art out of linked data: the Death clip (18 frames) and the respawn clips (32 frames) are now two carried pool packages, `art_death` (5,862 bytes) and `art_wake` (5,510), read from the disc when a moment needs them. Linked data fell by 11,264 (294,936 to 283,672 on the draw-order texture packing base: the frames, and their table rows for the 50 streamed frames) while linked code rose from 781,628 to 783,160 (+1,532: the frame lookup, the carry rule and the boss song's wait for it), so 12,480 bytes are free below the module pool (2,804 before; 23,756 before the death pass and the texture packing). What stays linked is the death pass's code (+5,964 over 23,756) and its 11 slash frames and clip tables.
 
-Static data ends at `0x801d7d98`; the reserved stack begins at `0x801f3f00`.
+The 2026-10-25 ability effects pass (docs/ABILITY_EFFECTS.md: the Knight's dash burst, wall puff, double jump wings and flash, Vengeful Spirit's blast and impact, and the dash's and the wall slide's dust) took 3,640 of the 12,648 bytes that were free below the module pool, leaving 9,008: linked code 782,988 to 785,684 (+2,696: `ability_fx.rs` 2,850 bytes with its state, the carry and frame calls in `frame.rs`, `modules::carry` and `ability_art::ready` out of line, and one shared draw body for the three ability draws, which were two bodies before), linked data 283,688 to 284,552 (+864: the two new break-effect curves), BSS +72. The art is a carried pack of its own, `art_fx` (5,890 bytes, three sectors), which does not grow the pool-fit sum (the Shade's package and two of three sectors); no palette row and no VRAM is spent.
+
+Static data ends at `0x801d8bd0`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 415,052 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support

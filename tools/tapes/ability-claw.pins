@@ -1,0 +1,11 @@
+pacing = 4
+frame_time = 150
+long_frames = 2
+card = town-continue.mcd
+# Mantis Claw on the Dirtmouth card: the Knight runs right out of the town into the next room, where a
+# wall stops him, and jumps against it. The slide drags Wallslide Dust (ten particles every sixth tick)
+# and each wall jump raises the Wall Puff.
+HK_CHEATS = 32
+HK_FX_RAISED >= 1
+HK_FX_LATE = 0
+HK_PARTICLES_SPAWNED >= 60

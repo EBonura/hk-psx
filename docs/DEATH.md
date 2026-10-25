@@ -67,6 +67,8 @@ Measured on the routes: death to respawn takes no longer than with the linked ar
 on boss-death, 221 and 220 on husk-guard before and after) and the frames match the linked art's to the pixel except for ambient noise and
 one-tick offsets of fades and animations; the hit frames are identical.
 
+The Knight's ability effects are the third pack, `art_fx` (docs/ABILITY_EFFECTS.md): carried into every scene (and into the scene a gate leads to, as soon as he has chosen the gate) while he owns an ability that draws one. It stays within three sectors, so the three largest packages the pool-fit check holds at once are still the Shade's and one of the two 3-sector packs.
+
 To stream another group of frames (hk-effects' cocoon, door dust and grub jar): cook the clips after the last pack's
 in `ability_art.py` and add a row to `STREAM_PACKS`, add a module of that name to `CARRIED` in `code_modules.py`
 and a `STREAMS` entry in `ability_art.rs`, and call `modules::carry(module, scene)` from whatever knows the

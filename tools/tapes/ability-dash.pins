@@ -1,0 +1,12 @@
+pacing = 4
+frame_time = 135
+long_frames = 2
+card = town-continue.mcd
+# Mothwing Cloak from the pause Cheats page, on the Dirtmouth card: two dashes, one to the right and one to
+# the left. Each plays the Dash Burst clip (docs/ABILITY_EFFECTS.md) and drags the Dash Ash dust behind the
+# Knight (a burst of 16 every sixth tick, from the owner for his facing). The pack the clip is in is read
+# before the first dash, so nothing is late.
+HK_CHEATS = 16
+HK_FX_RAISED >= 2
+HK_FX_LATE = 0
+HK_PARTICLES_SPAWNED >= 32
