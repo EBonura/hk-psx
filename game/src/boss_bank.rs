@@ -8,8 +8,9 @@ use core::cell::Cell;
 use hk_format::boss::{self as fmt, Bank, Blob};
 use hk_format::Room;
 
-/// Animation-cache keys, above the props'.
-pub const KEY_BASE: u16 = crate::props::KEY_BASE + crate::props::PARTS.len() as u16;
+/// Animation-cache keys, above the dialogue panel's tiles (which sit above the props').
+pub const KEY_BASE: u16 =
+    crate::dialogue_art::KEY_BASE + crate::dialogue_art::DIALOGUE_TILE_COUNT as u16;
 /// Parts a bank may have: the keys that are left.
 pub const MAX_PARTS: usize = 640;
 const _: () = assert!(KEY_BASE as usize + MAX_PARTS <= hk_cache::MAX_KEYS);
