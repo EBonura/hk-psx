@@ -631,4 +631,4 @@ impl Cache{METHODS
             with self.subTest(exclusive=exclusive):self.run_rust(code.replace('EXCLUSIVE',exclusive))
         main = rustsrc.source(ROOT / 'game/src/main.rs')
         retry = main[main.index('while cache.prepare_ambience()'):]
-        self.assertLess(retry.index('cache.reset_bootstrap()'), retry.index('menu::restore('))
+        self.assertLess(retry.index('cache.reset_bootstrap()'), retry.index('title::restore('))
