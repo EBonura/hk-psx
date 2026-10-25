@@ -24,8 +24,8 @@ pub mod material{
 }
 #[derive(Clone,Copy,Debug)]pub struct VramRect{pub x:u16,pub y:u16,pub w:u16,pub h:u16}
 impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{assert!(x+w<=1024&&y+h<=512);Self{x,y,w,h}}}
-pub struct Clut;impl Clut{pub fn new(x:u16,y:u16)->Self{assert!(x%16==0&&y<512);Self}pub fn uv_clut_word(&self)->u16{0}}
-pub enum TexDepth{Bit4,Bit8}pub struct Tpage;impl Tpage{pub fn new(x:u16,y:u16,_:TexDepth)->Self{assert!(x%64==0&&y%256==0);Self}pub fn uv_tpage_word(&self,_:u16)->u16{0}}
+pub struct Clut;impl Clut{pub fn new(x:u16,y:u16)->Self{assert!(x%16==0&&y<512);Self}pub fn uv_word(&self)->u16{0}}
+pub enum TextureDepth{Bit4,Bit8}pub struct TexturePage;impl TexturePage{pub fn new(x:u16,y:u16,_:TextureDepth)->Self{assert!(x%64==0&&y%256==0);Self}pub fn uv_word(&self,_:u16)->u16{0}}
 pub fn upload_bytes(rect:VramRect,data:&[u8]){assert_eq!(rect.w as usize*rect.h as usize*2,data.len());TRACE.with(|t|t.borrow_mut().uploads.push((rect,data.len())));}
 pub fn draw_sprite_material(x:i16,y:i16,w:u16,h:u16,_:(u8,u8),_:material::TextureMaterial){assert!(x>=0&&y>=0&&x as u16+w<=320&&y as u16+h<=240);TRACE.with(|t|t.borrow_mut().sprites+=1);}
 pub fn draw_quad_textured_material(_:[(i16,i16);4],_:[(u8,u8);4],_:material::TextureMaterial){TRACE.with(|t|t.borrow_mut().quads+=1);}
@@ -42,8 +42,8 @@ pub fn arm_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();t.armed=true;t.si
 pub fn signal_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.armed,"GP0(1Fh) without an arm");t.armed=false;t.signalled=true;});}
 mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic!("the menu's flip timed out");}}
 pub mod interrupts{
- pub fn queue_gp1_at_vblank(_:u32){super::TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.signalled,"flip queued with no GP0(1Fh) after the arm: it would never apply");t.signalled=false;t.pending=true;});}
- pub fn gp1_queue_pending()->bool{super::TRACE.with(|t|t.borrow().pending)}
+ pub fn queue_display_control_at_vblank(_:u32){super::TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.signalled,"flip queued with no GP0(1Fh) after the arm: it would never apply");t.signalled=false;t.pending=true;});}
+ pub fn is_display_control_queued()->bool{super::TRACE.with(|t|t.borrow().pending)}
  pub fn vblank_count()->u32{super::TRACE.with(|t|t.borrow().polls as u32)}
  pub fn wait_vblank(){super::TRACE.with(|t|t.borrow_mut().pending=false);}
 }

@@ -12,8 +12,8 @@ impl Voice {
  pub fn new(index:u8)->Self{assert!((12..=14).contains(&index));Self(index)}
  pub fn configure_sample(self,address:SpuAddr,rate:u32,gain:Volume,_:Adsr){TRACE.lock().unwrap().plays.push((self.0,address.0,rate,gain.0));}
  pub fn set_volume(self,l:Volume,r:Volume){assert_eq!(l,r);TRACE.lock().unwrap().gains.push((self.0,l.0));}
- pub fn key_off(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().off|=mask;}
- pub fn key_on(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().on|=mask;}
+ pub fn release(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().off|=mask;}
+ pub fn start(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().on|=mask;}
 }
 pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;}
 #[path="../game/src/geo_audio.rs"]mod geo_audio;

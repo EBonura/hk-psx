@@ -18,8 +18,8 @@ impl Voice {
  pub fn configure_sample(&self,addr:SpuAddr,rate:u32,gain:Volume,adsr:Adsr){record(Event::Configure(self.0,addr.0,rate,gain,adsr));}
  pub fn set_loop_addr(&self,addr:SpuAddr){record(Event::Loop(self.0,addr.0));}
  pub fn set_volume(&self,left:Volume,right:Volume){assert!(left.0>=0&&right.0>=0);record(Event::Volume(self.0,left,right));}
- pub fn key_on(mask:u32){assert!(mask&!0xFFFFFF==0);record(Event::On(mask));}
- pub fn key_off(mask:u32){assert!(mask&!0xFFFFFF==0);record(Event::Off(mask));}
+ pub fn start(mask:u32){assert!(mask&!0xFFFFFF==0);record(Event::On(mask));}
+ pub fn release(mask:u32){assert!(mask&!0xFFFFFF==0);record(Event::Off(mask));}
 }
 pub mod ambience {
  pub struct Clip {pub spu_address:u32,pub spu_bytes:usize}
