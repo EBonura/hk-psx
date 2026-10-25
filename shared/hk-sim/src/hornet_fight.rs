@@ -426,6 +426,9 @@ impl Fight {
             let (kind, object) = (r[0] as u8, (r[0] >> 8) as u8);
             if kind == k::MESSAGE && r[1] == corpse::EV_HORNET_LEAVE as i32 {
                 sink(Effect::CloakLeaves);
+                // The corpse's tree never sends a `BG OPEN` (nothing in either tree does: the gates' own FSMs are not ours), and
+                // `HORNET KILLED` stays inside the tree, so the arena opens when she leaves, which is when she stops existing.
+                sink(Effect::GatesOpen);
                 self.phase = Phase::Gone;
             } else if kind == k::MESSAGE && r[1] == corpse::EV_HORNET_KILLED as i32 {
                 sink(Effect::GatesOpen);
