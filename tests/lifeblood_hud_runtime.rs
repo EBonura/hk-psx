@@ -43,6 +43,8 @@ impl VramRect{pub fn new(x:u16,y:u16,w:u16,h:u16)->Self{Self{x,y,w,h}}}
 static UPLOADS:Mutex<Vec<(u16,u16,u16,u16)>>=Mutex::new(Vec::new());
 pub fn upload_bytes(rect:VramRect,bytes:&[u8]){assert_eq!(bytes.len(),rect.w as usize*rect.h as usize*2);UPLOADS.lock().unwrap().push((rect.x,rect.y,rect.w,rect.h));}
 mod input{pub fn checkpoint(){}}
+/// The cocoon's code is a room module on the disc; the harness has it resident.
+mod modules{pub const LIFEBLOOD:usize=0;pub fn loaded(_:usize)->bool{true}}
 mod world{
  pub fn scene_of(_:usize)->usize {0}
  pub struct State{pub edges:Vec<u16>}
