@@ -16,13 +16,19 @@ const RESTING_TICK: u16 = 36;
 const GET_OFF_CLIP_TICKS: u16 = 25; // five frames at 12 fps
 const GET_OFF_TICKS: u16 = GET_OFF_CLIP_TICKS + 15 + 6 + 30; // move 0.25 s, Idle 0.1 s, regain 0.5 s
 const SEAT_SLIDE_TICKS: u16 = 12; // iTween 0.2 s
-/// `Init Resting` after a death: `Sit Fall Asleep` for 1.2 s, then `Startle` plays `Wake To Sit`.
-const ASLEEP_TICKS: u16 = 72;
+/// `Init Resting` after a death: `Sit Fall Asleep` for 1.2 s (73 frames from the state's entry to `Startle` on the
+/// original, which plays `Wake To Sit`).
+const ASLEEP_TICKS: u16 = 73;
 /// The camera fades back in over this many ticks as the respawned Knight appears (`RESPAWN` sent to
-/// the camera's fade FSM; the fade-in length is the camera's ordinary 0.33 s).
-const FADE_IN_TICKS: u16 = 20;
+/// the camera's fade FSM: its `FadeIn` state waits 0.6 s, 30 physics steps on the original).
+const FADE_IN_TICKS: u16 = 36;
 /// `Wake Up Ground`'s 25 identical lying frames at 18 fps.
 const LYING_TICKS: u32 = 25 * 60 / 18;
+/// The whole `Wake Up Ground` clip: the lying frames, 20 rising frames and one last standing frame (not
+/// cooked: the idle pose follows it) at 18 fps. The original gives control back when it completes
+/// (153 ticks after the clip starts, measured with hkref), so the last rising frame is held for the
+/// standing frame's ticks.
+const WAKE_GROUND_TICKS: u32 = 46 * 60 / 18;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -218,7 +224,7 @@ impl State {
                 };
             }
             Phase::Rising(t) => {
-                self.phase = if u32::from(t) + 1 >= ability_art::clip_ticks(ability_art::WAKE_GROUND_RISE) {
+                self.phase = if u32::from(t) + 1 >= WAKE_GROUND_TICKS - LYING_TICKS {
                     Phase::Idle
                 } else {
                     Phase::Rising(t + 1)

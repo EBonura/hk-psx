@@ -25,6 +25,9 @@ art_late = 44
 # fight with a Shade in the room is the ordinary case after any death, and
 # it is the one case the port cannot currently survive. Do not extend this
 # tape past 1,600 expecting it to pass; fix that first.
+#
+# The Knight wakes 24 ticks later than he did (the killing hit's hit stop, vitals.rs DEATH_FREEZE_TICKS), so the
+# second walk right is held to poll 1,545 instead of 1,519 (tape-hold) and still reaches the trigger.
 HK_CHEATS = 0
 HK_DEATHS = 1
 HK_SHADE_PRESENT = 1

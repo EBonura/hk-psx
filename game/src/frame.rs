@@ -78,10 +78,12 @@ pub struct Game {
     /// Ticks the screen has been black after a death, before the respawn load: see `DEATH_HOLD_TICKS`.
     pub death_hold: u16,
 }
-/// `GameManager.PlayerDead`: after `DEATH_WAIT` (the vitals' 171 ticks) the camera fades out, waits
-/// 0.8 s and only then calls `ReadyForRespawn`. The fade is the camera's ordinary one (0.33 s, 20
-/// ticks, `EXIT_FADE_TICKS`), so the screen is black for the 28 ticks that remain.
+/// `GameManager.PlayerDead`: after `DEATH_WAIT` (the vitals' 171 ticks, which start when the killing hit's
+/// hit stop ends) the camera fades out and `ReadyForRespawn` follows 0.8 s later.
 pub const DEATH_HOLD_TICKS: u16 = 48;
+/// The camera's `RESPAWN FADE` out (its `CameraFade` state `RespawnFadingOut` waits 0.75 s, measured on the
+/// original with hkref: 38 physics steps), so the screen is black for only the last 3 of the 48 ticks.
+pub const DEATH_FADE_TICKS: u16 = 45;
 /// Total health (masks and Lifeblood) at or below which a hit can kill, so the Death clip is carried:
 /// the most any one hit takes is two masks, doubled by Fragile and Unbreakable overcharming.
 const LOW_HEALTH: u32 = 4;
@@ -205,7 +207,7 @@ impl Game {
             return 0;
         }
         let into = self.death_age().saturating_sub(VITAL_PARAMS.death_ticks as u32);
-        (into.min(EXIT_FADE_TICKS as u32) * 255 / EXIT_FADE_TICKS as u32) as u8
+        (into.min(DEATH_FADE_TICKS as u32) * 255 / DEATH_FADE_TICKS as u32) as u8
     }
     /// Screen darkness for the exit fade, 0 (none) to 255 (black).
     pub fn exit_shade(&self) -> u8 {
