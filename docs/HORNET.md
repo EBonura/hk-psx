@@ -43,20 +43,22 @@ corpse's `HORNET LEAVE`. `HK_HORNET_ART=off` leaves her out of a build.
 
 ## Where it lives (RAM)
 
-Everything of hers is carried with her room; the resident image holds three small calls (`game/src/boss_hooks.rs`) and the
-telemetry words.
+Everything of hers is carried with her room; the resident image holds three small calls (`game/src/boss_hooks.rs`), the draw
+pass's packet loop and the telemetry words. The resident mask is a u32 and the build now refuses a thirty-third module or package
+(Hornet's second module made it 33 for a build, which aliased the ability effects' package onto module 0; the empty `arena`
+module was dropped).
 
 | piece | where | bytes |
 | --- | --- | ---: |
 | `hornet`: the fight's tick, the boss tier's handlers, the fight adapter, the FSM action families it needs | code module, under the pool's first window (53,504) | 49,200 |
-| `hornet_art`: the boss bank reader, the draw pass over her objects, the greeting and item panels | code module | 12,096 |
+| `hornet_art`: the boss bank's part decode and queue, the draw pass over her objects, the greeting and item panels | code module | 14,456 |
 | `art_hornet`: the state block (the fight, each object's world transform, the bank reader's index and queue), then her tree and the corpse's tree | data package | 15,976 |
 | the boss bank: 70 chunks of 2 KiB, her 335 parts and 16 palettes | streamed textures of the scene | 143,360 of the scene's stream |
 
-Her room needs 77,272 pool bytes and carries 12,288 more (the Knight's Death clip and respawn clips, which a boss room always
-carries): 89,560 of 98,304. The pool did not move (base 0x801DAF00, 102,400 bytes). The boss-art branch (2026-10-18) moved it to
-0x801D8000 so one window could hold a 65 KB module, which on today's main leaves 448 bytes free below it; this layout needs 5,300
-bytes of resident code for her instead (docs/BUDGET.md). Modules do not call each other (the publisher refuses a cross-module
+Her room needs 79,652 pool bytes and carries 18,432 more (the Knight's Death clip, the respawn clips and the ability effects): 98,084
+of 98,304, 220 to spare. The pool did not move (base 0x801DAF00, 102,400 bytes). The boss-art branch (2026-10-18) moved it to
+0x801D8000 so one window could hold a 65 KB module, which on today's main leaves 448 bytes free below it; this layout leaves 8,368 bytes free below the
+pool (docs/BUDGET.md; main without her has 9,008). Modules do not call each other (the publisher refuses a cross-module
 edge and lists it), so the fight's tick exports every visible object's composed world transform into the state block for the
 drawing module to read, and her terrain is read through the actors' shared edge copy (`State::edge` would have kept 1,768 bytes of
 resident code alive for her alone).
