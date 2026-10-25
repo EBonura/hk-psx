@@ -16,6 +16,7 @@ const ATTEMPTS: usize = 4;
 /// Read the title's code and install it, after the title art was staged (`Cache::menu_art`). False when
 /// the disc would not give it, in which case nothing of the title can be shown.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn open(cache: &mut Cache) -> bool {
     for _ in 0..ATTEMPTS {
         if modules::loaded(modules::TITLE) || cache.title_code().is_ok() {
