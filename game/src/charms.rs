@@ -598,7 +598,7 @@ mod presentation {
             ICON_CLUT_RECT.0,
             ICON_CLUT_RECT.1 + ICON_PALETTE[index] as u16,
         )
-        .uv_clut_word();
+        .uv_word();
         let (x1, y1) = (x + size, y + size);
         unsafe {
             assert!(ICON_COUNT < MAX_ICONS);

@@ -12,7 +12,7 @@
 //! nothing else may read the disc, which is what `disc` arranges for the title
 //! and the fights. A song loops by watching the head: at the end of its own
 //! audio it seeks back to the top, a gap as long as the seek.
-use psx_io::{cdrom, disc_base};
+use psx_io::{cd, disc_base};
 
 const CMD_SETFILTER: u8 = 0x0D;
 const CMD_READS: u8 = 0x1B;
@@ -78,14 +78,16 @@ impl Player {
     /// milliseconds on a warm drive. Gives the drive mixer unity.
     #[inline(never)]
     pub fn play(&mut self, song: Song, looping: bool) -> bool {
-        let ok = cdrom::try_demute(SPINS).is_some()
-            && cdrom::try_set_mode(MODE_XA_FILTERED, SPINS).is_some()
-            && cdrom::try_command(CMD_SETFILTER, &[song.file, song.channel], SPINS).is_some()
+        let ok = cd::try_unmute(SPINS).is_some()
+            && cd::try_set_mode(MODE_XA_FILTERED, SPINS).is_some()
+            && cd::try_command(CMD_SETFILTER, &[song.file, song.channel], SPINS).is_some()
             && self.begin_read(song);
         if ok {
             self.song = Some(song);
             self.looping = looping;
-            cdrom::set_audio_mixer(0x80, 0, 0x80, 0);
+            // SAFETY: a token is a logic guard, not a memory-safety one (see
+            // `psx_io::periph`); this driver has never held the CD token.
+            unsafe { psx_io::periph::Cd::steal() }.set_audio_mixer(0x80, 0, 0x80, 0);
         } else {
             self.state = State::Idle;
             self.song = None;
@@ -96,8 +98,8 @@ impl Player {
     #[inline(never)]
     fn begin_read(&mut self, song: Song) -> bool {
         let start = disc_base::shift_lba(song.lba);
-        if cdrom::try_set_loc_lba(start, SPINS).is_none()
-            || cdrom::try_command(CMD_READS, &[], SPINS).is_none()
+        if cd::try_set_target_lba(start, SPINS).is_none()
+            || cd::try_command(CMD_READS, &[], SPINS).is_none()
         {
             return false;
         }
@@ -112,7 +114,7 @@ impl Player {
     #[inline(never)]
     pub fn stop(&mut self) {
         if self.state != State::Idle {
-            self.pause_pending = !cdrom::try_pause_until_complete(PAUSE_SPINS);
+            self.pause_pending = !cd::try_pause_until_complete(PAUSE_SPINS);
         }
         self.state = State::Idle;
         self.song = None;
@@ -123,7 +125,7 @@ impl Player {
     pub fn poll(&mut self) -> Event {
         let Some(song) = self.song else {
             if self.pause_pending {
-                self.pause_pending = !cdrom::try_pause_until_complete(PAUSE_SPINS);
+                self.pause_pending = !cd::try_pause_until_complete(PAUSE_SPINS);
             }
             return Event::Idle;
         };
@@ -163,7 +165,7 @@ impl Player {
 /// Absolute LBA the head is reading, if the drive answers (it counts from the
 /// start of the lead-in, two seconds before LBA 0).
 fn head_lba() -> Option<u32> {
-    let p = cdrom::PlayPosition::parse(&cdrom::try_get_loc_p(SPINS)?)?;
+    let p = cd::PlayPosition::parse(&cd::try_play_position(SPINS)?)?;
     ((p.absolute_min as u32 * 60 + p.absolute_sec as u32) * 75 + p.absolute_frame as u32)
         .checked_sub(150)
 }

@@ -28,7 +28,7 @@ pub fn release_voices() {
         let voice = Voice::new(n);
         voice.set_volume(Volume::SILENCE, Volume::SILENCE);
         voice.set_adsr(Adsr { lower: 0x000f, upper: 0 });
-        Voice::key_off(1 << n);
+        Voice::release(1 << n);
     }
 }
 /// Revoke publication and silence all three voices before any SPU overwrite.
@@ -128,14 +128,14 @@ pub fn loop_start_for(source:u32,mossman:bool) {
     let voice = Voice::new(LOOP_VOICES[slot]);
     // The source AudioSource plays the walk loop at its authored initial pitch.
     let (start, _, _, pitch, _, _) = clips(mossman)[0];
-    Voice::key_off(1 << LOOP_VOICES[slot]);
+    Voice::release(1 << LOOP_VOICES[slot]);
     let gain = Volume(volume::scale(GAIN, unsafe { LEVEL }));
     voice.set_volume(gain, gain);
     voice.set_pitch(Pitch::raw(pitch));
     voice.set_start_addr(SpuAddr::new(start));
     voice.set_loop_addr(SpuAddr::new(start));
     voice.set_adsr(Adsr::sample_one_shot());
-    Voice::key_on(1 << LOOP_VOICES[slot]);
+    Voice::start(1 << LOOP_VOICES[slot]);
     unsafe {
         HK_RUNNER_LOOP_STARTS = HK_RUNNER_LOOP_STARTS.saturating_add(1);
     }
@@ -146,7 +146,7 @@ pub fn loop_stop(source: u32) {
         return;
     }
     if let Some(slot) = loop_slot(source) {
-        Voice::key_off(1 << LOOP_VOICES[slot]);
+        Voice::release(1 << LOOP_VOICES[slot]);
         unsafe {
             LOOP_OWNERS[slot] = 0;
         }
@@ -172,7 +172,7 @@ pub fn call_for(pitch_q16:i32,variant:u8,mossman:bool) {
         .min(psx_math::WideU::of(high as u32))
         .low() as u16;
     let voice = Voice::new(CALL_VOICE);
-    Voice::key_off(1 << CALL_VOICE);
+    Voice::release(1 << CALL_VOICE);
     voice.configure_sample(
         SpuAddr::new(start),
         11025,
@@ -181,7 +181,7 @@ pub fn call_for(pitch_q16:i32,variant:u8,mossman:bool) {
     );
     voice.set_pitch(Pitch::raw(scaled));
     let _ = bytes;
-    Voice::key_on(1 << CALL_VOICE);
+    Voice::start(1 << CALL_VOICE);
     unsafe {
         HK_RUNNER_CALLS = HK_RUNNER_CALLS.saturating_add(1);
     }
@@ -192,7 +192,7 @@ pub fn reset() {
         return;
     }
     for voice in LOOP_VOICES.iter().copied().chain([CALL_VOICE]) {
-        Voice::key_off(1 << voice);
+        Voice::release(1 << voice);
     }
     unsafe {
         LOOP_OWNERS = [0; 2];

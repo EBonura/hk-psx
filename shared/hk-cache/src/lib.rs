@@ -117,10 +117,14 @@ impl Cache {
                 stats.hits += 1;
                 continue;
             }
-            let slot = self.slots.reserve(key).ok_or(Error::WorkingSet)?;
+            let reservation = self.slots.begin_load(key).ok_or(Error::WorkingSet)?;
+            let slot = reservation.slot();
             match upload(key, slot) {
                 Some(bytes) if (1..=2048).contains(&bytes) => {
-                    self.slots.mark_ready(slot, slot as u8);
+                    // Nothing evicts between begin_load and here, so the key still owns the slot.
+                    self.slots
+                        .finish_load(reservation, slot as u8)
+                        .map_err(|_| Error::Upload)?;
                     self.slots.pin(key);
                     stats.misses += 1;
                     stats.upload_bytes += bytes;
