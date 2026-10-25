@@ -3092,9 +3092,9 @@ fn generate(curves: &[String], manifest: &[Chunk], widest: [usize; 5]) -> Result
         "// Generated from Windows source; source IDs/hashes in ignored break-effects report."
             .to_string(),
     ];
-    // A curve is three tables (size, opacity, spin) of 33 samples. Few distinct tables of each kind
-    // serve all the styles (most spin is zero, most opacity is constant), so each is stored once and a
-    // curve names its three.
+    // A curve is six tables of 33 values: the low and high end of its size, opacity and spin. Few distinct
+    // tables of each kind serve all the styles (most spin is zero, most opacity constant, and a curve's two
+    // ends are often the same table), so each is stored once and a curve names its six.
     let mut tables: [Vec<String>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     let mut rows = Vec::new();
     for key in curves {
@@ -3102,23 +3102,22 @@ fn generate(curves: &[String], manifest: &[Chunk], widest: [usize; 5]) -> Result
         if samples.len() != 33 {
             return err(format!("a particle curve has {} samples, not 33", samples.len()));
         }
-        let mut named = [0usize; 3];
+        let mut named = [[0usize; 2]; 3];
         for (kind, field) in ["size", "alpha", "spin"].iter().enumerate() {
-            let text = samples
-                .iter()
-                .map(|s| {
-                    let pair = s[*field].as_array().unwrap();
-                    format!("[{},{}]", pair[0], pair[1])
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            named[kind] = match tables[kind].iter().position(|t| *t == text) {
-                Some(n) => n,
-                None => {
-                    tables[kind].push(text);
-                    tables[kind].len() - 1
-                }
-            };
+            for end in 0..2 {
+                let text = samples
+                    .iter()
+                    .map(|s| s[*field].as_array().unwrap()[end].to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                named[kind][end] = match tables[kind].iter().position(|t| *t == text) {
+                    Some(n) => n,
+                    None => {
+                        tables[kind].push(text);
+                        tables[kind].len() - 1
+                    }
+                };
+            }
         }
         rows.push(named);
     }
@@ -3127,14 +3126,15 @@ fn generate(curves: &[String], manifest: &[Chunk], widest: [usize; 5]) -> Result
         .enumerate()
     {
         for (n, text) in tables[kind].iter().enumerate() {
-            out.push(format!("static {name}_{n}:[[{element};2];33]=[{text}];"));
+            out.push(format!("static {name}_{n}:[{element};33]=[{text}];"));
         }
     }
     out.push(format!(
         "pub static CURVES:&[Curve]=&[{}];",
         rows.iter()
             .map(|[size, alpha, spin]| format!(
-                "Curve{{size:&SIZE_{size},alpha:&ALPHA_{alpha},spin:&SPIN_{spin}}}"
+                "Curve{{size:[&SIZE_{},&SIZE_{}],alpha:[&ALPHA_{},&ALPHA_{}],spin:[&SPIN_{},&SPIN_{}]}}",
+                size[0], size[1], alpha[0], alpha[1], spin[0], spin[1]
             ))
             .collect::<Vec<_>>()
             .join(",")
