@@ -9,11 +9,13 @@ use super::{Draws, Events, Nail, Vitals};
 use crate::world::{Region, State as World};
 use crate::world::debris::Rotation;
 use hk_format::Room;
-use hk_sim::fsm3_world::{flag, NO_CLIP};
+use hk_sim::fsm3_world::{flag, MAX_ENT, NO_CLIP};
 use hk_sim::hornet_fight::{self as hf, Effect, Fight, Input, Phase, Strike};
 use hk_sim::Player;
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/hornet_art.rs"));
+// Her greeting, `HORNET_GREENPATH` of the Hornet sheet, as the panel's pages (host/npc_dialogue.py `cook_hornet`).
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/hornet_convo.rs"));
 
 const MAGIC: u32 = 0x484f_524e;
 
@@ -21,19 +23,57 @@ const MAGIC: u32 = 0x484f_524e;
 #[repr(C)]
 pub struct State {
     fight: Fight,
+    /// Where each object of the live tree stands this tick, composed through its parents: the fight's code works it out and the
+    /// drawing module reads it (the two modules do not call each other).
+    xf: [Xf; MAX_ENT],
     ready: u32,
-    /// Ticks until the conversation the Encounter started has been read (the dialogue box is not wired yet).
-    convo: u16,
+    /// Her greeting is on the panel (`HORNET_CONVO`), at `convo_page`.
+    convo_open: bool,
+    convo_page: u8,
+    /// The pad of the last tick, for the panel's presses.
+    convo_prev: u16,
+    /// The panel closed since the fight last looked: `CONVO_FINISH`.
     done: bool,
+}
+/// An object's world transform and whether it and every ancestor are active.
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct Xf {
+    pos: [i32; 3],
+    scale: [i32; 2],
+    rot: i32,
+    on: bool,
 }
 const _: () = assert!(core::mem::size_of::<State>() <= hf::STATE_BYTES);
 
-#[cfg_attr(target_arch = "mips", optimize(size))]
+/// The room's data package (`art_hornet`): the state block, then the fight's cooked tree and the corpse's, each padded to a word
+/// (host/build_guest.py `module_tables`). The trees ride here rather than in the `hornet` module's read-only data so the module
+/// stays under the pool's first window.
+const fn word_up(n: usize) -> usize {
+    (n + 3) & !3
+}
+const FIGHT_BANK: usize = hk_sim::hornet::fight::BANK.len();
+const CORPSE_BANK: usize = hk_sim::hornet::corpse::BANK.len();
+
+/// Both modules (`hornet` ticks, `hornet_art` draws) read the state block the same way, so each keeps its own copy of this.
+#[inline(always)]
 fn state_block() -> Option<&'static mut State> {
     let p = crate::modules::data_mut(crate::modules::ART_HORNET)?;
     debug_assert!(p as usize % 4 == 0);
-    // SAFETY: the room's zeroed state block, aligned and `STATE_BYTES` long; nothing else touches it.
+    // SAFETY: the room's state block, aligned and `STATE_BYTES` long; nothing else touches it.
     Some(unsafe { &mut *(p as *mut State) })
+}
+
+/// Point the trees at their cooked bytes in the data package: the host cooker's order and padding.
+fn place_trees() {
+    let Some(p) = crate::modules::data_mut(crate::modules::ART_HORNET) else { return };
+    let fight = p as usize + hf::STATE_BYTES;
+    // SAFETY: single-threaded guest; the package outlives the fight and stays where it is while the room is resident.
+    unsafe {
+        let banks = &mut *(&raw mut hk_sim::hornet::POOL_BANKS);
+        banks[0] = (fight, FIGHT_BANK);
+        banks[1] = (fight + word_up(FIGHT_BANK), CORPSE_BANK);
+    }
 }
 
 #[cfg_attr(target_arch = "mips", optimize(size))]
@@ -64,6 +104,7 @@ pub fn tick(
     room: &Room,
 ) {
     let Some(s) = state_block() else { return };
+    place_trees();
     if s.ready != MAGIC {
         let defeated = crate::persist::player(crate::persist::HORNET_1_DEFEATED);
         s.fight.begin(0x484f_524e, defeated, saved());
@@ -71,7 +112,7 @@ pub fn tick(
         // A Hornet already beaten has left: the shiny is out (`Check PD`).
         unsafe { super::HK_HORNET_CLOAK_WAIT = 0 };
         s.ready = MAGIC;
-        s.convo = 0;
+        s.convo_open = false;
         s.done = false;
     }
     unsafe {
@@ -91,10 +132,6 @@ pub fn tick(
     if s.fight.phase == Phase::Gone {
         return;
     }
-    if s.convo != 0 {
-        s.convo -= 1;
-        s.done = s.convo == 0;
-    }
     let damage = cheats.params(crate::VITAL_PARAMS).nail_damage as i32;
     let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind: nail.kind as u8, damage, facing: player.facing });
     let input = Input {
@@ -106,7 +143,7 @@ pub fn tick(
         strike,
         conversation_done: core::mem::take(&mut s.done),
     };
-    let (mut hits, mut kills, mut hurt, mut convo) = (0u16, 0u16, None, 0u16);
+    let (mut hits, mut kills, mut hurt, mut convo) = (0u16, 0u16, None, false);
     let scene = region.scene;
     let edge = |i: usize| world.edge(region, room, i);
     s.fight.step(&input, room.counts[5], &edge, &mut |e| {
@@ -137,12 +174,26 @@ pub fn tick(
             unsafe { super::HK_HERO_LOCK = !regain };
         } else if let Effect::Conversation { .. } = e {
             unsafe { super::HK_HORNET_ENCOUNTERS += 1 };
-            // Her greeting is read in a few seconds; the box itself is not drawn yet.
-            convo = 60 * 4;
+            convo = true;
         }
     });
-    if convo != 0 {
-        s.convo = convo;
+    if convo {
+        if HORNET_CONVO.is_empty() {
+            s.done = true;
+        } else {
+            s.convo_open = true;
+            s.convo_page = 0;
+        }
+    }
+    // The drawing module's view of the tree, from the objects the pass left.
+    let world = &s.fight.boss.world;
+    for i in 0..world.n {
+        let e = &world.ent[i as usize];
+        s.xf[i as usize].on = false;
+        if e.on(flag::MESH) && e.clip != NO_CLIP && world.active_in_hierarchy(i) {
+            let (pos, scale, rot) = world.world_of(i);
+            s.xf[i as usize] = Xf { pos, scale, rot, on: true };
+        }
     }
     events.hits += hits;
     events.kills += kills;
@@ -179,14 +230,15 @@ pub fn draw(_draws: &mut Draws, room: &Room, camera: (i32, i32)) {
     crate::boss_bank::with(room, |bank| {
         for i in 0..world.n {
             let e = &world.ent[i as usize];
-            if !e.on(flag::MESH) || e.clip == NO_CLIP || !world.active_in_hierarchy(i) {
+            let x = s.xf[i as usize];
+            if !x.on {
                 continue;
             }
             let Some(&(_, _, group, sx, sy)) = HORNET_ART_ENTS.iter().find(|r| r.0 == tree && r.1 == i) else {
                 continue;
             };
             let Some(&(_, _, _, clip)) = HORNET_ART_CLIPS.iter().find(|r| r.0 == tree && r.1 == group && r.2 == e.clip) else {
-                unsafe { crate::boss_bank::HK_BOSS_CLIP_MISSES += 1 };
+                super::note_clip_miss();
                 continue;
             };
             if clip as u32 >= bank.clips {
@@ -198,7 +250,7 @@ pub fn draw(_draws: &mut Draws, room: &Room, camera: (i32, i32)) {
             }
             let frame = if e.frame >= 0 { (e.frame as usize).min(c.count as usize - 1) } else { c.frame(e.clip_from as u32) };
             let sprite = bank.sprite(bank.seq_sprite(c.first as usize + frame));
-            let (pos, scale, rot) = world.world_of(i);
+            let (pos, scale, rot) = (x.pos, x.scale, x.rot);
             let authored = (sx, sy);
             let ratio = (
                 if authored.0 != 0 { hk_sim::fixed::mul_div_floor(scale[0].unsigned_abs(), crate::ONE as u32, authored.0 as u32) as i32 } else { crate::ONE },
@@ -228,4 +280,34 @@ pub fn draw(_draws: &mut Draws, room: &Room, camera: (i32, i32)) {
             }
         }
     });
+}
+
+/// One tick of the greeting's panel: Cross turns the page and closes after the last, Circle closes (the NPC panel's keys, npc_state.rs).
+/// Runs every tick the room's module is resident, so the pad's edges are never missed.
+#[inline(never)]
+pub fn convo_tick(bits: u16) {
+    let Some(s) = state_block() else { return };
+    let pressed = bits & !s.convo_prev;
+    s.convo_prev = bits;
+    if !s.convo_open {
+        return;
+    }
+    let (cross, circle) = (0x4000, 0x2000);
+    if pressed & circle != 0 || (pressed & cross != 0 && s.convo_page as usize + 1 >= HORNET_CONVO.len()) {
+        s.convo_open = false;
+        s.done = true;
+    } else if pressed & cross != 0 {
+        s.convo_page += 1;
+    }
+}
+
+/// Her greeting's panel for this frame, composed after the HUD's (`dialogue::prepare`). True while it is up.
+#[inline(never)]
+pub fn convo_prepare() -> bool {
+    let Some(s) = state_block() else { return false };
+    if !s.convo_open {
+        return false;
+    }
+    crate::dialogue::panel_pages(HORNET_CONVO, s.convo_page as usize);
+    true
 }

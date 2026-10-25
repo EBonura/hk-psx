@@ -5,7 +5,7 @@
 use crate::world::{terrain, Region, State};
 use hk_format::{i32_at, u32_at, Room};
 #[cfg(feature = "hornet")]
-mod hornet;
+pub(crate) mod hornet;
 /// Ticks until the Cloak Corpse's shiny wakes: `Cloak Corpse Control` waits for `HORNET LEAVE`, then `Fall Pause` (0.5 s) and
 /// `Fall` (0.4 s) before `Activate Item`. u16::MAX while Hornet has not left yet; the fight sets both, a later visit finds
 /// the shiny already active (`Check PD`).
@@ -15,6 +15,13 @@ pub static mut HK_HORNET_CLOAK_WAIT: u16 = 0;
 #[cfg(feature = "hornet")]
 #[no_mangle]
 pub static mut HK_HERO_LOCK: bool = false;
+/// A bank clip an object played was missing (must stay 0). Resident: the drawing module's loop cannot hold the counter's
+/// `lui` for the publisher to pair.
+#[cfg(feature = "hornet")]
+#[inline(never)]
+pub fn note_clip_miss() {
+    unsafe { crate::boss_bank::HK_BOSS_CLIP_MISSES += 1 };
+}
 #[cfg(feature = "hornet")]
 pub fn hero_locked() -> bool {
     unsafe { HK_HERO_LOCK }
@@ -6985,7 +6992,7 @@ impl EnemyWorld {
             }
         }
         #[cfg(feature = "hornet")]
-        if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET) {
+        if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET_ART) {
             hornet::draw(&mut draws, room, camera);
         }
         for shot in self

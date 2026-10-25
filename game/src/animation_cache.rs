@@ -63,6 +63,7 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 // RAM. The props (Goams, stalactites, grub jars) were added
                 // last and are the highest.
                 // A boss's parts sit above the props' keys and stream from the boss's bank in the scene (boss_bank.rs).
+                #[cfg(feature = "hornet")]
                 if key >= crate::boss_bank::KEY_BASE {
                     return crate::boss_bank::upload(room, (key - crate::boss_bank::KEY_BASE) as usize, |w, h| dest(slot, w, h));
                 }

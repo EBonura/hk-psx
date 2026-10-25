@@ -129,7 +129,7 @@ pub struct Fight {
 
 const PD_FIELDS: usize = 8;
 /// The bytes of the room's state block (host/code_modules.py `art_hornet`): a Fight lives there, in zeroed pool memory.
-pub const STATE_BYTES: usize = 4096;
+pub const STATE_BYTES: usize = 5120;
 
 impl Fight {
     #[cfg_attr(target_arch = "mips", optimize(size))]
@@ -380,6 +380,7 @@ impl Fight {
     }
 
     /// The corpse tree's scene objects (drawn while she is dying).
+    #[inline(always)]
     pub fn corpse_world(&self) -> &crate::fsm3_world::World {
         &self.boss.world
     }

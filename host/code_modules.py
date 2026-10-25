@@ -70,7 +70,7 @@ MAX_IMPORTS = 256
 # window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
 # now refuses a module wider than the widest window the pool holds).
 STACK_FLOOR = 0x801FFF00 - 0xC000
-POOL_BYTES = STACK_FLOOR - 0x801D8000
+POOL_BYTES = 0x19000
 
 def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)
@@ -127,19 +127,25 @@ if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
     # reaches through one import site) and the scene objects it acts on (fsm3_world), and the guest side that ticks and draws
     # her (enemies/hornet.rs).
-    MODULES['hornet'] = (_sim('hornet', 'hornet_fight', 'fsm3b', 'fsm3_world') + ('*7enemies6hornet*',) +
+    MODULES['hornet'] = (_sim('hornet', 'hornet_fight', 'fsm3b', 'fsm3_world') + ('*7enemies6hornet4tick*', '*7enemies6hornet5saved*', '*7enemies6hornet11place_trees*') +
                          # What the boss tier added to the resident kernel's types, which only its handlers and the adapter call.
                          tuple(f'*{len(t)}{t}{len(f)}{f}*' for t, f in (
                              ('Ctx', 'comp'), ('Ctx', 'set_comp'), ('Ctx', 'pd_read_at'), ('Ctx', 'set_of'),
                              ('Block', 'set_active'), ('Block', 'inactive'), ('Block', 'set_bit'), ('Block', 'obj'),
                              ('Block', 'set_obj'), ('Tree', 'set_active'), ('Tree', 'set_bit'), ('Tree', 'obj'),
                              ('Tree', 'set_obj'))))
+if HORNET:
+    # Her drawing: the boss bank reader and the queue of parts (game/src/boss_bank.rs) and the draw pass over her objects. Apart
+    # from `hornet` because the fight's code only just fits the pool's first 64 KiB window, and this part of her needs no more
+    # than the room's pool.
+    MODULES['hornet_art'] = ('*7enemies6hornet4draw*', '*9boss_bank*', '*7enemies6hornet5convo*', '*7enemies6hornet12HORNET_CONVO*')
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
                 'cornifer': ('cornifer.rs', 'CORNIFER_SCENE')}
 if HORNET:
     ROOM_MODULES['hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
+    ROOM_MODULES['hornet_art'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
     ROOM_MODULES['art_hornet'] = ('hornet_art.rs', 'HORNET_ART_SCENE')
 # Families kept resident for a measurement (HK_RESIDENT_MODULES=climber,vengefly):
 # their code links into .text as before and their rooms carry nothing for them.
@@ -181,7 +187,7 @@ FAMILY_MODULE = {0: 'fsm3_logic', 1: 'fsm3_logic', 2: 'fsm3_logic', 3: 'fsm3_log
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
 # Blocker's room is resident.
-CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame')
+CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame', '15animation_cache', '6render14bind_animation')
 J26, HI16, LO16, W32 = 1, 2, 3, 4
 
 
@@ -787,12 +793,17 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
     # Carried packages ride on top of any room's own (the Shade's scene can be any, and the death art follows
     # whatever scene he is in), and at most the three largest are in the pool at once (a boss fight carries the
     # Shade's art, the Death clip and the respawn clips: the song holds the drive): a package nobody asks for any
-    # more is evicted for the next one that needs the room. Each is read in whole sectors.
-    carried = sorted((-(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048 for n in CARRIED if n in report['modules']), reverse=True)[:3]
-    if carried:
-        worst = max(sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods) for mods in scene_table.values())
-        if worst + sum(carried) > POOL_BYTES - 0x1000:
-            raise ValueError(f'a room ({worst} pool bytes) plus its carried packages ({sum(carried)}) exceeds the pool')
+    # more is evicted for the next one that needs the room. Each is read in whole sectors. Greenpath's Hornet's
+    # room carries no Shade (game/src/shade.rs `SHADELESS`: a Shade born there waits in the room before), because her
+    # module, her trees and her state already fill most of the pool.
+    shadeless = {scene for scene, mods in room_scenes().items() if 'hornet' in mods}
+    sector = lambda n: -(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048
+    for scene, mods in scene_table.items():
+        names = [n for n in CARRIED if n in report['modules'] and not (n == 'art_shade' and scene in shadeless)]
+        carried = sorted((sector(n) for n in names), reverse=True)[:3]
+        own = sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods)
+        if carried and own + sum(carried) > POOL_BYTES - 0x1000:
+            raise ValueError(f'scene {scene}: a room ({own} pool bytes) plus its carried packages ({sum(carried)}) exceeds the pool')
     report['chunks'] = chunks
     report['pool'] = {'base': pool_base(), 'bytes': POOL_BYTES}
     # Scans: each module appended to the final resident EXE, with an explicit

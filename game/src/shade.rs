@@ -84,6 +84,17 @@ pub struct World {
     seed: u32,
 }
 const HIT_COOLDOWN: u16 = 12;
+/// Greenpath's Hornet fills her room's pool (her module, her trees and state, the death and respawn art), so no Shade is
+/// born there, and none carried into it, while she lives: a Shade recorded in her arena waits for her defeat and appears on
+/// the visit after it (docs/HORNET.md, "The Shade in her arena").
+#[cfg(all(feature = "hornet", not(test)))]
+fn waits_for_hornet(scene: usize) -> bool {
+    scene == crate::enemies::hornet::HORNET_ART_SCENE && !crate::persist::player(crate::persist::HORNET_1_DEFEATED)
+}
+#[cfg(any(not(feature = "hornet"), test))]
+fn waits_for_hornet(_scene: usize) -> bool {
+    false
+}
 /// Source `shadeHealth` is clamp(maxHealth / 2, 1, 99) and the Shade's own HP
 /// is `nailDamage` times that, which is the prefab's 10 at this port's values.
 pub fn death_health(max_health: u16, nail_damage: u16) -> u16 {
@@ -123,6 +134,7 @@ impl World {
         } else {
             current.filter(|_| crate::music::boss_active())
         };
+        let scene = scene.filter(|&s| !waits_for_hornet(s));
         crate::modules::carry(
             crate::modules::ART_SHADE,
             scene.and_then(crate::disc::manifest_index),
@@ -146,7 +158,7 @@ impl World {
     }
     /// SceneManager::Start instantiates the Shade when the scene matches.
     pub fn enter_scene(&mut self, scene: usize) {
-        self.live = if self.record.present && self.record.scene as usize == scene {
+        self.live = if self.record.present && self.record.scene as usize == scene && !waits_for_hornet(scene) {
             self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
             Some(Live {
                 control: Shade::new(self.record.position, self.seed),

@@ -178,10 +178,28 @@ def cook(source, scenes, npcs):
             'A conversation the walk could not decide ends the chain, so an NPC repeats '
             'its last decided conversation where the source would move on'],
     })
+    cook_hornet(source)
     print(f'Cooked {len(records)} NPCs, '
           f'{sum(len(r["chain"]) for r in records)} conversations, '
           f'{sum(len(c["pages"]) for r in records for c in r["chain"])} pages', flush=True)
     return records
+
+
+def cook_hornet(source):
+    """Write data/hornet_convo.rs: Greenpath's Hornet greets the Knight before the fight (her Encounter FSM calls
+    `DialogueBox.StartConversation` with `HORNET_GREENPATH` of the Hornet sheet). The pages are the panel's, wrapped as the
+    tablets' are; the fight's module shows them (game/src/enemies/hornet.rs)."""
+    key = 'HORNET_GREENPATH'
+    sheet = language_sheet(source, 'Hornet')
+    pages = _pages(sheet[key], font_advances(source))
+    for page in pages:
+        if sum(len(line.replace(' ', '')) for line in page) + len(FOOTER) > MAX_PAGE_GLYPHS:
+            raise ValueError(f'{key} exceeds the panel glyph budget')
+    out = ['// Generated from the local Windows source; no retail payload is embedded.',
+           'pub static HORNET_CONVO:&[&[&str]]=&[' +
+           ','.join('&[' + ','.join(_quote(line) for line in page) + ']' for page in pages) + '];']
+    (ROOT / 'data/hornet_convo.rs').write_text('\n'.join(out) + '\n')
+    print(f'Hornet greeting: {len(pages)} pages', flush=True)
 
 
 def _quote(text):
