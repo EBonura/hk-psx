@@ -23,12 +23,14 @@ const SUBMODE_END: u8 = 0x80 | 0x01;
 /// speed: 150 sectors a second, 9.375 sound sectors a second.
 pub const AUDIO_PERIOD: usize = 16;
 
+/// The unpaced mux, kept for the tests as the plain reference of where the sound goes.
 /// `picture`: the encoder's stream, whose sound sectors are discarded;
 /// `sound`: the re-encoded sound sectors. The result has the picture sectors
 /// in their original order and a sound sector at every [`AUDIO_PERIOD`]th
 /// sector from `delay` on. Sound that would come after the last picture sector
 /// is not kept (the player has stopped reading by then; the movie's last
 /// moments are silent).
+#[cfg(test)]
 pub fn interleave(picture: &[u8], sound: &[u8], delay: usize) -> Result<Vec<u8>, String> {
     if !picture.len().is_multiple_of(SECTOR) || !sound.len().is_multiple_of(SECTOR) {
         return Err("a stream is not whole sectors".into());
@@ -52,6 +54,69 @@ pub fn interleave(picture: &[u8], sound: &[u8], delay: usize) -> Result<Vec<u8>,
             }
         }
         at += 1;
+    }
+    Ok(out)
+}
+
+/// Slots a frame has: 150 sectors a second at 15 frames a second.
+pub const SLOTS_PER_FRAME: usize = 10;
+
+/// Like [`interleave`], but every frame gets exactly [`SLOTS_PER_FRAME`] slots and its last sector in the
+/// last free slot of them, so that the drive delivers a frame's last sector at the same moment of every
+/// tenth slot whatever the frame's size, and the player (which shows a frame a fixed time after its last
+/// sector arrives) shows 15 frames a second evenly. The sound takes the same slots as in [`interleave`]
+/// (every 16th from `delay`); a frame's sectors go into the free slots at the end of its window, the earlier
+/// ones are filler (a data sector with no picture in it, which the player skips as foreign). A frame with
+/// more sectors than its window has free slots (10 less a sound slot) is an error.
+pub fn interleave_paced(picture: &[u8], sound: &[u8], delay: usize) -> Result<Vec<u8>, String> {
+    if !picture.len().is_multiple_of(SECTOR) || !sound.len().is_multiple_of(SECTOR) {
+        return Err("a stream is not whole sectors".into());
+    }
+    let video: Vec<&[u8]> = picture
+        .chunks_exact(SECTOR)
+        .filter(|s| s[2] & SUBMODE_AUDIO == 0)
+        .collect();
+    let template = video.first().ok_or("the picture has no sectors")?;
+    // Frames in order: the chunk header's frame number is at bytes 8 + 4 (frame) of the sector's user data.
+    let frame_of = |s: &[u8]| u32::from_le_bytes([s[8 + 8], s[8 + 9], s[8 + 10], s[8 + 11]]);
+    let mut frames: Vec<Vec<&[u8]>> = Vec::new();
+    let mut last = None;
+    for sector in &video {
+        let number = frame_of(sector);
+        if last != Some(number) {
+            frames.push(Vec::new());
+            last = Some(number);
+        }
+        frames.last_mut().expect("a frame was just pushed").push(sector);
+    }
+    let slots = frames.len() * SLOTS_PER_FRAME;
+    let mut audio = sound.chunks_exact(SECTOR);
+    let mut table: Vec<Option<&[u8]>> = vec![None; slots];
+    let mut is_sound = vec![false; slots];
+    for (slot, flag) in is_sound.iter_mut().enumerate() {
+        if slot >= delay && (slot - delay).is_multiple_of(AUDIO_PERIOD) {
+            if let Some(sector) = audio.next() {
+                table[slot] = Some(sector);
+                *flag = true;
+            }
+        }
+    }
+    for (f, frame) in frames.iter().enumerate() {
+        let window = f * SLOTS_PER_FRAME..(f + 1) * SLOTS_PER_FRAME;
+        let free: Vec<usize> = window.filter(|&s| !is_sound[s]).collect();
+        if frame.len() > free.len() {
+            return Err(format!("frame {} has {} sectors, its window has {} free", f + 1, frame.len(), free.len()));
+        }
+        for (sector, &slot) in frame.iter().zip(&free[free.len() - frame.len()..]) {
+            table[slot] = Some(sector);
+        }
+    }
+    // Filler: the first picture sector with the payload zeroed (so that no chunk header parses in it).
+    let mut filler = template.to_vec();
+    filler[8..8 + 2048].fill(0);
+    let mut out = Vec::with_capacity(slots * SECTOR);
+    for slot in table {
+        out.extend_from_slice(slot.unwrap_or(&filler));
     }
     Ok(out)
 }
@@ -167,6 +232,44 @@ mod tests {
         assert_eq!(last[2], 0x64 | 0x81);
         // The repeated subheader.
         assert_eq!(at(3)[..4], at(3)[4..8]);
+    }
+
+    fn picture_frames(sizes: &[usize]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (f, &n) in sizes.iter().enumerate() {
+            for i in 0..n {
+                let mut s = vec![0u8; SECTOR];
+                s[2] = 0x08;
+                s[8 + 8..8 + 12].copy_from_slice(&(f as u32 + 1).to_le_bytes());
+                s[8 + 12] = i as u8;
+                out.extend_from_slice(&s);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_frame_gets_ten_slots_and_ends_in_the_last_free_one() {
+        let sound = stream(&[(true, 200), (true, 201)]);
+        let out = interleave_paced(&picture_frames(&[9, 7, 9]), &sound, 3).unwrap();
+        assert_eq!(out.len(), 30 * SECTOR);
+        let at = |i: usize| &out[i * SECTOR..(i + 1) * SECTOR];
+        // Frame 1 (slots 0..10): sound at 3, so its 9 sectors take the other nine slots.
+        assert_eq!(at(3)[2] & SUBMODE_AUDIO, SUBMODE_AUDIO);
+        // Frame 2 (10..20): the second sound sector sits at 19, so its 7 sectors take slots 12 to 18 and 10 and 11 are filler.
+        assert_eq!(at(10)[8 + 8..8 + 12], [0, 0, 0, 0]);
+        assert_eq!(at(11)[8 + 8..8 + 12], [0, 0, 0, 0]);
+        assert_eq!(at(12)[8 + 8..8 + 12], 2u32.to_le_bytes());
+        assert_eq!(at(12)[8 + 12], 0);
+        assert_eq!(at(18)[8 + 12], 6);
+        assert_eq!(at(19)[2] & SUBMODE_AUDIO, SUBMODE_AUDIO);
+        assert_eq!(at(19)[8], 201);
+    }
+
+    #[test]
+    fn a_frame_too_big_for_its_window_is_refused() {
+        let sound = stream(&[(true, 200)]);
+        assert!(interleave_paced(&picture_frames(&[10]), &sound, 3).is_err());
     }
 
     #[test]

@@ -39,9 +39,11 @@ use std::process::{Command, ExitCode};
 
 use hk_unity::Value;
 
+mod dither;
 mod limiter;
 mod loudness;
 mod mux;
+mod transfer;
 mod xa;
 
 use psx_fmv::bitstream as bs;
@@ -519,15 +521,16 @@ fn find_tool(name: &str, variable: &str, explicit: Option<PathBuf>) -> Option<Pa
     })
 }
 
-/// The clip as the encoder should see it: 15 frames a second, 320x180 by an area average, reduced to the
-/// 5 bits per channel the MDEC's 15-bit output keeps with an ordered dither, and padded with black to the
-/// coded 320x192. The MDEC truncates to 5 bits without any dither of its own, so a smooth gradient decodes
-/// as a few flat bands with contour rings (the lamp glows) and its channels' steps fall in different
-/// places (olive and maroon patches in a dark blue sky); with the dither in the picture itself the
-/// quantisation noise is a fixed fine pattern and the gradient reads as one. The clip's own (silent)
-/// sound rides along as the encoder needs a sound track to leave its sound sectors in place.
+/// The clip as the encoder should see it: 15 frames a second, 320x180 by an area average, corrected for the
+/// tone the whole chain adds ([`transfer`]), reduced to the 5 bits per channel the MDEC's 15-bit output keeps
+/// with an ordered dither ([`dither`]) and padded with black to the coded 320x192. The MDEC truncates to 5
+/// bits without any dither of its own, so a smooth gradient decodes as a few flat bands with contour rings
+/// (the lamp glows) and the channels' steps fall in different places (olive and maroon patches in a dark
+/// blue sky); with the dither in the picture itself the quantisation noise is a fixed fine pattern and the
+/// gradient reads as one. The clip's own (silent) sound rides along as the encoder needs a sound track to
+/// leave its sound sectors in place.
 fn prepare_picture(ffmpeg: &Path, movie: &Path, work: &Path) -> Result<PathBuf, String> {
-    let (dithered, prepared) = (work.join("dithered.mkv"), work.join("prepared.mkv"));
+    let (scaled, raw, prepared) = (work.join("scaled.raw"), work.join("prepared.raw"), work.join("prepared.mkv"));
     let run = |args: &[&std::ffi::OsStr]| -> Result<(), String> {
         let status = Command::new(ffmpeg)
             .args(["-loglevel", "error", "-y"])
@@ -537,22 +540,44 @@ fn prepare_picture(ffmpeg: &Path, movie: &Path, work: &Path) -> Result<PathBuf, 
         status.success().then_some(()).ok_or_else(|| format!("{} failed: {status}", ffmpeg.display()))
     };
     let os = std::ffi::OsStr::new;
-    let scale = format!(
-        "fps={FPS},scale={WIDTH}:{PICTURE_HEIGHT}:flags=area,format=rgb555le"
-    );
+    let scale = format!("fps={FPS},scale={WIDTH}:{PICTURE_HEIGHT}:flags=area");
     run(&[
-        os("-i"), movie.as_os_str(), os("-vf"), os(&scale), os("-sws_dither"), os("bayer"),
-        os("-c:v"), os("ffv1"), os("-c:a"), os("pcm_s16le"), dithered.as_os_str(),
+        os("-i"), movie.as_os_str(), os("-vf"), os(&scale), os("-f"), os("rawvideo"), os("-pix_fmt"),
+        os("rgb24"), scaled.as_os_str(),
     ])?;
-    let pad = format!(
-        "format=rgb24,pad={WIDTH}:{HEIGHT}:0:{}:black",
-        (u32::from(HEIGHT) - PICTURE_HEIGHT) / 2
-    );
+    let pixels = std::fs::read(&scaled).map_err(|e| format!("{}: {e}", scaled.display()))?;
+    let corrected = [
+        dither::Transfer::inverse_of(&transfer::RED),
+        dither::Transfer::inverse_of(&transfer::GREEN),
+        dither::Transfer::inverse_of(&transfer::BLUE),
+    ];
+    let noise = dither::Bayer::new();
+    let (w, picture, coded) = (usize::from(WIDTH), PICTURE_HEIGHT as usize, usize::from(HEIGHT));
+    let bar = (coded - picture) / 2;
+    let frame = w * picture * 3;
+    let mut out = vec![0u8; pixels.len() / frame * w * coded * 3];
+    for (n, src) in pixels.chunks_exact(frame).enumerate() {
+        let dst = &mut out[n * w * coded * 3..(n + 1) * w * coded * 3];
+        for y in 0..picture {
+            for x in 0..w {
+                let t = noise.threshold(x, y);
+                for c in 0..3 {
+                    dst[((y + bar) * w + x) * 3 + c] = dither::five_bits(corrected[c].apply(src[(y * w + x) * 3 + c]), t);
+                }
+            }
+        }
+    }
+    std::fs::write(&raw, &out).map_err(|e| format!("{}: {e}", raw.display()))?;
+    let size = format!("{WIDTH}x{HEIGHT}");
+    let fps = FPS.to_string();
     run(&[
-        os("-i"), dithered.as_os_str(), os("-vf"), os(&pad), os("-c:v"), os("ffv1"), os("-c:a"), os("copy"),
-        prepared.as_os_str(),
+        os("-f"), os("rawvideo"), os("-pixel_format"), os("rgb24"), os("-video_size"), os(&size), os("-framerate"),
+        os(&fps), os("-i"), raw.as_os_str(), os("-i"), movie.as_os_str(), os("-map"), os("0:v"), os("-map"),
+        os("1:a"), os("-c:v"), os("ffv1"), os("-c:a"), os("pcm_s16le"), prepared.as_os_str(),
     ])?;
-    std::fs::remove_file(&dithered).map_err(|e| format!("{}: {e}", dithered.display()))?;
+    for temporary in [&scaled, &raw] {
+        std::fs::remove_file(temporary).map_err(|e| format!("{}: {e}", temporary.display()))?;
+    }
     Ok(prepared)
 }
 
@@ -572,8 +597,8 @@ fn run_psxavenc(psxavenc: &Path, args: &[&std::ffi::OsStr]) -> Result<(), String
 
 /// The encoder as the XA options of one audio pass: mono 37.8 kHz, `bits`
 /// per sample, filed under the movie's file and channel.
-fn xa_args(bits: &'static str) -> Vec<std::ffi::OsString> {
-    ["-f", "37800", "-c", "1", "-b", bits, "-F"]
+fn xa_args(bits: &'static str, channels: &'static str) -> Vec<std::ffi::OsString> {
+    ["-f", "37800", "-c", channels, "-b", bits, "-F"]
         .iter()
         .map(std::ffi::OsString::from)
         .chain([
@@ -585,7 +610,18 @@ fn xa_args(bits: &'static str) -> Vec<std::ffi::OsString> {
 }
 
 fn pass(psxavenc: &Path, head: &[&str], tail: &[&Path], bits: &'static str) -> Result<(), String> {
-    let xa = xa_args(bits);
+    pass_with(psxavenc, head, tail, bits, "1")
+}
+
+/// [`pass`] with the sound's channel count: the picture's pass asks for stereo, see [`encode`].
+fn pass_with(
+    psxavenc: &Path,
+    head: &[&str],
+    tail: &[&Path],
+    bits: &'static str,
+    channels: &'static str,
+) -> Result<(), String> {
+    let xa = xa_args(bits, channels);
     let mut args: Vec<&std::ffi::OsStr> = head.iter().map(std::ffi::OsStr::new).collect();
     args.extend(xa.iter().map(|a| a.as_os_str()));
     args.extend(tail.iter().map(|p| p.as_os_str()));
@@ -666,7 +702,7 @@ fn is_silent(pcm: &[i16]) -> bool {
 /// The encoder makes the picture (320x192, 15 frames a second, bitstream
 /// version 2) and the sound twice. First the sound at 8 bits, which the cook
 /// decodes to samples, loudens and limits ([`master`]); then those samples at
-/// 4 bits, the form the drive plays. [`mux::interleave`] puts the two streams
+/// 4 bits, the form the drive plays. [`mux::interleave_paced`] puts the two streams
 /// back together with the sound [`AUDIO_DELAY_SECTORS`] later than the encoder
 /// would place it.
 ///
@@ -689,6 +725,7 @@ fn encode(
     sound: Option<&Path>,
     work: &Path,
 ) -> Result<(Vec<u8>, Option<Mastering>), String> {
+    let work = &work.join("encode");
     std::fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let size = format!("{WIDTH}x{HEIGHT}");
     let fps = FPS.to_string();
@@ -699,11 +736,16 @@ fn encode(
         work.join("sound.xa"),
     );
     let prepared = prepare_picture(ffmpeg, movie, work)?;
-    pass(
+    // Stereo sound sectors, which the encoder places twice as often as mono ones, leave it a smaller budget
+    // for the picture (8.75 sectors of the 10 a frame, not 9.375): the picture sectors are what this keeps,
+    // and the busiest frame, which sets the player's buffers, is smaller by a sector. `mux::interleave_paced`
+    // puts them back into 10 slots a frame.
+    pass_with(
         psxavenc,
         &["-t", "str", "-v", "v2", "-s", &size, "-r", &fps, "-x", "2"],
         &[&prepared, &picture],
         "4",
+        "2",
     )?;
     // The sound comes from the install's separate AudioClip when the caller
     // decoded one (hk-cook intro-audio), else from the movie's own track.
@@ -717,7 +759,7 @@ fn encode(
         std::fs::write(&mastered, wav(&pcm, SOUND_HZ as u32))
             .map_err(|e| format!("{}: {e}", mastered.display()))?;
         pass(psxavenc, &["-t", "xa"], &[&mastered, &coded], "4")?;
-        let stream = mux::interleave(&read(&picture)?, &read(&coded)?, AUDIO_DELAY_SECTORS)?;
+        let stream = mux::interleave_paced(&read(&picture)?, &read(&coded)?, AUDIO_DELAY_SECTORS)?;
         (stream, Some(mastering))
     };
     std::fs::remove_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
@@ -863,9 +905,10 @@ fn run() -> Result<ExitCode, String> {
         // audio sector as whatever its memory held, which would make the disc
         // differ from one cook to the next.
         zero_sector_tails(&mut raw);
+        let m = measure(&raw).map_err(|e| format!("{}: {e}", spec.name))?;
+        let _ = std::fs::remove_dir_all(&work);
         let target = args.out.join(spec.file);
         std::fs::write(&target, &raw).map_err(|e| format!("{}: {e}", target.display()))?;
-        let m = measure(&raw).map_err(|e| format!("{}: {e}", spec.name))?;
         let want = expected_frames(spec);
         if !length_is_plausible(spec, m.frames) {
             return Err(format!(

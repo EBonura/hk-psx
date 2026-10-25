@@ -143,10 +143,14 @@ impl Handoff {
 
 /// Where the font's palette sits in VRAM (game/src/dialogue.rs draws every glyph with it).
 pub(crate) const FONT_CLUT: (u16, u16) = (320, 481);
-/// The letterbox bar under the picture: the movie is 192 lines centred in 240, so the lines
-/// from 216 down are black in every display buffer and the player never writes them.
-const LETTERBOX_Y: u16 = 216;
-const LETTERBOX_H: u16 = 24;
+/// The bar the prompt is drawn in: the movie is 192 lines centred in 240 (rows 24 to 215) with the picture in
+/// rows 30 to 209, so the lines from 212 down are black in every display buffer and the player never writes
+/// below 215.
+const LETTERBOX_Y: u16 = 212;
+const LETTERBOX_H: u16 = 28;
+/// The prompt's first line: 13 lines under the picture's last (210), so that its last (226) is inside the
+/// title-safe area (the central 90%, 12 to 228) and clear of a CRT's overscan.
+const PROMPT_TOP: i16 = 213;
 /// The popup of the original (`CinematicSkipPopup`): it fades in over 0.15 s, holds for 2 s and
 /// fades out over 1 s. Counted in VBlanks of a 60 Hz display.
 const FADE_IN: u32 = 9;
@@ -232,7 +236,7 @@ pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     let clut = u32::from(Clut::new(FONT_CLUT.0, FONT_CLUT.1).uv_word());
     let color = 0x6600_0000 | level * 0x0001_0101;
     let left = (320 - prompt_text::WIDTH) / 2;
-    let top = LETTERBOX_Y as i16 + (LETTERBOX_H as i16 - prompt_text::GLYPH_H as i16) / 2;
+    let top = PROMPT_TOP;
     for (u, v, dx) in prompt_text::GLYPHS {
         write_command(color);
         write_command(u32::from((left + dx) as u16) | u32::from(top as u16) << 16);

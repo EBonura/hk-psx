@@ -1,0 +1,139 @@
+//! The picture's reduction to the 5 bits per channel the MDEC's 15-bit output keeps.
+//!
+//! The MDEC truncates to 5 bits with no dither of its own, so what the encoder is given has to carry the
+//! dither: each frame goes through a tone correction (the measured transfer of the whole chain, [`Transfer`])
+//! and then to 5 bits against an ordered Bayer threshold, the same for every frame and for the three channels
+//! (so the noise is in the picture's brightness, not its colour). Blue noise was tried too: it has no regular
+//! rows, but costs a few kilobytes more run-length words in the busiest frame than the scene arena can lend.
+
+/// The ordered Bayer matrix of side [`SIDE`] as thresholds.
+pub struct Bayer {
+    rank: Vec<u32>,
+}
+
+/// Side of the matrix (a power of two).
+pub const SIDE: usize = 16;
+
+impl Bayer {
+    pub fn new() -> Bayer {
+        Bayer { rank: bayer(SIDE) }
+    }
+
+    /// The threshold at pixel (`x`, `y`), in [0, 1): every threshold of the matrix appears once per tile.
+    pub fn threshold(&self, x: usize, y: usize) -> f64 {
+        (f64::from(self.rank[(y % SIDE) * SIDE + x % SIDE]) + 0.5) / (SIDE * SIDE) as f64
+    }
+}
+
+
+/// An ordered Bayer matrix of side `size` (a power of two), thresholds in rank order.
+pub fn bayer(size: usize) -> Vec<u32> {
+    let mut m = vec![0u32];
+    let mut n = 1;
+    while n < size {
+        let mut next = vec![0u32; 4 * n * n];
+        for y in 0..n {
+            for x in 0..n {
+                let v = 4 * m[y * n + x];
+                next[y * 2 * n + x] = v;
+                next[y * 2 * n + x + n] = v + 2;
+                next[(y + n) * 2 * n + x] = v + 3;
+                next[(y + n) * 2 * n + x + n] = v + 1;
+            }
+        }
+        m = next;
+        n *= 2;
+    }
+    m
+}
+
+/// as measured points (source value, value the PlayStation shows): the tone correction is its inverse, so
+/// that the picture shown has the clip's levels instead of the chain's ~5% extra gain and its green lift.
+pub struct Transfer {
+    lut: [u8; 256],
+}
+
+impl Transfer {
+    /// The inverse of `measured` (points in rising order of both values; (0, 0) is implied before the first)
+    /// as a table of source value to value to encode.
+    pub fn inverse_of(measured: &[(f64, f64)]) -> Transfer {
+        let mut points = vec![(0.0, 0.0)];
+        points.extend_from_slice(measured);
+        let mut lut = [0u8; 256];
+        for (x, out) in lut.iter_mut().enumerate() {
+            let want = x as f64;
+            // Past the last measured point (the chain was not measured where the clip has no pixels) the
+            // curve goes on with the slope of its last five points.
+            let tail = points.len().saturating_sub(6);
+            let (s_end, o_end) = points[points.len() - 1];
+            let slope = (o_end - points[tail].1) / (s_end - points[tail].0).max(1.0);
+            let mut value = s_end + (want - o_end) / slope.max(0.5);
+            for w in points.windows(2) {
+                let ((s0, o0), (s1, o1)) = (w[0], w[1]);
+                if want <= o1 {
+                    let t = if o1 > o0 { ((want - o0) / (o1 - o0)).clamp(0.0, 1.0) } else { 1.0 };
+                    value = s0 + t * (s1 - s0);
+                    break;
+                }
+            }
+            *out = value.round().clamp(0.0, 255.0) as u8;
+        }
+        Transfer { lut }
+    }
+
+    pub fn apply(&self, v: u8) -> u8 {
+        self.lut[usize::from(v)]
+    }
+}
+
+/// `v` (0..=255) reduced to 5 bits against `threshold` and expanded back by bit replication, the way the
+/// display expands the MDEC's 5 bits, so that the mean of the dithered values is `v`.
+pub fn five_bits(v: u8, threshold: f64) -> u8 {
+    let level = f64::from(v) * 31.0 / 255.0;
+    let q = ((level + threshold).floor() as i32).clamp(0, 31) as u8;
+    (q << 3) | (q >> 2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_matrix_uses_every_rank_once() {
+        let n = Bayer::new();
+        let mut seen = vec![false; SIDE * SIDE];
+        for &r in &n.rank {
+            assert!(!seen[r as usize], "{r} twice");
+            seen[r as usize] = true;
+        }
+        assert!(seen.iter().all(|s| *s));
+    }
+
+    #[test]
+    fn a_dithered_flat_area_keeps_its_mean() {
+        let n = Bayer::new();
+        for v in [3u8, 17, 100, 128, 200, 250] {
+            let mut sum = 0u64;
+            for y in 0..SIDE {
+                for x in 0..SIDE {
+                    sum += u64::from(five_bits(v, n.threshold(x, y)));
+                }
+            }
+            let mean = sum as f64 / (SIDE * SIDE) as f64;
+            assert!((mean - f64::from(v)).abs() < 1.0, "{v}: {mean}");
+        }
+    }
+
+    #[test]
+    fn the_inverse_of_a_five_percent_gain_takes_five_percent_off() {
+        let m: Vec<(f64, f64)> = (1..=51).map(|i| (f64::from(i) * 5.0, f64::from(i) * 5.0 * 1.05)).collect();
+        let t = Transfer::inverse_of(&m);
+        assert_eq!(t.apply(0), 0);
+        assert!((i32::from(t.apply(105)) - 100).abs() <= 1);
+        assert!((i32::from(t.apply(210)) - 200).abs() <= 1);
+        assert!((i32::from(t.apply(255)) - 243).abs() <= 2);
+        // Past the points: a table that stops at 100 (shown 105) goes on at the same slope.
+        let short = Transfer::inverse_of(&m[..20]);
+        assert!((i32::from(short.apply(210)) - 200).abs() <= 2, "{}", short.apply(210));
+    }
+}

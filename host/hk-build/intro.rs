@@ -220,15 +220,23 @@ pub const POEM: [&str; 5] = [
     "A world you gave to bug and beast as they had never dreamed.",
     "- From 'Elegy for Hallownest' by Monomon the Teacher",
 ];
-/// The widest a row of the poem may be: the picture is 320 wide.
-const POEM_WIDTH: i64 = 300;
+/// The widest a row of the poem may be: 288 of the picture's 320 columns, so the text stays inside the
+/// title-safe area (the central 90%, columns 16 to 304) whatever a CRT's overscan hides.
+const POEM_WIDTH: i64 = 288;
 /// Rows apart within one line of the poem, and between lines: the extra space before the author's line is
 /// the original's (its line sits further down than the pitch of the four above it).
-const POEM_ROW_PITCH: i64 = 16;
-const POEM_LINE_GAP: i64 = 6;
-const POEM_AUTHOR_GAP: i64 = 14;
-/// The lines of the screen above the skip prompt's bar (game's 32 line letterbox at the bottom).
-const POEM_SCREEN_HEIGHT: i64 = 208;
+const POEM_ROW_PITCH: i64 = 15;
+const POEM_LINE_GAP: i64 = 5;
+const POEM_AUTHOR_GAP: i64 = 10;
+/// Where the block ends. The original anchors it at the screen's middle and runs it downward (the scene's
+/// transforms: the first line sits on the full-screen vignette's centre, the others 0.78 units apart, the
+/// author's line 3.79 under the first, the whole block 0.8 units left of centre), so that its lower edge is
+/// about three quarters of the way down. Its text is about a third of the size of ours (a 5 px em at this
+/// resolution), so our block is too tall to start at the middle: it ends where the prompt's 28 line zone
+/// (from line 212) starts, less a margin, and so sits in the lower middle as the original's does.
+const POEM_BOTTOM: i64 = 204;
+/// The first line the poem may use (the title-safe area starts at 12).
+const POEM_TOP_LIMIT: i64 = 12;
 
 /// `text` broken greedily at spaces into rows no wider than `limit`.
 fn wrap_greedy(font: &Font, text: &str, limit: i64) -> Result<Vec<String>> {
@@ -322,10 +330,10 @@ fn poem_source(font: &Font) -> Result<String> {
         .collect::<Result<_>>()?;
     let count: i64 = rows.iter().map(|r| r.len() as i64).sum();
     let height = count * POEM_ROW_PITCH + 3 * POEM_LINE_GAP + POEM_AUTHOR_GAP - (POEM_ROW_PITCH - 14);
-    if height > POEM_SCREEN_HEIGHT {
-        return Err(format!("the poem is {height} lines tall, the screen has {POEM_SCREEN_HEIGHT}").into());
+    if POEM_BOTTOM - height < POEM_TOP_LIMIT {
+        return Err(format!("the poem is {height} lines tall, ending at {POEM_BOTTOM} it would start above {POEM_TOP_LIMIT}").into());
     }
-    let mut y = (POEM_SCREEN_HEIGHT - height) / 2;
+    let mut y = POEM_BOTTOM - height;
     let mut glyphs = String::new();
     let (mut total, mut ends) = (0usize, Vec::new());
     for (group, line) in rows.iter().enumerate() {
