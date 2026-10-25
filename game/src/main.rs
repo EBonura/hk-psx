@@ -115,7 +115,10 @@ mod vram_cache;
 /// have resident bindings. Native integration tests supply a recording sink.
 /// Never admit an actor here and silently discard its presentation events.
 /// Units from a gate trigger inside which its scene is prefetched (about two
-/// seconds of running at the Knight's RUN_SPEED, more than a group read).
+/// seconds of running at the Knight's RUN_SPEED, more than a group read). A walk through 102
+/// gates left 817 vblanks of black beyond half a second at 16, 735 at 32 and 644 at 64, but
+/// from 24 up the route to Hornet's arena (hornet-road) lost 13 pad polls and a music refill
+/// while Fungus1_21's gate loaded, and 64 once ended a gate without its room's art.
 const PREFETCH_RADIUS: i32 = match option_env!("HK_PREFETCH_RADIUS") {
     Some(s) => {
         let b = s.as_bytes();
@@ -128,6 +131,20 @@ const PREFETCH_RADIUS: i32 = match option_env!("HK_PREFETCH_RADIUS") {
         v
     }
     None => 16,
+};
+/// `PREFETCH_RADIUS` in a room whose arena slack is at most `disc::SPILL_SLACK_MAX` sectors.
+const TIGHT_RADIUS: i32 = match option_env!("HK_TIGHT_RADIUS") {
+    Some(s) => {
+        let b = s.as_bytes();
+        let mut i = 0;
+        let mut v = 0i32;
+        while i < b.len() {
+            v = v * 10 + (b[i] - b'0') as i32;
+            i += 1;
+        }
+        v
+    }
+    None => 60,
 };
 #[no_mangle]
 pub static mut HK_RUNNER_DUST_EVENTS: u32 = 0;
@@ -1407,19 +1424,22 @@ fn main() {
                 let next = if cfg!(feature = "prefetch-oracle") {
                     gate_tour::upcoming().map(|(_, region)| disc::scene_index(region))
                 } else {
+                    // A room with almost no arena slack can stage little under its own scene, so
+                    // its next group is read ahead from farther (into spare VRAM pages).
+                    let radius = if cache.tight() { TIGHT_RADIUS } else { PREFETCH_RADIUS };
                     game.state
                         .predict_gate(
                             r.scene,
                             &game.player,
                             predicted,
                             &mut entry_gate,
-                            PREFETCH_RADIUS,
+                            radius,
                         )
                         .and_then(|(i, g, distance)| {
                             // Only near a gate: a read costs the CPU its sector
                             // drain, so the drive reads for the gate the Knight is
                             // about to reach, not for every gate he passes far off.
-                            (distance <= PREFETCH_RADIUS).then(|| {
+                            (distance <= radius).then(|| {
                                 predicted = Some(i);
                                 disc::scene_index(g.target_region)
                             })

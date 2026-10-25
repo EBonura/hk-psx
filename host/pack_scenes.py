@@ -296,8 +296,11 @@ def scene_arena_bytes(entries,meta,bodies,output_dir,residency):
     # The guest checks each in-place decode with raw + (stored >> 8) + 32 bytes of margin
     # (disc.rs window_fits_at), so the tail must hold that, not just the raw bank: without it
     # Tutorial_01 (whose 69,076-byte bank sets the arena) fell 106 bytes short and its group,
-    # which fits the arena in two windows, was read chunk by chunk (19 reads) at its gate.
-    tails={b['scene_id']:max(aligned(b['raw_len']+(b['stored_len']>>8)+32),sector(b['stored_len'])) for b in banks}
+    # which fits the arena in two windows, was read chunk by chunk (19 reads) at its gate. The window's
+    # last sector is whole, so the stored bytes end short of the arena's end by the sector's padding:
+    # the tail holds that too (Tutorial_01's bank, 73,516 bytes with 283 bytes of padding, still
+    # missed its margin by 277 bytes without it).
+    tails={b['scene_id']:max(aligned(b['raw_len']+(b['stored_len']>>8)+32+sector(b['stored_len'])-b['stored_len']),sector(b['stored_len'])) for b in banks}
     widest=max(tails.values(),default=0)
     def need(e):
         # Under scene-gate residency only one scene and its own bank are ever
@@ -310,7 +313,8 @@ def scene_arena_bytes(entries,meta,bodies,output_dir,residency):
         return max(resident+max(meta_tail,margin),sector(e['resident_stored_len']),atlas)
     if residency=='scene_gate':peak=max(need(e) for e in entries)
     else:peak=sum(aligned(e['resident_raw_len']) for e in entries)+max(need(e)-aligned(e['resident_raw_len']) for e in entries)
-    return aligned(peak+4)
+    # The guest stages groups from the sector-floored arena (disc.rs ARENA_TOTAL), so the arena is whole sectors.
+    return sector(peak+4)
 
 def atlas_chunks(raw,entry):
     """Bootstrap atlas chunks with their stored bytes; independent of allocation."""

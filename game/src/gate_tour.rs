@@ -33,6 +33,7 @@ mod imp {
     pub static mut HK_TOUR_DONE: u32 = 0;
     static mut IDLE: u32 = 0;
     /// Ticks the Knight has stood in the scene since its entry finished.
+    #[inline(never)]
     pub fn tick(entering: bool) {
         unsafe {
             if entering {
@@ -55,6 +56,7 @@ mod imp {
     /// sees a Knight that approaches (the tour otherwise stands still). The
     /// step is due when he is inside the gate's trigger box.
     #[cfg(feature = "tour-walk")]
+    #[inline(never)]
     pub fn walk(player: &mut hk_sim::Player, scene: usize) {
         unsafe {
             if HK_TOUR_DONE != 0 || IDLE < 2 {
@@ -101,6 +103,7 @@ mod imp {
         }
     }
     /// The tour's next (target scene, target region), if it is due now.
+    #[inline(never)]
     pub fn due(scene: usize) -> Option<(usize, usize)> {
         unsafe {
             #[cfg(feature = "tour-walk")]
@@ -127,6 +130,7 @@ mod imp {
             Some((to as usize, region as usize))
         }
     }
+    #[inline(never)]
     pub fn taken() {
         unsafe {
             HK_TOUR_STEP += 1;
