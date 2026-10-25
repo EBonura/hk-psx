@@ -105,6 +105,9 @@ fn killing_hornet_runs_the_corpse_to_the_defeat_and_the_leave() {
     let wrote = r.effects.iter().any(|e| matches!(e, Effect::Persist { field: field::HORNET1_DEFEATED, value } if *value != 0));
     assert!(wrote, "the corpse never wrote hornet1Defeated");
     assert!(r.effects.iter().any(|e| matches!(e, Effect::CloakLeaves)), "the corpse never sent HORNET LEAVE");
+    // The arena is sealed for the fight and opens again when she is dead: a Knight who killed her must be able to leave.
+    assert!(r.effects.iter().any(|e| matches!(e, Effect::GatesClose)), "the Encounter never closed the gates");
+    assert!(r.effects.iter().any(|e| matches!(e, Effect::GatesOpen)), "the gates never opened again: {:?}", &r.effects[r.effects.len().saturating_sub(12)..]);
     assert_eq!(r.f.phase, Phase::Gone);
     assert_eq!(r.f.boss.world.unhandled, 0, "an action type with no handler was reached (family << 8 | op)");
 }

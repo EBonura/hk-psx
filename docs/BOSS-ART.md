@@ -1,6 +1,6 @@
 # Boss art: one bank per boss, carried by its scene
 
-Status, 2026-10-18. Built and replayed on Greenpath's Hornet (Hornet 1): the build numbers are under "Built". Measured, not built, for the other bosses (table at the end).
+Status, 2026-10-25. Built and replayed on Greenpath's Hornet (Hornet 1): the build numbers are under "Built". Measured, not built, for the other bosses (table at the end).
 
 ## The problem
 
@@ -81,8 +81,8 @@ that streams scenes streams it. The palettes reach VRAM with the scene's CLUTs, 
 **Guest** (`game/src/boss_bank.rs`, format in `shared/hk-format/src/boss.rs`):
 
 - `attach` finds the chunks by their magic once per scene and keeps their texture ids (96 at most).
-- A part's animation-cache key is `KEY_BASE + part`, above every other art set's. The cache's upload closure asks
-  `boss_bank::upload`, which decodes the part (at most 2,048 bytes) into a stack buffer and uploads it to its slot.
+- A part's animation-cache key is `KEY_BASE + part`, above every other art set's (and the dialogue panel's tiles). The cache's upload closure asks
+  `boss_bank::upload` (through `boss_hooks.rs`), which decodes the part (at most 2,048 bytes) into a stack buffer and uploads it to its slot.
 - The Hornet module (`enemies/hornet.rs`) turns each visible object of the live tree into the parts of the sprite its clip shows,
   projects them with the same camera maths as before and queues them. `frame.rs` adds the queue's keys to the working set and
   draws the queue after the actors, with the hit flash through the same silhouette CLUT. A part that finds no room in the
@@ -90,7 +90,7 @@ that streams scenes streams it. The palettes reach VRAM with the scene's CLUTs, 
 
 Cost: see `docs/BUDGET.md` (resident bytes, pool fit) and the build numbers in `hk-boss-art/NOTES.md`.
 
-## Built (Hornet 1, 2026-10-18, disc build of `hk-psx` on this branch)
+## Built (Hornet 1, 2026-10-25, disc build of `hk-psx` on `feat/hk-hornet2-2026-10-25`)
 
 | | before the bank | with it |
 | --- | ---: | ---: |
@@ -98,17 +98,24 @@ Cost: see `docs/BUDGET.md` (resident bytes, pool fit) and the build numbers in `
 | Fungus1_04 scene textures (records) | 224 | 294 (a view holds at most 640) |
 | Fungus1_04 scene palettes | 197 | 213 (a view holds at most 416) |
 | Fungus1_04 scene pages | 11 | 11 |
-| `hornet` room module (a window is 65,536) | | 65,312 |
-| Hornet room in the pool (module + 4,096 state + 30,388 carried Shade) | | 99,796 of 114,432 |
-| free RAM below the pool | 29,620 | 7,672 |
+| `hornet` room module, the fight (a window is 53,504 at the pool's base) | | 49,200 |
+| `hornet_art` room module, the reader and the draw | | 12,096 |
+| `art_hornet` data package, state block and trees | | 15,976 |
+| Hornet room in the pool (carries the death and respawn art, no Shade) | | 89,560 of 98,304 |
+| resident code for the three hooks and the telemetry | | about 5,300 (free below the pool 12,648 to 9,488 on the route-input disc) |
 
-On the disc the Knight crossing her arena (`hornet-road`) saw 70 chunks found, 226 parts drawn from 102 uploads, no part dropped
-(`HK_BOSS_DROPS` 0) and no clip the bank lacks (`HK_BOSS_CLIP_MISSES` 0). The bank costs the scene its load: 143 KB more streamed
-bytes at the Fungus1_04 gate, with no read during the fight.
+On the disc the Knight crossing her arena (`hornet-road`) saw 70 chunks found, no part dropped (`HK_BOSS_DROPS` 0) and no clip the bank
+lacks (`HK_BOSS_CLIP_MISSES` 0). The bank costs the scene its load: 143 KB more streamed bytes at the Fungus1_04 gate, with no read
+during the fight.
 
-Two things the build taught that the design did not know. A boss module and its fixups can exceed one `lui` window, so the pool
-must start at a window boundary and the gate (not the prefetch) installs it (docs/BUDGET.md); and the gate path must service the
-pad between the steps of a big install, or the first poll of the load is a vblank late.
+What the build taught that the design did not know. A module and its fixups must stay inside one `lui` window, and the first
+layout moved the pool to a window boundary to fit a 65 KB module; with the resident image where main is today that leaves nothing
+below the pool, so her trees (9,828 bytes of read-only data) went to the room's data package and her drawing to a second module,
+which leaves the fight module under the window at the pool's own base. Modules cannot call each other, so what both need (an
+object's composed transform, the bank reader's memory) lives in the state block. The gate path must service the pad between the
+steps of a big install, and a frame that needs two dozen new parts must take the pad poll between uploads, or a poll is late.
+Resident helpers kept alive only by a module are paid for in resident bytes (`State::edge`, 1,768 bytes): the module takes the
+actors' shared copy instead.
 
 ## The other bosses
 
