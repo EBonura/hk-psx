@@ -75,7 +75,7 @@ pub fn overwritten(lo: u32, hi: u32) {
 /// its cooked address, a slice at a time with the pad serviced between.
 pub fn upload(scene: usize, bytes: &[u8]) {
     invalidate();
-    Voice::key_off(1 << VOICE);
+    Voice::release(1 << VOICE);
     assert!(bytes.len() == BANKS[scene].0 as usize);
     let mut total = 0u32;
     for &(event, address, offset, len, _, _) in entries(scene) {
@@ -157,7 +157,7 @@ pub fn play_pitched(event: u8, scale: u32) {
     unsafe {
         LOOPING = NONE;
     }
-    Voice::key_off(1 << VOICE);
+    Voice::release(1 << VOICE);
     let voice = Voice::new(VOICE);
     voice.configure_sample(
         SpuAddr::new(address),
@@ -166,7 +166,7 @@ pub fn play_pitched(event: u8, scale: u32) {
         Adsr::sample_one_shot(),
     );
     voice.set_pitch(Pitch::raw((pitch as u32 * scale / 4096).min(0x3fff) as u16));
-    Voice::key_on(1 << VOICE);
+    Voice::start(1 << VOICE);
 }
 /// One scene sound on the scene voice, if the resident bank holds it.
 pub fn play(event: u8) {
@@ -194,10 +194,10 @@ pub fn loop_tick(event: u8, level: i32) {
     ));
     let voice = Voice::new(VOICE);
     if unsafe { LOOPING } != event as usize {
-        Voice::key_off(1 << VOICE);
+        Voice::release(1 << VOICE);
         voice.configure_sample(SpuAddr::new(address), rate, volume, Adsr::sample_one_shot());
         voice.set_pitch(Pitch::raw(pitch));
-        Voice::key_on(1 << VOICE);
+        Voice::start(1 << VOICE);
         unsafe {
             LOOPING = event as usize;
         }
@@ -208,7 +208,7 @@ pub fn loop_tick(event: u8, level: i32) {
 /// Stop a looped scene sound that `loop_tick` started (the source went away).
 pub fn loop_stop() {
     if unsafe { LOOPING } != NONE {
-        Voice::key_off(1 << VOICE);
+        Voice::release(1 << VOICE);
         unsafe {
             LOOPING = NONE;
         }

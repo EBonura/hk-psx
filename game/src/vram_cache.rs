@@ -58,7 +58,7 @@ impl Cache {
 /// palette coverage within each scene by Cache::init before uploads start.
 pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
     assert_eq!(bytes.len(), a.raw_len);
-    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::gp1_queue_pending());
+    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::is_display_control_queued());
     crate::input::checkpoint();
     match a.kind {
         0 => {
@@ -91,8 +91,8 @@ pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
         }
         _ => panic!("atlas kind"),
     }
-    psx_io::gpu::wait_cmd_ready();
-    psx_io::gpu::write_gp0(psx_hw::gpu::gp0::CLEAR_CACHE);
+    psx_io::gpu::wait_command_ready();
+    psx_io::gpu::write_command(psx_hw::gpu::gp0::CLEAR_CACHE);
     psx_gpu::draw_sync();
     unsafe {
         HK_VRAM_UPLOAD_BYTES = HK_VRAM_UPLOAD_BYTES.saturating_add(bytes.len() as u32);

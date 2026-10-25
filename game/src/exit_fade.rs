@@ -9,7 +9,7 @@
 //! pages or the coverage arena, so the load may replace all of them at once;
 //! only the two framebuffers (x 0..320, y 0..480) are used.
 use psx_hw::gpu::{gp0, gp1, pack_color, pack_texcoord, pack_vertex, pack_xy};
-use psx_io::gpu::{wait_cmd_ready, write_gp0};
+use psx_io::gpu::{wait_command_ready, write_command};
 struct Fade {
     armed: bool,
     active: bool,
@@ -63,7 +63,7 @@ pub fn start(shown: u16, other: u16) {
     f.last = psx_rt::interrupts::vblank_count();
     // GPUSTAT 0..10 mirror GP0(E1h); restore them afterwards so dither and
     // draw-to-display stay what the renderer set.
-    f.mode = psx_io::gpu::gpustat().bits() & 0x7ff;
+    f.mode = psx_io::gpu::status().bits() & 0x7ff;
 }
 pub fn active() -> bool {
     fade().active
@@ -87,7 +87,7 @@ pub fn service() {
     // to start with a GP1 word pending. At worst one frame shows a seam
     // between two fade levels.
     if f.step == 1 {
-        psx_io::gpu::write_gp1(gp1::display_start(0, f.other as u32));
+        psx_io::gpu::write_display_control(gp1::display_start(0, f.other as u32));
     }
     unsafe {
         HK_EXIT_FADE_STEPS += 1;
@@ -95,8 +95,8 @@ pub fn service() {
     if f.step >= f.steps {
         // Black: clear both buffers so no old pixel can come back, restore
         // the draw mode, and hand the screen to the load.
-        wait_cmd_ready();
-        write_gp0(gp0::draw_mode(
+        wait_command_ready();
+        write_command(gp0::draw_mode(
             f.mode & 15,
             (f.mode >> 4) & 1,
             (f.mode >> 5) & 3,
@@ -107,7 +107,7 @@ pub fn service() {
         psx_gpu::fill_rect(0, 0, 320, 480, 0, 0, 0);
         // Show the other buffer (black too) so the renderer's first frame,
         // drawn into this one, is never on screen while it is drawn.
-        psx_io::gpu::write_gp1(gp1::display_start(0, f.shown as u32));
+        psx_io::gpu::write_display_control(gp1::display_start(0, f.shown as u32));
         crate::gate_probe::note(31, now);
         f.active = false;
     }
@@ -116,12 +116,12 @@ pub fn service() {
 /// `modulate`/128. 15-bit texture pages are 256 texels wide and start on
 /// rows 0 or 256, so the copy is cut at x 256 and at row 256.
 fn copy_dimmed(src: u16, dst: u16, modulate: u8) {
-    wait_cmd_ready();
-    write_gp0(gp0::draw_area_top_left(0, dst as u32));
-    wait_cmd_ready();
-    write_gp0(gp0::draw_area_bottom_right(319, dst as u32 + 239));
-    wait_cmd_ready();
-    write_gp0(gp0::draw_offset(0, dst as i32));
+    wait_command_ready();
+    write_command(gp0::draw_area_top_left(0, dst as u32));
+    wait_command_ready();
+    write_command(gp0::draw_area_bottom_right(319, dst as u32 + 239));
+    wait_command_ready();
+    write_command(gp0::draw_offset(0, dst as i32));
     let mut row = 0u16;
     while row < 240 {
         let y = src + row;
@@ -132,14 +132,14 @@ fn copy_dimmed(src: u16, dst: u16, modulate: u8) {
             240 - row
         };
         for (x, w) in [(0u16, 256u16), (256, 64)] {
-            wait_cmd_ready();
-            write_gp0(gp0::draw_mode(x as u32 / 64, page_y, 0, 2, false, true));
-            wait_cmd_ready();
+            wait_command_ready();
+            write_command(gp0::draw_mode(x as u32 / 64, page_y, 0, 2, false, true));
+            wait_command_ready();
             // GP0(64h): textured rectangle, variable size, blended with the colour.
-            write_gp0(0x6400_0000 | pack_color(modulate, modulate, modulate));
-            write_gp0(pack_vertex(x as i16, row as i16));
-            write_gp0(pack_texcoord(0, (y & 255) as u8, 0));
-            write_gp0(pack_xy(w, rows));
+            write_command(0x6400_0000 | pack_color(modulate, modulate, modulate));
+            write_command(pack_vertex(x as i16, row as i16));
+            write_command(pack_texcoord(0, (y & 255) as u8, 0));
+            write_command(pack_xy(w, rows));
         }
         row += rows;
     }

@@ -531,7 +531,7 @@ fn flush_instruction_cache_idle() {
     while crate::render::dma_pending() {
         crate::input::poll_only();
     }
-    psx_rt::cache::flush_i_cache();
+    psx_rt::cache::flush_instruction_cache();
 }
 fn evict(m: usize) {
     bind(m, None);

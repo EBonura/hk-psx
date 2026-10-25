@@ -5,7 +5,7 @@
 //! that the CD refills between room loads, so it plays on through a load from
 //! what is buffered. The drive itself is scheduled by `disc`: room loads,
 //! music refills and XA never overlap.
-use psx_io::cdrom;
+use psx_io::cd;
 #[path = "xa_player.rs"]
 mod xa_player;
 use psx_spu::{self as spu, Adsr, CdVolume, Voice, Volume};
@@ -201,7 +201,7 @@ pub fn stop() -> bool {
     spu::enable_cd_audio(false);
     // The player's pause is refused while a read is still seeking; this one waits.
     player().stop();
-    let okay = cdrom::try_pause_until_complete(SPINS);
+    let okay = cd::try_pause_until_complete(SPINS);
     if !okay {
         unsafe {
             HK_MUSIC_ERROR = 2;
@@ -825,7 +825,7 @@ fn boss_service(now: u32) {
             spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
             spu::enable_cd_audio(false);
             player().stop();
-            if !cdrom::try_pause_until_complete(SPINS) {
+            if !cd::try_pause_until_complete(SPINS) {
                 unsafe {
                     HK_MUSIC_ERROR = 4;
                 }

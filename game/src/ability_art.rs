@@ -240,10 +240,10 @@ mod presentation {
     pub fn upload_frame(index: usize, rect: VramRect) -> Option<u32> {
         let len = texel_bytes(index)?;
         let mut stream = Unpack::new(coded(index)?);
-        psx_io::gpu::wait_cmd_ready();
-        psx_io::gpu::write_gp0(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
-        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.x, rect.y));
-        psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.w, rect.h));
+        psx_io::gpu::wait_command_ready();
+        psx_io::gpu::write_command(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
+        psx_io::gpu::write_command(psx_hw::gpu::pack_xy(rect.x, rect.y));
+        psx_io::gpu::write_command(psx_hw::gpu::pack_xy(rect.w, rect.h));
         let mut left = len;
         while left > 0 {
             let mut word = 0u32;
@@ -254,7 +254,7 @@ mod presentation {
                 word |= u32::from(stream.next()) << (shift * 8);
                 left -= 1;
             }
-            psx_io::gpu::write_gp0(word);
+            psx_io::gpu::write_command(word);
         }
         Some(len as u32)
     }
@@ -361,7 +361,7 @@ mod presentation {
         let (u, v) = crate::render::animation_uv(KEY_BASE + index as u16);
         let right = (u16::from(u) + frame.width - 1) as u8;
         let bottom = (u16::from(v) + frame.height - 1) as u8;
-        let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_clut_word();
+        let clut = Clut::new(CLUT_RECT.0, CLUT_Y[frame.clut as usize]).uv_word();
         let tpage = crate::render::animation_tpage_word(KEY_BASE + index as u16);
         let template = QuadTextured::with_material(
             [(0, 0); 4],

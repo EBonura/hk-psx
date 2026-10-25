@@ -14,7 +14,7 @@
 //!    VBlanks and records how far from the pause point the resumed position
 //!    is. This is the cost of sharing the drive between XA music and room
 //!    reads: what a gate load would cut out of an area song.
-use psx_io::cdrom;
+use psx_io::cd;
 use psx_math::fmt::{u32_dec, U32_DEC_MAX};
 use psx_spu::{self as spu, CdVolume};
 
@@ -181,8 +181,8 @@ fn probe_a(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
 
 /// Absolute LBA the head is reading (the drive counts from the lead-in, 150 sectors early).
 fn head() -> Option<i32> {
-    cdrom::try_get_loc_p(SPINS)
-        .and_then(|r| cdrom::PlayPosition::parse(&r))
+    cd::try_play_position(SPINS)
+        .and_then(|r| cd::PlayPosition::parse(&r))
         .map(|p| {
             (p.absolute_min as i32 * 60 + p.absolute_sec as i32) * 75 + p.absolute_frame as i32
                 - 150
@@ -190,11 +190,11 @@ fn head() -> Option<i32> {
 }
 /// Start the XA channel streaming from `lba` (an absolute LBA, already shifted).
 fn xa_start(lba: u32, channel: u8) -> bool {
-    cdrom::try_demute(SPINS).is_some()
-        && cdrom::try_set_mode(0x40 | 0x08, SPINS).is_some()
-        && cdrom::try_command(0x0D, &[crate::music::XA_FILE_NUMBER, channel], SPINS).is_some()
-        && cdrom::try_set_loc_lba(lba, SPINS).is_some()
-        && cdrom::try_command(0x1B, &[], SPINS).is_some()
+    cd::try_unmute(SPINS).is_some()
+        && cd::try_set_mode(0x40 | 0x08, SPINS).is_some()
+        && cd::try_command(0x0D, &[crate::music::XA_FILE_NUMBER, channel], SPINS).is_some()
+        && cd::try_set_target_lba(lba, SPINS).is_some()
+        && cd::try_command(0x1B, &[], SPINS).is_some()
 }
 /// VBlanks until `ready` holds, polling it every other VBlank, or u32::MAX.
 fn wait(limit: u32, mut ready: impl FnMut() -> bool) -> u32 {
@@ -231,7 +231,7 @@ fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
     for cycle in 0..CYCLES {
         idle(180);
         let paused_at = head();
-        let t = wait(600, || cdrom::try_pause_until_complete(4_000_000));
+        let t = wait(600, || cd::try_pause_until_complete(4_000_000));
         crate::disc::cdda_release();
         let started = now();
         let read = cache.probe_far_read();
@@ -301,7 +301,7 @@ fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
         show(fb, &lines[..3 + cycle]);
     }
     spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
-    let _ = cdrom::try_pause_until_complete(4_000_000);
+    let _ = cd::try_pause_until_complete(4_000_000);
     crate::disc::cdda_release();
     unsafe {
         HK_PROBE_PHASE = 3;

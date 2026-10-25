@@ -985,7 +985,7 @@ mod presentation {
                     let right = (u16::from(u) + p.width - 1) as u8;
                     let bottom = (u16::from(v) + p.height - 1) as u8;
                     let clut =
-                        Clut::new(CLUT_RECT.0, CLUT_RECT.1 + u16::from(p.clut)).uv_clut_word();
+                        Clut::new(CLUT_RECT.0, CLUT_RECT.1 + u16::from(p.clut)).uv_word();
                     let template = QuadTextured::with_material(
                         [(0, 0); 4],
                         [(u, v), (right, v), (u, bottom), (right, bottom)],

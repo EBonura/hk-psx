@@ -158,7 +158,7 @@ pub fn set_volume(level: u8) {
 /// Retrigger the shared voice on one clip. Two owners take turns on it, so the
 /// address and rate are written every time rather than left from `init`.
 fn play_shared(address: u32, rate: u32, gain: i16, pitch: Option<u16>) {
-    Voice::key_off(1 << SHARED_VOICE);
+    Voice::release(1 << SHARED_VOICE);
     Voice::new(SHARED_VOICE).configure_sample(
         SpuAddr::new(address),
         rate,
@@ -168,7 +168,7 @@ fn play_shared(address: u32, rate: u32, gain: i16, pitch: Option<u16>) {
     if let Some(pitch) = pitch {
         Voice::new(SHARED_VOICE).set_pitch(Pitch::raw(pitch));
     }
-    Voice::key_on(1 << SHARED_VOICE);
+    Voice::start(1 << SHARED_VOICE);
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
     }
@@ -278,8 +278,8 @@ fn play(index: usize) {
     // One dedicated voice per event class. Retrigger replaces only that class;
     // jump/land, nail impacts and hurt can overlap without an unbounded pool.
     let mask = 1 << VOICES[index];
-    Voice::key_off(mask);
-    Voice::key_on(mask);
+    Voice::release(mask);
+    Voice::start(mask);
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
         HK_SFX_EVENT_COUNTS[index] = HK_SFX_EVENT_COUNTS[index].saturating_add(1);
@@ -322,14 +322,14 @@ pub const FOCUS_READY: usize = 6;
 /// address, rate and gain are written every time.
 fn play_on(voice: u8, (address, rate, gain): (u32, u32, i16)) {
     let mask = 1 << voice;
-    Voice::key_off(mask);
+    Voice::release(mask);
     Voice::new(voice).configure_sample(
         SpuAddr::new(address),
         rate,
         Volume(volume::scale(gain, unsafe { LEVEL })),
         Adsr::sample_one_shot(),
     );
-    Voice::key_on(mask);
+    Voice::start(mask);
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
     }
@@ -425,7 +425,7 @@ pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bo
         )
     };
     if events.stop_run {
-        Voice::key_off(1 << VOICES[7]);
+        Voice::release(1 << VOICES[7]);
     }
     match events.landing {
         movement::Landing::None => {}
@@ -440,7 +440,7 @@ pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bo
 /// Pause/dialogue entry must stop the current sequence even when simulation
 /// ticks are suspended. Preserve falling duration across that suspension.
 pub fn stop_footsteps() {
-    Voice::key_off(1 << VOICES[7]);
+    Voice::release(1 << VOICES[7]);
     unsafe {
         MOVEMENT.stop_run();
     }

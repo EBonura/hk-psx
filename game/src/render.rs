@@ -8,7 +8,7 @@ use crate::{
 use hk_format::coverage::CoverageView;
 use hk_format::{u32_at, Room, Texture};
 use psx_gpu::{self as gpu, ot::OrderingTable, prim::QuadTextured};
-use psx_vram::{Clut, TexDepth, Tpage};
+use psx_vram::{Clut, TextureDepth, TexturePage};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/scenery_budgets.rs"
@@ -321,7 +321,7 @@ fn vertex(p: (i16, i16)) -> u32 {
 }
 /// Called after final GPU/DMA retirement, before any scene/atlas replacement.
 pub fn release_scene() {
-    assert!(!dma_pending() && !psx_rt::interrupts::gp1_queue_pending());
+    assert!(!dma_pending() && !psx_rt::interrupts::is_display_control_queued());
     unsafe {
         BOUND_VIEW = usize::MAX;
         (&mut *(&raw mut BACK_PREFIX)).invalidate();
@@ -451,7 +451,7 @@ pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>)
                 } else {
                     let page = crate::disc::scene_page_base(bank) + t.page as usize;
                     let (x, y) = hk_cache::residency::page_xy(page);
-                    let tp = Tpage::new(x, y, TexDepth::Bit4);
+                    let tp = TexturePage::new(x, y, TextureDepth::Bit4);
                     TEMPLATES[i] = template(t, tp, t.u, t.v);
                 }
             }
@@ -1003,7 +1003,7 @@ pub fn prepare_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
 #[inline(never)]
 pub fn prepare_back_prefix(camera: (i32, i32), framebuffer_y: u16, coverage: CoverageView<'_>) {
     let camera = scenery_camera(camera);
-    if !crate::presentation::queued() || !psx_rt::interrupts::gp1_queue_pending() {
+    if !crate::presentation::queued() || !psx_rt::interrupts::is_display_control_queued() {
         return;
     }
     unsafe {
@@ -1016,7 +1016,7 @@ pub fn prepare_back_prefix(camera: (i32, i32), framebuffer_y: u16, coverage: Cov
         }
         prefix.invalidate();
         prepare_tile_coverage(camera, coverage);
-        if !BACK_PREBUILD_ALLOWED || !psx_rt::interrupts::gp1_queue_pending() {
+        if !BACK_PREBUILD_ALLOWED || !psx_rt::interrupts::is_display_control_queued() {
             return;
         }
         let Some(count) = draw_visibility::sparse_snapshot(prefix.state_mut()) else {
@@ -1027,7 +1027,7 @@ pub fn prepare_back_prefix(camera: (i32, i32), framebuffer_y: u16, coverage: Cov
         gpu::submit_linked_list_wait();
         collect_occluders(camera);
         restore_tile_coverage(camera);
-        if !psx_rt::interrupts::gp1_queue_pending() {
+        if !psx_rt::interrupts::is_display_control_queued() {
             return;
         }
         USED = 0;
@@ -1103,7 +1103,7 @@ fn tile_visibility(input: &Pieces, out: &mut Pieces, rank: u16, core_packets: us
         removed
     }
 }
-fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
+fn template(t: Texture, tp: TexturePage, u: u16, v: u16) -> QuadTextured {
     let palette = crate::disc::scene_palette_base(unsafe { ACTIVE_BANK }) + t.palette as usize;
     let (x, y) = hk_cache::residency::clut_xy(
         palette / hk_cache::residency::CLUTS,
@@ -1120,8 +1120,8 @@ fn template(t: Texture, tp: Tpage, u: u16, v: u16) -> QuadTextured {
         [(0, 0); 4],
         uv,
         gpu::material::TextureMaterial::blended(
-            cl.uv_clut_word(),
-            tp.uv_tpage_word(0),
+            cl.uv_word(),
+            tp.uv_word(0),
             (128, 128, 128),
             gpu::material::BlendMode::Add,
         ),
@@ -1337,7 +1337,7 @@ pub fn bind_animation(room: &Room, animation_ids: &[u16], early: bool) -> hk_cac
             let slot = animation_cache::slot(id);
             let (u, v) = animation_cache::uv(slot);
             let (px, py) = animation_cache::page(slot);
-            TEMPLATES[id as usize] = template(t, Tpage::new(px, py, TexDepth::Bit4), u, v);
+            TEMPLATES[id as usize] = template(t, TexturePage::new(px, py, TextureDepth::Bit4), u, v);
         }
     }
     stats
@@ -1361,7 +1361,7 @@ pub fn animation_uv(id: u16) -> (u8, u8) {
 /// VRAM regions, so this is not the same page for every key.
 pub fn animation_tpage_word(id: u16) -> u16 {
     let (x, y) = animation_cache::page(animation_cache::slot(id));
-    Tpage::new(x, y, TexDepth::Bit4).uv_tpage_word(0)
+    TexturePage::new(x, y, TextureDepth::Bit4).uv_word(0)
 }
 pub fn finish_gpu_frame() {
     // Main has already observed DMA idle. Pair the SDK async submission with
@@ -1407,7 +1407,7 @@ pub fn texture_flash(id: usize, verts: [(i16, i16); 4], tint: (u8, u8, u8)) {
         // Semi-transparent command bit, the silhouette CLUT, ABR 1 (B+F).
         words[0] |= 1 << 25;
         words[2] = (words[2] & 0xffff)
-            | ((Clut::new(FLASH_CLUT_X, FLASH_CLUT_Y).uv_clut_word() as u32) << 16);
+            | ((Clut::new(FLASH_CLUT_X, FLASH_CLUT_Y).uv_word() as u32) << 16);
         words[4] = (words[4] & !(3 << 21)) | (1 << 21);
         PACKETS[USED].write_plain(words);
         USED += 1;
@@ -1809,7 +1809,7 @@ fn quad_words(
         let a = opacity as u32;
         words[0] = (words[0] & 0xff00_0000) | a | (a << 8) | (a << 16);
         words[2] = (words[2] & 0xffff)
-            | ((Clut::new(FADE_CLUT_X, FADE_CLUT_Y).uv_clut_word() as u32) << 16);
+            | ((Clut::new(FADE_CLUT_X, FADE_CLUT_Y).uv_word() as u32) << 16);
         words[4] = (words[4] & !(3 << 21)) | (2 << 21);
     }
     words
@@ -2021,7 +2021,7 @@ fn scenery_range(camera: (i32, i32), front: bool, start: usize, prebuilding: boo
                 next = i + 1;
                 continue;
             }
-            if prebuilding && !psx_rt::interrupts::gp1_queue_pending() {
+            if prebuilding && !psx_rt::interrupts::is_display_control_queued() {
                 break;
             }
             next = i + 1;
@@ -2092,7 +2092,7 @@ fn scenery_range(camera: (i32, i32), front: bool, start: usize, prebuilding: boo
                     ],
                     vignette_color(i, DRAW_COLORS[i], opacity),
                     opacity,
-                    Clut::new(FADE_CLUT_X, FADE_CLUT_Y).uv_clut_word() as u32,
+                    Clut::new(FADE_CLUT_X, FADE_CLUT_Y).uv_word() as u32,
                 );
                 // Keep the original alpha partition alive for the capacity
                 // fallback below while scenery scratch undergoes subtraction.

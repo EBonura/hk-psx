@@ -6,7 +6,7 @@
 extern crate psx_rt;
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::{Nail, Player, ONE};
-use psx_gpu::{self as gpu, framebuf::FrameBuffer, Resolution, VideoMode};
+use psx_gpu::{self as gpu, framebuf::FrameBuffer, display::Resolution, display::VideoMode};
 use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
@@ -1225,7 +1225,7 @@ fn main() {
                 // render while sampled input still waits for simulation. Drain
                 // the observed VBlanks first, including ticks spent rendering.
                 if presentation::queued()
-                    && !psx_rt::interrupts::gp1_queue_pending()
+                    && !psx_rt::interrupts::is_display_control_queued()
                     && sim_clock == psx_rt::interrupts::vblank_count()
                 {
                     break;
@@ -1352,7 +1352,7 @@ fn main() {
                 if sim_clock != coverage_clock
                     && target.is_none()
                     && presentation::queued()
-                    && psx_rt::interrupts::gp1_queue_pending()
+                    && psx_rt::interrupts::is_display_control_queued()
                 {
                     coverage_clock = sim_clock;
                     game.state.apply(&rv);
@@ -1509,7 +1509,7 @@ fn present_spin(sim_clock: u32) {
         if psx_rt::interrupts::vblank_count() != sim_clock || presentation::queued() != queued {
             return;
         }
-        if queued && !psx_rt::interrupts::gp1_queue_pending() {
+        if queued && !psx_rt::interrupts::is_display_control_queued() {
             return;
         }
         if presentation::flip_overdue() {

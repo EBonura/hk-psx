@@ -16,7 +16,7 @@ pub fn load(
     shown: u16,
     other: u16,
 ) -> Result<u32, crate::disc::LoadError> {
-    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::gp1_queue_pending());
+    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::is_display_control_queued());
     crate::gate_probe::load_start(0);
     crate::gate_probe::set(crate::gate_probe::PREP);
     crate::input::begin_scene_load(clock);
@@ -32,8 +32,8 @@ pub fn load(
         // it (the GPU has nothing left to draw here) before queueing.
         psx_gpu::arm_draw_done();
         psx_gpu::signal_draw_done();
-        psx_rt::interrupts::queue_gp1_at_vblank(psx_hw::gpu::gp1::display_enable(false));
-        while psx_rt::interrupts::gp1_queue_pending() {
+        psx_rt::interrupts::queue_display_control_at_vblank(psx_hw::gpu::gp1::display_enable(false));
+        while psx_rt::interrupts::is_display_control_queued() {
             crate::input::checkpoint();
         }
         crate::gate_probe::note(31, psx_rt::interrupts::vblank_count());
@@ -59,8 +59,8 @@ pub fn load(
         vram.admit_scene(region, cache.atlases_ready());
         psx_gpu::arm_draw_done();
         psx_gpu::signal_draw_done();
-        psx_rt::interrupts::queue_gp1_at_vblank(psx_hw::gpu::gp1::display_enable(true));
-        while psx_rt::interrupts::gp1_queue_pending() {
+        psx_rt::interrupts::queue_display_control_at_vblank(psx_hw::gpu::gp1::display_enable(true));
+        while psx_rt::interrupts::is_display_control_queued() {
             crate::input::checkpoint();
         }
     }

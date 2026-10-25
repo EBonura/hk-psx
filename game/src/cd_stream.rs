@@ -6,8 +6,8 @@
 //! VBlank/display-flip/fault handler. No SDK or sibling source is modified.
 //! Only an inactive, exclusively owned room arena may be a transfer target.
 use core::cell::UnsafeCell;
-use psx_io::{cdrom, irq, timers};
-const CD: u32 = cdrom::BASE;
+use psx_io::{cd, irq, timers};
+const CD: u32 = psx_hw::cd::BASE;
 const CD_BIT: u32 = 1 << irq::source::CDROM;
 const PARAM_POLLS: usize = 32;
 const FIFO_POLLS: usize = 256;
@@ -115,13 +115,13 @@ fn exclusive<T>(f: impl FnOnce(&mut Transfer) -> T) -> T {
 }
 unsafe fn index(value: u8) {
     unsafe {
-        psx_io::write8(CD, value);
+        psx_io::write_u8(CD, value);
     }
 }
 unsafe fn output(value: u8) {
     unsafe {
         index(1);
-        psx_io::write8(CD + 2, value);
+        psx_io::write_u8(CD + 2, value);
         index(0);
     }
 }
@@ -144,7 +144,7 @@ fn fail(t: &mut Transfer, error: u32) {
     unsafe {
         output(0);
     }
-    irq::ack(CD_BIT);
+    irq::acknowledge(CD_BIT);
 }
 /// Bound command dispatch, never wait for its ACK or mechanical completion.
 fn command(t: &mut Transfer, command: u8, params: &[u8], phase: Phase) {
@@ -152,20 +152,20 @@ fn command(t: &mut Transfer, command: u8, params: &[u8], phase: Phase) {
     unsafe {
         output(0);
         index(1);
-        psx_io::write8(CD + 3, 0x5f);
+        psx_io::write_u8(CD + 3, 0x5f);
         index(0);
     }
-    irq::ack(CD_BIT);
-    cdrom::discard_response();
+    irq::acknowledge(CD_BIT);
+    cd::discard_response();
     unsafe {
         index(1);
-        psx_io::write8(CD + 3, 0x40);
+        psx_io::write_u8(CD + 3, 0x40);
         index(0);
     }
     for &value in params {
         let mut ready = false;
         for _ in 0..PARAM_POLLS {
-            if unsafe { psx_io::read8(CD) } & 0x10 != 0 {
+            if unsafe { psx_io::read_u8(CD) } & 0x10 != 0 {
                 ready = true;
                 break;
             }
@@ -175,17 +175,17 @@ fn command(t: &mut Transfer, command: u8, params: &[u8], phase: Phase) {
             return;
         }
         unsafe {
-            psx_io::write8(CD + 2, value);
+            psx_io::write_u8(CD + 2, value);
         }
     }
     change(t, phase);
     unsafe {
-        psx_io::write8(CD + 1, command);
+        psx_io::write_u8(CD + 1, command);
         output(0x1f);
     }
 }
 fn pause(t: &mut Transfer) {
-    command(t, cdrom::CMD_PAUSE, &[], Phase::PauseAck);
+    command(t, psx_hw::cd::CMD_PAUSE, &[], Phase::PauseAck);
 }
 
 /// Called only with CPU CD interrupts masked and after the previous Pause.
@@ -202,9 +202,9 @@ pub unsafe fn start(destination: *mut u32, count: usize, lba: u32) -> Result<(),
         let recover = matches!(t.phase, Phase::Failed);
         let absolute = psx_io::disc_base::shift_lba(lba).saturating_add(150);
         let params = [
-            cdrom::bin_to_bcd((absolute / (60 * 75)) as u8),
-            cdrom::bin_to_bcd(((absolute / 75) % 60) as u8),
-            cdrom::bin_to_bcd((absolute % 75) as u8),
+            cd::bin_to_bcd((absolute / (60 * 75)) as u8),
+            cd::bin_to_bcd(((absolute / 75) % 60) as u8),
+            cd::bin_to_bcd((absolute % 75) as u8),
         ];
         *t = Transfer {
             phase: Phase::Idle,
@@ -224,9 +224,9 @@ pub unsafe fn start(destination: *mut u32, count: usize, lba: u32) -> Result<(),
         } else {
             unsafe {
                 index(0);
-                psx_io::write8(CD + 3, 0);
+                psx_io::write_u8(CD + 3, 0);
             }
-            command(t, cdrom::CMD_SETLOC, &params, Phase::Setloc);
+            command(t, psx_hw::cd::CMD_SETLOC, &params, Phase::Setloc);
         }
         if t.phase == Phase::Failed {
             Err(t.error)
@@ -259,7 +259,7 @@ pub fn status() -> Status {
         // source is masked, rather than waiting forever for another edge.
         if !matches!(t.phase, Phase::Idle | Phase::Done | Phase::Failed)
             && irq::pending() & CD_BIT == 0
-            && cdrom::irq_flag_value() != 0
+            && cd::irq_flag_value() != 0
         {
             service_irq(t);
         }
@@ -295,7 +295,7 @@ pub fn recover_lost_edge() {
     exclusive(|t| {
         if !matches!(t.phase, Phase::Idle | Phase::Done | Phase::Failed)
             && irq::pending() & CD_BIT == 0
-            && cdrom::irq_flag_value() != 0
+            && cd::irq_flag_value() != 0
         {
             service_irq(t);
         }
@@ -306,11 +306,11 @@ pub fn recover_lost_edge() {
 fn sector(t: &mut Transfer) -> bool {
     unsafe {
         index(0);
-        psx_io::write8(CD + 3, 0x80);
+        psx_io::write_u8(CD + 3, 0x80);
     }
     let mut ready = false;
     for _ in 0..FIFO_POLLS {
-        if unsafe { psx_io::read8(CD) } & 0x40 != 0 {
+        if unsafe { psx_io::read_u8(CD) } & 0x40 != 0 {
             ready = true;
             break;
         }
@@ -323,10 +323,10 @@ fn sector(t: &mut Transfer) -> bool {
         matches!(t.phase, Phase::Reading | Phase::ReadAck) && !t.cancelled && t.received < t.count;
     for word in 0..512 {
         let value = unsafe {
-            (psx_io::read8(CD + 2) as u32)
-                | ((psx_io::read8(CD + 2) as u32) << 8)
-                | ((psx_io::read8(CD + 2) as u32) << 16)
-                | ((psx_io::read8(CD + 2) as u32) << 24)
+            (psx_io::read_u8(CD + 2) as u32)
+                | ((psx_io::read_u8(CD + 2) as u32) << 8)
+                | ((psx_io::read_u8(CD + 2) as u32) << 16)
+                | ((psx_io::read_u8(CD + 2) as u32) << 24)
         };
         if store {
             unsafe {
@@ -372,16 +372,16 @@ fn service_irq(t: &mut Transfer) {
     unsafe {
         HK_CD_IRQ_COUNT = HK_CD_IRQ_COUNT.wrapping_add(1);
     }
-    let flag = cdrom::irq_flag_value();
+    let flag = cd::irq_flag_value();
     trace(1, t, flag);
     if flag == 1 {
         if !sector(t) {
-            cdrom::discard_response();
-            cdrom::acknowledge_irq(0x1f);
+            cd::discard_response();
+            cd::acknowledge_irq(0x1f);
             return;
         }
-        cdrom::discard_response();
-        cdrom::acknowledge_irq(flag);
+        cd::discard_response();
+        cd::acknowledge_irq(flag);
         if matches!(t.phase, Phase::Reading | Phase::ReadAck)
             && (t.cancelled || t.received == t.count)
         {
@@ -390,28 +390,28 @@ fn service_irq(t: &mut Transfer) {
         return;
     }
     if flag == 5 {
-        let a = unsafe { psx_io::read8(CD + 1) };
-        let b = unsafe { psx_io::read8(CD + 1) };
-        cdrom::discard_response();
-        cdrom::acknowledge_irq(0x1f);
+        let a = unsafe { psx_io::read_u8(CD + 1) };
+        let b = unsafe { psx_io::read_u8(CD + 1) };
+        cd::discard_response();
+        cd::acknowledge_irq(0x1f);
         fail(
             t,
             0x0500_0000 | ((a as u32) << 16) | ((t.phase as u32) << 8) | b as u32,
         );
         return;
     }
-    cdrom::discard_response();
-    cdrom::acknowledge_irq(flag);
+    cd::discard_response();
+    cd::acknowledge_irq(flag);
     match (t.phase, flag) {
-        (Phase::Setloc, 3) => command(t, cdrom::CMD_SEEKL, &[], Phase::SeekAck),
+        (Phase::Setloc, 3) => command(t, psx_hw::cd::CMD_SEEKL, &[], Phase::SeekAck),
         (Phase::SeekAck, 3) => change(t, Phase::SeekComplete),
         (Phase::SeekComplete, 2) => command(
             t,
-            cdrom::CMD_SETMODE,
-            &[cdrom::MODE_DOUBLE_SPEED],
+            psx_hw::cd::CMD_SETMODE,
+            &[psx_hw::cd::MODE_DOUBLE_SPEED],
             Phase::Setmode,
         ),
-        (Phase::Setmode, 3) => command(t, cdrom::CMD_READN, &[], Phase::ReadAck),
+        (Phase::Setmode, 3) => command(t, psx_hw::cd::CMD_READN, &[], Phase::ReadAck),
         (Phase::ReadAck, 3) => {
             change(t, Phase::Reading);
             if t.cancelled {
@@ -425,9 +425,9 @@ fn service_irq(t: &mut Transfer) {
                 let params = t.location;
                 unsafe {
                     index(0);
-                    psx_io::write8(CD + 3, 0);
+                    psx_io::write_u8(CD + 3, 0);
                 }
-                command(t, cdrom::CMD_SETLOC, &params, Phase::Setloc);
+                command(t, psx_hw::cd::CMD_SETLOC, &params, Phase::Setloc);
             } else {
                 change(t, Phase::Done);
                 unsafe {
@@ -447,9 +447,9 @@ pub fn suspend() {
 }
 /// Take the controller back after polled commands, dropping whatever they left.
 pub fn resume() {
-    cdrom::discard_response();
-    cdrom::acknowledge_irq(0x1f);
-    irq::ack(CD_BIT);
+    cd::discard_response();
+    cd::acknowledge_irq(0x1f);
+    irq::acknowledge(CD_BIT);
     irq::set_mask(irq::mask() | CD_BIT);
 }
 
@@ -471,9 +471,9 @@ pub fn install() {
         let address = hk_cd_exception_wrapper as *const () as usize as u32;
         (0x8000_0080 as *mut u32).write_volatile(0x0800_0000 | ((address >> 2) & 0x03ff_ffff));
         (0x8000_0084 as *mut u32).write_volatile(0);
-        psx_rt::cache::flush_i_cache();
+        psx_rt::cache::flush_instruction_cache();
     }
-    irq::ack(CD_BIT);
+    irq::acknowledge(CD_BIT);
     irq::set_mask(mask | CD_BIT);
 }
 
@@ -604,7 +604,7 @@ mod tests {
         crate::fixture_event(2, false);
         assert_eq!(status(), Status::Done);
         assert_eq!(crate::fixture_mask(), CD_BIT);
-        assert_eq!(crate::fixture_commands(), vec![cdrom::CMD_PAUSE]);
+        assert_eq!(crate::fixture_commands(), vec![psx_hw::cd::CMD_PAUSE]);
     }
     #[test]
     fn latched_and_inactive_events_remain_with_their_owner() {

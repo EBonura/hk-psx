@@ -45,7 +45,7 @@ fn dest(slot: usize, width: u16, height: u16) -> VramRect {
 /// Called before the frame clear or any submitted drawing commands. The prior
 /// frame's idle VBlank acknowledgement must already have called `complete`.
 pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
-    assert!(!psx_rt::interrupts::gp1_queue_pending());
+    assert!(!psx_rt::interrupts::is_display_control_queued());
     unsafe {
         let cache = &mut *(&raw mut CACHE);
         // An early back pass (frame::render) may still be on the GPU DMA
@@ -121,8 +121,8 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
         if stats.misses != 0 {
             // SDK command constructor and port access. A cached texel line
             // must not survive a slot's overwrite on physical hardware.
-            psx_io::gpu::wait_cmd_ready();
-            psx_io::gpu::write_gp0(gp0::CLEAR_CACHE);
+            psx_io::gpu::wait_command_ready();
+            psx_io::gpu::write_command(gp0::CLEAR_CACHE);
         }
         core::ptr::write_volatile(
             &raw mut HK_ANIM_CACHE_HITS,
@@ -152,7 +152,7 @@ pub fn submit() {
 /// The queued display switch is consumed only once GPU raster work is idle.
 /// Synchronous OT submission separately guarantees the DMA list is finished.
 pub fn complete() {
-    assert!(!psx_rt::interrupts::gp1_queue_pending());
-    assert!(psx_io::gpu::gpustat().contains(GpuStat::READY_DMA_RECV));
+    assert!(!psx_rt::interrupts::is_display_control_queued());
+    assert!(psx_io::gpu::status().contains(GpuStat::READY_DMA_RECV));
     unsafe { (&mut *(&raw mut CACHE)).complete().expect("cache complete") };
 }
