@@ -306,7 +306,7 @@ const SOFT_CLUT_SLOTS: [(u16, u16); 4] = [(368, 239), (368, 238), (368, 237), (3
 /// palettes across textures, so the copy is what keeps the rocks opaque. A
 /// soft style whose palette gets no slot keeps the coverage path.
 #[inline(never)]
-#[optimize(size)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
 fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
     r.soft_clut_count = 0;
     let free = |&(x, y): &(u16, u16)| {
@@ -355,7 +355,7 @@ fn soft_clut(r: &Resident, clut: u16) -> Option<u16> {
 /// format violation; nothing of the previous scene survives a failure.
 #[cfg(not(test))]
 #[inline(never)]
-#[optimize(size)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
 pub fn load_scene(scene: usize, data: &[u8]) -> bool {
     let r = unsafe { &mut *(&raw mut RESIDENT) };
     r.scene = usize::MAX;
