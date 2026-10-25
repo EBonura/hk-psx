@@ -1,0 +1,54 @@
+# Elderbug's conversation in Dirtmouth: the original's dialogue box (the fleur above and below, the text
+# centred, the arrow under every page but the last and the stop under the last), page by page.
+# The tape is the first 728 polls of tools/tapes/town-elderbug.pxtape: continue from the Dirtmouth card,
+# walk to Elderbug's talk trigger and press up. Route-split from there: every wait is on a word the game decides
+# or a fixed count of ticks the box takes to open (0.5 s) and the typewriter to finish.
+#
+#   psoxide-gate run tools/journeys/dialogue-box.toml --disc <route-input Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc.
+name = "dialogue-box"
+title = "dialogue: the original's box, page by page (route-input disc)"
+disc = ["lib-test/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+card_fixture = { path = "../cards/town-continue.mcd", sha256 = "1aa6c20210c2ef1134f20d30e82bf5a78cefea8f84ff349dd0e95f9f62391dd8" }
+max_ticks = 200000
+
+[[step]]
+label = "continue from the card, walk to Elderbug, press up"
+tape = "town-elderbug-open.pxtape"
+timeout = 20000
+
+[[step]]
+label = "the first page is up, typed out"
+wait = 240
+checkpoint = "page1"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_NPC_OPENED"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_NPC_PAGE"
+op = "eq"
+value = 0
+
+[[step]]
+label = "next page"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "the second page is up"
+wait = 240
+checkpoint = "page2"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_NPC_PAGE"
+op = "eq"
+value = 1
