@@ -1,7 +1,7 @@
 {
   "note": "Captured from a tools/replay_cue.py run of the tape below against the real disc. tests/test_boss_sim.py replays the same tape through tools/boss_sim.py and asserts the fight it predicts is this one. See capture() in tools/boss_sim.py to regenerate after a disc change.",
   "tape": "tools/tapes/boss-death.pxtape",
-  "tape_sha256": "142d7dfb6122c14aad96428986fb913c6610c083409b8ca34bb185f91698f7bb",
+  "tape_sha256": "8aa11ca5757793b69233ac26cc0fb9e1536a599fa03bc159a35abae1eae3a31c",
   "hero_died_at_poll": 1163,
   "disc_sha256": {
     "/Users/ebonura/Library/Application Support/PSoXide-perf/work/settings-2026-10-05/hk-psx/dist/hk-psx.exe": "6783d4fd6643441cd95f139a2c2f059ec05aa87e52023c772ddc78918d0d8dd7",

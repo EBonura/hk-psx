@@ -22,6 +22,12 @@ pub enum Hurt {
     Hazard,
     Died,
 }
+/// The hit stop of the killing blow, in 60 Hz ticks: `Hero Death Anim`'s `Initiate` calls
+/// `FreezeMoment`, which holds the time scale at 0 for 0.35 s of real time and eases it back over 0.1 s,
+/// so about 24 ticks of game time are lost at 60 frames a second (hkref measured the original at 22 to 24;
+/// the harness's frames are not a steady 1/60 s). The death takes that much longer by the clock than the
+/// 171 ticks of `DEATH_WAIT`, which start when the hit stop ends.
+pub const DEATH_FREEZE_TICKS: u16 = 24;
 /// `InvulnerablePulse.pulseDuration` on the Knight (0.1 s) in 60 Hz ticks.
 pub const PULSE_TICKS: u16 = 6;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,7 +131,7 @@ impl Vitals {
         if self.health == 0 {
             self.dead = true;
             self.death_ticks = p.death_ticks;
-            self.freeze_ticks = 0;
+            self.freeze_ticks = DEATH_FREEZE_TICKS;
             self.recoil_ticks = 0;
             self.invulnerable_ticks = 0;
             return Hurt::Died;
@@ -245,8 +251,14 @@ mod tests {
         assert_eq!(v.hurt(P, 1, 0, true), Hurt::Ignored);
         v.heal(P, 5);
         assert_eq!(v.health, 0);
+        // The hit stop holds the countdown: it starts when the freeze ends.
+        for _ in 0..DEATH_FREEZE_TICKS {
+            assert!(v.tick());
+            assert_eq!(v.death_ticks, P.death_ticks);
+        }
         for _ in 0..P.death_ticks {
-            v.tick();
+            assert!(!v.needs_death_respawn());
+            assert!(!v.tick());
         }
         assert!(v.needs_death_respawn());
     }

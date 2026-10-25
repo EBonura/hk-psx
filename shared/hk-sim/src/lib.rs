@@ -73,7 +73,7 @@ pub use actors::{
 pub use combat::polygon_hits_box;
 pub use combat::{AttackParams, Grass, Nail};
 pub use nail_response::{NailResponse, NailResponseParams};
-pub use vitals::{Hurt, VitalParams, Vitals, PULSE_TICKS};
+pub use vitals::{Hurt, VitalParams, Vitals, DEATH_FREEZE_TICKS, PULSE_TICKS};
 pub const ONE: i32 = 65536;
 /// Two terrain edges (or boxes) are equal. The derived `==` on `[i32; 4]` is a
 /// 16-byte `memcmp` call on the R3000, a byte loop; this is four word compares.
