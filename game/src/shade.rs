@@ -128,6 +128,11 @@ impl World {
             scene.and_then(crate::disc::manifest_index),
         );
     }
+    #[cfg(not(test))]
+    /// Whether `carry` asks for the Shade's art into the scene `current` (`modules::fx_fit`'s light or full row).
+    pub fn art_wanted(&self, current: usize) -> bool {
+        (self.record.present && self.record.scene as usize == current) || crate::music::boss_active()
+    }
     pub fn soul_limited(&self) -> bool {
         self.record.present
     }

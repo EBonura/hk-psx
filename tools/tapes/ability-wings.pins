@@ -3,7 +3,7 @@ frame_time = 130
 long_frames = 2
 card = town-continue.mcd
 # Monarch Wings on the Dirtmouth card: two jumps with a second press in the air each. A double jump raises
-# the wings and the flash (two effects).
+# the wings and the small blue glow behind them (two effects from the pack).
 HK_CHEATS = 64
 HK_FX_RAISED >= 4
 HK_FX_LATE = 0

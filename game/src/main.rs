@@ -18,6 +18,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
 mod ability_art;
 mod ability_fx;
+mod unpack;
 mod ambience;
 mod animation_cache;
 mod audio;

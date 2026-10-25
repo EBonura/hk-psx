@@ -179,25 +179,28 @@ impl Game {
             }
         }
     }
-    /// Carry the ability effects (`art_fx`) into the scene while the Knight owns an ability that
-    /// draws one, so every gate reads them with the scene's own art. Asked again only when the scene
-    /// or the answer changes: nearly every frame it is one compare.
+    /// Carry the ability effects (`art_fx` for the movement abilities, `art_fx_spell` for Vengeful
+    /// Spirit) into the scene while the Knight owns an ability that draws one, so every gate reads them
+    /// with the scene's own art, but only the packs that fit the pool there (`modules::fx_fit`): the
+    /// guarantee the build checks, a room beside the Shade's art, the Death clip and the respawn clips, is
+    /// never spent on them. Asked again only when the scene, what he owns or what fits changes: nearly
+    /// every frame it is one compare.
     #[cfg(not(test))]
     #[inline(never)]
     pub fn carry_ability_art(&self, current: usize) {
-        static mut ASKED: usize = usize::MAX;
-        let wants = ability_fx::wanted(&self.player, self.cast.has_fireball);
-        let key = current << 1 | usize::from(wants);
-        if unsafe { ASKED } == key {
+        static mut ASKED: (usize, u8) = (usize::MAX, 0);
+        let here = crate::disc::manifest_index(current);
+        let wants = u8::from(ability_fx::wants_move(&self.player))
+            | u8::from(ability_fx::wants_spell(self.cast.has_fireball)) << 1;
+        let wants = wants & here.map_or(0, |scene| crate::modules::fx_fit(scene, self.shade.art_wanted(current)));
+        if unsafe { ASKED } == (current, wants) {
             return;
         }
         unsafe {
-            ASKED = key;
+            ASKED = (current, wants);
         }
-        crate::modules::carry(
-            crate::modules::ART_FX,
-            crate::disc::manifest_index(current).filter(|_| wants),
-        );
+        crate::modules::carry(crate::modules::ART_FX, here.filter(|_| wants & 1 != 0));
+        crate::modules::carry(crate::modules::ART_FX_SPELL, here.filter(|_| wants & 2 != 0));
     }
     /// Screen darkness for the death fade, 0 (none) to 255 (black).
     pub fn death_shade(&self) -> u8 {

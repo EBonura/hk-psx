@@ -152,7 +152,10 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # and when he has died; `art_fx` (the Knight's ability effects, game/src/ability_fx.rs) follows him through every scene
 # once he owns an ability that draws one. Up to four packages can be asked for at once (modules.rs CARRIED).
 CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk',
-           'art_fx': 'data/art-fx.hk'}
+           'art_fx': 'data/art-fx.hk', 'art_fx_spell': 'data/art-fx-spell.hk'}
+# Carried packages the pool-fit guarantee leaves out: the guest asks for one only where it fits beside the room's own
+# modules and whatever else is wanted (game/src/modules.rs `fx_fit`), and does without it where it does not.
+OPTIONAL = ('art_fx', 'art_fx_spell')
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
@@ -783,7 +786,7 @@ def harden(elf_path, exe, link_map, work, report_dir, scene_table, data_blobs=No
     # whatever scene he is in), and at most the three largest are in the pool at once (a boss fight carries the
     # Shade's art, the Death clip and the respawn clips: the song holds the drive): a package nobody asks for any
     # more is evicted for the next one that needs the room. Each is read in whole sectors.
-    carried = sorted((-(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048 for n in CARRIED if n in report['modules']), reverse=True)[:3]
+    carried = sorted((-(-(report['modules'][n]['image_bytes'] + 20) // 2048) * 2048 for n in CARRIED if n in report['modules'] and n not in OPTIONAL), reverse=True)[:3]
     if carried:
         worst = max(sum(report['modules'][all_names()[k]]['image_bytes'] for k in mods) for mods in scene_table.values())
         if worst + sum(carried) > POOL_BYTES - 0x1000:

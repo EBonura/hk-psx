@@ -2,17 +2,19 @@
 //! Knight prefab: the Dash Burst of an ordinary dash, the wings and flash of a double jump and the puff
 //! of a wall jump (`HeroController.HeroDash`, `DoDoubleJump`, `DoWallJump`), and Vengeful Spirit's cast
 //! blast and the end of its flight (`Fireball Top`, the ball's `Wall Impact`). The clips are cooked into
-//! the `art_fx` pack (host/ability_art.py `FX_CLIPS`). Each plays once from the tick of the state edge
-//! that raised it; the Knight's follow him and turn with his facing, the spell's keep the place and the
-//! way they were spawned with.
+//! the `art_fx` and `art_fx_spell` packs (host/ability_art.py `FX_CLIPS`), each frame cut to parts of one
+//! animation slot. Each plays once from the tick of the state edge that raised it; the Knight's follow
+//! him and turn with his facing, the spell's keep the place and the way they were spawned with. The double
+//! jump's `White Flash DJ` is a small round glow of blue light (one frame of `art_fx`).
 //!
 //! Dash Ash (the dust a dash drags behind the Knight) and Wallslide Dust are particle systems, cooked as
 //! owners of the Knight in every scene (host/hk-cook break_effects.rs `HERO_*_OWNER`) and raised here
 //! every sixth tick of the dash and of the slide, as the Focus dust is.
 //!
-//! The pack is carried (`wanted`) into the scenes of a Knight who owns one of the abilities; an effect
-//! whose pack is not resident yet is not raised (`HK_FX_LATE` counts them), so a gate that has not read
-//! it costs one missing puff, never a stall.
+//! A pack is carried (`wants_move`, `wants_spell`; frame.rs `carry_ability_art`) into the scenes of a
+//! Knight who owns one of its abilities, where the pool has room for it; an effect whose pack is not
+//! resident is not raised (`HK_FX_LATE` counts them), so a gate that has not read it costs one missing
+//! puff, never a stall.
 use crate::ability_art::{
     self, BALL_END, DASH_EFFECT, FIREBALL_BLAST, FLASH_EFFECT, WALL_IMPACT, WALL_PUFF, WINGS_EFFECT,
 };
@@ -41,19 +43,31 @@ const TICKS: [u32; 7] = {
     t[FLASH] = FLASH_HOLD + FLASH_FADE;
     t
 };
-/// The frame of slot `i` at its age: the 60 Hz tick count times the clip's fps over 60, the divide done
-/// as a multiply (exact for these small ages), held on the last frame.
+/// The frame of slot `i` at its age, as a number in its clip: the 60 Hz tick count times the clip's
+/// fps over 60, the divide done as a multiply (exact for these small ages), held on the last frame.
 fn frame_at(i: usize, age: u32) -> usize {
     let c = ability_art::ABILITY_CLIPS[CLIPS[i]];
-    c.start + ((age * c.fps * 17_477) >> 20).min(c.count as u32 - 1) as usize
+    ((age * c.fps * 17_477) >> 20).min(c.count as u32 - 1) as usize
+}
+/// The parts of slot `i`'s frame, as indices of the cooked frames: an effect frame is cut to parts of
+/// one animation slot each, the ball's end is one.
+fn parts_at(i: usize, frame: usize) -> core::ops::Range<usize> {
+    if CLIPS[i] == BALL_END {
+        let first = ability_art::ABILITY_CLIPS[BALL_END].start + frame;
+        first..first + 1
+    } else {
+        ability_art::fx_parts(CLIPS[i], frame)
+    }
 }
 /// Slots from here on are spawned in the world (they keep `AT` and `FACING`).
 const FIRST_WORLD: usize = 4;
 const FLASH: usize = 3;
 /// `White Flash DJ` (resources.assets:4989) waits 0.125 s at full alpha, then `EaseColor` takes it to
-/// nothing in 0.4 s; the cooked `Double Jump Flash` frame is its one frame.
+/// nothing in 0.4 s; the cooked `Double Jump Flash` frame is a small round glow of blue light.
 const FLASH_HOLD: u32 = 8;
 const FLASH_FADE: u32 = 24;
+/// The level the cooked effect frames are drawn at (128 is the texel's own).
+const LEVEL: u8 = 112;
 /// The Knight's own particle owners (host/hk-cook break_effects.rs): the dash's dust offset to the
 /// right of him (the original's local +x, behind a Knight who faces left) and to the left, the wall
 /// slide's.
@@ -67,7 +81,8 @@ const IDLE: u8 = u8::MAX;
 const NO_FRAME: u16 = u16::MAX;
 
 static mut AGE: [u8; 7] = [IDLE; 7];
-static mut FRAME: [u16; 7] = [NO_FRAME; 7];
+/// The parts slot `i` shows this frame: first and one past the last (`NO_FRAME` first when it shows none).
+static mut PARTS: [(u16, u16); 7] = [(NO_FRAME, 0); 7];
 static mut AT: [[i32; 2]; 3] = [[0; 2]; 3];
 static mut FACING: [i32; 3] = [0; 3];
 static mut WAS_ALIVE: bool = false;
@@ -166,65 +181,70 @@ pub fn clear() {
         WAS_ALIVE = false;
     }
 }
-/// The frame slot `i` shows now, `NO_FRAME` when it is idle or its art is not here.
+/// The parts slot `i` shows now: none when it is idle or its art is not here.
 #[inline(never)]
-fn frame_of(i: usize) -> u16 {
+fn parts_of(i: usize) -> (u16, u16) {
     unsafe {
         if AGE[i] != IDLE && ability_art::ready(CLIPS[i]) {
-            frame_at(i, u32::from(AGE[i])) as u16
+            let parts = parts_at(i, frame_at(i, u32::from(AGE[i])));
+            (parts.start as u16, parts.end as u16)
         } else {
-            NO_FRAME
+            (NO_FRAME, 0)
         }
     }
 }
-/// Ask for this frame's animation keys. False, and nothing asked for, when the cache's slots are
-/// not left for them: an effect is the one thing in a frame that may simply not draw.
+/// Ask for this frame's animation keys, one for each part of each live frame. False, and nothing
+/// asked for, when the cache's slots are not left for them: an effect is the one thing in a frame that
+/// may simply not draw.
 #[inline(never)]
 pub fn request(needed: &mut [u16], needed_len: &mut usize) -> bool {
-    let mut wanted = 0;
+    let (start, room) = (*needed_len, hk_cache::SLOTS.min(needed.len()));
     for i in 0..CLIPS.len() {
-        let f = frame_of(i);
+        let p = parts_of(i);
         unsafe {
-            FRAME[i] = f;
+            PARTS[i] = p;
         }
-        wanted += usize::from(f != NO_FRAME);
+        if p.0 == NO_FRAME {
+            continue;
+        }
+        for part in p.0..p.1 {
+            if *needed_len >= room {
+                *needed_len = start;
+                return false;
+            }
+            needed[*needed_len] = ability_art::KEY_BASE + part;
+            *needed_len += 1;
+        }
     }
-    if wanted == 0 || *needed_len + wanted > hk_cache::SLOTS.min(needed.len()) {
-        return false;
-    }
-    for &f in unsafe { &*(&raw const FRAME) }.iter().filter(|&&f| f != NO_FRAME) {
-        needed[*needed_len] = ability_art::KEY_BASE + f;
-        *needed_len += 1;
-    }
-    true
+    *needed_len > start
 }
-/// Draw slot `i`, at the Knight or where it was spawned. The cooked frames are a grey ramp: the draw
-/// colours the light.
+/// Draw slot `i`, at the Knight or where it was spawned. The cooked frames carry their own colour
+/// (the bright palette): 128 is the texel's own level.
 #[cfg(not(test))]
 #[inline(never)]
 fn draw_one(i: usize, player: &Player, camera: (i32, i32)) -> u32 {
-    let frame = unsafe { FRAME[i] };
-    if frame == NO_FRAME {
+    let (first, end) = unsafe { PARTS[i] };
+    if first == NO_FRAME {
         return 0;
     }
-    let age = u32::from(unsafe { AGE[i] });
-    let v = if i == FLASH {
-        (96 * (FLASH_FADE - age.saturating_sub(FLASH_HOLD)) / FLASH_FADE) as u8
-    } else {
-        128
-    };
-    let rgb = match CLIPS[i] {
-        WINGS_EFFECT => (v, v - 10, v),
-        WALL_PUFF => (96, 100, 108),
-        _ => (v, v, v),
-    };
     let (at, facing) = if i >= FIRST_WORLD {
         // The Knight's atlas faces left and the spell art right (`draw` mirrors for +1).
         unsafe { (AT[i - FIRST_WORLD], -FACING[i - FIRST_WORLD]) }
     } else {
         ([player.x, player.y], player.facing)
     };
-    ability_art::draw_light(usize::from(frame), at[0], at[1], facing, camera, rgb)
+    // The flash holds, then fades (`EaseColor`); the rest are at their own level.
+    let level = if i == FLASH {
+        let age = u32::from(unsafe { AGE[i] });
+        (u32::from(LEVEL) * (FLASH_FADE - age.saturating_sub(FLASH_HOLD).min(FLASH_FADE)) / FLASH_FADE) as u8
+    } else {
+        LEVEL
+    };
+    let mut drawn = 0;
+    for part in first..end {
+        drawn += ability_art::draw_light(usize::from(part), at[0], at[1], facing, camera, (level, level, level));
+    }
+    drawn
 }
 /// Draw the live effects. Only after `request` said yes this frame.
 #[cfg(not(test))]
@@ -236,7 +256,11 @@ pub fn draw(player: &Player, camera: (i32, i32)) -> u32 {
     }
     drawn
 }
-/// Whether this Knight owns an ability that raises an effect.
-pub fn wanted(player: &Player, spell: bool) -> bool {
-    player.has_dash || player.has_walljump || player.has_double_jump || spell
+/// Whether this Knight owns an ability whose effects are in `art_fx`.
+pub fn wants_move(player: &Player) -> bool {
+    player.has_dash || player.has_walljump || player.has_double_jump
+}
+/// Whether this Knight owns Vengeful Spirit, whose effects are in `art_fx_spell`.
+pub fn wants_spell(spell: bool) -> bool {
+    spell
 }
