@@ -375,7 +375,8 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
             .read(&source.object(&resources, UI_COLLECTION).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         let (full, _) = tk_sprite(&source, &resources, &collection, COIN_SPRITE, &mut textures)?;
-        let coin = full.resize(COIN_PX, COIN_PX, Filter::Lanczos);
+        // An area average: Lanczos rings on the stones' dark gaps and speckled the 12 px coin.
+        let coin = full.resize(COIN_PX, COIN_PX, Filter::Box);
         let cell: Vec<u8> = coin
             .data
             .chunks_exact(4)
