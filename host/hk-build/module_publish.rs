@@ -96,6 +96,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                         "5title",
                         "15animation_cache",
                         "6render14bind_animation",
+                        "10boss_hooks",
                     ]
                     .iter()
                     .any(|p| caller.name.contains(p))
