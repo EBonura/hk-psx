@@ -255,6 +255,49 @@ pub fn data_mut(m: usize) -> Option<*mut u8> {
     let s = slots()[m];
     Some(core::ptr::with_exposed_provenance_mut::<u8>(pool() + s.offset as usize))
 }
+/// The chunk that carries boot module `m` (the title's code), or None when the build links it resident.
+pub const fn boot_chunk(m: usize) -> Option<usize> {
+    let c = MODULE_CHUNK[m];
+    if c == u8::MAX {
+        None
+    } else {
+        Some(c as usize)
+    }
+}
+/// Install boot module `m` from `chunk`, the staged bytes of the chunk that carries it: checked, then copied
+/// into the pool and bound like any room's code. Nothing is pinned, so the first scene's modules may take
+/// its place; `evict_boot` frees it earlier. True when the module is resident.
+#[inline(never)]
+pub fn install_boot(m: usize, chunk: &[u8]) -> bool {
+    if resident() & (1 << m) != 0 {
+        return true;
+    }
+    let Some(c) = boot_chunk(m) else { return false };
+    if chunk.len() != chunk_len(c) || chunk.as_ptr() as usize % 4 != 0 {
+        return false;
+    }
+    let words = unsafe { core::slice::from_raw_parts(chunk.as_ptr().cast::<u32>(), chunk.len() / 4) };
+    if hash(words, 0x811c_9dc5) != chunk_hash(c) {
+        return false;
+    }
+    let Some(mut job) = find(words, m).and_then(|p| begin(p, 0)) else {
+        return false;
+    };
+    loop {
+        match job.run(usize::MAX) {
+            Ok(true) => return true,
+            Ok(false) => {}
+            Err(_) => return false,
+        }
+    }
+}
+/// Free boot module `m`'s pool bytes and point its import sites back at the trap.
+#[inline(never)]
+pub fn evict_boot(m: usize) {
+    if resident() & (1 << m) != 0 {
+        evict(m);
+    }
+}
 /// Every module `scene`'s actors need is resident.
 pub fn all_resident(scene: usize) -> bool {
     SCENE_MODULES[scene] & !resident() == 0

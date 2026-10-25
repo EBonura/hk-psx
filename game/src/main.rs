@@ -110,6 +110,7 @@ mod shop;
 mod soul_totems;
 mod spstack;
 mod texture_upload;
+mod title;
 mod title_card;
 mod vram_cache;
 /// Canonical source admission remains closed until Runner audio and Charge Dust
@@ -832,8 +833,9 @@ fn main() {
     // Before the title: it plays two of these. A failed read is retried by
     // bootstrap's prepare_ambience, so it only costs the title its clips.
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.prepare_world_sfx();
-    // The title art follows it on the disc; menu::run uploads it to VRAM
-    // before anything else takes the arena.
+    // The title's code (an overlay, title.rs) and the title art follow it on the disc, in that order;
+    // menu::run uploads the art to VRAM before anything else takes the arena.
+    let opened = title::open(unsafe { &mut *(&raw mut ROOM_CACHE) });
     let art = unsafe { &mut *(&raw mut ROOM_CACHE) }.menu_art().ok();
     // The art the game uploads once, from the same chunk while it is staged.
     if let Some(boot) = art {
@@ -860,10 +862,16 @@ fn main() {
             }
             (settings, profile)
         }
-        None => menu::run(&mut fb, art, &slot_lines, profile_fault),
+        // A disc that would not give the title's code starts a game with the settings a fresh card has.
+        None if !opened => (menu::Settings::new(), 0),
+        None => title::run(&mut fb, art, &slot_lines, profile_fault),
     };
     focus_audio::set_volume(settings.sfx);
-    menu::loading(&mut fb);
+    if opened {
+        title::loading(&mut fb);
+        // The pool is the rooms' from here: the first scene's modules install into it.
+        title::close();
+    }
     #[cfg(feature = "card-diag")]
     card_diag::run(&mut fb);
     #[cfg(feature = "audio-probe")]
@@ -1031,9 +1039,14 @@ fn main() {
                 }
                 vram = vram_cache::Cache::new();
                 cache.reset_bootstrap();
-                menu::restore(cache.menu_art().ok());
-                menu::retry(&mut fb);
-                menu::loading(&mut fb);
+                let opened = title::open(cache);
+                let art = cache.menu_art().ok();
+                if opened {
+                    title::restore(art);
+                    title::retry(&mut fb);
+                    title::loading(&mut fb);
+                    title::close();
+                }
             }
             // Atlas bytes were verified/uploaded before the initial scene
             // was admitted. Every spatial view in this scene stays live.
