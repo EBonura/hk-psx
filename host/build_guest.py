@@ -111,7 +111,7 @@ def boot_art():
     # The opening-movie player (intro/, built by hk-build into data/intro.exe) rides at the end, for builds with
     # the `intro` feature only: the chunk is read from disc and dropped after the title, so it costs no RAM.
     intro=ROOT/'data/intro.exe'
-    intro_at=(0,0)
+    intro_at=(0,0);player_bytes=0
     if os.environ.get('HK_INTRO')=='1' and intro.is_file():
         import struct
         exe=intro.read_bytes()
@@ -123,6 +123,9 @@ def boot_art():
         if exe[:8]!=b'PS-X EXE' or load<0x801DB000 or load+size>sp-0x4000 or len(exe)<0x800+size:
             raise ValueError(f'data/intro.exe does not fit the pool: load {load:#x} size {size:#x} sp {sp:#x}')
         data=struct.pack('<5I',load,size,pc0,gp0,sp)+exe[0x800:0x800+size];intro_at=(len(blob),len(data));blob+=data+bytes(-len(data)%4)
+        # What the movie player asks of the scene arena (hk-intro-cook writes it): the game asserts it fits (intro.rs).
+        import re
+        player_bytes=int(re.search(r'PLAYER_BYTES: usize = (\d+);',(ROOT/'.hkpsx/intro/movie.rs').read_text())[1])
     def fnv32(data):
         h=0x811c9dc5
         for byte in data:h=((h^byte)*0x01000193)&0xffffffff
@@ -150,7 +153,8 @@ def boot_art():
           f'/// Per style: where its background starts, where its extras start and their length, and the checksum of both (0 for the default style, which rides the common part).\n'
           f'pub const STYLE_ART:[(u32,u32,u32,u32);{STYLE_COUNT}]={[tuple(s) for s in styles]};\n'
           f'pub const LOGO_ART:(usize,usize)={at["menu-logos.hk"]};\n'
-          f'pub const INTRO_ART:(usize,usize)={intro_at};\n')
+          f'pub const INTRO_ART:(usize,usize)={intro_at};\n'
+          f'pub const INTRO_PLAYER_BYTES:usize={player_bytes};\n')
     path=ROOT/'data/boot_art.rs'
     if not path.is_file() or path.read_text()!=text:path.write_text(text)
     if at['read_font.hk'][0]!=len((ROOT/'data/menu.hk').read_bytes()):raise ValueError('the glyphs must follow the title art')

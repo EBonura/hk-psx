@@ -1,0 +1,176 @@
+# Frames spaced through both movies on the shipping disc, for same-moment comparison with the source clips (the
+# review's PC | PS1 pairs): a checkpoint every 150 ticks of the Prologue and every 200 of the Intro. The movie
+# frame a checkpoint shows is found by matching it against the decoded stream (the Prologue starts about tick 2144,
+# the Intro about 3976 on this build; a frame is 4 ticks).
+#
+#   psoxide-gate run tools/journeys/new-game-movie-frames.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+name = "new-game-movie-frames"
+title = "new game: frames through both movies"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "f2300"
+wait = 1954
+checkpoint = "f2300"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f2450"
+wait = 150
+checkpoint = "f2450"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f2600"
+wait = 150
+checkpoint = "f2600"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f2750"
+wait = 150
+checkpoint = "f2750"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f2900"
+wait = 150
+checkpoint = "f2900"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f3050"
+wait = 150
+checkpoint = "f3050"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f3200"
+wait = 150
+checkpoint = "f3200"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f3350"
+wait = 150
+checkpoint = "f3350"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f3500"
+wait = 150
+checkpoint = "f3500"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f3650"
+wait = 150
+checkpoint = "f3650"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f4100"
+wait = 450
+checkpoint = "f4100"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f4300"
+wait = 200
+checkpoint = "f4300"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f4500"
+wait = 200
+checkpoint = "f4500"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f4700"
+wait = 200
+checkpoint = "f4700"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f4900"
+wait = 200
+checkpoint = "f4900"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f5100"
+wait = 200
+checkpoint = "f5100"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f5300"
+wait = 200
+checkpoint = "f5300"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f5500"
+wait = 200
+checkpoint = "f5500"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f5700"
+wait = 200
+checkpoint = "f5700"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f5900"
+wait = 200
+checkpoint = "f5900"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "f6100"
+wait = 200
+checkpoint = "f6100"
+golden = false
+no_matrix = true

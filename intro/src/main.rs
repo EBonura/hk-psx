@@ -143,10 +143,10 @@ impl Handoff {
 
 /// Where the font's palette sits in VRAM (game/src/dialogue.rs draws every glyph with it).
 pub(crate) const FONT_CLUT: (u16, u16) = (320, 481);
-/// The letterbox bar under the picture: the movie is 176 lines centred in 240, so the lines
-/// from 208 down are black in every display buffer and the player never writes them.
-const LETTERBOX_Y: u16 = 208;
-const LETTERBOX_H: u16 = 32;
+/// The letterbox bar under the picture: the movie is 192 lines centred in 240, so the lines
+/// from 216 down are black in every display buffer and the player never writes them.
+const LETTERBOX_Y: u16 = 216;
+const LETTERBOX_H: u16 = 24;
 /// The popup of the original (`CinematicSkipPopup`): it fades in over 0.15 s, holds for 2 s and
 /// fades out over 1 s. Counted in VBlanks of a 60 Hz display.
 const FADE_IN: u32 = 9;

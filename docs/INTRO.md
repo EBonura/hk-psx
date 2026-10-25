@@ -33,10 +33,10 @@ frame buffer, black display buffers) and goes on into the new game with the titl
 and the audio it already loaded: there is no reload of `PSX.EXE` and no second boot. The SPU's voices and RAM are
 left alone (the program never resets the SPU), so the sound effects stay loaded.
 
-The movies' buffers (374 KB for the Prologue) are the scene arena, which nothing needs between the title and the
+The movies' buffers (413 KB for the Intro, the larger) are the scene arena, which nothing needs between the title and the
 first scene's load; the program's own image and stack are in the pool. The program draws the poem, then streams
-`HKINTRO1.STR` and `HKINTRO2.STR` through the SDK's FMV player (320x176 letterboxed on 320x240, 15 fps, 15-bit,
-mono 37.8 kHz XA), shows the skip prompt with the game's own font (glyphs and palette are already in VRAM;
+`HKINTRO1.STR` and `HKINTRO2.STR` through the SDK's FMV player (the 16:9 picture at 320x180 in a coded 320x192,
+centred on the 320x240 screen, 15 fps, 15-bit, mono 37.8 kHz XA), shows the skip prompt with the game's own font (glyphs and palette are already in VRAM;
 `hk-build` lays the strings out from `data/font_layout.rs` into `.hkpsx/intro/prompt.rs`).
 
 The poem (`intro/src/poem.rs`): the five lines the original's `Prologue Text` shows, in the game's 14 px font,
@@ -51,6 +51,17 @@ one sound sector in eight, filler between, a 2 s silent lead-in so that the firs
 3.53 s whatever the drive's start takes), played by the SDK's XA player from 1.0 s on; no fake movie carries it.
 A first press during the poem shows the skip prompt, a second one while it shows skips the poem and both movies.
 
+The picture (host/hk-intro-cook `prepare_picture`): the MDEC's 15-bit output truncates each channel to 5 bits with
+no dither of its own, so a smooth gradient came out as flat bands with contour rings around the lamps and
+colour patches in dark skies. The cook now scales the clip to 320x180 with an area average, reduces it to 5 bits
+per channel with an ordered dither (ffmpeg's swscale) and pads it to 192 lines before `psxavenc` sees it; the
+pattern survives the encode and the truncation then leaves a fine fixed mesh instead of bands. The price is
+decoder work and memory: the busiest frame decodes to about 13,300 run-length words (12,000 before), which with
+the taller frame buffers is the 413 KB of the arena above (415,052 B in the shipping build; the cook refuses a
+movie over 415,000 and the guest build asserts it against the arena). A 24-bit decode would need 495 KB.
+The picture is one frame behind the clip (the encoder puts the first frame in twice). `ffmpeg` is a cook
+dependency beside `psxavenc`; a machine without it builds without the poem and the movies.
+
 Cook: `hk-cook intro-audio` decodes the three clips with FMOD (the cooker every other clip goes through),
 `hk-intro-cook --audio-dir` encodes the movies with `psxavenc`, masters each sound to the install's loudness
 (+0.9 dB for the player's path, through a limiter) and interleaves it with the picture, and does the same to the
@@ -63,10 +74,10 @@ never has them. `cargo hk-build intro-cook` cooks them and compiles the player a
 
 ## Costs
 
-- Disc: the poem's piano 1,344 sectors (3.1 MB, `HKPOEM.XA`) and the two movies 10,186 sectors (23.8 MB), after
+- Disc: the poem's piano 1,344 sectors (3.1 MB, `HKPOEM.XA`) and the two movies 10,196 sectors (23.8 MB), after
   WORLD.PAK and before the XA songs: the disc is 95.8 MB (92.6 before the poem).
-- RAM in the game: free below the module pool 13,096 B against 12,648 B on the main this was cut from (the
-  program's call and return stub is 156 B and `intro::play` 372; the mailbox copy of the settings, `take` and the
+- RAM in the game: free below the module pool 9,472 B against 9,008 B on the main this was cut from (the
+  program's call and return stub is 156 B and `intro::play` 372 bytes; the mailbox copy of the settings, `take` and the
   resume path in `main` are gone). The three `#[inline(never)]` marks on `audio::set_volume`, `music::set_volume`
   and `music::apply` stay: without them LLVM links the same tree 1,004 B larger.
 - CD: the movies stream at double speed (150 sectors a second, 10 a frame); the piano plays at single speed (a
@@ -77,7 +88,7 @@ never has them. `cargo hk-build intro-cook` cooks them and compiles the player a
   boot and the same 340 of scene load. The reload and the boot are gone because nothing of the game was ever
   overwritten.
 - The scene load cannot be hidden under the movie. The Intro streams at the drive's full 150 sectors a second, so
-  nothing else can be read during it; its buffers (374 KB for the Prologue) take the scene arena, which the scene
+  nothing else can be read during it; its buffers (413 KB for the Intro) take the scene arena, which the scene
   needs (322 KB resident for Tutorial_01, which also stages its 18 pages through it); and VRAM has no spare 320x240
   for a third display buffer beside the scene's pages. What the load costs is the data (about 1.7 MB at 150
   sectors a second) and it starts as soon as the last frame is gone.

@@ -25,6 +25,10 @@
 const MAILBOX: *mut u32 = 0x801F_FFC0 as *mut u32;
 const MAGIC: u32 = 0x484B_4E47; // "HKNG"
 
+// The player's buffers are the scene arena: the cook measured what they need (host/hk-intro-cook), the guest
+// build read it from the movie constants.
+const _: () = assert!(crate::boot_art::INTRO_PLAYER_BYTES <= crate::disc::ARENA_BYTES);
+
 extern "C" {
     /// Saves the callee-saved registers, switches to the blob's stack and gp and jumps to it; comes back
     /// when the blob jumps to `hk_intro_leave` with this call's stack pointer.
