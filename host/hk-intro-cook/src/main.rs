@@ -59,10 +59,15 @@ const SUBMODE_FORM2: u8 = 0x20;
 const WIDTH: u16 = 320;
 /// The picture's own height: the 16:9 clips fill the 320 columns of a 4:3 screen with 180 lines.
 const PICTURE_HEIGHT: u32 = 180;
-/// The coded height: a whole number of 16 line macroblocks (12), with the 6 black lines above and below
-/// the 180 the encoder pads, so that the picture is not squashed to 176 (2%) the way a coded height of 11
-/// macroblocks would make it.
+/// The coded height: a whole number of 16 line macroblocks (12), so that the picture is not squashed to 176
+/// (2%) the way a coded height of 11 macroblocks would make it.
 const HEIGHT: u16 = 192;
+/// The black lines above the picture in the coded frame (4 below): 8, a whole 8x8 block, so that the picture's
+/// top edge is a block's edge and the blocks above it decode to exactly black. (180 lines are 22 blocks and a
+/// half, so the bottom edge is inside a block whatever is done: the four lines under it carry the decoder's
+/// ringing, which the intro hides, see `show_rows` in intro/src/main.rs.) The intro centres the 192 lines by
+/// giving the player a screen 236 lines high, so that the picture is on lines 30 to 209 of the 240.
+const PICTURE_TOP: usize = 8;
 const FPS: u32 = 15;
 /// XA file and channel the sound of both movies is filed under (psxavenc
 /// `-F`, `-C`).
@@ -119,14 +124,16 @@ const POEM_STRIDE: usize = 8;
 /// does (3.53 s into the sequence, `Music` activated by the clip); the intro program measures the
 /// start and shows the text against the sound's own clock.
 const POEM_LEAD_IN_S: f64 = 2.0;
-/// Sectors the sound is moved later behind the encoder's placement, so that
-/// it plays together with the picture. The picture shows its frame the
-/// headroom of [`LATENCY_VBLANKS`] after the frame's last sector arrives, and
-/// a frame is read in 10 sectors (150 a second, 15 frames a second), so the
-/// sound has to wait 10 sectors plus 5 / 59.94 s (12.5 sectors) behind where
-/// the encoder starts it; 1.5 more sectors (10 ms) are what the first frame's
-/// decode and the flip to the next VBlank add, measured on the emulator.
-const AUDIO_DELAY_SECTORS: usize = 24;
+/// Sectors the sound is moved later behind the encoder's placement, so that it plays together with the
+/// picture. The picture shows its frame the headroom of [`LATENCY_VBLANKS`] after the frame's last sector
+/// arrives, and a frame is read in 10 sectors (150 a second, 15 frames a second), so the sound has to wait
+/// 10 sectors plus 5 / 59.94 s (12.5 sectors) behind where the encoder starts it; and the picture is one
+/// frame behind the clip (the encoder shows the first frame twice), 10 sectors more. Measured on the emulator
+/// (the SPU's output against the clips' own sound, the displays' flips against the clips' frames, a screenshot
+/// at known ticks naming the frame each flip shows): with 21 the sound was 68 ms early in the Prologue and
+/// 67 ms in the Intro, steady over the whole movie, and with 24 (which the sum of the first two terms and the
+/// 1.5 sectors of decode and flip made, without the third) 49 ms early; 31 sectors are 1.6 ms off in both.
+const AUDIO_DELAY_SECTORS: usize = 31;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Movie {
@@ -523,10 +530,10 @@ fn find_tool(name: &str, variable: &str, explicit: Option<PathBuf>) -> Option<Pa
 
 /// The clip as the encoder should see it: 15 frames a second, 320x180 by an area average, corrected for the
 /// tone the whole chain adds ([`transfer`]), reduced to the 5 bits per channel the MDEC's 15-bit output keeps
-/// with an ordered dither ([`dither`]) and padded with black to the coded 320x192. The MDEC truncates to 5
+/// with an ordered dither whose phase changes every picture ([`dither`]) and padded with black to the coded 320x192. The MDEC truncates to 5
 /// bits without any dither of its own, so a smooth gradient decodes as a few flat bands with contour rings
 /// (the lamp glows) and the channels' steps fall in different places (olive and maroon patches in a dark
-/// blue sky); with the dither in the picture itself the quantisation noise is a fixed fine pattern and the
+/// blue sky); with the dither in the picture itself the quantisation noise is a fine pattern and the
 /// gradient reads as one. The clip's own (silent) sound rides along as the encoder needs a sound track to
 /// leave its sound sectors in place.
 fn prepare_picture(ffmpeg: &Path, movie: &Path, work: &Path) -> Result<PathBuf, String> {
@@ -553,14 +560,15 @@ fn prepare_picture(ffmpeg: &Path, movie: &Path, work: &Path) -> Result<PathBuf, 
     ];
     let noise = dither::Bayer::new();
     let (w, picture, coded) = (usize::from(WIDTH), PICTURE_HEIGHT as usize, usize::from(HEIGHT));
-    let bar = (coded - picture) / 2;
+    let bar = PICTURE_TOP;
     let frame = w * picture * 3;
     let mut out = vec![0u8; pixels.len() / frame * w * coded * 3];
     for (n, src) in pixels.chunks_exact(frame).enumerate() {
         let dst = &mut out[n * w * coded * 3..(n + 1) * w * coded * 3];
+        let (ox, oy) = dither::phase(n);
         for y in 0..picture {
             for x in 0..w {
-                let t = noise.threshold(x, y);
+                let t = noise.threshold(x + ox, y + oy);
                 for c in 0..3 {
                     dst[((y + bar) * w + x) * 3 + c] = dither::five_bits(corrected[c].apply(src[(y * w + x) * 3 + c]), t);
                 }
@@ -917,6 +925,7 @@ fn run() -> Result<ExitCode, String> {
             ));
         }
         let words = player_words(&m);
+        eprintln!("hk-intro-cook: {}: the player needs {} bytes of the scene arena", spec.name, words * 4);
         if words * 4 > PLAYER_MEMORY_LIMIT {
             return Err(format!(
                 "{}: the player needs {} bytes, the scene arena lends {PLAYER_MEMORY_LIMIT}",
@@ -924,7 +933,6 @@ fn run() -> Result<ExitCode, String> {
                 words * 4
             ));
         }
-        eprintln!("hk-intro-cook: {}: the player needs {} bytes of the scene arena", spec.name, words * 4);
         let (video_s, audio_s) = durations(&m);
         if sound.is_some() {
             // The sound is the install's own clip, so it must really be there, and about as long

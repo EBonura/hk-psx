@@ -2,9 +2,21 @@
 //!
 //! The MDEC truncates to 5 bits with no dither of its own, so what the encoder is given has to carry the
 //! dither: each frame goes through a tone correction (the measured transfer of the whole chain, [`Transfer`])
-//! and then to 5 bits against an ordered Bayer threshold, the same for every frame and for the three channels
-//! (so the noise is in the picture's brightness, not its colour). Blue noise was tried too: it has no regular
-//! rows, but costs a few kilobytes more run-length words in the busiest frame than the scene arena can lend.
+//! and then to 5 bits against an ordered Bayer threshold, the same for the three channels (so the noise is in
+//! the picture's brightness, not its colour) and offset by a different amount for every picture ([`phase`]).
+//! Blue noise was tried too: it has no regular rows, but the busiest frame then needs about 424 KB of the
+//! scene arena's 415 KB.
+//! Lowering the amplitude where the picture is flat was tried as well: the gradients there then fall back into
+//! contour patches with ragged edges, worse than the mesh.
+
+/// Where in the matrix picture `n` starts: the matrix is offset by a different amount for every picture, in a
+/// low-discrepancy sequence (the plastic number's R2 sequence), so that no pixel keeps the same threshold from
+/// one picture to the next. The pattern is then fine grain at 15 pictures a second instead of a mesh fixed
+/// to the screen (the shower door that a fixed matrix makes over a moving picture).
+pub fn phase(n: usize) -> (usize, usize) {
+    let fraction = |step: f64| (n as f64 * step).fract();
+    ((fraction(0.754_877_666_2) * SIDE as f64) as usize, (fraction(0.569_840_291_0) * SIDE as f64) as usize)
+}
 
 /// The ordered Bayer matrix of side [`SIDE`] as thresholds.
 pub struct Bayer {
@@ -107,6 +119,16 @@ mod tests {
             seen[r as usize] = true;
         }
         assert!(seen.iter().all(|s| *s));
+    }
+
+    #[test]
+    fn every_picture_starts_somewhere_else_in_the_matrix() {
+        let phases: Vec<(usize, usize)> = (0..64).map(phase).collect();
+        assert!(phases.iter().all(|&(x, y)| x < SIDE && y < SIDE));
+        // Neighbouring pictures differ, and over a few seconds most of the 256 offsets are used.
+        assert!(phases.windows(2).all(|w| w[0] != w[1]));
+        let distinct: std::collections::HashSet<_> = phases.iter().collect();
+        assert!(distinct.len() > 48, "{}", distinct.len());
     }
 
     #[test]

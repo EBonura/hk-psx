@@ -40,7 +40,7 @@ use psx_chainloader::runtime::{self};
 use psx_fmv::player::{self, Config, Depth, Movie, Stop};
 use psx_gpu::display::{DisplayConfig, Resolution, VideoMode};
 use psx_gpu::Gpu;
-use psx_io::gpu::write_command;
+use psx_io::gpu::{write_command, write_display_control};
 use psx_io::periph::ControllerPort;
 use psx_pad::Port;
 use psx_rt::{interrupts, tty, Peripherals};
@@ -185,11 +185,19 @@ impl Handoff {
 
 /// Where the font's palette sits in VRAM (game/src/dialogue.rs draws every glyph with it).
 pub(crate) const FONT_CLUT: (u16, u16) = (320, 481);
-/// The bar the prompt is drawn in: the movie is 192 lines centred in 240 (rows 24 to 215) with the picture in
-/// rows 30 to 209, so the lines from 212 down are black in every display buffer and the player never writes
-/// below 215.
-const LETTERBOX_Y: u16 = 212;
-const LETTERBOX_H: u16 = 28;
+/// The bar the prompt is drawn in. The player is given a screen 236 lines high ([`SCREEN_HEIGHT`]) so that it
+/// centres the coded 192 lines on lines 22 to 213 and the 180 line picture, which the cook puts 8 lines down
+/// in them, on lines 30 to 209. From line 210 down the buffers are black but for the lines under the picture
+/// (210 to 213), where the decoder's blocks (the picture's bottom edge is in the middle of one) leave a texel or
+/// two of 8, up to 16: while no prompt shows, the display window ends at the picture ([`PICTURE_BOTTOM`]).
+const LETTERBOX_Y: u16 = 210;
+const LETTERBOX_H: u16 = 30;
+/// The player's screen height (see above); the display, and so the poem, is 240 lines.
+const SCREEN_HEIGHT: u16 = 236;
+/// The display window (GP1 07h) ends under the picture, and reaches down over the prompt's rows when it shows
+/// (the title-safe area ends at 228).
+const PICTURE_BOTTOM: u32 = 210;
+const PROMPT_BOTTOM: u32 = 228;
 /// The prompt's first line: 13 lines under the picture's last (210), so that its last (226) is inside the
 /// title-safe area (the central 90%, 12 to 228) and clear of a CRT's overscan.
 const PROMPT_TOP: i16 = 213;
@@ -238,7 +246,7 @@ impl Prompt {
 
     /// Bring the bars up to date, unless the player has a VRAM copy in flight (the GPU's port is
     /// then not ours; the next VBlank tries again).
-    fn update(&mut self, now: u32) {
+    fn update(&mut self, now: u32, top: u32) {
         let level = self.brightness(now);
         if self.drawn == Some(level) || (self.drawn.is_none() && level == 0) {
             return;
@@ -250,6 +258,7 @@ impl Prompt {
             draw_bar(x, y, level);
         }
         self.drawn = Some(level);
+        show_rows(top, if level == 0 { PICTURE_BOTTOM } else { PROMPT_BOTTOM });
         if level == 0 {
             self.since = None;
         }
@@ -279,12 +288,18 @@ pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     let color = 0x6600_0000 | level * 0x0001_0101;
     let left = (320 - prompt_text::WIDTH) / 2;
     let top = PROMPT_TOP;
-    for (u, v, dx) in prompt_text::GLYPHS {
+    for (&(u, v, dx), &width) in prompt_text::GLYPHS.iter().zip(&prompt_text::GLYPH_WIDTHS) {
         write_command(color);
         write_command(u32::from((left + dx) as u16) | u32::from(top as u16) << 16);
         write_command(u32::from(u) | u32::from(v) << 8 | clut << 16);
-        write_command(u32::from(prompt_text::GLYPH_W) | u32::from(prompt_text::GLYPH_H) << 16);
+        write_command(u32::from(width) | u32::from(prompt_text::GLYPH_H) << 16);
     }
+}
+
+/// Show the display buffers' lines down to `bottom`, the rest of the screen the signal's own black. The window
+/// starts at its usual place, `top`: 16, the NTSC window's top, plus the screen offset the game chose.
+fn show_rows(top: u32, bottom: u32) {
+    write_display_control(0x0700_0000 | top | (top + bottom) << 10);
 }
 
 /// The pad and the skip prompt it drives.
@@ -297,6 +312,8 @@ pub(crate) struct Skip {
     prompt: Prompt,
     /// Whether the prompt is drawn into the movies' display buffers (the poem draws its own frames).
     bars: bool,
+    /// The display window's first scanline: 16, the NTSC window's top, plus the game's screen offset.
+    window_top: u32,
 }
 
 impl Skip {
@@ -320,7 +337,7 @@ impl Skip {
             return true;
         }
         if self.bars {
-            self.prompt.update(now);
+            self.prompt.update(now, self.window_top);
         }
         false
     }
@@ -341,6 +358,7 @@ impl Skip {
     fn begin_movie(&mut self) {
         self.bars = true;
         self.prompt.drawn = None;
+        show_rows(self.window_top, PICTURE_BOTTOM);
     }
 }
 
@@ -366,7 +384,7 @@ fn play_movie(skip: &mut Skip, cooked: &Cooked, memory: &mut [u32]) -> Option<St
         depth: Depth::Rgb15,
         buffers: movie_buffers(),
         screen_width: 320,
-        screen_height: 240,
+        screen_height: SCREEN_HEIGHT,
         // The cook sized the sound's delay for this headroom (hk-intro-cook).
         latency_vblanks: cooked.latency_vblanks,
         stall_vblanks: STALL_VBLANKS,
@@ -481,6 +499,7 @@ fn main() {
         last_vblank: interrupts::vblank_count(),
         prompt: Prompt { since: None, drawn: None },
         bars: true,
+        window_top: (16 + i32::from(handoff.screen.1)).max(0) as u32,
     };
     // SAFETY: the scene arena the game lent: nothing in it is needed until the game loads a scene into it
     // after this returns.

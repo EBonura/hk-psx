@@ -57,14 +57,30 @@ The first scene's CLUT rows (x 0..319, y 480..499) and the animation slots are o
 The movies' buffers (412 KB for the Prologue, the larger) are the scene arena, which nothing needs between the title and the
 first scene's load; the program's own image and stack are in the pool. The program draws the poem, then streams
 `HKINTRO1.STR` and `HKINTRO2.STR` through the SDK's FMV player (the 16:9 picture at 320x180 in a coded 320x192,
-centred on the 320x240 screen, 15 fps, 15-bit, mono 37.8 kHz XA), shows the skip prompt with the game's own font (glyphs and palette are already in VRAM;
-`hk-build` lays the strings out from `data/font_layout.rs` into `.hkpsx/intro/prompt.rs`). The prompt's lines are
-rows 213 to 226, inside the title-safe area (the central 90%, rows 12 to 228) and 3 lines under the picture, which
-ends at row 209; over the poem it sits under the block, which ends at row 204.
+15 fps, 15-bit, mono 37.8 kHz XA; the player centres the 192 lines on a 236 line screen, so that the cook's 8 black
+lines above the picture put it on lines 30 to 209 of the 240, see below), shows the skip prompt with the game's own font (glyphs and palette are already in VRAM;
+`hk-build` lays the strings out from `data/font_layout.rs` into `.hkpsx/intro/prompt.rs`). The prompt's glyph rows are
+213 to 226 (its ink 216 to 226), inside the title-safe area (the central 90%, rows 12 to 228) and under the picture,
+which ends at row 209; over the poem it sits under the block, which ends at row 204. Each glyph is drawn as wide
+as its advance and two texels, not the font's whole 13 texel cell (the `p` cell has a stray texel at its far edge,
+a speck after the last letter).
+
+The bars: the 180 line picture starts at line 8 of the coded 192, a whole 8x8 block, so the blocks above it decode
+to exactly black (a few specks of 8 remain in lines 6 and 7, from the chroma). Its bottom edge is in the middle of
+a block (180 lines are 22.5 blocks, whatever the offset): the four lines under it carry the decoder's ringing, a
+texel or two of 8 (up to 16) a frame. While no prompt shows the intro ends the display window under the picture
+(GP1 07h, line 210) so that those lines are the signal's black; with the prompt up the window reaches line 228.
+The emulator's screenshots are the window: 320x210 (the picture on lines 30 to 209, 0 to 29 black), 320x228 with
+the prompt.
 
 The poem (`intro/src/poem.rs`): the five lines the original's `Prologue Text` shows, in the game's 14 px font,
-wrapped to 288 px (a margin of 16 px each side, inside the title-safe area) and centred (language sheet `General`, `PROLOGUE_EXCERPT_01` to `_04` and `_AUTHOR`; the
-author's curly quotes become ASCII). Each line fades in as in the original's animation (linear ramps from 1.43,
+the four verses wrapped to 288 px (a margin of 16 px each side, inside the title-safe area) and centred (language
+sheet `General`, `PROLOGUE_EXCERPT_01` to `_04` and `_AUTHOR`; the author's curly quotes become ASCII). The
+author's line is set smaller and right aligned in the scene: its text object has font size 3.85 where the verses'
+is 5, and alignment 2 (top right) where theirs is 1 (top centre), in the same 20 unit box, white, alpha 1 like the
+others. So it is a picture of its own, the line's font cells scaled by 0.77 with an area average
+(`host/hk-build/intro.rs` `author_strip`), uploaded into the movies' third display buffer (at (512, 0), free
+until the movies start) and drawn as one rectangle with the font's palette, ending at column 300. Each line fades in as in the original's animation (linear ramps from 1.43,
 6.33, 9.77 and 13.5 s, the author's eased from 17.1 s), a black cover opens at 1.8 s (done by 5.9 s) and closes
 over everything from 23.6 s (black at 28.1 s), and the sequence ends at 28.6 s. The curves are the clip's own
 (`host/hk-build/intro.rs` `KEYS`), sampled at 100 ms. One assumption: the cover is in front of the text (its z is
@@ -80,10 +96,16 @@ A first press during the poem shows the skip prompt, a second one while it shows
 The picture (host/hk-intro-cook `prepare_picture`): the MDEC's 15-bit output truncates each channel to 5 bits with
 no dither of its own, so a smooth gradient came out as flat bands with contour rings around the lamps and
 colour patches in dark skies. The cook scales the clip to 320x180 with an area average, corrects its tone, reduces
-it to 5 bits per channel against a 16x16 ordered (Bayer) threshold, and pads it to 192 lines before `psxavenc` sees
-it; the pattern survives the encode and the truncation then leaves a fine fixed mesh instead of bands. Blue noise
-looked smoother on a flat area but the busiest frame then needed about 424 KB of the arena's 415, which it
-does not have; ffmpeg's own swscale dithers (the first version) collapsed into rows on flat areas.
+it to 5 bits per channel against a 16x16 ordered (Bayer) threshold, and pads it to 192 lines (8 above, 4 below)
+before `psxavenc` sees it; the pattern survives the encode and the truncation then leaves a fine mesh instead of
+bands. The matrix starts somewhere else for every picture (`dither::phase`, the R2 low-discrepancy sequence), so
+no pixel keeps its threshold from one picture to the next: over a moving picture a mesh fixed to the screen
+reads as a shower door, a mesh that changes at 15 pictures a second reads as grain. It costs nothing in the
+arena (the busiest frame is within 2 KB of the fixed matrix's) and the temporal change of a flat patch goes from
+about 1 to about 4 steps a picture, where the clip's own is 0.1 to 0.3. Tried and not taken: blue noise (the
+busiest frame then needs about 424 KB of the arena's 415), ffmpeg's swscale dithers (they collapse into rows on
+flat areas) and a lower amplitude where the picture is flat (the gradients there fall back into contour patches
+with ragged edges, a block mean error of 0.4 rising to 1.0 steps at half amplitude, worse than the mesh).
 
 Tone (`host/hk-intro-cook/src/transfer.rs`): the whole chain (5 bit reduction, encoder, MDEC, display) lifts midtones
 and highlights (up to +14 steps at luma 150 to 256) and adds green, which came out as a teal cast and a clipped lamp
@@ -95,8 +117,11 @@ luma, `review/movies/luma_bands_before_after.txt` in the lane's review folder).
 Encoder budget and mux: the encoder gets a stereo sound parameter set so that it budgets the picture at 8.75 sectors
 a frame (9 chunks at most; the mono default budgets 9.4, which makes the busiest frame bigger than the arena
 holds), and `mux::interleave_paced` then lays each frame into exactly 10 slots (150 sectors a second), its last
-sector in the last free slot, sound in every 16th slot from 24 slots in, filler elsewhere. Frame pacing is then even
-and the player's memory is 412,320 B (Prologue) and 406,944 B (Intro), against the 415,000 B limit of the cook and
+sector in the last free slot, sound in every 16th slot from 31 slots in, filler elsewhere. Measured on the
+emulator (SPU output against the clips' sound, display flips against the clips' frames, screenshots naming the
+frame each flip shows) the sound is then within 2 ms of the picture; it was 49 ms early at 24 slots (the picture
+runs a frame behind the clip, which the delay had not counted), steadily over both movies. Frame pacing is then even
+and the player's memory is 411,552 B (Prologue) and 409,248 B (Intro), against the 415,000 B limit of the cook and
 the arena's 415,052 B (the guest build asserts it; the cook refuses a movie over the limit). A 24-bit decode would
 need 495 KB. The picture is one frame behind the clip (the encoder puts the first frame in twice). `ffmpeg` is a
 cook dependency beside `psxavenc`; a machine without it builds without the poem and the movies.

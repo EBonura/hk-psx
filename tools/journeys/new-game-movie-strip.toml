@@ -1,0 +1,449 @@
+# Two seconds of consecutive frames of each movie (a checkpoint every 4 ticks, a frame is 4 ticks), to judge how the dither moves:
+# the Prologue at tick 3500 and the Intro at tick 4500 on this build, 30 frames each (the frame each shows is found
+# in the decoded stream by matching).
+#
+#   psoxide-gate run tools/journeys/new-game-movie-strip.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+name = "new-game-movie-strip"
+title = "new game: two seconds of frames in each movie"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+[[step]]
+label = "title"
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+
+[[step]]
+label = "s3500"
+wait = 3154
+checkpoint = "s3500"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3504"
+wait = 4
+checkpoint = "s3504"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3508"
+wait = 4
+checkpoint = "s3508"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3512"
+wait = 4
+checkpoint = "s3512"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3516"
+wait = 4
+checkpoint = "s3516"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3520"
+wait = 4
+checkpoint = "s3520"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3524"
+wait = 4
+checkpoint = "s3524"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3528"
+wait = 4
+checkpoint = "s3528"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3532"
+wait = 4
+checkpoint = "s3532"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3536"
+wait = 4
+checkpoint = "s3536"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3540"
+wait = 4
+checkpoint = "s3540"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3544"
+wait = 4
+checkpoint = "s3544"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3548"
+wait = 4
+checkpoint = "s3548"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3552"
+wait = 4
+checkpoint = "s3552"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3556"
+wait = 4
+checkpoint = "s3556"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3560"
+wait = 4
+checkpoint = "s3560"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3564"
+wait = 4
+checkpoint = "s3564"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3568"
+wait = 4
+checkpoint = "s3568"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3572"
+wait = 4
+checkpoint = "s3572"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3576"
+wait = 4
+checkpoint = "s3576"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3580"
+wait = 4
+checkpoint = "s3580"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3584"
+wait = 4
+checkpoint = "s3584"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3588"
+wait = 4
+checkpoint = "s3588"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3592"
+wait = 4
+checkpoint = "s3592"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3596"
+wait = 4
+checkpoint = "s3596"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3600"
+wait = 4
+checkpoint = "s3600"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3604"
+wait = 4
+checkpoint = "s3604"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3608"
+wait = 4
+checkpoint = "s3608"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3612"
+wait = 4
+checkpoint = "s3612"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s3616"
+wait = 4
+checkpoint = "s3616"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4500"
+wait = 884
+checkpoint = "s4500"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4504"
+wait = 4
+checkpoint = "s4504"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4508"
+wait = 4
+checkpoint = "s4508"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4512"
+wait = 4
+checkpoint = "s4512"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4516"
+wait = 4
+checkpoint = "s4516"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4520"
+wait = 4
+checkpoint = "s4520"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4524"
+wait = 4
+checkpoint = "s4524"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4528"
+wait = 4
+checkpoint = "s4528"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4532"
+wait = 4
+checkpoint = "s4532"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4536"
+wait = 4
+checkpoint = "s4536"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4540"
+wait = 4
+checkpoint = "s4540"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4544"
+wait = 4
+checkpoint = "s4544"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4548"
+wait = 4
+checkpoint = "s4548"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4552"
+wait = 4
+checkpoint = "s4552"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4556"
+wait = 4
+checkpoint = "s4556"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4560"
+wait = 4
+checkpoint = "s4560"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4564"
+wait = 4
+checkpoint = "s4564"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4568"
+wait = 4
+checkpoint = "s4568"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4572"
+wait = 4
+checkpoint = "s4572"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4576"
+wait = 4
+checkpoint = "s4576"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4580"
+wait = 4
+checkpoint = "s4580"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4584"
+wait = 4
+checkpoint = "s4584"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4588"
+wait = 4
+checkpoint = "s4588"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4592"
+wait = 4
+checkpoint = "s4592"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4596"
+wait = 4
+checkpoint = "s4596"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4600"
+wait = 4
+checkpoint = "s4600"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4604"
+wait = 4
+checkpoint = "s4604"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4608"
+wait = 4
+checkpoint = "s4608"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4612"
+wait = 4
+checkpoint = "s4612"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "s4616"
+wait = 4
+checkpoint = "s4616"
+golden = false
+no_matrix = true
