@@ -102,7 +102,7 @@ Cost: see `docs/BUDGET.md` (resident bytes, pool fit) and the build numbers in `
 | `hornet_art` room module, the reader and the draw | | 14,456 |
 | `art_hornet` data package, state block and trees | | 15,976 |
 | Hornet room in the pool (carries the death and respawn art and the ability effects, no Shade) | | 98,084 of 98,304 |
-| free RAM below the pool | 9,008 (main) | 8,368 (shipping disc) |
+| free RAM below the pool | 24,856 (main) | 23,264 (shipping disc) |
 
 On the disc the Knight crossing her arena (`hornet-road`) saw 70 chunks found, no part dropped (`HK_BOSS_DROPS` 0) and no clip the bank
 lacks (`HK_BOSS_CLIP_MISSES` 0). The bank costs the scene its load: 143 KB more streamed bytes at the Fungus1_04 gate, with no read

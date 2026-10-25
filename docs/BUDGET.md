@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |770,432|
-| Code-to-data alignment |0|
-| Linked data, including menu and HUD |283,960|
-| BSS, including shared scene arena and runtime pools |800,552|
-| Total static span |1,854,952|
+| Linked code |771,460|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |284,424|
+| BSS, including shared scene arena and runtime pools |800,640|
+| Total static span |1,856,544|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |127,256|
+| Unallocated gap before reserved stack |125,664|
 | Room module pool, inside that gap |102,400|
-| Free RAM below the module pool |24,856|
+| Free RAM below the module pool |23,264|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -574,3 +574,5 @@ scene decode has already taken the arena by then.
 The 2026-10-19 console-fix pass (gate arrivals grounded by the cooker, the Knight's LookUp/LookDown clips, loop-section ability clips, the Shade and Vengeful Spirit mirror fixes, Myla's hum, pickaxe and sung line, gate-entry and look telemetry, the soft-dust gain) took linked code from 754,836 to 758,912 bytes (4,076) and linked data from 258,536 to 263,432 (4,896: 17 look frames and the loop table, scene-sfx rows), so 60,260 bytes are free below the module pool (69,284 before); static end 0x801cc39c.
 
 The 2026-10-25 title overlay (docs/MENUS.md "The title as a boot overlay"): `menu.rs` apart from `skip_drop` and its statics is the boot code module `title`, read from its own disc chunk right before the title art, installed into the module pool for the title and the loading frame, and evicted before the first scene. Free RAM below the module pool went from 9,568 to 24,856 on the shipping disc: linked code 785,136 to 770,432, linked data 284,552 to 283,960. The module is 18,188 bytes of image (a 19,064-byte chunk) in the pool while the title is up; the resident forwarders (`title.rs`) and `skip_drop` stay.
+
+The 2026-10-25 Hornet landing (docs/HORNET.md, docs/BOSS-ART.md): her fight, her drawing and her trees are two code modules and a data package carried by her room (Fungus1_04), and the resident image holds three small hook calls, the draw pass's packet loop and the telemetry words. Linked code went to 771,460 bytes, data to 284,424 and BSS to 800,640; free RAM below the module pool went from 24,856 to 23,264 on the shipping disc (static end 0x801d5420). Her room needs 79,652 pool bytes and carries 18,432 (the Knight's Death and respawn clips and the ability effects): 98,084 of 98,304. The resident mask holds 32 modules and packages, so the Acid Flyer's code moved into the Mosquito's module.

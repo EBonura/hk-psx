@@ -57,8 +57,8 @@ module was dropped).
 
 Her room needs 79,652 pool bytes and carries 18,432 more (the Knight's Death clip, the respawn clips and the ability effects): 98,084
 of 98,304, 220 to spare. The pool did not move (base 0x801DAF00, 102,400 bytes). The boss-art branch (2026-10-18) moved it to
-0x801D8000 so one window could hold a 65 KB module, which on today's main leaves 448 bytes free below it; this layout leaves 8,368 bytes free below the
-pool (docs/BUDGET.md; main without her has 9,008). Modules do not call each other (the publisher refuses a cross-module
+0x801D8000 so one window could hold a 65 KB module, which on today's main leaves 448 bytes free below it; this layout leaves 23,264 bytes free below the
+pool (docs/BUDGET.md; main without her has 24,856). Modules do not call each other (the publisher refuses a cross-module
 edge and lists it), so the fight's tick exports every visible object's composed world transform into the state block for the
 drawing module to read, and her terrain is read through the actors' shared edge copy (`State::edge` would have kept 1,768 bytes of
 resident code alive for her alone).
