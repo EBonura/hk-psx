@@ -1,5 +1,7 @@
 //! Boot-only functional menu with original title assets and Perpetua glyphs.
 //! Scene admission reuses its title texture storage; no gameplay allocation.
+//! Everything here but `skip_drop` and the statics is the `title` code module (host/code_modules.py): the
+//! boot installs it from the disc for the title and the game calls it only through title.rs.
 use crate::input::poll_bits;
 use psx_gpu::{
     self as gpu,
@@ -801,11 +803,13 @@ pub fn probe_screen(fb: &mut FrameBuffer, lines: &[&str]) {
 }
 
 /// Keep the title visible while the blocking room read completes.
+#[inline(never)]
 pub fn loading(fb: &mut FrameBuffer) {
     let _ = status(fb, 0);
 }
 
 /// A failed read can be retried after releasing the previous activating press.
+#[inline(never)]
 pub fn retry(fb: &mut FrameBuffer) {
     let mut released = false;
     loop {
@@ -821,6 +825,7 @@ pub fn retry(fb: &mut FrameBuffer) {
 /// and after a failed in-game region load. The glyph sheet rides the same
 /// disc chunk, right after the title art; a failed read leaves the glyphs an
 /// earlier upload put in VRAM.
+#[inline(never)]
 pub fn restore(art: Option<&[u8]>) {
     unsafe {
         ART = art.is_some();

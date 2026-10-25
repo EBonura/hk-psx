@@ -43,7 +43,7 @@ def publish(root, elf, link_map, out, scene_code, art):
     run('assemble',elf,config,publication/'final',out)
     import lz4.block
     for chunk in chunks:
-        if chunk['kind']=='code': continue
+        if chunk['kind'] in ('code','boot'): continue
         raw=out/'chunks'/(chunk['stem']+'.raw'); payload=raw.read_bytes()
         stored=cm.art_stored(payload)
         if stored is not None:

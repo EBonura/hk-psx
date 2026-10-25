@@ -79,6 +79,8 @@ pub struct Plan {
     /// Code and art chunks by id, with the scene index each one heads or ends.
     pub code_ids: Vec<(usize, usize)>,
     pub art_ids: Vec<(usize, usize)>,
+    /// The boot's own code chunks (the title's, modules.rs `BOOT_CODE_CHUNKS`).
+    pub boot_ids: Vec<usize>,
     pub data_ids: Vec<usize>,
 }
 
@@ -87,7 +89,7 @@ pub struct Plan {
 /// Chunk ids keep numbering the payloads by kind, as the guest's manifests
 /// index them; only where each one sits changes. Boot's reads come first in
 /// the order it makes them: the world bank before the title, the quick map's
-/// art and the title art, then the SFX bank, Focus, Geo and Runner; then the
+/// art, the title's own code (the boot chunk) and the title art, then the SFX bank, Focus, Geo and Runner; then the
 /// ambience clips, which a scene gate reads when its area first needs one. Then
 /// each manifest scene gets one contiguous group with everything a scene gate
 /// reads for it, in the order game/src/disc.rs `admit_scenes` reads it: its
@@ -109,7 +111,10 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
         return Err("one scene sound bank per manifest scene".into());
     }
     let (boot, world, game_map) = (&p.bank_ids[..3], p.bank_ids[3], p.bank_ids[4]);
-    let mut order = vec![world, game_map, p.menu_id, boot[0], focus, boot[1], boot[2]];
+    // The title's code heads the title art: read first, the art follows on the very next sector.
+    let mut order = vec![world, game_map];
+    order.extend(&p.boot_ids);
+    order.extend([p.menu_id, boot[0], focus, boot[1], boot[2]]);
     order.push(p.bank_ids[5]);
     order.extend(clip_base + 1..=clip_base + ids.clips);
     for (index, room) in p.rooms.iter().enumerate() {
@@ -309,11 +314,13 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
         &root.join("data/boot-art.hk"),
         &chunks.join(format!("chunk_{menu_id}.menu")),
     )?;
-    let (mut code_ids, mut art_ids, mut data_ids) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut code_ids, mut art_ids, mut boot_ids, mut data_ids) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for (c, chunk) in list(modules, "chunks")?.iter().enumerate() {
         let id = menu_id + 1 + c;
         match field(chunk, "kind")?.as_str() {
             Some("data") => data_ids.push(id),
+            Some("boot") => boot_ids.push(id),
             Some("code") => code_ids.push((id, int(chunk, "scene_index")?)),
             _ => art_ids.push((id, int(chunk, "scene_index")?)),
         }
@@ -335,6 +342,7 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
         menu_id,
         code_ids,
         art_ids,
+        boot_ids,
         data_ids,
     })
 }
@@ -563,6 +571,7 @@ mod tests {
             menu_id: 52,
             code_ids: vec![(53, 1)],
             art_ids: Vec::new(),
+            boot_ids: Vec::new(),
             data_ids: Vec::new(),
         }
     }
@@ -572,6 +581,15 @@ mod tests {
         let order = disc_order(&plan()).unwrap();
         // The world bank, the map art, the title art, the SFX bank, Focus, Geo, Runner.
         assert_eq!(order[..8], [43, 44, 52, 40, 3, 41, 42,45]);
+    }
+
+    #[test]
+    fn the_titles_code_comes_just_before_the_title_art() {
+        let mut p = plan();
+        p.boot_ids = vec![60];
+        let order = disc_order(&p).unwrap();
+        // The world bank, the map art, the title's code, the title art, the SFX bank, Focus, Geo, Runner.
+        assert_eq!(order[..9], [43, 44, 60, 52, 40, 3, 41, 42, 45]);
     }
 
     #[test]

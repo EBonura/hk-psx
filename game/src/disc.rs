@@ -91,8 +91,8 @@ const MENU_INDEX: usize = SCENE_SFX_INDEX + SCENE_COUNT;
 const CODE_INDEX: usize = MENU_INDEX + 1;
 const PACK_CHUNKS: usize = CODE_INDEX + crate::modules::PACKAGE_CHUNKS;
 /// The payloads sit on the disc in the order they are read, not by kind.
-/// Group 0 is boot's, in its read order: the world bank and the title art
-/// (both before the title), then bootstrap's SFX bank, Focus bank, Geo and Runner banks; then the ambience clips, which a scene gate reads
+/// Group 0 is boot's, in its read order: the world bank, the title's code and the title art
+/// (all before the title), then bootstrap's SFX bank, Focus bank, Geo and Runner banks; then the ambience clips, which a scene gate reads
 /// when its area first needs them (see `prepare_scene_ambience`). Group `1+s` is
 /// everything a scene gate reads for manifest scene `s`, in the order
 /// `admit_scenes` reads it: the scene's one-shot bank, coverage, effect art,
@@ -107,7 +107,12 @@ const GROUPS: usize = 3 + SCENE_COUNT;
 const MUSIC_GROUP: usize = GROUPS - 2;
 /// The carried data packages (modules::carry), each a chunk of its own.
 const DATA_GROUP: usize = GROUPS - 1;
-const BOOT_CHUNKS: usize = AUDIO_BANKS.len() + CLIP_COUNT + 2;
+/// The title's own code chunk (modules.rs `BOOT_CODE_CHUNKS`, 0 or 1): the third member of group 0, read
+/// right before the title art it heads.
+const TITLE_CHUNKS: usize = crate::modules::BOOT_CODE_CHUNKS;
+/// Package chunk index of the first carried data package: after the room code and art chunks and the title's.
+const DATA_START: usize = crate::modules::CODE_CHUNKS + crate::modules::ART_CHUNKS + TITLE_CHUNKS;
+const BOOT_CHUNKS: usize = AUDIO_BANKS.len() + CLIP_COUNT + 2 + TITLE_CHUNKS;
 const fn scene_atlases(scene: usize) -> usize {
     (SCENE_ATLAS_RANGES[scene].1 - SCENE_ATLAS_RANGES[scene].0) as usize
 }
@@ -138,6 +143,11 @@ const fn staged_len(group: usize) -> usize {
 /// Chunk index of the `j`th payload of `group`, in disc order.
 const fn member(group: usize, j: usize) -> usize {
     if group == 0 {
+        if TITLE_CHUNKS == 1 && j == 2 {
+            return CODE_INDEX + crate::modules::CODE_CHUNKS + crate::modules::ART_CHUNKS;
+        }
+        // The members after the title's chunk are numbered as they were without it.
+        let j = if j > 2 { j - TITLE_CHUNKS } else { j };
         return match j {
             0 => BANK_INDEX + WORLD_BANK,
             1 => BANK_INDEX + MAP_BANK,
@@ -153,7 +163,7 @@ const fn member(group: usize, j: usize) -> usize {
         return MUSIC_INDEX + j;
     }
     if group == DATA_GROUP {
-        return CODE_INDEX + crate::modules::CODE_CHUNKS + crate::modules::ART_CHUNKS + j;
+        return CODE_INDEX + DATA_START + j;
     }
     let scene = group - 1;
     let atlases = scene_atlases(scene);
@@ -230,9 +240,12 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         (0, 2)
     } else if index < PACK_CHUNKS {
         let k = index - CODE_INDEX;
-        let carried = crate::modules::CODE_CHUNKS + crate::modules::ART_CHUNKS;
-        if k >= carried {
-            return Some((DATA_GROUP, k - carried));
+        let title = crate::modules::CODE_CHUNKS + crate::modules::ART_CHUNKS;
+        if TITLE_CHUNKS == 1 && k == title {
+            return Some((0, 2));
+        }
+        if k >= DATA_START {
+            return Some((DATA_GROUP, k - DATA_START));
         }
         let g = 1 + crate::modules::CHUNK_SCENE[k];
         return Some(if k < crate::modules::CODE_CHUNKS {
@@ -243,9 +256,11 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
     } else {
         return None;
     };
-    // A scene group's code chunk, if it has one, comes first.
+    // A scene group's code chunk, if it has one, comes first; group 0's title chunk is its third member.
     Some(if group > 0 && group < MUSIC_GROUP {
         (group, j + code_slots(group - 1))
+    } else if group == 0 && j >= 2 {
+        (group, j + TITLE_CHUNKS)
     } else {
         (group, j)
     })
@@ -1615,6 +1630,37 @@ impl Cache {
     /// chunk is the other title styles (`style_art`).
     pub fn menu_art(&mut self) -> Result<&[u8], LoadError> {
         self.stage_menu(0, crate::boot_art::BOOT_COMMON_BYTES, 0, crate::boot_art::BOOT_COMMON_CHECKSUM)
+    }
+    /// The title's code (modules.rs `TITLE`): its chunk, which heads the title art on the disc, read into the arena
+    /// behind the art's common part and installed into the pool. Before the title and on a failed load's retry
+    /// screen, right after `menu_art` (whose bytes it leaves alone); `title::close` evicts the module again. Does
+    /// nothing in a build that links the title resident (`HK_RESIDENT_MODULES`).
+    #[inline(never)]
+    pub fn title_code(&mut self) -> Result<(), LoadError> {
+        let Some(chunk) = crate::modules::boot_chunk(crate::modules::TITLE) else {
+            return Ok(());
+        };
+        self.init()?;
+        if self.loaded_scenes != 0 {
+            return Err(LoadError::Ambience);
+        }
+        let entry = self.entry(CODE_INDEX + chunk)?;
+        let at = crate::boot_art::BOOT_COMMON_BYTES;
+        self.read(entry, at)?;
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                (&raw const BUFFERS.words).cast::<u8>().add(at),
+                entry.byte_size as usize,
+            )
+        };
+        if fnv(bytes) != entry.checksum {
+            return Err(LoadError::Checksum);
+        }
+        if crate::modules::install_boot(crate::modules::TITLE, bytes) {
+            Ok(())
+        } else {
+            Err(LoadError::Checksum)
+        }
     }
     /// One of the other title styles, read from its sectors of the title chunk into the arena after
     /// the common part (which stays in place): its background and its extras, from the
