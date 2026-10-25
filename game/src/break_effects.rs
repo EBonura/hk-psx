@@ -9,22 +9,23 @@ pub struct Sample {
     pub alpha: [u8; 2],
     pub spin: [i32; 2],
 }
-/// A style's size, opacity and spin over its life, 33 samples each. Few distinct tables of each kind
-/// serve all the styles, so the cooked data stores each once (`CURVES`) and a style names its three.
+/// A style's size, opacity and spin over its life: the low and high end of each, 33 values apiece. Few
+/// distinct tables of each kind serve all the styles, so the cooked data stores each once (`CURVES`) and
+/// a style names its curve.
 #[derive(Clone, Copy)]
 pub struct Curve {
-    pub size: &'static [[i32; 2]; 33],
-    pub alpha: &'static [[u8; 2]; 33],
-    pub spin: &'static [[i32; 2]; 33],
+    pub size: [&'static [i32; 33]; 2],
+    pub alpha: [&'static [u8; 33]; 2],
+    pub spin: [&'static [i32; 33]; 2],
 }
 impl Curve {
     /// The sample at `phase` (0..=32).
     #[inline(always)]
     fn at(&self, phase: usize) -> Sample {
         Sample {
-            size: self.size[phase],
-            alpha: self.alpha[phase],
-            spin: self.spin[phase],
+            size: [self.size[0][phase], self.size[1][phase]],
+            alpha: [self.alpha[0][phase], self.alpha[1][phase]],
+            spin: [self.spin[0][phase], self.spin[1][phase]],
         }
     }
 }
@@ -62,7 +63,7 @@ pub struct Style {
     /// frame it shows then; 12..14 its size in quarters; 15 set for a burst that flies on
     /// outside the region's collision coverage instead of pausing there.
     pub splash: u16,
-    pub samples: Curve,
+    pub samples: &'static Curve,
     pub frames: &'static [[u16; 3]],
 }
 impl Style {
@@ -196,10 +197,10 @@ const EMPTY_STYLE: Style = Style {
     kill_speed: 0,
     radius_scale: 0,
     splash: 0,
-    samples: Curve {
-        size: &[[0; 2]; 33],
-        alpha: &[[0; 2]; 33],
-        spin: &[[0; 2]; 33],
+    samples: &Curve {
+        size: [&[0; 33]; 2],
+        alpha: [&[0; 33]; 2],
+        spin: [&[0; 33]; 2],
     },
     frames: &[],
 };
@@ -322,7 +323,7 @@ fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
             || s.samples
                 .alpha
                 .iter()
-                .any(|a| a[0] < 255 || a[1] < 255);
+                .any(|ends| ends.iter().any(|&a| a < 255));
         let mut ok = faint && !s.frames.is_empty();
         for cell in s.frames.iter().filter(|_| faint) {
             let clut = r.art[cell[2] as usize].clut;
@@ -439,7 +440,7 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             kill_speed: i32_at(b, 152),
             radius_scale: i32_at(b, 156),
             splash: u16_at(b, 166),
-            samples: CURVES[curve],
+            samples: &CURVES[curve],
             frames: frame_pool,
         };
         r.additive[i] = b[43] != 0;
@@ -1433,13 +1434,13 @@ mod tests {
     }
 
     /// The three tables of 33 samples a `Curve` names, split out of a table of whole samples.
-    const fn split(c: &[Sample; 33]) -> ([[i32; 2]; 33], [[u8; 2]; 33], [[i32; 2]; 33]) {
-        let (mut size, mut alpha, mut spin) = ([[0; 2]; 33], [[0; 2]; 33], [[0; 2]; 33]);
+    const fn split(c: &[Sample; 33], end: usize) -> ([i32; 33], [u8; 33], [i32; 33]) {
+        let (mut size, mut alpha, mut spin) = ([0; 33], [0; 33], [0; 33]);
         let mut i = 0;
         while i < 33 {
-            size[i] = c[i].size;
-            alpha[i] = c[i].alpha;
-            spin[i] = c[i].spin;
+            size[i] = c[i].size[end];
+            alpha[i] = c[i].alpha[end];
+            spin[i] = c[i].spin[end];
             i += 1;
         }
         (size, alpha, spin)
@@ -1447,14 +1448,14 @@ mod tests {
     /// `$name`: a `Curve` of the 33 whole samples `$samples`.
     macro_rules! curve {
         ($name:ident = $samples:expr) => {
-            const $name: Curve = {
-                static SIZE: [[i32; 2]; 33] = split(&$samples).0;
-                static ALPHA: [[u8; 2]; 33] = split(&$samples).1;
-                static SPIN: [[i32; 2]; 33] = split(&$samples).2;
-                Curve {
-                    size: &SIZE,
-                    alpha: &ALPHA,
-                    spin: &SPIN,
+            const $name: &Curve = {
+                static SIZE: [[i32; 33]; 2] = [split(&$samples, 0).0, split(&$samples, 1).0];
+                static ALPHA: [[u8; 33]; 2] = [split(&$samples, 0).1, split(&$samples, 1).1];
+                static SPIN: [[i32; 33]; 2] = [split(&$samples, 0).2, split(&$samples, 1).2];
+                &Curve {
+                    size: [&SIZE[0], &SIZE[1]],
+                    alpha: [&ALPHA[0], &ALPHA[1]],
+                    spin: [&SPIN[0], &SPIN[1]],
                 }
             };
         };
