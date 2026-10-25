@@ -1882,22 +1882,9 @@ pub fn simulate(
         }
         // What hurts this tick: Vengeful Spirit's ball, then the polygons of Desolate Dive and Howling
         // Wraiths (spells.rs); and what refuses an enemy's blow.
-        let mut strikes = [hk_sim::Strike::NONE; 6];
-        let struck = if modules::loaded(modules::SPELLS) {
-            spells::strikes(game, &mut strikes)
-        } else {
-            0
-        };
         let mut shapes = [(enemies::SpellShape::Box([0; 4]), 0u16); 7];
-        let mut shaped = 0;
-        if let Some(ball) = game.cast.ball_bounds(FIREBALL_PARAMS) {
-            shapes[0] = (enemies::SpellShape::Box(ball), FIREBALL_PARAMS.damage);
-            shaped = 1;
-        }
-        for strike in &strikes[..struck] {
-            shapes[shaped] = (enemies::SpellShape::Poly(strike.corners()), strike.damage);
-            shaped += 1;
-        }
+        let mut strikes = [hk_sim::Strike::NONE; 6];
+        let shaped = spell_shapes(game, &mut strikes, &mut shapes);
         let enemy_events = game.enemies.tick(
             r,
             room,
@@ -2301,7 +2288,31 @@ fn hero_sounds(before: &Player, after: &Player) {
     }
 }
 
+/// The shapes of this tick's spells, Vengeful Spirit's ball first, written to `shapes`: how many.
+#[inline(never)]
+fn spell_shapes<'a>(
+    game: &Game,
+    strikes: &'a mut [hk_sim::Strike; 6],
+    shapes: &mut [(enemies::SpellShape<'a>, u16); 7],
+) -> usize {
+    let struck = if modules::loaded(modules::SPELLS) {
+        spells::strikes(game, strikes)
+    } else {
+        0
+    };
+    let mut shaped = 0;
+    if let Some(ball) = game.cast.ball_bounds(FIREBALL_PARAMS) {
+        shapes[0] = (enemies::SpellShape::Box(ball), FIREBALL_PARAMS.damage);
+        shaped = 1;
+    }
+    for strike in &strikes[..struck] {
+        shapes[shaped] = (enemies::SpellShape::Poly(strike.corners()), strike.damage);
+        shaped += 1;
+    }
+    shaped
+}
 /// `quakeLevel` and `screamLevel`: what the save holds or the cheats grant.
+#[inline(never)]
 fn spell_levels(cheats: &cheats::Settings) -> (u8, u8) {
     (
         persist::store().levels[persist::QUAKE_LEVEL].max(cheats.quake_level()),

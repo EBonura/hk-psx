@@ -7477,6 +7477,7 @@ pub enum SpellShape<'a> {
 }
 impl SpellShape<'_> {
     /// Whether the shape reaches the world box `b`.
+    #[inline(never)]
     pub fn hits(self, b: [i32; 4]) -> bool {
         match self {
             Self::Box(a) => overlap(a, b),
