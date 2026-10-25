@@ -33,4 +33,4 @@ HK_HIT_FX_BURSTS = 8
 HK_BENCH_WAKES = 1
 HK_GROUND_WAKES = 0
 # The first death held 48 ticks and the route stops one tick into the second hold (it stopped before it at 48 until the death art was streamed: the respawn load is a tick shorter).
-HK_DEATH_HOLD_TICKS = 51
+HK_DEATH_HOLD_TICKS = 49

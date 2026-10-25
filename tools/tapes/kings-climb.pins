@@ -1,6 +1,6 @@
 pacing = 646
 frame_time = 242
-long_frames = 44
+long_frames = 47
 # The King's Pass climb, which reproduced in the probe and had never been
 # done on the disc, and the first cooked script to fire in Tutorial_01:
 # FLAGS bit 0 is seenFocusTablet. The climb needs no ability, it needs to
