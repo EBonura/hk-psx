@@ -179,17 +179,18 @@ pub const fn scene_modules(scene: usize) -> u32 {
 /// scene's gate loads like its own art (`carry`).
 const CARRY_SLOTS: usize = 5;
 static mut CARRIED: [(u8, u16); CARRY_SLOTS] = [(u8::MAX, u16::MAX); CARRY_SLOTS];
-/// Per manifest scene, which of the optional carried packs (the Knight's ability effects, `art_fx`
-/// then `art_fx_spell`) fit in the pool beside the scene's own modules: bits 0 and 1 beside the Death
-/// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee).
+/// Per manifest scene, which of the optional carried packs (the Knight's ability effects `art_fx` and
+/// `art_fx_spell`, then the code of Desolate Dive and Howling Wraiths, `spells`) fit in the pool beside
+/// the scene's own modules: bits 0 to 2 beside the Death and respawn clips, bits 3 to 5 beside those and
+/// the Shade's art as well (the build's guarantee).
 /// The build writes it into the image (host/hk-build/module_publish.rs).
 #[no_mangle]
-pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()];
+pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x3f; SCENE_MODULES.len()];
 /// The optional packs that fit in `scene` now: `HK_FX_FIT`'s light row, or its full row while the
 /// Shade's art is wanted there (`shade`).
 pub fn fx_fit(scene: usize, shade: bool) -> u8 {
     let fit = unsafe { HK_FX_FIT[scene] };
-    (if shade { fit >> 2 } else { fit }) & 3
+    (if shade { fit >> 3 } else { fit }) & 7
 }
 /// Ask for carried data module `m` (one with its own chunk, host/code_modules.py
 /// `CARRIED`) to be resident whenever manifest scene `scene` is, or for no scene

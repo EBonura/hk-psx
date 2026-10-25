@@ -4897,7 +4897,7 @@ impl Events {
             damage,
             direction,
             false,
-            player.shadow_dashing,
+            player.shadow_dashing || player.immune,
         );
         if hurt != Hurt::Ignored {
             self.hurt = hurt;
@@ -5719,8 +5719,9 @@ impl EnemyWorld {
         vitals: &mut Vitals,
         nail: &Nail,
         dream: &hk_sim::DreamNail,
-        // Vengeful Spirit's world box while one is in flight, and its damage.
-        ball: Option<([i32; 4], u16)>,
+        // The spells and nail arts hurting this tick, with their damage: Vengeful Spirit's box while
+        // one is in flight, and the polygons of Desolate Dive, Howling Wraiths and the nail arts.
+        spells: &[(SpellShape<'_>, u16)],
         response: &mut hk_sim::NailResponse,
         attack: AttackParams,
         polygons: [&[[i32; 2]]; 4],
@@ -6000,9 +6001,9 @@ impl EnemyWorld {
             // hurts from `Hero Damager` rather than its body.
             if let Some(mut boss) = actor.gruz() {
                 let mut reached = false;
-                if let Some((box_, damage)) = ball {
+                for &(shape, damage) in spells {
                     let (_, hit) =
-                        actor.strike_gruz(&mut boss, spec, &|b| overlap(box_, b), damage);
+                        actor.strike_gruz(&mut boss, spec, &|b| shape.hits(b), damage);
                     if hit.landed() {
                         events.hits += 1;
                     }
@@ -6072,11 +6073,11 @@ impl EnemyWorld {
                 let away = if actor.x >= player.x { 1 } else { -1 };
                 let speed = crate::mawlek_art::MW_CORPSE_FLING;
                 let fling = |kind: u16| hk_sim::components::death_fling(kind, away, speed);
-                if let Some((box_, damage)) = ball {
+                for &(shape, damage) in spells {
                     let (_, hit) = actor.strike_mawlek(
                         &mut boss,
                         spec,
-                        &|b| overlap(box_, b),
+                        &|b| shape.hits(b),
                         damage,
                         fling(0),
                     );
@@ -6151,9 +6152,9 @@ impl EnemyWorld {
             // so it does not take the shared Runner/flyer path below.
             if let Some(mut boss) = actor.false_knight() {
                 let mut reached = false;
-                if let Some((box_, damage)) = ball {
+                for &(shape, damage) in spells {
                     let (_, hit) =
-                        actor.strike_false_knight(&mut boss, spec, &|b| overlap(box_, b), damage);
+                        actor.strike_false_knight(&mut boss, spec, &|b| shape.hits(b), damage);
                     if hit.landed() {
                         events.hits += 1;
                     }
@@ -6195,8 +6196,8 @@ impl EnemyWorld {
             // A fireball passes through what it hits: Fireball Control only
             // listens for the terrain layer, so the enemy's own invulnerability
             // window is what stops it hitting twice.
-            if let Some((box_, damage)) = ball {
-                if overlap(box_, bounds) {
+            for &(shape, damage) in spells {
+                if shape.hits(bounds) {
                     // A shut Blocker's shell turns the ball the way it turns
                     // the nail: `IsBlockingByDirection` answers for every
                     // cardinal while `SetInvincible` is up.
@@ -6650,7 +6651,7 @@ impl EnemyWorld {
                 unsafe { HK_FK_BARRELS = HK_FK_BARRELS.saturating_add(1) }
             }
         }
-        let shadow = player.shadow_dashing;
+        let shadow = player.shadow_dashing || player.immune;
         let hurt = self.tick_shots(
             region,
             body,
@@ -7467,6 +7468,21 @@ fn draw_gruz(
         flash,
         0,
     );
+}
+/// A spell or nail art's damaging shape for one tick: Vengeful Spirit's world box or a polygon.
+#[derive(Clone, Copy)]
+pub enum SpellShape<'a> {
+    Box([i32; 4]),
+    Poly(&'a [[i32; 2]]),
+}
+impl SpellShape<'_> {
+    /// Whether the shape reaches the world box `b`.
+    pub fn hits(self, b: [i32; 4]) -> bool {
+        match self {
+            Self::Box(a) => overlap(a, b),
+            Self::Poly(p) => hk_sim::polygon_hits_box(p, b),
+        }
+    }
 }
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
@@ -8307,7 +8323,7 @@ mod runner_runtime_tests {
             &mut vitals,
             &nail,
             &hk_sim::DreamNail::new(),
-            None,
+            &[],
             &mut response,
             attack,
             [poly; 4],
@@ -8335,7 +8351,7 @@ mod runner_runtime_tests {
             &mut vitals,
             &nail,
             &hk_sim::DreamNail::new(),
-            None,
+            &[],
             &mut response,
             attack,
             [poly; 4],
@@ -8363,7 +8379,7 @@ mod runner_runtime_tests {
                 &mut vitals,
                 &nail,
                 &hk_sim::DreamNail::new(),
-                None,
+                &[],
                 &mut response,
                 attack,
                 [poly; 4],
@@ -8540,7 +8556,7 @@ mod runner_runtime_tests {
             &mut vitals,
             &nail,
             &hk_sim::DreamNail::new(),
-            None,
+            &[],
             &mut hk_sim::NailResponse::new(),
             attack,
             [poly; 4],
@@ -8585,7 +8601,7 @@ mod runner_runtime_tests {
                 &mut Vitals::new(crate::VITAL_PARAMS),
                 &Nail::new(),
                 &hk_sim::DreamNail::new(),
-                None,
+                &[],
                 &mut hk_sim::NailResponse::new(),
                 AttackParams {
                     duration: 20,

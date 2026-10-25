@@ -39,6 +39,14 @@ pub struct Fireball {
     pub facing: i32,
     pub life: u16,
 }
+/// The spell a tap of the cast button starts, chosen by `Spell Choice` from the direction held when
+/// the button went down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpellKind {
+    Fireball,
+    Quake,
+    Scream,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cast {
     pub phase: CastPhase,
@@ -46,6 +54,15 @@ pub struct Cast {
     pub ball: Fireball,
     /// Set when Vengeful Spirit has been acquired; nothing grants it yet.
     pub has_fireball: bool,
+    /// `quakeLevel` and `screamLevel`: 0 none, 1 Desolate Dive and Howling Wraiths, 2 Descending Dark
+    /// and Abyss Shriek.
+    pub quake_level: u8,
+    pub scream_level: u8,
+    /// Up and Down as held now, and as they were when the button went down.
+    aim: (bool, bool),
+    press_aim: (bool, bool),
+    /// A Desolate Dive or Howling Wraiths the last tick started; the caller owns it from there.
+    started: Option<SpellKind>,
     was_button: bool,
     was_quick: bool,
     held: u16,
@@ -68,9 +85,45 @@ impl Cast {
                 life: 0,
             },
             has_fireball: false,
+            quake_level: 0,
+            scream_level: 0,
+            aim: (false, false),
+            press_aim: (false, false),
+            started: None,
             was_button: false,
             was_quick: false,
             held: 0,
+        }
+    }
+    /// Up and Down as held this tick: `ListenForUp`/`ListenForDown` read them as the button goes down.
+    pub fn aim(&mut self, up: bool, down: bool) {
+        self.aim = (up, down);
+    }
+    /// The spell `Spell Choice` picks for the direction held at the press: Up for the scream, else Down
+    /// for the quake, else the fireball, and a spell not had falls back to the fireball (`Has Quake?` and
+    /// `Has Scream?` cancel to `Has Fireball?`). None when nothing can be cast.
+    pub fn choice(&self) -> Option<SpellKind> {
+        let (up, down) = self.press_aim;
+        match (up, down) {
+            (true, _) if self.scream_level > 0 => Some(SpellKind::Scream),
+            (false, true) if self.quake_level > 0 => Some(SpellKind::Quake),
+            _ => self.has_fireball.then_some(SpellKind::Fireball),
+        }
+    }
+    /// The Desolate Dive or Howling Wraiths that began on the last tick, once.
+    pub fn take_started(&mut self) -> Option<SpellKind> {
+        self.started.take()
+    }
+    /// Pay for the spell the button chose and begin it: the fireball's own antic here, the others
+    /// handed to the caller (`take_started`).
+    fn start(&mut self, kind: SpellKind, cost: u16, soul: &mut u16) {
+        *soul -= cost;
+        match kind {
+            SpellKind::Fireball => {
+                self.phase = CastPhase::Antic;
+                self.tick = 0;
+            }
+            other => self.started = Some(other),
         }
     }
     /// The Knight is pinned for the whole cast, as Spell Control's velocity
@@ -98,6 +151,9 @@ impl Cast {
         blocked: bool,
     ) -> bool {
         self.fly(p);
+        if button && !self.was_button {
+            self.press_aim = self.aim;
+        }
         if button {
             self.held = self.held.saturating_add(1);
         }
@@ -111,10 +167,8 @@ impl Cast {
             // Can Cast?: HeroController.CanCast, MPCharge >= MP Cost, and
             // Has Fireball? wants fireballLevel above zero.
             let can = self.can_cast(p, *soul, player, blocked);
-            if tapped && can {
-                *soul -= p.cost;
-                self.phase = CastPhase::Antic;
-                self.tick = 0;
+            if let (true, true, Some(kind)) = (tapped, can, self.choice()) {
+                self.start(kind, p.cost, soul);
             }
             return false;
         }
@@ -145,7 +199,7 @@ impl Cast {
     /// Can Cast?: `HeroController.CanCast`, `MPCharge >= MP Cost`, and `Has Fireball?`
     /// wants `fireballLevel` above zero.
     fn can_cast(&self, p: FireballParams, soul: u16, player: &Player, blocked: bool) -> bool {
-        self.has_fireball
+        self.choice().is_some()
             && !blocked
             && soul >= p.cost
             && player.dash_left == 0
@@ -165,10 +219,15 @@ impl Cast {
     ) -> bool {
         let pressed = button && !self.was_quick;
         self.was_quick = button;
-        if pressed && self.phase == CastPhase::Off && self.can_cast(p, *soul, player, blocked) {
-            *soul -= p.cost;
-            self.phase = CastPhase::Antic;
-            self.tick = 0;
+        if pressed {
+            self.press_aim = self.aim;
+        }
+        if let (true, true, Some(kind)) = (
+            pressed && self.phase == CastPhase::Off,
+            self.can_cast(p, *soul, player, blocked),
+            self.choice(),
+        ) {
+            self.start(kind, p.cost, soul);
             return true;
         }
         false

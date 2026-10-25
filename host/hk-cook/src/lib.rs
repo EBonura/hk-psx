@@ -87,6 +87,7 @@ pub mod scenery;
 pub mod scenery_geometry;
 pub mod secret_breaks;
 pub mod spells;
+pub mod ability_params;
 pub mod spu;
 pub mod static_sources;
 pub mod superdash;

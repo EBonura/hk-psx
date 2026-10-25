@@ -7,7 +7,7 @@ pub const PURE_NAIL_DAMAGE: u16 = 21;
 pub const MAX_MASKS: u16 = 9;
 pub const BLUE_CHEAT_CAP: u16 = 20;
 /// Toggle rows on the Cheats page, ahead of Restore, Add Lifeblood, Reset and Back.
-pub const CHEAT_ROWS: usize = 12;
+pub const CHEAT_ROWS: usize = 15;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub invincible: bool,
@@ -24,6 +24,12 @@ pub struct Settings {
     pub cloak: bool,
     pub dream: bool,
     pub spell: bool,
+    /// Desolate Dive and Howling Wraiths (the save's `quakeLevel` and `screamLevel` are the earned
+    /// way: no admitted scene has the Soul Master or the Howling Cliffs), and `abyss` raises them
+    /// to Descending Dark and Abyss Shriek.
+    pub dive: bool,
+    pub wraiths: bool,
+    pub abyss: bool,
     /// Marks every charm found. Only Grubsong's Shiny is in the admitted
     /// scenes and it sits inactive, so this is the only route to the board.
     /// It grants nothing else: the notch budget and every refusal still apply.
@@ -50,6 +56,9 @@ impl Settings {
             cloak: false,
             dream: false,
             spell: false,
+            dive: false,
+            wraiths: false,
+            abyss: false,
             charms: false,
         }
     }
@@ -67,6 +76,9 @@ impl Settings {
             9 => self.dream,
             10 => self.spell,
             11 => self.charms,
+            12 => self.dive,
+            13 => self.wraiths,
+            14 => self.abyss,
             _ => false,
         }
     }
@@ -87,9 +99,28 @@ impl Settings {
             9 => &mut self.dream,
             10 => &mut self.spell,
             11 => &mut self.charms,
+            12 => &mut self.dive,
+            13 => &mut self.wraiths,
+            14 => &mut self.abyss,
             _ => return,
         };
         *value = delta > 0;
+    }
+    /// `quakeLevel` the cheats grant: Desolate Dive, or Descending Dark with the Abyss row.
+    pub fn quake_level(self) -> u8 {
+        if self.dive {
+            1 + u8::from(self.abyss)
+        } else {
+            0
+        }
+    }
+    /// `screamLevel` the cheats grant: Howling Wraiths, or Abyss Shriek.
+    pub fn scream_level(self) -> u8 {
+        if self.wraiths {
+            1 + u8::from(self.abyss)
+        } else {
+            0
+        }
     }
     pub fn bits(self) -> u32 {
         u32::from(self.invincible)
@@ -104,6 +135,9 @@ impl Settings {
             | (u32::from(self.dream) << 9)
             | (u32::from(self.spell) << 10)
             | (u32::from(self.charms) << 11)
+            | (u32::from(self.dive) << 12)
+            | (u32::from(self.wraiths) << 13)
+            | (u32::from(self.abyss) << 14)
     }
     /// The live parameter stack: the cooked base, then the PlayerData Sly's
     /// counter moves (`maxHealthBase` and the SOUL reserve), then the equipped

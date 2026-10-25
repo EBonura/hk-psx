@@ -25,6 +25,10 @@ pub struct Game {
     pub focus: hk_sim::Focus,
     pub dream: hk_sim::DreamNail,
     pub cast: hk_sim::Cast,
+    /// Desolate Dive and Howling Wraiths: the spells a tap of the cast button starts with Down or Up held
+    /// (spells.rs, a code module that is resident while he owns one).
+    pub quake: hk_sim::Quake,
+    pub scream: hk_sim::Scream,
     // The world he stands in. `geo` and `life` are the two arenas that outlive
     // a scene load, so they stay the statics they were and are held by
     // reference; every other world is owned here.
@@ -180,19 +184,22 @@ impl Game {
         }
     }
     /// Carry the ability effects (`art_fx` for the movement abilities, `art_fx_spell` for Vengeful
-    /// Spirit) into the scene while the Knight owns an ability that draws one, so every gate reads them
-    /// with the scene's own art, but only the packs that fit the pool there (`modules::fx_fit`): the
-    /// guarantee the build checks, a room beside the Shade's art, the Death clip and the respawn clips, is
-    /// never spent on them. Asked again only when the scene, what he owns or what fits changes: nearly
-    /// every frame it is one compare.
+    /// Spirit) and the code of Desolate Dive and Howling Wraiths (`spells`) into the scene while the
+    /// Knight owns what uses them, so every gate reads them with the scene's own art, but only the packs
+    /// that fit the pool there (`modules::fx_fit`): the guarantee the build checks, a room beside the
+    /// Shade's art, the Death clip and the respawn clips, is never spent on them. Asked again only when
+    /// the scene, what he owns or what fits changes: nearly every frame it is one compare.
     #[cfg(not(test))]
     #[inline(never)]
     pub fn carry_ability_art(&self, current: usize) {
         static mut ASKED: (usize, u8) = (usize::MAX, 0);
         let here = crate::disc::manifest_index(current);
+        let (quake, scream) = spell_levels(&self.settings.cheats);
         let wants = u8::from(ability_fx::wants_move(&self.player))
-            | u8::from(ability_fx::wants_spell(self.cast.has_fireball)) << 1;
-        let wants = wants & here.map_or(0, |scene| crate::modules::fx_fit(scene, self.shade.art_wanted(current)));
+            | u8::from(ability_fx::wants_spell(self.cast.has_fireball)) << 1
+            | u8::from(quake != 0 || scream != 0) << 2;
+        let wants = wants
+            & here.map_or(0, |scene| crate::modules::fx_fit(scene, self.shade.art_wanted(current)));
         if unsafe { ASKED } == (current, wants) {
             return;
         }
@@ -201,6 +208,7 @@ impl Game {
         }
         crate::modules::carry(crate::modules::ART_FX, here.filter(|_| wants & 1 != 0));
         crate::modules::carry(crate::modules::ART_FX_SPELL, here.filter(|_| wants & 2 != 0));
+        crate::modules::carry(crate::modules::SPELLS, here.filter(|_| wants & 4 != 0));
     }
     /// Screen darkness for the death fade, 0 (none) to 255 (black).
     pub fn death_shade(&self) -> u8 {
@@ -1173,9 +1181,20 @@ pub fn simulate(
         // and the Focus starts instead. One button, two moves.
         let cast_button =
             pad.is_held(input::bind::CAST) && !read_consumes && game.vitals.can_control();
-        let cast_blocked = !game.vitals.can_control() || game.door.pending() || read_consumes;
+        let cast_blocked = !game.vitals.can_control()
+            || game.door.pending()
+            || read_consumes
+            || game.quake.locks_control()
+            || game.scream.locks_control();
         game.cast.has_fireball =
             game.settings.cheats.spell || persist::store().levels[persist::FIREBALL_LEVEL] > 0;
+        // The other two spells are code that is carried in once he owns one (`carry_ability_art`): until it
+        // has arrived a tap casts what is left.
+        let (quake, scream) = spell_levels(&game.settings.cheats);
+        let carried = modules::loaded(modules::SPELLS);
+        game.cast.quake_level = if carried { quake } else { 0 };
+        game.cast.scream_level = if carried { scream } else { 0 };
+        game.cast.aim(pad.is_held(button::UP), pad.is_held(button::DOWN));
         let was_antic = game.cast.phase == hk_sim::CastPhase::Antic;
         game.cast.tick(
             FIREBALL_PARAMS,
@@ -1194,6 +1213,9 @@ pub fn simulate(
             &game.player,
             cast_blocked,
         );
+        if let Some(kind) = game.cast.take_started() {
+            spells::begin(game, kind);
+        }
         // `Fireball Top`'s `Cast Left`/`Cast Right` play the cast as the ball leaves.
         if was_antic && game.cast.phase == hk_sim::CastPhase::Recoil {
             ability_sound(audio::FIREBALL);
@@ -1205,7 +1227,9 @@ pub fn simulate(
             hk_sim::FocusInput {
                 held: cast_button
                     && game.cast.held_past_tap(FIREBALL_PARAMS)
-                    && !game.cast.locks_control(),
+                    && !game.cast.locks_control()
+                    && !game.quake.locks_control()
+                    && !game.scream.locks_control(),
                 // CanFocus wants cState.onGround, which a hard landing leaves false.
                 grounded: game.player.grounded && !game.player.hard_landing(),
                 can_start: game.vitals.can_control()
@@ -1370,6 +1394,8 @@ pub fn simulate(
             || game.bench.locks_control()
             || game.save_ui.modal()
             || game.cast.locks_control()
+            || game.quake.locks_control()
+            || game.scream.locks_control()
             || game.pickups.kneeling()
             // `Update` skips LookForInput in `hard_landing`, and CanJump, CanAttack and CanDash
             // refuse the state: no steering, jump, dash or strike until the timer runs out.
@@ -1414,9 +1440,17 @@ pub fn simulate(
             game.player.grounded = true;
             game.player.jumping = false;
             game.player.was_jump = pad.is_held(button::CROSS);
+        } else if (game.quake.locks_control()
+            || (game.scream.locks_control() && game.vitals.recoil_velocity(VITAL_PARAMS).is_none()))
+            && modules::loaded(modules::SPELLS)
+        {
+            // Desolate Dive and Howling Wraiths own his velocity, gravity and steering.
+            spells::drive(game, r, room);
         } else if let Some((vx, vy)) = game.vitals.recoil_velocity(VITAL_PARAMS) {
             // A hit takes the Knight out of `hard_landing` (his state becomes no_input).
             game.player.end_hard_landing();
+            // A hit ends a roar; a dive refuses the hit (`Player::immune`).
+            game.scream = hk_sim::Scream::new();
             let mut p = PARAMS;
             p.speed = vx.abs();
             p.gravity = 0;
@@ -1846,6 +1880,24 @@ pub fn simulate(
                 );
             }
         }
+        // What hurts this tick: Vengeful Spirit's ball, then the polygons of Desolate Dive and Howling
+        // Wraiths (spells.rs); and what refuses an enemy's blow.
+        let mut strikes = [hk_sim::Strike::NONE; 6];
+        let struck = if modules::loaded(modules::SPELLS) {
+            spells::strikes(game, &mut strikes)
+        } else {
+            0
+        };
+        let mut shapes = [(enemies::SpellShape::Box([0; 4]), 0u16); 7];
+        let mut shaped = 0;
+        if let Some(ball) = game.cast.ball_bounds(FIREBALL_PARAMS) {
+            shapes[0] = (enemies::SpellShape::Box(ball), FIREBALL_PARAMS.damage);
+            shaped = 1;
+        }
+        for strike in &strikes[..struck] {
+            shapes[shaped] = (enemies::SpellShape::Poly(strike.corners()), strike.damage);
+            shaped += 1;
+        }
         let enemy_events = game.enemies.tick(
             r,
             room,
@@ -1854,9 +1906,7 @@ pub fn simulate(
             &mut game.vitals,
             &game.nail,
             &game.dream,
-            game.cast
-                .ball_bounds(FIREBALL_PARAMS)
-                .map(|b| (b, FIREBALL_PARAMS.damage)),
+            &shapes[..shaped],
             &mut game.nail_response,
             ATTACK_PARAMS,
             NAIL_POLYGONS,
@@ -2251,6 +2301,13 @@ fn hero_sounds(before: &Player, after: &Player) {
     }
 }
 
+/// `quakeLevel` and `screamLevel`: what the save holds or the cheats grant.
+fn spell_levels(cheats: &cheats::Settings) -> (u8, u8) {
+    (
+        persist::store().levels[persist::QUAKE_LEVEL].max(cheats.quake_level()),
+        persist::store().levels[persist::SCREAM_LEVEL].max(cheats.scream_level()),
+    )
+}
 /// One of the Knight's ability one-shots from the Focus bank, once it is in SPU.
 fn ability_sound(index: usize) {
     if focus_audio::ready() {

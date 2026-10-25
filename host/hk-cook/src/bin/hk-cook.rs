@@ -14,6 +14,7 @@ fn main() {
         Some("cook-audio") => hk_cook::cook_audio::main(&root, source.as_deref()),
         Some("geo-audio") => hk_cook::geo_audio::main(&root, source.as_deref()),
         Some("focus-audio") => hk_cook::focus_audio::main(&root, source.as_deref()),
+        Some("ability-params") => hk_cook::ability_params::main(&root, None),
         Some("cook-music") => hk_cook::music_report::main(&root, source.as_deref()),
         Some("ambience") => hk_cook::ambience::main(&root, source.as_deref()),
         Some("area-music") => hk_cook::area_music::main(&root, source.as_deref()),

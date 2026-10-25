@@ -61,7 +61,13 @@ mod vitals;
 pub use focus::{Focus, FocusClip, FocusEvents, FocusInput, FocusParams};
 pub mod script;
 mod spell;
-pub use spell::{Cast, CastPhase, Fireball, FireballParams};
+pub use spell::{Cast, CastPhase, Fireball, FireballParams, SpellKind};
+pub mod quake;
+pub mod scream;
+pub mod strike;
+pub use quake::{Quake, QuakeParams, QuakePhase};
+pub use scream::{Scream, ScreamParams, ScreamPhase};
+pub use strike::{HitSpec, Strike};
 mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
@@ -215,6 +221,9 @@ pub struct Player {
     pub has_dash: bool,
     /// Source cState.shadowDashing: TakeDamage returns immediately while set.
     pub shadow_dashing: bool,
+    /// `damageMode` 1 and `parryInvulnTimer`: TakeDamage refuses an enemy's hit (not a hazard's), as
+    /// Desolate Dive and a nail art's invulnerability do. Set from outside, once a tick.
+    pub immune: bool,
     pub shadow_dash_cooldown: u16,
     pub has_shade_cloak: bool,
     /// -1 for a wall on the left, +1 on the right, 0 for none. Airborne only,
@@ -273,6 +282,7 @@ impl Player {
             was_dash: false,
             has_dash: false,
             shadow_dashing: false,
+            immune: false,
             shadow_dash_cooldown: 0,
             has_shade_cloak: false,
             touching_wall: 0,

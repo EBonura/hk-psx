@@ -71,6 +71,10 @@ def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)
 
 
+def _methods(ty, *fns):
+    return tuple(f'*{len(ty)}{ty}{len(f)}{f}*' for f in fns)
+
+
 def _actor(*fns):
     return tuple(f'*Actor{len(f)}{f}*' for f in fns)
 
@@ -117,7 +121,16 @@ MODULES = {
     'fsm3_logic': _sim('fsm3_flow', 'fsm3_math', 'fsm3_events', 'fsm3_timers', 'fsm3_playerdata'),
     'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
+    # Desolate Dive and Howling Wraiths (game/src/spells.rs and the two state machines; their small
+    # state-reading methods stay resident, the frame loop asks them every tick). Carried in by ownership,
+    # not by room (CARRIED_CODE), only where the pool has room (OPTIONAL).
+    'spells': ('*6hk_psx6spells*', '*12QUAKE_PARAMS*', '*13SCREAM_PARAMS*') +
+              _methods('Quake', 'begin', 'velocity', 'tick', 'strikes') +
+              _methods('Scream', 'begin', 'tick', 'strikes') + _methods('HitSpec', 'live', 'place'),
 }
+# Code modules that are not tied to a room: they ride the carried data chunks and are asked for like them
+# (modules.rs `carry`), which is why they are left out of the scene-bound CODE_MASK.
+CARRIED_CODE = ('spells',)
 if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
     # reaches through one import site) and the scene objects it acts on (fsm3_world), and the guest side that ticks and draws
@@ -155,7 +168,7 @@ CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_
            'art_fx': 'data/art-fx.hk', 'art_fx_spell': 'data/art-fx-spell.hk'}
 # Carried packages the pool-fit guarantee leaves out: the guest asks for one only where it fits beside the room's own
 # modules and whatever else is wanted (game/src/modules.rs `fx_fit`), and does without it where it does not.
-OPTIONAL = ('art_fx', 'art_fx_spell')
+OPTIONAL = ('art_fx', 'art_fx_spell', 'spells')
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
@@ -334,7 +347,7 @@ def package_chunks(table):
     Each is (kind, manifest scene, sorted module ids)."""
     code = [('code', s, [k for k in m if k < len(MODULES)]) for s, m in sorted(table.items())]
     art = [('art', s, [k for k in m if k >= len(MODULES)]) for s, m in sorted(table.items())]
-    carried = [('data', None, [all_names().index(n)]) for n in CARRIED]
+    carried = [('data', None, [all_names().index(n)]) for n in (*CARRIED, *CARRIED_CODE)]
     return [c for c in code if c[2]] + [c for c in art if c[2]] + carried
 
 
@@ -408,7 +421,7 @@ def manifest_rust(packed, regions_rs, props_rs=None):
               f'pub const MAX_IMPORTS:usize={MAX_IMPORTS};',
               '/// Modules each manifest scene needs, one bit per module.',
               f'pub const SCENE_MODULES:[u32;{n}]=[{",".join(map(str, masks))}];',
-              f'pub const CODE_MASK:u32={(1 << len(MODULES)) - 1};',
+              f'pub const CODE_MASK:u32={sum(1 << k for k, n in enumerate(MODULES) if n not in CARRIED_CODE)};',
               '/// Modules linked resident for this build (HK_RESIDENT_MODULES).',
               f'pub const ALWAYS:u32={sum(1 << k for k, n in enumerate(MODULES) if n in ALWAYS_RESIDENT)};',
               '/// The code chunk heading each manifest scene\'s disc group, or u8::MAX.',
