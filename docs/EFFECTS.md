@@ -39,6 +39,29 @@ the break-effect particle pool (`game/src/particles.rs`, `break_effects.rs`) and
 
 `.hkpsx/break-effects/report.json` lists, per scene, which owners fit and why the others were dropped.
 
+## Memory
+
+Nothing here is resident per effect. The tables of a scene (`HKFX0001` chunk: styles, emitters, art, frames) are
+decoded at admission into `RESIDENT`, sized by the widest scene (`FX_MAX_*`; Tutorial_01 with 27 styles and 108
+emitters), and the effect art rides the scene's own chunk. What the effects added to the resident image was paid
+for by storing the particle curves as their distinct size, opacity and spin tables (`Curve`: 16, 12 and 10 tables
+of 33 entries serve all 23 curves, 7.6 KB instead of 15.2 KB; `host/hk-cook/src/break_effects.rs` `generate`),
+and by building the two scene decoders (`load_scene`, `soft_styles`) for size. The lifeblood cocoon's world code
+and the rigid debris solver are room modules (`host/code_modules.py` `lifeblood`, `debris`), read with the rooms
+that use them. The debris module (5.8 KB) lands in the worst room (Crossroads_05, the grub jars) on top of the
+carried Shade, Death and wake art, so the pool grew by 6,144 bytes (pool fit: room 8, +988 bytes of margin;
+main had +688) and the free RAM below the pool is what `docs/BUDGET.md` says.
+
+## Frame cost
+
+A break now raises its own dust and chips as well as the Breakable's debris, and a nail hit on a rock or the
+door raises dust, chips and (the door) rubble: more particles in the pool for the second or so a burst lasts.
+In King's Pass a break burst that took 4 vblanks a frame before takes 5 (the particle tick runs every
+simulation tick, a burst frame spans four of them), so the `long_frames` ceilings of the King's Pass routes were
+re-measured (2x). Routes with no break (f08a, husk-guard, greenpath-walk, c37) are unchanged in the census (frames and GPU cycles per frame).
+Rigid debris decodes its polygon only for the solver; a draw decodes a `Look` (centroid, scale, tint) and the
+frame map's object index is found once per region.
+
 ## Not done
 
 Strike Nail R's own art (the impact is the grass Slash Impact), the door's `Tute Door Piece A/B`, the jar's rigid
