@@ -96,7 +96,12 @@ def module_tables():
         # Her room's state block: the fight lives in these zeroed pool bytes (shared/hk-sim hornet_fight.rs STATE_BYTES).
         import re
         size=int(re.search(r'pub const STATE_BYTES: usize = (\d+);',(ROOT/'shared/hk-sim/src/hornet_fight.rs').read_text())[1])
-        art['art_hornet']=bytes(size)
+        # Then her two cooked trees (hornet3.hkf3, hornet_corpse3.hkf3), each padded to a word: game/src/enemies/hornet.rs
+        # `place_trees` addresses them, and they stay out of the code module's read-only data.
+        blob=bytearray(size)
+        for tree in ('hornet3','hornet_corpse3'):
+            data=(ROOT/'data'/f'{tree}.hkf3').read_bytes();blob+=data+bytes(-len(data)%4)
+        art['art_hornet']=bytes(blob)
     for name,text in (('modules.rs',code_modules.manifest_rust(packed,regions_rs,props_rs)),('props_art.rs',art_rs)):
         if not (ROOT/'data'/name).is_file() or (ROOT/'data'/name).read_text()!=text:(ROOT/'data'/name).write_text(text)
     return code_modules.scene_table(packed,regions_rs,props_rs),art

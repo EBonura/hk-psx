@@ -39,6 +39,8 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
         .as_array()
         .ok_or("module declarations")?;
     let mut images = Vec::new();
+    // Every edge from one cold module into another, so one build lists them all.
+    let mut cross: Vec<String> = Vec::new();
     for module in modules {
         let name = module["name"].as_str().ok_or("module name")?;
         let id = module["id"].as_u64().ok_or("module id")?;
@@ -66,7 +68,15 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                 }
                 // Any cross-cold edge is a real residency bug, never a resident import.
                 if section.name.starts_with(".mod_") {
-                    return Err("cross-cold dependency".into());
+                    let caller = owner(&symbols, index, relocation.address)?;
+                    let word = read_word(section.bytes, relocation.address.saturating_sub(section.address)).unwrap_or(0);
+                    let target = ((relocation.address + 4) & 0xf0000000) | ((word & 0x03ffffff) << 2);
+                    let callee = symbols
+                        .iter()
+                        .find(|s| s.address <= target && target < s.address + s.bytes.max(1) && s.bytes != 0)
+                        .map_or("?", |s| s.name);
+                    cross.push(format!("{} in {} reaches {callee} of module {name}", caller.name, section.name));
+                    continue;
                 }
                 let caller = owner(&symbols, index, relocation.address)?;
                 let offset = relocation
@@ -84,6 +94,8 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                         "8dialogue",
                         "5frame",
                         "5title",
+                        "15animation_cache",
+                        "6render14bind_animation",
                     ]
                     .iter()
                     .any(|p| caller.name.contains(p))
@@ -112,6 +124,9 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
             }
         }
         images.push(json!({"name":name,"id":id,"code":code_name,"data":data.map(|_|vec![data_name]).unwrap_or_default(),"calls":calls,"pinned":pinned}));
+    }
+    if !cross.is_empty() {
+        return Err(format!("cross-cold dependency: {}", cross.join("; ")).into());
     }
 
     let result = json!({"header":".ps_exe_head","resident":[".text",".data",".bss"],"compact_sites":"HK_MODULE_IMPORTS","compact_ranges":"HK_MODULE_IMPORT_RANGE","compact_trap":"__hk_module_trap","images":images});
@@ -500,20 +515,24 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         chunks.push(json!({"kind":kind,"scene_index":chunk["scene_index"],"modules":ids,"bytes":raw.len(),"stored_bytes":stored.as_ref().map_or(raw.len(),|b|b.len()),"path":path}));
     }
     // The three largest carried packages can be in the pool at once (a package nobody asks for any more is
-    // evicted for the next one), each read in whole sectors after its 20-byte header.
-    let mut carried_sizes = config["carried"]
-        .as_array()
-        .ok_or("carried")?
-        .iter()
-        .map(|id| {
-            sizes
-                .get(id.as_u64().unwrap_or(u64::MAX) as usize)
-                .map(|size| (size + 20).div_ceil(2048) * 2048)
-                .ok_or("carried id")
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    carried_sizes.sort_unstable_by(|a, b| b.cmp(a));
-    let carried: u32 = carried_sizes.iter().take(3).sum();
+    // evicted for the next one), each read in whole sectors after its 20-byte header. Greenpath's Hornet's room carries
+    // no Shade (game/src/shade.rs `waits_for_hornet`): her module, her trees and her state leave no room for 30 KB of it.
+    let names = config["names"].as_array().ok_or("names")?;
+    let carried_of = |without_shade: bool| -> std::result::Result<u32, Box<dyn std::error::Error>> {
+        let mut sizes_of = Vec::new();
+        for id in config["carried"].as_array().ok_or("carried")? {
+            let id = id.as_u64().unwrap_or(u64::MAX) as usize;
+            if without_shade && names.get(id).and_then(|n| n.as_str()) == Some("art_shade") {
+                continue;
+            }
+            sizes_of.push((sizes.get(id).ok_or("carried id")? + 20).div_ceil(2048) * 2048);
+        }
+        sizes_of.sort_unstable_by(|a, b| b.cmp(a));
+        Ok(sizes_of.iter().take(3).sum())
+    };
+    let carried = carried_of(false)?;
+    let carried_without_shade = carried_of(true)?;
+    let hornet_id = names.iter().position(|n| n.as_str() == Some("hornet"));
     // Every room's own modules plus the carried packages in the pool together must fit the pool less one 4 KiB window fence.
     let pool = config["pool"].as_u64().unwrap_or(0x17000) as u32;
     let limit = pool - 0x1000;
@@ -537,27 +556,32 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
             .into());
         }
     }
-    let names = config["names"].as_array().ok_or("names")?;
     let mut table = Vec::new();
     for (index, room) in config["rooms"].as_array().ok_or("rooms")?.iter().enumerate() {
         let ids = room.as_array().ok_or("room modules")?;
         let mut need = 0u32;
         let mut listed = Vec::new();
+        let mut shadeless = false;
         for id in ids {
             let id = id.as_u64().ok_or("room id")? as usize;
+            shadeless |= Some(id) == hornet_id;
             need = need
                 .checked_add(*sizes.get(id).ok_or("room module")?)
                 .ok_or("room sum")?;
             listed.push(format!("{}={}", names[id].as_str().unwrap_or("?"), sizes[id]));
         }
-        table.push((need, index, listed));
+        table.push((need, index, listed, shadeless));
     }
     table.sort_by(|a, b| b.cmp(a));
     let mut report_rooms = Vec::new();
-    for (need, index, listed) in &table {
-        report_rooms.push(json!({"room":index,"bytes":need,"with_carried":need + carried,"modules":listed}));
+    let carried_in = |shadeless: bool| if shadeless { carried_without_shade } else { carried };
+    for (need, index, listed, shadeless) in &table {
+        report_rooms.push(json!({"room":index,"bytes":need,"with_carried":need + carried_in(*shadeless),"modules":listed}));
     }
-    for (need, index, listed) in table.iter().take(6) {
+    // Largest total first, whatever the room carries.
+    table.sort_by_key(|(need, _, _, shadeless)| std::cmp::Reverse(need + carried_in(*shadeless)));
+    for (need, index, listed, shadeless) in table.iter().take(6) {
+        let carried = carried_in(*shadeless);
         eprintln!(
             "pool fit: room {index} {need} + carried {carried} = {} of {limit} ({:+}): {}",
             need + carried,
@@ -565,13 +589,10 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
             listed.join(" ")
         );
     }
-    if let Some((need, _, _)) = table.first() {
-        if need.checked_add(carried).ok_or("carried sum")? > limit {
-            return Err(format!(
-                "whole room plus carried package exceeds fixed pool: {} of {limit}",
-                need + carried
-            )
-            .into());
+    if let Some((need, _, _, shadeless)) = table.first() {
+        let total = need.checked_add(carried_in(*shadeless)).ok_or("carried sum")?;
+        if total > limit {
+            return Err(format!("whole room plus carried package exceeds fixed pool: {total} of {limit}").into());
         }
     }
     fs::write(output.join("runtime.exe"), runtime)?;

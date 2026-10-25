@@ -12,7 +12,11 @@ use hk_format::fsm3::Bank;
 
 /// One cooked boss tree.
 pub struct Data {
+    /// The cooked tree. On the console it is empty: the room's data package carries the bytes (`POOL_BANKS`) so they do not
+    /// take room in the fight's code module.
     pub bank: &'static [u8],
+    /// Which `POOL_BANKS` entry replaces `bank` when it is set.
+    pub slot: usize,
     pub ents: &'static [EntInit],
     /// The object each FSM is on, by FSM.
     pub owners: &'static [u8],
@@ -24,17 +28,48 @@ pub struct Data {
     pub runtime: usize,
 }
 
+/// A tree's static bank: none on the console, where the room's data package holds it (`Data::bytes`).
+const fn bank_of(bank: &'static [u8]) -> &'static [u8] {
+    if cfg!(target_arch = "mips") {
+        &[]
+    } else {
+        bank
+    }
+}
+
 /// The fight: the boss object's subtree plus the Encounter FSM that wakes it.
 pub mod fight {
     include!("../../../data/hornet3_fsm3.rs");
-    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub const SLOT: usize = 0;
+    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 /// `Corpse Hornet 1`: what the death effects spawn. Its first state writes `hornet1Defeated`, its last sends `HORNET LEAVE`.
 pub mod corpse {
     include!("../../../data/hornet_corpse3_fsm3.rs");
-    pub static DATA: super::Data = super::Data { bank: &BANK, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub const SLOT: usize = 1;
+    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 pub use fight::{ENTS, OWNERS};
+
+/// The trees' bytes in pool memory (the fight's, then the corpse's): (address, length), set by the guest before a fight begins
+/// and null otherwise. A set entry replaces the static bank of its tree.
+pub static mut POOL_BANKS: [(usize, usize); 2] = [(0, 0); 2];
+
+impl Data {
+    /// The tree's bytes: the pool's copy when the guest placed one, else the static bank.
+    #[inline(always)]
+    pub fn bytes(&self) -> &'static [u8] {
+        // SAFETY: `POOL_BANKS` is written only by the single-threaded guest, with the address and length of a resident data
+        // package that outlives the fight.
+        unsafe {
+            let (at, len) = (*(&raw const POOL_BANKS))[self.slot];
+            if len != 0 {
+                return core::slice::from_raw_parts(core::ptr::with_exposed_provenance::<u8>(at), len);
+            }
+        }
+        self.bank
+    }
+}
 
 /// Words of tree memory: the larger of the two trees (`fight`) plus one for the alignment slack.
 const MEM_WORDS: usize = 232;
@@ -44,7 +79,7 @@ const _: () = assert!(fight::ENTS.len() <= MAX_ENT && corpse::ENTS.len() <= MAX_
 #[cfg_attr(target_arch = "mips", optimize(size))]
 pub fn bank() -> Bank<'static> {
     // SAFETY: the cooker parses the bank it emits and the module transport hash-checks it.
-    unsafe { Bank::from_verified(fight::DATA.bank) }
+    unsafe { Bank::from_verified(fight::DATA.bytes()) }
 }
 
 /// A boss tree in progress: its memory, its scene objects and the environment of the pass.
@@ -84,7 +119,7 @@ impl Boss {
     #[cfg_attr(target_arch = "mips", optimize(size))]
     fn bank(&self) -> Bank<'static> {
         // SAFETY: as in `bank`.
-        unsafe { Bank::from_verified(self.data().bank) }
+        unsafe { Bank::from_verified(self.data().bytes()) }
     }
     #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Lay the tree and its objects out in their authored state. The first `step` enters every active FSM's start state.

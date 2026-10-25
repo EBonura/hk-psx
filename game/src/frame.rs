@@ -379,7 +379,10 @@ pub fn render(
     }
     enemy_draws.append_needed(&mut needed, &mut needed_len);
     game.shade.append_needed(&mut needed, &mut needed_len);
-    crate::boss_bank::append_needed(&mut needed, &mut needed_len);
+    #[cfg(feature = "hornet")]
+    if crate::modules::loaded(crate::modules::HORNET_ART) {
+        crate::boss_bank::append_needed(&mut needed, &mut needed_len);
+    }
     if let Some(i) = ball_frame {
         assert!(
             needed_len < needed.len(),
@@ -496,7 +499,10 @@ pub fn render(
         }
     }
     prims += enemy_draws.draw();
-    prims += crate::boss_bank::draw();
+    #[cfg(feature = "hornet")]
+    if crate::modules::loaded(crate::modules::HORNET_ART) {
+        prims += crate::boss_bank::draw();
+    }
     prims += game.props.draw(camera);
     prims += pickup_draws.draw(room, camera);
     render::kick_ready();
@@ -620,6 +626,10 @@ pub fn render(
     if crate::modules::loaded(crate::modules::SHOP) {
         shop::prepare(&game.shop_screen, camera, game.paused);
     }
+    #[cfg(feature = "hornet")]
+    if crate::modules::loaded(crate::modules::HORNET_ART) {
+        crate::enemies::hornet::convo_prepare();
+    }
     title_card::prepare(game.paused);
     render::submit(
         game.vitals.health,
@@ -701,6 +711,10 @@ pub fn interact(
     }
     // The Snail Shaman and the spell's orb, whose trigger takes the hero body
     // whatever he is doing (host/shaman.py).
+    #[cfg(feature = "hornet")]
+    if crate::modules::loaded(crate::modules::HORNET_ART) {
+        crate::enemies::hornet::convo_tick(pad.bits());
+    }
     if shaman::tick(r.scene, body, can_inspect && !dialogue::open(), pad.bits()).wake {
         game.wake = true;
     }
