@@ -138,7 +138,9 @@ pub fn clut(room: &Room, palette: u8) -> u16 {
 #[repr(align(4))]
 struct Buf([u8; 2048]);
 
+/// Out of line on purpose: inlined into the resident hook it would put the whole decode in the resident image.
 /// The decoded part `index`, uploaded into the cache slot `slot` (its rectangle sized to the part). Returns the bytes uploaded.
+#[inline(never)]
 pub fn upload(room: &Room, index: usize, slot: usize) -> Option<u32> {
     with(room, |bank| {
         if index >= bank.parts as usize {
@@ -206,6 +208,7 @@ pub fn queue(part: usize, palette_clut: u16, width: u8, height: u8, verts: [(i16
 }
 
 /// The queue's keys, added to the frame's working set as far as it has room.
+#[inline(never)]
 pub fn append_needed(needed: &mut [u16], len: &mut usize) {
     let m = mem();
     unsafe {

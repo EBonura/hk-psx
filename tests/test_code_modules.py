@@ -58,9 +58,11 @@ class SceneTableTest(unittest.TestCase):
     def test_rooms_get_the_modules_their_actors_need(self):
         packed = {'scenes': [{'scene_id': 9}, {'scene_id': 3}, {'scene_id': 7}]}
         names = list(cm.MODULES)
-        # A boss room also carries the arena controller (room logic).
+        # The arena controller (hk_sim::boss) is inlined into its callers: no module of its own, so the boss room needs only the boss.
         self.assertEqual(cm.scene_table(packed, self.REGIONS),
-                         {0: [names.index('husks')], 2: sorted([names.index('false_knight'), names.index('arena')])})
+                         {0: [names.index('husks')], 2: [names.index('false_knight')]})
+        # The resident mask is a u32: the modules and packages together must not pass 32.
+        self.assertLessEqual(len(cm.all_names()), 32)
 
 
 class MapFilterTest(unittest.TestCase):

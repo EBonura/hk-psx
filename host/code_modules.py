@@ -105,8 +105,6 @@ MODULES = {
     # modulo-indexed switch table once the table is in a module.
     # Formatting vtables stay resident; only actual controller methods are cold.
     'climber': ('_RNvM*6hk_sim7climber*',) + _actor('advance_climber'),
-    # Room logic: the boss arena controller (Battle Control), only in arena rooms.
-    'arena': _sim('boss'),
     # Room logic behind entry-point guards (modules::loaded): Sly's shelf
     # screen, the Snail Shaman's drawing, Cornifer's conversation.
     'shop': ('*6hk_psx4shop12presentation*',),
@@ -168,10 +166,10 @@ CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_
 # hk_sim::ActorController kinds -> the module whose code they run. Runner and
 # Walker are the shared actor framework (the Runner is in 10 of the port's 28
 # enemy rooms) and stay resident.
-KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': ('false_knight', 'arena'), 'Mawlek': ('mawlek', 'arena'), 'HuskGuard': 'husks', 'ZombieShield': 'husks',
+KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': 'false_knight', 'Mawlek': 'mawlek', 'HuskGuard': 'husks', 'ZombieShield': 'husks',
                'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
-               'GruzMother': ('gruz_mother', 'arena', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
+               'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'acid_flyer', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
                # (blocker_roller.rs), so its rooms carry both.
                'Blocker': ('blocker', 'baldur')}
@@ -258,7 +256,12 @@ def scene_modules(regions_rs):
 
 
 def all_names():
-    return list(MODULES) + list(DATA_MODULES) + list(CARRIED)
+    names = list(MODULES) + list(DATA_MODULES) + list(CARRIED)
+    # The guest keeps which modules are resident in one u32 (game/src/modules.rs `resident`, `1 << m`): module 32 would shift
+    # onto module 0 without a word. The empty `arena` module (hk_sim::boss, inlined into its callers) was dropped to make room.
+    if len(names) > 32:
+        raise ValueError(f'{len(names)} modules and packages, one more than the resident mask holds: {names[32:]}')
+    return names
 
 
 def carried_blobs(root):
