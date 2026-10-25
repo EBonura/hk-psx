@@ -94,8 +94,6 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                         "8dialogue",
                         "5frame",
                         "5title",
-                        "15animation_cache",
-                        "6render14bind_animation",
                         "10boss_hooks",
                     ]
                     .iter()

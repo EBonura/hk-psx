@@ -202,7 +202,7 @@ FAMILY_MODULE = {0: 'fsm3_logic', 1: 'fsm3_logic', 2: 'fsm3_logic', 3: 'fsm3_log
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
 # Blocker's room is resident.
-CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame', '5title', '15animation_cache', '6render14bind_animation', '10boss_hooks')
+CALLERS = ('4fsm3', '7enemies', '14blocker_roller', '5frame8simulate', '5frame6render', '8dialogue', '5frame', '5title', '10boss_hooks')
 J26, HI16, LO16, W32 = 1, 2, 3, 4
 
 

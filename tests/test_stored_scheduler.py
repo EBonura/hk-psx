@@ -222,7 +222,6 @@ const WORLD_META_MANIFEST:&[WorldMetaDesc]=&[WorldMetaDesc{raw_len:160},WorldMet
 // malformed manifest-to-scene bindings cannot be accidentally accepted.
 static mut PAYLOADS:[[u32;6];2]=[[0,2,3,2,1,2],[1,1,2,1,3,0]];
 mod input{pub fn checkpoint(){}}
-fn checkpoint(){input::checkpoint();}
 mod ambience{pub fn missing(_:usize)->u8{0}}
 mod gate_probe{pub const SCENE_CHECK:u8=0;pub fn set(_:u8){}pub fn decoder(_:u32)->u8{0}}
 // Rooms without streamed code or art: the module calls are no-ops, and the
@@ -447,7 +446,6 @@ mod input{pub fn checkpoint(){unsafe{
  super::CHECKPOINTS+=1;
  assert_eq!(super::HK_COVERAGE_SCENE,0,"proof owner published before all validation/copy checkpoints");
 }}}
-fn checkpoint(){input::checkpoint();}
 #[derive(Debug,PartialEq)]enum LoadError{Coverage,Checksum,Decompress,PayloadRead}
 mod gate_probe{pub const COVERAGE_CHECK:u8=0;pub fn set(_:u8){}pub fn decoder(_:u32)->u8{0}}
 // No chunk was hashed ahead of this admission: the decoder checks it all.
