@@ -61,14 +61,15 @@ mod imp {
                 return;
             }
             let step = HK_TOUR_STEP as usize;
-            let Some(&(from, to, region)) = TOUR.get(step) else {
+            let Some(&(_, _, region)) = TOUR.get(step) else {
                 return;
             };
-            if from as usize != scene {
+            if !from_matches(step, scene) {
                 return;
             }
+            let to = crate::disc::scene_index(region as usize);
             let Some(g) = crate::world::gates(scene)
-                .find(|g| g.target_scene == to as usize && g.target_region == region as usize)
+                .find(|g| g.target_scene == to && g.target_region == region as usize)
             else {
                 return;
             };
@@ -100,6 +101,13 @@ mod imp {
             }
         }
     }
+    /// The list names scenes by the manifest order of the day it was written; the
+    /// manifest is sorted by resident size, which moves. The target regions are
+    /// stable, so a step starts in the scene the previous step's region is in
+    /// (the first step starts wherever the new game does).
+    fn from_matches(step: usize, scene: usize) -> bool {
+        step == 0 || crate::disc::scene_index(TOUR[step - 1].2 as usize) == scene
+    }
     /// The tour's next (target scene, target region), if it is due now.
     pub fn due(scene: usize) -> Option<(usize, usize)> {
         unsafe {
@@ -118,13 +126,13 @@ mod imp {
                 HK_TOUR_DONE = 1;
                 return None;
             }
-            let (from, to, region) = TOUR[step];
-            if from as usize != scene {
+            let region = TOUR[step].2 as usize;
+            if !from_matches(step, scene) {
                 HK_TOUR_MISSES += 1;
                 HK_TOUR_DONE = 2;
                 return None;
             }
-            Some((to as usize, region as usize))
+            Some((crate::disc::scene_index(region), region))
         }
     }
     pub fn taken() {
@@ -141,7 +149,7 @@ mod imp {
     pub fn upcoming() -> Option<(usize, usize)> {
         let step = unsafe { HK_TOUR_STEP } as usize;
         TOUR.get(step)
-            .map(|&(_, to, region)| (to as usize, region as usize))
+            .map(|&(_, _, region)| (crate::disc::scene_index(region as usize), region as usize))
     }
 }
 #[cfg(feature = "gate-tour")]

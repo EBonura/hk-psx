@@ -23,8 +23,7 @@ gate-tour = ["gate-log"]
 prefetch-oracle = ["gate-tour"]
 # Tour builds only: walk the Knight to each listed gate instead of standing (real predictor).
 tour-walk = ["gate-tour"]
-# Spike: decode and upload the next scene's atlases ahead of its gate.
-vram-ahead = []
+
 # The original's HeroLight behind the Knight and the hero vignette
 # (hero_light.rs). On the 49 builder routes the two together cost 0.71% of
 # presented fps on average and 3.90% at worst (boss-fight); the palette
