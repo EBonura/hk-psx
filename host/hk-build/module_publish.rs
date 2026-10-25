@@ -542,9 +542,23 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
             .ok_or("optional")?
             .iter()
             .map(|id| {
-                let id = id.as_u64().ok_or("optional id")? as usize;
-                // A package takes whole sectors after its header, and a compressed chunk a sector more.
-                Ok(((sizes.get(id).ok_or("optional module")? + 20).div_ceil(2048) as u32 + 1) * 2048)
+                let id = id.as_u64().ok_or("optional id")?;
+                // What the guest reserves to read the pack's chunk (modules.rs `reserve_bytes`).
+                let chunk = chunks
+                    .iter()
+                    .find(|c| c["modules"].as_array().is_some_and(|m| m.len() == 1 && m[0].as_u64() == Some(id)))
+                    .ok_or("optional chunk")?;
+                let raw = chunk["bytes"].as_u64().ok_or("chunk bytes")? as usize;
+                let stored = match chunk["stored_bytes"].as_u64().ok_or("chunk stored")? as usize {
+                    s if s == raw => 0,
+                    s => s,
+                };
+                let sectors = |n: usize| n.div_ceil(2048) * 2048;
+                Ok(if stored == 0 {
+                    sectors(raw)
+                } else {
+                    sectors(raw + (stored >> 8) + 64).max(sectors(stored))
+                } as u32)
             })
             .collect::<std::result::Result<_, Box<dyn std::error::Error>>>()?;
         if optional.len() > 2 {
