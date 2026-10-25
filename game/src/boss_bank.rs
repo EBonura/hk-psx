@@ -35,7 +35,7 @@ struct Index {
     /// The scene's texture count when the index was made, which tells a different scene's table.
     textures: u16,
 }
-static mut INDEX: Index = Index { chunks: [0; fmt::MAX_CHUNKS], count: 0, id: 0, textures: 0 };
+
 
 fn chunk_of(room: &Room, texture: usize) -> Option<(u16, usize)> {
     let t = room.texture(texture);
@@ -53,7 +53,7 @@ fn chunk_of(room: &Room, texture: usize) -> Option<(u16, usize)> {
 /// carries no such bank.
 pub fn attach(room: &Room, id: u16) -> bool {
     unsafe {
-        let ix = &mut *(&raw mut INDEX);
+        let ix = &mut mem().index;
         if ix.count != 0 && ix.id == id && ix.textures as usize == room.counts[1] {
             if chunk_of(room, ix.chunks[0] as usize) == Some((id, 0)) {
                 return true;
@@ -93,7 +93,7 @@ impl<'r> View<'_, 'r> {
         if have == chunk {
             return Some(bytes);
         }
-        let ix = unsafe { &*(&raw const INDEX) };
+        let ix = unsafe { &mem().index };
         if chunk >= ix.count as usize {
             return None;
         }
@@ -130,7 +130,7 @@ pub fn with<R>(room: &Room, f: impl FnOnce(&Bank<View<'_, '_>>) -> R) -> Option<
 
 /// The CLUT word of the bank's palette `k`: the palette of the chunk texture that carries it.
 pub fn clut(room: &Room, palette: u8) -> u16 {
-    let ix = unsafe { &*(&raw const INDEX) };
+    let ix = unsafe { &mem().index };
     let chunk = palette as usize % ix.count.max(1) as usize;
     crate::render::clut_word(room.texture(ix.chunks[chunk] as usize).palette)
 }
@@ -138,8 +138,8 @@ pub fn clut(room: &Room, palette: u8) -> u16 {
 #[repr(align(4))]
 struct Buf([u8; 2048]);
 
-/// The decoded part `index`, uploaded into the rectangle `dest` names for its size. Returns the bytes uploaded.
-pub fn upload(room: &Room, index: usize, dest: impl FnOnce(u16, u16) -> psx_vram::VramRect) -> Option<u32> {
+/// The decoded part `index`, uploaded into the cache slot `slot` (its rectangle sized to the part). Returns the bytes uploaded.
+pub fn upload(room: &Room, index: usize, slot: usize) -> Option<u32> {
     with(room, |bank| {
         if index >= bank.parts as usize {
             return None;
@@ -151,8 +151,10 @@ pub fn upload(room: &Room, index: usize, dest: impl FnOnce(u16, u16) -> psx_vram
         }
         let mut buf = Buf([0; 2048]);
         bank.decode_into(&part, &mut buf.0)?;
-        crate::texture_upload::upload(dest(part.width as u16, part.height as u16), &buf.0[..len]);
+        crate::texture_upload::upload(crate::animation_cache::dest(slot, part.width as u16, part.height as u16), &buf.0[..len]);
         unsafe { HK_BOSS_UPLOADS = HK_BOSS_UPLOADS.wrapping_add(1) };
+        // A frame can need two dozen new parts, a decode and an upload each: take the pad poll that fell due meanwhile.
+        crate::input::poll_only();
         Some(len as u32)
     })?
 }
@@ -168,37 +170,52 @@ struct Queued {
     verts: [(i16, i16); 4],
 }
 const QUEUE: usize = 24;
-static mut QUEUE_PARTS: [Queued; QUEUE] = [Queued { part: 0, clut: 0, width: 0, height: 0, flash: 0, verts: [(0, 0); 4] }; QUEUE];
-static mut QUEUE_LEN: usize = 0;
+
+/// What the reader keeps between calls: the chunk index and the frame's queue. A boss's room state holds it (zeroed bytes are
+/// a valid, empty `Mem`), so it takes no resident RAM.
+#[repr(C)]
+pub struct Mem {
+    index: Index,
+    queue: [Queued; QUEUE],
+    len: usize,
+}
+
+/// The hosting boss's `Mem`: only called while its module is resident, which is when the drawing module is.
+#[inline(always)]
+fn mem() -> &'static mut Mem {
+    crate::enemies::hornet::boss_mem()
+}
 
 /// Start a frame's draws.
 pub fn begin() {
-    unsafe { QUEUE_LEN = 0 };
+    unsafe { mem().len = 0 };
 }
 
 /// Queue part `part` of `bank` at `verts`. False if the queue is full.
 pub fn queue(part: usize, palette_clut: u16, width: u8, height: u8, verts: [(i16, i16); 4], flash: u8) -> bool {
+    let m = mem();
     unsafe {
-        if QUEUE_LEN == QUEUE {
+        if m.len == QUEUE {
             HK_BOSS_DROPS = HK_BOSS_DROPS.wrapping_add(1);
             return false;
         }
-        QUEUE_PARTS[QUEUE_LEN] = Queued { part: part as u16, clut: palette_clut, width, height, flash, verts };
-        QUEUE_LEN += 1;
+        m.queue[m.len] = Queued { part: part as u16, clut: palette_clut, width, height, flash, verts };
+        m.len += 1;
     }
     true
 }
 
 /// The queue's keys, added to the frame's working set as far as it has room.
 pub fn append_needed(needed: &mut [u16], len: &mut usize) {
+    let m = mem();
     unsafe {
         let mut kept = 0;
-        for i in 0..QUEUE_LEN {
-            let key = KEY_BASE + QUEUE_PARTS[i].part;
+        for i in 0..m.len {
+            let key = KEY_BASE + m.queue[i].part;
             if !needed[..*len].contains(&key) {
                 if *len == needed.len() {
                     // No room: the parts from here on are not drawn this frame.
-                    HK_BOSS_DROPS = HK_BOSS_DROPS.wrapping_add((QUEUE_LEN - i) as u32);
+                    HK_BOSS_DROPS = HK_BOSS_DROPS.wrapping_add((m.len - i) as u32);
                     break;
                 }
                 needed[*len] = key;
@@ -206,7 +223,7 @@ pub fn append_needed(needed: &mut [u16], len: &mut usize) {
             }
             kept = i + 1;
         }
-        QUEUE_LEN = kept;
+        m.len = kept;
     }
 }
 
@@ -217,10 +234,11 @@ pub fn draw() -> u32 {
         prim::QuadTextured,
     };
     unsafe {
-        let n = QUEUE_LEN;
-        QUEUE_LEN = 0;
+        let m = mem();
+        let n = m.len;
+        m.len = 0;
         for i in 0..n {
-            let q = QUEUE_PARTS[i];
+            let q = m.queue[i];
             let key = KEY_BASE + q.part;
             let (u, v) = crate::render::animation_uv(key);
             let right = (u as u16 + q.width as u16 - 1) as u8;

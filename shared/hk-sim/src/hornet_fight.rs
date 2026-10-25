@@ -129,7 +129,7 @@ pub struct Fight {
 
 const PD_FIELDS: usize = 8;
 /// The bytes of the room's state block (host/code_modules.py `art_hornet`): a Fight lives there, in zeroed pool memory.
-pub const STATE_BYTES: usize = 5120;
+pub const STATE_BYTES: usize = 6144;
 
 impl Fight {
     #[cfg_attr(target_arch = "mips", optimize(size))]

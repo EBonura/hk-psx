@@ -151,7 +151,8 @@ if HORNET:
     # Her drawing: the boss bank reader and the queue of parts (game/src/boss_bank.rs) and the draw pass over her objects. Apart
     # from `hornet` because the fight's code only just fits the pool's first 64 KiB window, and this part of her needs no more
     # than the room's pool.
-    MODULES['hornet_art'] = ('*7enemies6hornet4draw*', '*9boss_bank*', '*7enemies6hornet5convo*', '*7enemies6hornet12HORNET_CONVO*')
+    MODULES['hornet_art'] = ('*7enemies6hornet4draw*', '*9boss_bank*', '*7enemies6hornet10convo_tick*', '*7enemies6hornet13convo_prepare*', '*7enemies6hornet12HORNET_CONVO*', '*7enemies6hornet11HORNET_ITEM*',
+                           '*7enemies6hornet15HORNET_ART_*', '*7enemies6hornet16HORNET_ART_*', '*6render19resident_quad_flash*')
 # Room logic modules by the room that runs them: (data file, constant) holding
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),

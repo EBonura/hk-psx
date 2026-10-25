@@ -195,9 +195,15 @@ def cook_hornet(source):
     for page in pages:
         if sum(len(line.replace(' ', '')) for line in page) + len(FOOTER) > MAX_PAGE_GLYPHS:
             raise ValueError(f'{key} exceeds the panel glyph budget')
+    # The Mothwing Cloak's item get: its name, the get-item text and the button line (`GET_DASH_1` ends the sentence the
+    # button's glyph starts; the port names its button, R2).
+    ui, prompts = language_sheet(source, 'UI'), language_sheet(source, 'Prompts')
+    item = [ui['INV_NAME_DASH']] + [line for page in _pages(prompts['GET_DASH_2'], font_advances(source)) for line in page]
+    item.append('Press R2 ' + prompts['GET_DASH_1'])
     out = ['// Generated from the local Windows source; no retail payload is embedded.',
            'pub static HORNET_CONVO:&[&[&str]]=&[' +
-           ','.join('&[' + ','.join(_quote(line) for line in page) + ']' for page in pages) + '];']
+           ','.join('&[' + ','.join(_quote(line) for line in page) + ']' for page in pages) + '];',
+           'pub static HORNET_ITEM:&[&str]=&[' + ','.join(_quote(line) for line in item) + '];']
     (ROOT / 'data/hornet_convo.rs').write_text('\n'.join(out) + '\n')
     print(f'Hornet greeting: {len(pages)} pages', flush=True)
 
