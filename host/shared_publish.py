@@ -33,6 +33,9 @@ def publish(root, elf, link_map, out, scene_code, art):
     import tempfile
     publication = Path(tempfile.mkdtemp(prefix='shared-publication-',dir=out))/'images'
     def run(*args): subprocess.run([str(publisher),*map(str,args)],check=True)
+    # A stored form from an earlier build binds that build's raw bytes (module ids move when a module is added): drop it, it is rewritten below.
+    for stale in (out/'chunks').glob('*.stored'): stale.unlink()
+    for stale in (out/'chunks').glob('*.binding.json'): stale.unlink()
     run('pipeline',elf,link_map,declarations,publication,sdk_target/'release')
     inputs=out/'transport-inputs'; inputs.mkdir(exist_ok=True)
     blobs={**art,**cm.carried_blobs(root)}
