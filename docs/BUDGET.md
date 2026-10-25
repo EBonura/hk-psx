@@ -7,8 +7,8 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |770,424|
-| Code-to-data alignment |8|
+| Linked code |770,432|
+| Code-to-data alignment |0|
 | Linked data, including menu and HUD |283,960|
 | BSS, including shared scene arena and runtime pools |800,552|
 | Total static span |1,854,952|
@@ -573,4 +573,4 @@ scene decode has already taken the arena by then.
 
 The 2026-10-19 console-fix pass (gate arrivals grounded by the cooker, the Knight's LookUp/LookDown clips, loop-section ability clips, the Shade and Vengeful Spirit mirror fixes, Myla's hum, pickaxe and sung line, gate-entry and look telemetry, the soft-dust gain) took linked code from 754,836 to 758,912 bytes (4,076) and linked data from 258,536 to 263,432 (4,896: 17 look frames and the loop table, scene-sfx rows), so 60,260 bytes are free below the module pool (69,284 before); static end 0x801cc39c.
 
-The 2026-10-25 title overlay (docs/MENUS.md "The title as a boot overlay"): `menu.rs` apart from `skip_drop` and its statics is the boot code module `title`, read from its own disc chunk right before the title art, installed into the module pool for the title and the loading frame, and evicted before the first scene. Free RAM below the module pool went from 9,568 to 24,856 on the shipping disc: linked code 785,136 to 770,424, linked data 284,552 to 283,960. The module is 18,188 bytes of image (a 19,064-byte chunk) in the pool while the title is up; the resident forwarders (`title.rs`) and `skip_drop` stay.
+The 2026-10-25 title overlay (docs/MENUS.md "The title as a boot overlay"): `menu.rs` apart from `skip_drop` and its statics is the boot code module `title`, read from its own disc chunk right before the title art, installed into the module pool for the title and the loading frame, and evicted before the first scene. Free RAM below the module pool went from 9,568 to 24,856 on the shipping disc: linked code 785,136 to 770,432, linked data 284,552 to 283,960. The module is 18,188 bytes of image (a 19,064-byte chunk) in the pool while the title is up; the resident forwarders (`title.rs`) and `skip_drop` stay.
