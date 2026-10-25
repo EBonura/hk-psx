@@ -10,10 +10,11 @@
 //! frames a second, bitstream version 2 STR with interleaved XA-ADPCM audio.
 //! It then decodes every frame once with the SDK's bitstream decoder and
 //! writes what the guest has to size its buffers for. Both clips of the
-//! install this was written against carry a digital-silent audio track (any
-//! sound the original plays with them is not in the files), so their streams
-//! hold silent XA sectors; a clip with real sound would be mastered as the
-//! Half-Life cook does (see [`encode`]). Nothing it writes
+//! install this was written against carry a digital-silent audio track: the
+//! original plays their sound from separate AudioClips (`hk-cook intro-audio`
+//! decodes them, `--audio-dir`), mastered as the Half-Life cook does (see
+//! [`encode`]). Without `--audio-dir` the streams hold silent XA sectors.
+//! Nothing it writes
 //! belongs in the repository: the movies and everything derived from them
 //! stay under `.hkpsx/` beside the other build output.
 //!
@@ -79,6 +80,10 @@ const LATENCY_VBLANKS: u32 = 5;
 /// re-measured on these two movies. The gain goes through the limiter, which
 /// holds the stream under its ceiling whatever the movie peaks at.
 const PLAYBACK_LOSS_DB: f64 = 0.9;
+/// How far the install's sound clip may differ in length from the picture it
+/// plays with: the encoder ends a picture about 0.2 s early, and the clips are
+/// authored to within a frame or two of the video.
+const MAX_SOUND_DRIFT_S: f64 = 0.6;
 /// Sectors the sound is moved later behind the encoder's placement, so that
 /// it plays together with the picture. The picture shows its frame the
 /// headroom of [`LATENCY_VBLANKS`] after the frame's last sector arrives, and
@@ -542,13 +547,12 @@ fn is_silent(pcm: &[i16]) -> bool {
 /// back together with the sound [`AUDIO_DELAY_SECTORS`] later than the encoder
 /// would place it.
 ///
-/// A clip whose audio track is silent (both of this install's are; any sound
-/// the original plays with them is not in the files) has nothing to
-/// master. The encoder's own sound sectors, which are silent, then stay where
-/// it put them, so that the stream keeps its 10 sectors a frame and the same
+/// A movie with no sound of its own (`sound` is None and the clip's track is
+/// silent, as both of this install's are) has nothing to master. The encoder's
+/// own sound sectors, which are silent, then stay where it put them, so that the stream keeps its 10 sectors a frame and the same
 /// XA file and channel; the result carries no [`Mastering`].
 ///
-/// Mono 37.8 kHz XA: the sound is stereo AAC in the install and the encoder
+/// Mono 37.8 kHz XA: the sound is stereo in the install and the encoder
 /// mixes it down to one channel, which the drive plays to both speakers; the
 /// sound then takes half the sectors a stereo stream would, which go to the
 /// picture instead. The loudness the cook matches is that of the mono mix.
@@ -558,12 +562,13 @@ fn is_silent(pcm: &[i16]) -> bool {
 fn encode(
     psxavenc: &Path,
     movie: &Path,
+    sound: Option<&Path>,
     work: &Path,
 ) -> Result<(Vec<u8>, Option<Mastering>), String> {
     std::fs::create_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
     let size = format!("{WIDTH}x{HEIGHT}");
     let fps = FPS.to_string();
-    let (picture, wide, mastered, sound) = (
+    let (picture, wide, mastered, coded) = (
         work.join("picture.str"),
         work.join("wide.xa"),
         work.join("sound.wav"),
@@ -575,7 +580,9 @@ fn encode(
         &[movie, &picture],
         "4",
     )?;
-    pass(psxavenc, &["-t", "xa"], &[movie, &wide], "8")?;
+    // The sound comes from the install's separate AudioClip when the caller
+    // decoded one (hk-cook intro-audio), else from the movie's own track.
+    pass(psxavenc, &["-t", "xa"], &[sound.unwrap_or(movie), &wide], "8")?;
     let read = |p: &Path| std::fs::read(p).map_err(|e| format!("{}: {e}", p.display()));
     let decoded = xa::decode_mono_37800(&read(&wide)?)?;
     let (stream, mastering) = if is_silent(&decoded) {
@@ -584,8 +591,8 @@ fn encode(
         let (pcm, mastering) = master(&decoded)?;
         std::fs::write(&mastered, wav(&pcm, SOUND_HZ as u32))
             .map_err(|e| format!("{}: {e}", mastered.display()))?;
-        pass(psxavenc, &["-t", "xa"], &[&mastered, &sound], "4")?;
-        let stream = mux::interleave(&read(&picture)?, &read(&sound)?, AUDIO_DELAY_SECTORS)?;
+        pass(psxavenc, &["-t", "xa"], &[&mastered, &coded], "4")?;
+        let stream = mux::interleave(&read(&picture)?, &read(&coded)?, AUDIO_DELAY_SECTORS)?;
         (stream, Some(mastering))
     };
     std::fs::remove_dir_all(work).map_err(|e| format!("{}: {e}", work.display()))?;
@@ -602,10 +609,14 @@ struct Args {
     install: Install,
     out: PathBuf,
     psxavenc: Option<PathBuf>,
+    /// Folder of `<movie>.wav` files, the install's separate AudioClips
+    /// (hk-cook intro-audio). Without it a movie's sound is its own track.
+    audio_dir: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let (mut data_dir, mut doctor, mut out, mut psxavenc) = (None, None, None, None);
+    let (mut data_dir, mut doctor, mut out, mut psxavenc, mut audio_dir) =
+        (None, None, None, None, None);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut value = || {
@@ -618,11 +629,12 @@ fn parse_args() -> Result<Args, String> {
             "--from-doctor" => doctor = Some(value()?),
             "--out" => out = Some(value()?),
             "--psxavenc" => psxavenc = Some(value()?),
+            "--audio-dir" => audio_dir = Some(value()?),
             other => return Err(format!("unknown argument {other}")),
         }
     }
-    let usage =
-        "usage: hk-intro-cook (--data-dir DIR | --from-doctor REPO) --out DIR [--psxavenc PATH]";
+    let usage = "usage: hk-intro-cook (--data-dir DIR | --from-doctor REPO) --out DIR \
+                 [--psxavenc PATH] [--audio-dir DIR]";
     let install = match (data_dir, doctor) {
         (Some(dir), None) => Install::DataDir(dir),
         (None, Some(repo)) => Install::Doctor(repo),
@@ -632,6 +644,7 @@ fn parse_args() -> Result<Args, String> {
         install,
         out: out.ok_or(usage)?,
         psxavenc,
+        audio_dir,
     })
 }
 
@@ -709,7 +722,11 @@ fn run() -> Result<ExitCode, String> {
         std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", work.display()))?;
         let mp4 = work.join(format!("{}.mp4", spec.module));
         std::fs::write(&mp4, bytes).map_err(|e| format!("{}: {e}", mp4.display()))?;
-        let (mut raw, mastering) = encode(&psxavenc, &mp4, &work)?;
+        let sound = args.audio_dir.as_ref().map(|d| d.join(format!("{}.wav", spec.module)));
+        if let Some(wav) = sound.as_deref().filter(|w| !w.is_file()) {
+            return Err(format!("{}: no decoded sound at {}", spec.name, wav.display()));
+        }
+        let (mut raw, mastering) = encode(&psxavenc, &mp4, sound.as_deref(), &work)?;
         // Same movie, same bytes: the encoder leaves the unused tail of each
         // audio sector as whatever its memory held, which would make the disc
         // differ from one cook to the next.
@@ -725,6 +742,19 @@ fn run() -> Result<ExitCode, String> {
             ));
         }
         let (video_s, audio_s) = durations(&m);
+        if sound.is_some() {
+            // The sound is the install's own clip, so it must really be there, and about as long
+            // as the picture it plays with (the original starts both together).
+            if mastering.is_none() {
+                return Err(format!("{}: the decoded sound is digital silence", spec.name));
+            }
+            if (video_s - audio_s).abs() > MAX_SOUND_DRIFT_S {
+                return Err(format!(
+                    "{}: {audio_s:.2} s of sound against {video_s:.2} s of picture",
+                    spec.name
+                ));
+            }
+        }
         match &mastering {
             Some(mastering) => eprintln!(
                 "hk-intro-cook: {}: sound {:.1} LUFS in the install's mono mix, {:+.1} dB gain to reach {:.1}, {:.1} LUFS and \
@@ -768,6 +798,10 @@ fn run() -> Result<ExitCode, String> {
     let movies: Vec<(&Spec, &Movie)> = cooked.iter().map(|(s, m)| (*s, m)).collect();
     std::fs::write(args.out.join("movie.rs"), constants(&movies))
         .map_err(|e| format!("movie.rs: {e}"))?;
+    // What the build checks to know the cook is current: the sound's origin.
+    let origin = if args.audio_dir.is_some() { "install AudioClips" } else { "movie track" };
+    std::fs::write(args.out.join("sound.json"), format!("{{\"sound\": \"{origin}\"}}\n"))
+        .map_err(|e| format!("sound.json: {e}"))?;
     let sectors: u32 = cooked
         .iter()
         .map(|(_, m)| m.video_sectors + m.audio_sectors + m.other_sectors)

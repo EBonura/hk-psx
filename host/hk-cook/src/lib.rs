@@ -52,6 +52,7 @@ pub mod gruz_art;
 pub mod gruzzer;
 pub mod hatcher;
 pub mod husk_guard;
+pub mod intro_audio;
 pub mod materials;
 pub mod mawlek;
 pub mod mawlek_art;
