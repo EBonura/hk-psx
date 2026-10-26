@@ -56,9 +56,17 @@ main had +688) and the free RAM below the pool is what `docs/BUDGET.md` says.
 
 A break now raises its own dust and chips as well as the Breakable's debris, and a nail hit on a rock or the
 door raises dust, chips and (the door) rubble: more particles in the pool for the second or so a burst lasts.
-In King's Pass a break burst that took 4 vblanks a frame before takes 5 (the particle tick runs every
-simulation tick, a burst frame spans four of them), so the `long_frames` ceilings of the King's Pass routes were
-re-measured (2x). Routes with no break (f08a, husk-guard, greenpath-walk, c37) are unchanged in the census (frames and GPU cycles per frame).
+A grub jar's glass alone is 80 shards. The break particles used to take a pass in every simulation tick, about
+half a vblank for eighty shards, and the main loop only lets a frame end when a tick finishes in the vblank it
+began in (main.rs, the loop after `begin_deferred_swap`): while a tick took a vblank the frame went on, up to 70
+vblanks at the jar (33 and 36 in the first measurement, a King's Pass break took 5 vblanks a frame where main
+took 4). The particles are only drawn, so each tick now adds to a count (`Pool::defer_break_tick`) and the
+picture takes one pass for the ticks since the last (`State::tick_break_particles`, before `frame::render`;
+`break_effects::tick_specs_by`): the velocity follows every tick, the step, shape, spin and contacts are taken
+once over the distance the ticks add up to, and one step is exactly one tick. On the grub-jar route the stall
+is gone (frame time 279 to 241 against a ceiling of 286, two frames of 5 vblanks and none longer) and
+kp-playtest's frames of 5 vblanks went from 29 to 1.
+Routes with no break (f08a, husk-guard, greenpath-walk, c37) are unchanged in the census (frames and GPU cycles per frame).
 Rigid debris decodes its polygon only for the solver; a draw decodes a `Look` (centroid, scale, tint) and the
 frame map's object index is found once per region.
 
