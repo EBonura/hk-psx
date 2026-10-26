@@ -26,6 +26,31 @@ fn fnv(bytes: &[u8]) -> u32 {
         (h ^ u32::from(*b)).wrapping_mul(16777619)
     })
 }
+/// The word hash of a stored chunk, as host/scene_bank.py `stored_hash` and the guest's `room_decode::word_hash`:
+/// Jenkins' one-at-a-time mix over little-endian 32-bit words, a last partial word padded with zeros,
+/// the length added before the final mix.
+fn stored_hash(bytes: &[u8]) -> u32 {
+    let round = |h: u32, w: u32| {
+        let h = h.wrapping_add(w);
+        let h = h.wrapping_add(h << 10);
+        h ^ (h >> 6)
+    };
+    let mut hash = 0x811c9dc5u32;
+    let mut words = bytes.chunks_exact(4);
+    for word in words.by_ref() {
+        hash = round(hash, u32::from_le_bytes([word[0], word[1], word[2], word[3]]));
+    }
+    let rest = words.remainder();
+    if !rest.is_empty() {
+        let mut tail = [0u8; 4];
+        tail[..rest.len()].copy_from_slice(rest);
+        hash = round(hash, u32::from_le_bytes(tail));
+    }
+    let hash = hash.wrapping_add(bytes.len() as u32);
+    let hash = hash.wrapping_add(hash << 3);
+    let hash = hash ^ (hash >> 11);
+    hash.wrapping_add(hash << 15)
+}
 fn load(path: &Path) -> Result<Value> {
     Ok(serde_json::from_slice(
         &std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?,
@@ -460,7 +485,7 @@ pub fn finish(root: &Path) -> Result<()> {
     descriptor["bank_fnv"] = json!(fnv(&raw));
     descriptor["raw_sha256"] = json!(format!("{:x}", Sha256::digest(&raw)));
     descriptor["stored_len"] = json!(compressed.len());
-    descriptor["stored_fnv"] = json!(fnv(&compressed));
+    descriptor["stored_fnv"] = json!(stored_hash(&compressed));
     descriptor["stored_sha256"] = json!(format!("{:x}", Sha256::digest(&compressed)));
     descriptor["fingerprint"] = json!(format!(
         "{:x}",
@@ -470,7 +495,7 @@ pub fn finish(root: &Path) -> Result<()> {
         .map(|i| word(&raw, 68 + i * 12).unwrap() * word(&raw, 72 + i * 12).unwrap())
         .collect::<Vec<_>>());
     let row = format!("WorldMetaDesc{{scene_id:21,raw_len:{},raw_fnv:{},bank_fnv:{},stored_len:{},stored_fnv:{},chunk_id:{},fingerprint:[{}]}},",
-        raw.len(), word(&raw, 12)?, fnv(&raw), compressed.len(), fnv(&compressed),
+        raw.len(), word(&raw, 12)?, fnv(&raw), compressed.len(), stored_hash(&compressed),
         descriptor["chunk_id"].as_u64().ok_or("metadata chunk id")?,
         binding.iter().map(u8::to_string).collect::<Vec<_>>().join(","));
     let manifest_path = root.join("data/scene_manifest.rs");

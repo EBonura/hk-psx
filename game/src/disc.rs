@@ -433,6 +433,14 @@ pub const fn scene_region(scene: usize) -> usize {
 const fn audio_bank_index(bank: usize) -> usize {
     BANK_INDEX + bank
 }
+/// The chunk's `chunk_spec` checksum is a word hash (room_decode.rs `word_hash`, host/scene_bank.py
+/// `stored_hash`), not FNV-1a: scenes, atlases and world metadata. The pack directory's own checksum for
+/// them is FNV-1a (mkisopsx) and is not compared; the decoder checks the bytes against the word hash.
+const fn word_hashed(index: usize) -> bool {
+    index < SCENE_COUNT
+        || (index >= ATLAS_INDEX && index < FOCUS_INDEX)
+        || (index >= METADATA_INDEX && index < EFFECT_INDEX)
+}
 /// Stored byte length, payload checksum and staging capacity of one pack chunk,
 /// by chunk index. Every field of that chunk's directory entry except its
 /// sector offset follows from this triple and the index itself, which is why
@@ -964,7 +972,7 @@ impl Cache {
                     || group_of(i) != Some((group, j))
                     || e.chunk_id as usize != i + 1
                     || e.byte_size as usize != size
-                    || e.checksum != checksum
+                    || (!word_hashed(i) && e.checksum != checksum)
                     || e.sector_offset as usize != next
                     || e.sector_count as usize != size.div_ceil(SECTOR_BYTES)
                 {
@@ -1563,9 +1571,9 @@ impl Cache {
     /// The arena is word aligned and the bank starts at its front, which is
     /// what keeps the SDK's SPU DMA upload path available; the banks used to
     /// get that from their own `repr(align(4))` static.
-    /// Two passes through a stack sector preserve every admitted arena byte.
-    /// The first validates the complete bank; the second installs it while
-    /// publication is revoked. I/O/hash failure cannot publish a partial bank.
+    /// One pass through a stack sector preserves every admitted arena byte: each sector is checked
+    /// and installed while publication is revoked, and the hash is judged at the end. I/O/hash
+    /// failure leaves publication revoked, so a partial bank is never published.
     #[inline(never)]
     fn prepare_runner_audio(&mut self,scene:usize)->Result<(),LoadError> {
         let mossman=crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
@@ -1616,31 +1624,33 @@ impl Cache {
         prefetch_discard();
         room_drive();
         let mut words=[0u32;SECTOR_WORDS];
-        for pass in 0..2 {
-            if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
-                unsafe{self.reader.stop();}
-                return Err(LoadError::PayloadRead);
-            }
-            let result=(|| {
-                let mut hash=0x811c9dc5u32;
-                let mut offset=0;
-                while offset<size {
-                    checkpoint();
-                    if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
-                    let n=(size-offset).min(SECTOR_BYTES);
-                    let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
-                    if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
-                    for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
-                    if pass==1 {crate::runner_audio::upload_fragment(offset,bytes);}
-                    offset+=n;
-                }
-                if hash!=checksum {return Err(LoadError::RoomMismatch);}
-                Ok(())
-            })();
+        // One pass: each sector is checked and uploaded as it arrives, and the hash is judged at the
+        // end. Publication stays revoked from `begin_overlay` until `finish_overlay`, so a failure
+        // leaves the family unpublished and the load fails, as a failed second pass did before; the
+        // separate validating pass cost a second seek and a second read of the bank (up to 0.5 s).
+        if !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
+        if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
             unsafe{self.reader.stop();}
-            result?;
+            return Err(LoadError::PayloadRead);
         }
+        let result=(|| {
+            let mut hash=0x811c9dc5u32;
+            let mut offset=0;
+            while offset<size {
+                checkpoint();
+                if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
+                let n=(size-offset).min(SECTOR_BYTES);
+                let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
+                if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
+                for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
+                crate::runner_audio::upload_fragment(offset,bytes);
+                offset+=n;
+            }
+            if hash!=checksum {return Err(LoadError::RoomMismatch);}
+            Ok(())
+        })();
+        unsafe{self.reader.stop();}
+        result?;
         crate::runner_audio::finish_overlay(mossman);
         Ok(())
     }
@@ -1982,6 +1992,7 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
+                    unsafe { HK_BAD_DECODE = 1 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2067,6 +2078,7 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
+                    unsafe { HK_BAD_DECODE = 2 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2123,6 +2135,7 @@ impl Cache {
             )
         };
         let mut decoder = Decoder::new_bytes(m.stored_len, m.stored_fnv, m.raw_len, m.bank_fnv)
+                .word_stored()
             .at(input)
             .hashed(preverified(m.chunk_id - 1));
         loop {
@@ -2137,6 +2150,7 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
+                    unsafe { HK_BAD_DECODE = 3 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2232,6 +2246,7 @@ impl Cache {
                 core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(), end)
             };
             let mut decoder = Decoder::new_bytes(a.stored_len, a.stored_fnv, a.raw_len, a.raw_fnv)
+                .word_stored()
                 .at(input)
                 .hashed(preverified(ATLAS_INDEX + self.loaded_atlases));
             loop {
@@ -2249,6 +2264,7 @@ impl Cache {
                     }
                     Ok(None) => {}
                     Err(error) => {
+                        unsafe { HK_BAD_DECODE = 4 * 1000 + self.loaded_atlases as u32; }
                         return Err(match error {
                             DecodeError::Checksum => LoadError::Checksum,
                             DecodeError::Decompress => LoadError::Decompress,
@@ -2447,6 +2463,7 @@ impl Cache {
                 )
             };
             let mut decoder = Decoder::new_scene(d.stored_len, d.stored_fnv, d.raw_len, d.raw_fnv)
+                .word_stored()
                 .at(input)
                 .hashed(preverified(index));
             loop {
@@ -2464,6 +2481,7 @@ impl Cache {
                     }
                     Ok(None) => {}
                     Err(error) => {
+                        unsafe { HK_BAD_DECODE = 5 * 1000 + self.loaded_atlases as u32; }
                         return Err(match error {
                             DecodeError::Checksum => LoadError::Checksum,
                             DecodeError::Decompress => LoadError::Decompress,
@@ -3479,6 +3497,8 @@ impl Verify {
 static mut GATE_VERIFIED: psx_math::Mask64 = psx_math::Mask64::EMPTY;
 static mut GATE_SCENE: usize = EMPTY;
 #[no_mangle]
+pub static mut HK_BAD_DECODE: u32 = 0;
+#[no_mangle]
 pub static mut HK_PREVERIFIED_BYTES: u32 = 0;
 #[no_mangle]
 pub static mut HK_PREVERIFIED_CHUNKS: u32 = 0;
@@ -3533,9 +3553,22 @@ pub fn preverify_step(mut budget: usize) {
         let bytes = unsafe {
             core::slice::from_raw_parts(p.base.add((v.first - p.skip) * SECTOR_BYTES), size)
         };
-        let m = (size - v.pos).min(budget);
-        for &b in &bytes[v.pos..v.pos + m] {
-            v.hash = (v.hash ^ u32::from(b)).wrapping_mul(0x01000193);
+        let index = member(g, v.j);
+        let word = word_hashed(index);
+        let mut m = (size - v.pos).min(budget);
+        if word && m < size - v.pos {
+            // The word hash takes whole words but for the chunk's last piece.
+            m &= !3;
+            if m == 0 {
+                break;
+            }
+        }
+        if word {
+            v.hash = crate::room_decode::word_hash(v.hash, &bytes[v.pos..v.pos + m]);
+        } else {
+            for &b in &bytes[v.pos..v.pos + m] {
+                v.hash = (v.hash ^ u32::from(b)).wrapping_mul(0x01000193);
+            }
         }
         v.pos += m;
         budget -= m;
@@ -3543,7 +3576,12 @@ pub fn preverify_step(mut budget: usize) {
             HK_PREVERIFIED_BYTES = HK_PREVERIFIED_BYTES.wrapping_add(m as u32);
         }
         if v.pos == size {
-            if v.hash == checksum {
+            let sealed = if word {
+                crate::room_decode::word_finish(v.hash, size)
+            } else {
+                v.hash
+            };
+            if sealed == checksum {
                 v.mask.set(v.j);
                 unsafe {
                     HK_PREVERIFIED_CHUNKS += 1;

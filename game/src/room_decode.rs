@@ -53,6 +53,8 @@ pub struct Decoder {
     input: usize,
     /// The stored hash matched and the cook is trusted: skip raw hash and validation.
     trusted: bool,
+    /// The stored bytes carry the word hash (`word_hash`) rather than FNV-1a.
+    word: bool,
 }
 /// Trust the cook: a payload whose stored bytes match the cooked hash is not
 /// raw-hashed or format-walked again after decoding. The LZ4 decode of verified
@@ -113,6 +115,57 @@ fn hash_bytes(mut hash: u32, bytes: &[u8]) -> u32 {
         p = unsafe { p.add(1) };
     }
     hash
+}
+/// One round of the word hash: Jenkins' one-at-a-time mix over a little-endian 32-bit word.
+#[inline(always)]
+const fn word_round(hash: u32, word: u32) -> u32 {
+    let hash = hash.wrapping_add(word);
+    let hash = hash.wrapping_add(hash << 10);
+    hash ^ (hash >> 6)
+}
+/// Fold `bytes` into a word hash: whole little-endian words, then a last partial word padded with
+/// zeros. Pieces of one stream must all be a multiple of four bytes long but the last (the decoder
+/// rounds its steps down), and the state starts at `FNV`. `word_finish` seals it.
+pub fn word_hash(mut hash: u32, bytes: &[u8]) -> u32 {
+    let words = bytes.len() / 4;
+    let base = bytes.as_ptr();
+    if base as usize & 3 == 0 {
+        let mut p = base.cast::<u32>();
+        // SAFETY: `words` whole words lie inside the slice and `p` is word aligned.
+        let quads_end = unsafe { p.add(words & !3) };
+        while p != quads_end {
+            let (a, b, c, d) = unsafe { (p.read(), p.add(1).read(), p.add(2).read(), p.add(3).read()) };
+            hash = word_round(word_round(word_round(word_round(hash, u32::from_le(a)), u32::from_le(b)), u32::from_le(c)), u32::from_le(d));
+            p = unsafe { p.add(4) };
+        }
+        let end = unsafe { base.cast::<u32>().add(words) };
+        while p != end {
+            hash = word_round(hash, u32::from_le(unsafe { p.read() }));
+            p = unsafe { p.add(1) };
+        }
+    } else {
+        for i in 0..words {
+            // SAFETY: four bytes of the slice; the read makes no alignment demand.
+            let w = unsafe { base.add(i * 4).cast::<u32>().read_unaligned() };
+            hash = word_round(hash, u32::from_le(w));
+        }
+    }
+    let rest = &bytes[words * 4..];
+    if !rest.is_empty() {
+        let mut w = 0u32;
+        for (i, &b) in rest.iter().enumerate() {
+            w |= u32::from(b) << (8 * i);
+        }
+        hash = word_round(hash, w);
+    }
+    hash
+}
+/// The word hash of a whole stream of `len` bytes, from the state `word_hash` left.
+pub const fn word_finish(hash: u32, len: usize) -> u32 {
+    let hash = hash.wrapping_add(len as u32);
+    let hash = hash.wrapping_add(hash << 3);
+    let hash = hash ^ (hash >> 11);
+    hash.wrapping_add(hash << 15)
 }
 /// Replicate an LZ4 match in forward order, including overlap. The caller has
 /// checked offset<=output and the complete output span against both the raw
@@ -333,7 +386,14 @@ impl Decoder {
             scene_validation: None,
             input: 0,
             trusted: false,
+            word: false,
         }
+    }
+    /// The stored bytes are checked with `word_hash` (four bytes a round) instead of byte-wise FNV-1a:
+    /// the scene groups' chunks (host/scene_bank.py `stored_hash`). The expanded hash stays FNV.
+    pub const fn word_stored(mut self) -> Self {
+        self.word = true;
+        self
     }
     /// Decode stored bytes that already sit at `start`, ending exactly at the
     /// end of the slice later handed to `step`: a scene group read or
@@ -415,10 +475,25 @@ impl Decoder {
                         return Err(Error::Decompress);
                     }
                     if self.pos < len {
-                        let n = (len - self.pos).min(budget + 1);
-                        self.hash =
-                            hash_bytes(self.hash, &arena[base + self.pos..base + self.pos + n]);
+                        let word = stored && self.word;
+                        let mut n = (len - self.pos).min(budget + 1);
+                        if word && n < len - self.pos {
+                            // A word hash takes whole words but for the stream's last piece.
+                            n &= !3;
+                            if n == 0 {
+                                break;
+                            }
+                        }
+                        let piece = &arena[base + self.pos..base + self.pos + n];
+                        self.hash = if word {
+                            word_hash(self.hash, piece)
+                        } else {
+                            hash_bytes(self.hash, piece)
+                        };
                         self.pos += n;
+                        if word && self.pos == len {
+                            self.hash = word_finish(self.hash, len);
+                        }
                         budget -= n - 1;
                         continue;
                     }
@@ -689,6 +764,41 @@ mod word_copy_tests {
             }
         }
     }
+    #[test]
+    fn word_hash_matches_the_host_vectors_at_every_alignment_and_split() {
+        // Pinned against host/scene_bank.py `stored_hash`.
+        let seq = |n: usize| -> Vec<u8> { (0..n).map(|i| i as u8).collect() };
+        let mut big = seq(256);
+        big.extend(seq(256));
+        big.extend(b"abc");
+        for (bytes, expected) in [
+            (Vec::new(), 4026452956u32),
+            (vec![1u8], 1347402264),
+            (seq(64), 430371775),
+            (big, 3397851643),
+        ] {
+            let whole = super::word_finish(super::word_hash(super::FNV, &bytes), bytes.len());
+            assert_eq!(whole, expected);
+            // Misaligned copies hash alike, and so do pieces cut on word boundaries.
+            let mut padded = vec![0u8; bytes.len() + 4];
+            for shift in 0..4 {
+                padded[shift..shift + bytes.len()].copy_from_slice(&bytes);
+                let slice = &padded[shift..shift + bytes.len()];
+                assert_eq!(super::word_finish(super::word_hash(super::FNV, slice), slice.len()), expected);
+            }
+            for step in [4usize, 8, 12, 1024] {
+                let mut hash = super::FNV;
+                let mut at = 0;
+                while at < bytes.len() {
+                    let end = if bytes.len() - at <= step { bytes.len() } else { at + step };
+                    hash = super::word_hash(hash, &bytes[at..end]);
+                    at = end;
+                }
+                assert_eq!(super::word_finish(hash, bytes.len()), expected);
+            }
+        }
+    }
+
     #[test]
     fn fnv_shift_multiply_and_chunked_hash_match_scalar_reference() {
         let reference = |seed: u32, bytes: &[u8]| {

@@ -10,7 +10,7 @@ import subprocess
 import struct
 import sys
 from pathlib import Path
-from scene_bank import BOOT_SCENE, build_scene, compressed, fnv, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
+from scene_bank import BOOT_SCENE, build_scene, compressed, fnv, stored_hash, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
 
 ROOT=Path(__file__).resolve().parents[1]
 def rel(path):
@@ -84,7 +84,7 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         raw,descriptor=encode_scene(source_scene,rows)
         stored=compressed(raw)
         path=output_dir/f"scene_{scene['scene_id']}"
-        bank=dict(descriptor,raw_len=len(raw),stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),
+        bank=dict(descriptor,raw_len=len(raw),stored_len=len(stored),stored_fnv=stored_hash(stored),stored_sha256=sha(stored),
                   bank_fnv=fnv(raw),raw_sha256=sha(raw),raw_path=rel(path)+'.hkwm',
                   stored_path=rel(path)+'.hkwm.z',path=rel(path)+'.hkwm.z',
                   fingerprint=raw[16:48].hex())
@@ -359,11 +359,11 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             dense=bank(None)
             if sectors(stored,resident_stored)>sectors(dense[2],dense[4]):raw,e,stored,resident,resident_stored=dense
         bodies[scene]=(raw,stored,resident,resident_stored)
-        e.update(stored_bytes=len(stored),stored_fnv=fnv(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
+        e.update(stored_bytes=len(stored),stored_fnv=stored_hash(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=rel(output_dir/f'scene_{scene}.hk'),stored_path=rel(output_dir/f'scene_{scene}.hlzc'),
                  resident_raw_path=rel(output_dir/f'scene_{scene}.resident.hk'),resident_stored_path=rel(output_dir/f'scene_{scene}.resident.hlzc'),
                  resident_raw_len=len(resident),resident_raw_fnv=fnv(resident),resident_raw_sha256=sha(resident),
-                 resident_stored_len=len(resident_stored),resident_stored_fnv=fnv(resident_stored),resident_stored_sha256=sha(resident_stored),
+                 resident_stored_len=len(resident_stored),resident_stored_fnv=stored_hash(resident_stored),resident_stored_sha256=sha(resident_stored),
                  path=rel(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
         entries.append(e)
     if arena_bytes is None:arena_bytes=scene_arena_bytes(entries,meta,bodies,report_path.parent,residency)
@@ -393,7 +393,7 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             spec['first']+=e['page_base']if spec['kind']==0 else e['palette_base']
             path=output_dir/f'atlas_{index:02}'
             atlases.append(spec|dict(scene_index=e['scene_index'],raw_len=len(chunk),raw_fnv=fnv(chunk),raw_sha256=sha(chunk),
-                stored_len=len(stored),stored_fnv=fnv(stored),stored_sha256=sha(stored),raw_path=rel(path)+'.raw',stored_path=rel(path)+'.hlzc',path=rel(path)+'.hlzc'))
+                stored_len=len(stored),stored_fnv=stored_hash(stored),stored_sha256=sha(stored),raw_path=rel(path)+'.raw',stored_path=rel(path)+'.hlzc',path=rel(path)+'.hlzc'))
             atlas_bodies.append((chunk,stored))
     if grades:scene_grading.write_rust(meta,means)
     report={'residency':residency,'format':'HKPACKEDSCENES02','source_format':'HKSCNE01','resident_format':'HKSCNE02','source_metadata_path':str(metadata),'source_metadata_sha256':sha(source),
