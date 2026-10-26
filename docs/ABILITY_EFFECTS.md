@@ -33,8 +33,24 @@ inside three sectors), which showed as blocks and clipped cores.
 
 What the density costs: every part of a frame is an animation-cache miss, uploaded through the GPU port when the
 effect frame changes (about every second tick). Vengeful Spirit's blast and impact at 1.25 pixels a texel (four parts
-a frame) took the Baldur fight (route baldur-spell, 54 casts) from 3.54 to 3.55 vblanks a frame; at 1.7 and 1.35 they
-are two parts a frame and the route is back at 3.54. The packs are 12,343 and 12,986 bytes.
+a frame) took the Baldur fight (route baldur-spell, 54 casts) from 3.54 to 3.55 vblanks a frame (frame time 203
+against 202); at 1.7 and 1.35 they are two parts a frame and the route is back at 202. The packs are 13,429 and
+11,703 bytes.
+
+Tone (`FX_TONE`, host/ability_art.py): each premultiplied value v becomes `255 * gain * (v / 255) ** gamma` before the
+frame is cut. The effects add to scenes that are bright blue in places, so the soft haze of the wings (gamma 1.9, gain
+0.8) and the wall impact's core (gamma 1.4, gain 0.72) saturated to a white disc, and the puff (gamma 0.7, gain 1.8), a
+pale dust, added nothing visible to a lit wall. The double jump's blue glow is dimmer (24, 40, 96 at its centre).
+
+A cooking bug that the first version carried: `fx_parts` reused the loop variables `tx` and `ty` for the lit box of a part,
+so every part after the first in a row of parts was cut from rows shifted by the first part's margin. Frames of two
+parts side by side (the wings in their wide frames, the blast) lost the tops of their feathers and the wall impact at
+four parts showed blocks where parts overlapped; the part corners are now their own variables.
+
+The spell's blast and wall impact are drawn after the front scenery (`ability_fx::draw_world`, frame.rs): the original
+draws them over the floor of the Elder Baldur's bridge and the arches below it (checked against the original with
+`tools/hkref`, same room, cast with 99 SOUL), and the port's floor strip drawn after the effects hid the middle of the
+fan and left only its lower sparks showing under it. The effects that follow the Knight stay a hair behind him.
 
 Those sizes are more than the three sectors the pool-fit check counts per carried package, so the two packs are
 *optional* (`host/code_modules.py` `OPTIONAL`): the build's guarantee (the worst room beside the three largest of the
