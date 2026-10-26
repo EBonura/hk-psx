@@ -93,9 +93,15 @@ FX_CLIPS = (('Dash Effect', 'knight', 'Dash Effect', 4.11, -0.55, -1.509, 1.509,
             ('Fireball Wall Impact', 23262, 'Fireball Wall Impact', 1.709, 0.0, 2.5, 2.5, 1.35))
 # A frame is cut to parts of at most this many texels a side: the animation slot.
 FX_PART = 64
+# Tone of an effect's light, (gamma, gain): each premultiplied value v (0..255) becomes 255 * gain * (v / 255) ** gamma.
+# The effects add to a scene that is itself bright blue in places, so soft glows that were faint in the original's own
+# blend saturate to a white disc here: gamma over 1 pulls the haze down and keeps the feathers and sparks' peaks (the
+# wings), a gain under 1 keeps a core from clipping (the wall impact), and gamma under 1 with a gain over 1 lifts a pale
+# dust that the add leaves invisible on a lit wall (the puff). Effects not listed are cooked as drawn.
+FX_TONE = {'Double Jump Wings': (1.9, 0.8), 'Wall Puff': (0.7, 1.8), 'Fireball Wall Impact': (1.4, 0.72)}
 # The double jump's aura: its radius in world units, the colour at its centre (0..255) and how fast it falls off.
 AURA_RADIUS = 1.6
-AURA_RGB = (42, 70, 160)
+AURA_RGB = (24, 40, 96)
 # A frame's outer edge fades to black over this many texels, so no quad shows a rectangle's edge.
 FX_EDGE_FADE = 2.5
 # Brightness (0..255, premultiplied) a texel needs to be anything but transparent.
@@ -291,7 +297,7 @@ def quantize_additive_shared(image, threshold, extra, weight):
     indices = [0 if c is None else nearest_entry(c, entries, cache) for c in lit]
     return w, h, palette_words(entries), pack_indices(indices, w, h)
 
-def fx_parts(image, box, scale, density, premultiplied=False):
+def fx_parts(image, box, scale, density, premultiplied=False, tone=None):
     """One effect frame as light on black: its colour premultiplied by its alpha, cut to `density`
     screen pixels a texel at the size `box` (world units, corners as the draw takes them) shows it
     at, faded to nothing over `FX_EDGE_FADE` texels at the frame's edge, then split into parts of
@@ -304,6 +310,9 @@ def fx_parts(image, box, scale, density, premultiplied=False):
     else:
         r, g, b, a = image.convert('RGBA').split()
         lit = Image.merge('RGB', [ImageChops.multiply(c, a) for c in (r, g, b)]).resize((w, h), Image.Resampling.LANCZOS)
+    if tone is not None:
+        gamma, gain = tone
+        lit = lit.point([min(255, round(255 * gain * (v / 255) ** gamma)) for v in range(256)] * 3)
     ramp = lambda n: [min(1.0, min(i + 0.5, n - i - 0.5) / FX_EDGE_FADE) for i in range(n)]
     fx, fy = ramp(w), ramp(h)
     mask = Image.new('L', (w, h))
@@ -321,11 +330,12 @@ def fx_parts(image, box, scale, density, premultiplied=False):
             lit_box = part.convert('L').point(lambda v: 255 if v >= FX_THRESHOLD else 0).getbbox()
             if lit_box is None:
                 continue
-            tx, ty, x1, y1 = tx + lit_box[0], ty + lit_box[1], tx + lit_box[2], ty + lit_box[3]
-            part = lit.crop((tx, ty, x1, y1))
+            # The part's own corners: `tx` and `ty` stay the loop's, so the next part of the row starts where it should.
+            left, top, right, bottom = tx + lit_box[0], ty + lit_box[1], tx + lit_box[2], ty + lit_box[3]
+            part = lit.crop((left, top, right, bottom))
             across = lambda t: box[0] + (box[2] - box[0]) * t / w
             down = lambda t: box[3] + (box[1] - box[3]) * t / h
-            parts.append((part, [across(tx), down(y1), across(x1), down(ty)]))
+            parts.append((part, [across(left), down(bottom), across(right), down(top)]))
     return parts
 
 def shelf(sizes, limit=256):
@@ -507,7 +517,7 @@ def cook():
             fx_frame_first.append(len(images))
             # A child's local transform; a negative scale turns the corners round, which draws the frame mirrored.
             placed = (lx + kx * box[0], ly + ky * box[1], lx + kx * box[2], ly + ky * box[3])
-            for part, part_box in fx_parts(image, placed, scale, density):
+            for part, part_box in fx_parts(image, placed, scale, density, tone=FX_TONE.get(name)):
                 images.append(part)
                 boxes.append(part_box)
                 art_sources.append(f'{source.sid(obj)}:{frame["spriteId"]}')
