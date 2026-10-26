@@ -101,10 +101,11 @@ MODULES = {
     # The Mosquito's module also holds the Acid Flyer (one room, 1.6 KB): the resident mask has 32 bits.
     'mosquito': _sim('mosquito', 'acid_flyer') + _actor('advance_mosquito', 'advance_acid_flyer'),
     'moss_walker': _sim('moss_walker') + _actor('advance_moss_walker'),
-    'baldur': _sim('baldur') + _actor('advance_baldur'),
+    # The Baldur's module also holds the Elder Baldur's Blocker (its rooms carry both modules, so the merge costs no pool
+    # bytes anywhere): a resident mask bit for the Knight's second optional effects pack.
+    'baldur': _sim('baldur', 'blocker') + _actor('advance_baldur', 'advance_blocker'),
     'aspid': _sim('aspid') + _actor('advance_aspid'),
     'hatcher': _sim('hatcher') + _actor('advance_hatcher', 'advance_baby'),
-    'blocker': _sim('blocker') + _actor('advance_blocker'),
     'pigeon': _sim('pigeon') + _actor('advance_pigeon', 'pigeon_senses'),
     # climber_ray_hit stays resident: the SDK scan cannot resolve its
     # modulo-indexed switch table once the table is in a module.
@@ -190,8 +191,8 @@ KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': 'false_knight', 'Mawlek': 'm
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
                'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'mosquito', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
-               # (blocker_roller.rs), so its rooms carry both.
-               'Blocker': ('blocker', 'baldur')}
+               # (blocker_roller.rs); both live in the `baldur` module.
+               'Blocker': 'baldur'}
 # Controller kinds that run an HKFSM03 bank -> the cooked tree label (data/<label>_families.txt, written by
 # host/hk-fsm cook3 with the action families the bank uses), and the module each family's code lives in
 # (hk_format::fsm3 family numbers: 0 flow, 1 math, 2 events, 3 timers, 4 transform, 5 ai, 6 raycast,
