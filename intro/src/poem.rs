@@ -94,7 +94,9 @@ fn clear(x: u16, y: u16) {
 fn draw_frame(x: u16, y: u16, ms: u32) {
     clear(x, y);
     aim(x, y);
-    let page = TexturePage::new(prompt_text::FONT_X, prompt_text::FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1);
+    // The poem's own cells (host/hk-build/intro.rs `PoemStrip`), uploaded by `play`, in the font's palette.
+    let (vx, vy, ..) = prompt_text::POEM_STRIP_VRAM;
+    let page = TexturePage::new(vx, vy, TextureDepth::Bit4).uv_word(1);
     packet(&[0xE100_0000 | u32::from(page) | 1 << 10]);
     let clut = u32::from(Clut::new(FONT_CLUT.0, FONT_CLUT.1).uv_word());
     let mut first = 0;
@@ -102,34 +104,19 @@ fn draw_frame(x: u16, y: u16, ms: u32) {
         let level = brightness(line, ms);
         if level != 0 {
             let color = 0x6600_0000 | level * 0x0001_0101;
-            for (&(u, v, gx, gy), &width) in
-                prompt_text::POEM_GLYPHS[first..end].iter().zip(&prompt_text::POEM_GLYPH_WIDTHS[first..end])
+            for (&(u, v, gx, gy), &size) in
+                prompt_text::POEM_GLYPHS[first..end].iter().zip(&prompt_text::POEM_GLYPH_SIZES[first..end])
             {
                 packet(&[
                     color,
                     // The drawing offset is the buffer's, set by `aim`: positions are the screen's.
                     u32::from(gx as u16) | u32::from(gy as u16) << 16,
                     u32::from(u) | u32::from(v) << 8 | clut << 16,
-                    u32::from(width) | u32::from(prompt_text::GLYPH_H) << 16,
+                    size,
                 ]);
             }
         }
         first = end;
-        // The author's line has no glyphs: a picture of its own, smaller than the verse and right aligned
-        // (host/hk-build/intro.rs `author_strip`), drawn as one rectangle from where `play` uploaded it.
-        if line == 4 && level != 0 {
-            let (vx, vy, ..) = prompt_text::AUTHOR_VRAM;
-            let page = TexturePage::new(vx, vy, TextureDepth::Bit4).uv_word(1);
-            let (x, y) = prompt_text::AUTHOR_POS;
-            let (w, h) = prompt_text::AUTHOR_SIZE;
-            packet(&[
-                0xE100_0000 | u32::from(page) | 1 << 10,
-                0x6600_0000 | level * 0x0001_0101,
-                u32::from(x as u16) | u32::from(y as u16) << 16,
-                clut << 16,
-                u32::from(w) | u32::from(h) << 16,
-            ]);
-        }
     }
 }
 
@@ -239,10 +226,10 @@ pub fn play(skip: &mut Skip, cd: Cd, carry: &mut Carry) -> First {
         p.set_volume(0x80, 0x80);
         (p, file.song(cooked::poem::XA_CHANNEL), false)
     });
-    // The author's line goes into the movies' third display buffer, which nothing draws in until the movies
+    // The poem's cells go into the movies' third display buffer, which nothing draws in until the movies
     // (and which the first scene's load, while the poem goes on, leaves alone: buffers.rs).
-    let (vx, vy, vw, vh) = prompt_text::AUTHOR_VRAM;
-    upload_words(VramRect::new(vx, vy, vw, vh), &prompt_text::AUTHOR_WORDS);
+    let (vx, vy, vw, vh) = prompt_text::POEM_STRIP_VRAM;
+    upload_words(VramRect::new(vx, vy, vw, vh), &prompt_text::POEM_STRIP_WORDS);
     psx_spu::set_cd_volume(CdVolume::MAX, CdVolume::MAX);
     psx_spu::enable_cd_audio(true);
 

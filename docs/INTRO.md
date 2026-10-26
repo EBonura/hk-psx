@@ -78,9 +78,13 @@ the four verses wrapped to 288 px (a margin of 16 px each side, inside the title
 sheet `General`, `PROLOGUE_EXCERPT_01` to `_04` and `_AUTHOR`; the author's curly quotes become ASCII). The
 author's line is set smaller and right aligned in the scene: its text object has font size 3.85 where the verses'
 is 5, and alignment 2 (top right) where theirs is 1 (top centre), in the same 20 unit box, white, alpha 1 like the
-others. So it is a picture of its own, the line's font cells scaled by 0.77 with an area average
-(`host/hk-build/intro.rs` `author_strip`), uploaded into the movies' third display buffer (at (512, 0), free
-until the movies start) and drawn as one rectangle with the font's palette, ending at column 300. Each line fades in as in the original's animation (linear ramps from 1.43,
+others. It is set from the font's outlines at that size (14 x 0.77 = 10.8 px, grid fitted like the dialogue's cells), not
+the verse's cells scaled down, and the verses use cells three rows taller than the dialogue's 14 so that a descender
+is whole (the dialogue's cell cuts the `g`'s lower bowl; the poem's rows are 16 apart). Both come from
+`data/poem-font.hk` (hk-cook `font_strip::cook_poem`, written with the font image); `host/hk-build/intro.rs`
+(`PoemStrip`) packs the cells the five lines use into one 4bpp picture, uploaded into the movies' third display
+buffer (at (576, 256), free until the movies start), and every glyph, the author's included, is one rectangle
+drawn from it with the font's palette; the author's line ends at column 300. Each line fades in as in the original's animation (linear ramps from 1.43,
 6.33, 9.77 and 13.5 s, the author's eased from 17.1 s), a black cover opens at 1.8 s (done by 5.9 s) and closes
 over everything from 23.6 s (black at 28.1 s), and the sequence ends at 28.6 s. The curves are the clip's own
 (`host/hk-build/intro.rs` `KEYS`), sampled at 100 ms. One assumption: the cover is in front of the text (its z is
@@ -106,6 +110,11 @@ about 1 to about 4 steps a picture, where the clip's own is 0.1 to 0.3. Tried an
 busiest frame then needs about 424 KB of the arena's 415), ffmpeg's swscale dithers (they collapse into rows on
 flat areas) and a lower amplitude where the picture is flat (the gradients there fall back into contour patches
 with ragged edges, a block mean error of 0.4 rising to 1.0 steps at half amplitude, worse than the mesh).
+A dead zone is taken (`dither::DEAD`, 0.2 of a level at each end): a tone within it of a level stays on the level, only
+tones between levels are mixed. On the Intro's flat fog the std of a 16x16 block goes from 3.98 to 2.97 (the clip's
+is 0.5) and the change per picture from 5.1 to 3.2; at 0.25 and 0.3 the shallow gradient of frame 79 breaks into
+contour patches again (the teal oval), so 0.2 is the limit. A 16x16 blue noise tile (void and cluster) was tried with it:
+the same banding, and at 0.25 the busiest frame needs 422,560 B of the arena's 415,000.
 
 Tone (`host/hk-intro-cook/src/transfer.rs`): the whole chain (5 bit reduction, encoder, MDEC, display) lifts midtones
 and highlights (up to +14 steps at luma 150 to 256) and adds green, which came out as a teal cast and a clipped lamp

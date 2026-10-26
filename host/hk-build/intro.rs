@@ -133,8 +133,6 @@ fn const_bytes(text: &str, name: &str) -> Result<Vec<u8>> {
 /// the pen moves after it (game/src/dialogue.rs).
 struct Font {
     advances: Vec<u8>,
-    /// The font image: its palette, then rows of 256 4bpp texels (data/read_font.hk).
-    image: Vec<u8>,
     u0: i64,
     w: i64,
     per_row: i64,
@@ -143,10 +141,9 @@ struct Font {
 }
 
 impl Font {
-    fn read(font_layout: &str, read_points: &str, image: &[u8]) -> Result<Font> {
+    fn read(font_layout: &str, read_points: &str) -> Result<Font> {
         Ok(Font {
             advances: const_bytes(read_points, "ADVANCES")?,
-            image: image.to_vec(),
             u0: const_int(font_layout, "GLYPH_U0")?,
             w: const_int(font_layout, "GLYPH_W")?,
             per_row: const_int(font_layout, "GLYPH_PER_ROW")?,
@@ -160,39 +157,6 @@ impl Font {
             .get(usize::from(b).wrapping_sub(32))
             .map(|a| i64::from(*a))
             .ok_or_else(|| format!("no advance for {:?}", b as char).into())
-    }
-
-    /// The 4bpp texel at (`u`, `v`) of the font image, a palette index (0 outside the image).
-    fn texel(&self, u: i64, v: i64) -> u8 {
-        let at = 32 + v * 128 + u / 2;
-        let byte = usize::try_from(at).ok().and_then(|i| self.image.get(i)).copied().unwrap_or(0);
-        if u % 2 == 0 { byte & 15 } else { byte >> 4 }
-    }
-
-    /// `text` as one picture of coverage (0 to 1, a row of `width` values per line, 14 lines), cells laid at
-    /// the pen as the dialogue lays them and the overlap of two neighbours' cells taking the more.
-    fn coverage(&self, text: &str) -> Result<(usize, Vec<f64>)> {
-        let width = (self.width(text)? + self.w) as usize;
-        let mut canvas = vec![0.0; width * 14];
-        let mut x = 0;
-        for b in text.bytes() {
-            let i = i64::from(b) - 32;
-            if b != b' ' {
-                // The image's own rows: the page's `v0` is where the image sits in the texture page.
-                let (u0, v0) = (self.u0 + i % self.per_row * self.w, i / self.per_row * self.pitch);
-                for dy in 0..14 {
-                    for dx in 0..self.w {
-                        let index = f64::from(self.texel(u0 + dx, v0 + dy));
-                        // Undo the font cook's coverage curve (hk-cook font_strip.rs `level`).
-                        let coverage = ((index / 15.0).powf(1.0 / FONT_GAMMA) / FONT_GAIN).min(1.0);
-                        let at = dy as usize * width + (x + dx) as usize;
-                        canvas[at] = f64::max(canvas[at], coverage);
-                    }
-                }
-            }
-            x += self.advance(b)?;
-        }
-        Ok((width, canvas))
     }
 
     /// The width of `text`.
@@ -224,8 +188,8 @@ impl Font {
 /// font file of its own): one `(u, v, x)` row per visible glyph, as
 /// game/src/dialogue.rs places them, and the string's width. After it the
 /// poem's lines ([`poem_source`]).
-pub fn prompt_source(font_layout: &str, read_points: &str, font_image: &[u8]) -> Result<String> {
-    let font = Font::read(font_layout, read_points, font_image)?;
+pub fn prompt_source(font_layout: &str, read_points: &str, poem_font: &[u8]) -> Result<String> {
+    let font = Font::read(font_layout, read_points)?;
     let mut rows = String::new();
     let glyphs = font.glyphs(SKIP_PROMPT, 0)?;
     let mut widths = String::new();
@@ -251,7 +215,7 @@ pub fn prompt_source(font_layout: &str, read_points: &str, font_image: &[u8]) ->
         const_int(font_layout, "GLYPH_H")?,
         glyphs.len(),
         glyphs.len(),
-        poem_source(&font)?,
+        poem_source(&font, &PoemFont::read(poem_font)?)?,
     ))
 }
 
@@ -270,7 +234,7 @@ pub const POEM: [&str; 5] = [
 const POEM_WIDTH: i64 = 288;
 /// Rows apart within one line of the poem, and between lines: the extra space before the author's line is
 /// the original's (its line sits further down than the pitch of the four above it).
-const POEM_ROW_PITCH: i64 = 15;
+const POEM_ROW_PITCH: i64 = 16;
 const POEM_LINE_GAP: i64 = 5;
 const POEM_AUTHOR_GAP: i64 = 10;
 /// Where the block ends. The original anchors it at the screen's middle and runs it downward (the scene's
@@ -281,18 +245,13 @@ const POEM_AUTHOR_GAP: i64 = 10;
 /// (from line 212) starts, less a margin, and so sits in the lower middle as the original's does.
 const POEM_BOTTOM: i64 = 204;
 /// The author's line is set smaller than the verse (the scene's text sizes: 3.85 against 5) and right aligned
-/// in the same 20 unit wide box (`m_textAlignment` 2, top right; the verse's is 1, top centre). The game's
-/// font has one size, so the line is the same cells scaled by area average into a picture of its own, which
-/// the intro uploads into the movies' third display buffer (free during the poem) and draws as one rectangle.
-const AUTHOR_SCALE: f64 = 3.85 / 5.0;
+/// in the same 20 unit wide box (`m_textAlignment` 2, top right; the verse's is 1, top centre). It is set from
+/// the font's outlines at that size (data/poem-font.hk), not the verse's cells scaled down.
 /// Where the author's line ends (the verse's box ends at the title-safe edge, 304).
 const AUTHOR_RIGHT: i64 = 300;
-/// Where the author's picture is uploaded: the movies' third display buffer, at (576, 256) (intro/src/buffers.rs
-/// `MOVIE_BUFFERS`; a test keeps the two together), which the first scene's load leaves alone.
-const AUTHOR_VRAM: (u16, u16) = (576, 256);
-/// The font cook's coverage curve, `level = 15 (coverage gain)^gamma` (hk-cook font_strip.rs).
-const FONT_GAMMA: f64 = 0.6;
-const FONT_GAIN: f64 = 1.1;
+/// Where the poem's cells are uploaded: the movies' third display buffer, at (576, 256) (intro/src/buffers.rs
+/// `MOVIE_BUFFERS`; a test keeps the two together), free during the poem and left alone by the first scene's load.
+const STRIP_VRAM: (u16, u16) = (576, 256);
 /// The first line the poem may use (the title-safe area starts at 12).
 const POEM_TOP_LIMIT: i64 = 12;
 
@@ -329,33 +288,114 @@ fn wrap(font: &Font, text: &str, limit: i64) -> Result<Vec<String>> {
     Ok(best)
 }
 
-/// The author's line at [`AUTHOR_SCALE`]: (width, height, the font's palette index of each texel, row by row).
-fn author_strip(font: &Font, text: &str) -> Result<(usize, usize, Vec<u8>)> {
-    let (width, canvas) = font.coverage(text)?;
-    let (w, h) = ((width as f64 * AUTHOR_SCALE).ceil() as usize, (14.0 * AUTHOR_SCALE).ceil() as usize);
-    let mut sum = vec![0.0; w * h];
-    for y in 0..14usize {
-        for x in 0..width {
-            let c = canvas[y * width + x];
-            if c == 0.0 {
-                continue;
-            }
-            // The source texel [x, x+1) lands on [x s, (x+1) s) of the picture: share it out by overlap.
-            let (x0, x1, y0, y1) = (x as f64 * AUTHOR_SCALE, (x + 1) as f64 * AUTHOR_SCALE, y as f64 * AUTHOR_SCALE, (y + 1) as f64 * AUTHOR_SCALE);
-            for dy in (y0.floor() as usize)..((y1.ceil() as usize).min(h)) {
-                for dx in (x0.floor() as usize)..((x1.ceil() as usize).min(w)) {
-                    let ox = (x1.min(dx as f64 + 1.0) - x0.max(dx as f64)).max(0.0);
-                    let oy = (y1.min(dy as f64 + 1.0) - y0.max(dy as f64)).max(0.0);
-                    sum[dy * w + dx] += c * ox * oy;
+/// The poem's own cells (data/poem-font.hk, hk-cook font_strip.rs `cook_poem`): the verse's three rows taller than
+/// the dialogue's so a descender is whole, the author's line at its own smaller em.
+struct PoemFont {
+    body_w: usize,
+    body_h: usize,
+    author_w: usize,
+    author_h: usize,
+    author_advances: Vec<u8>,
+    body: Vec<Vec<u8>>,
+    author: Vec<Vec<u8>>,
+}
+
+impl PoemFont {
+    fn read(blob: &[u8]) -> Result<PoemFont> {
+        let header = blob.get(..4).ok_or("poem-font.hk is empty")?;
+        let (body_w, body_h, author_w, author_h) = (usize::from(header[0]), usize::from(header[1]), usize::from(header[2]), usize::from(header[3]));
+        let cells = |from: usize, w: usize, h: usize| -> Result<Vec<Vec<u8>>> {
+            (0..95)
+                .map(|i| blob.get(from + i * w * h..from + (i + 1) * w * h).map(<[u8]>::to_vec).ok_or_else(|| "poem-font.hk is short".into()))
+                .collect()
+        };
+        let author_advances = blob.get(4..99).ok_or("poem-font.hk is short")?.to_vec();
+        let body = cells(99, body_w, body_h)?;
+        let author = cells(99 + 95 * body_w * body_h, author_w, author_h)?;
+        Ok(PoemFont { body_w, body_h, author_w, author_h, author_advances, body, author })
+    }
+
+    fn author_advance(&self, b: u8) -> Result<i64> {
+        self.author_advances
+            .get(usize::from(b).wrapping_sub(32))
+            .map(|a| i64::from(*a))
+            .ok_or_else(|| format!("no advance for {:?}", b as char).into())
+    }
+
+    fn author_width(&self, text: &str) -> Result<i64> {
+        text.bytes().try_fold(0, |x, b| Ok(x + self.author_advance(b)?))
+    }
+}
+
+/// One glyph of the poem as drawn: its cell in the strip, its place on the screen and the size of the rectangle.
+struct PoemGlyph {
+    u: usize,
+    v: usize,
+    x: i64,
+    y: i64,
+    w: usize,
+    h: usize,
+}
+
+/// The cells the poem draws, packed into one 4bpp image 256 texels wide (one texture page): the verse's
+/// characters first, then the author's. `place` gives a cell's (u, v) for a (author, character).
+struct PoemStrip {
+    texels: Vec<u8>,
+    rows: usize,
+    cells: Vec<((bool, u8), (usize, usize))>,
+}
+
+impl PoemStrip {
+    fn new(font: &PoemFont, verse: &[String], author: &str) -> PoemStrip {
+        let mut body: Vec<u8> = verse.iter().flat_map(|r| r.bytes()).filter(|b| *b != b' ').collect();
+        body.sort_unstable();
+        body.dedup();
+        let mut by: Vec<u8> = author.bytes().filter(|b| *b != b' ').collect();
+        by.sort_unstable();
+        by.dedup();
+        let (body_per_row, author_per_row) = (256 / font.body_w, 256 / font.author_w);
+        let body_rows = body.len().div_ceil(body_per_row);
+        let author_rows = by.len().div_ceil(author_per_row);
+        let rows = body_rows * font.body_h + author_rows * font.author_h;
+        let mut texels = vec![0u8; 256 * rows];
+        let mut cells = Vec::new();
+        for (i, &ch) in body.iter().enumerate() {
+            let (u, v) = (i % body_per_row * font.body_w, i / body_per_row * font.body_h);
+            for y in 0..font.body_h {
+                for x in 0..font.body_w {
+                    texels[(v + y) * 256 + u + x] = font.body[usize::from(ch) - 32][y * font.body_w + x];
                 }
             }
+            cells.push(((false, ch), (u, v)));
         }
+        let top = body_rows * font.body_h;
+        for (i, &ch) in by.iter().enumerate() {
+            let (u, v) = (i % author_per_row * font.author_w, top + i / author_per_row * font.author_h);
+            for y in 0..font.author_h {
+                for x in 0..font.author_w {
+                    texels[(v + y) * 256 + u + x] = font.author[usize::from(ch) - 32][y * font.author_w + x];
+                }
+            }
+            cells.push(((true, ch), (u, v)));
+        }
+        PoemStrip { texels, rows, cells }
     }
-    let texels = sum
-        .iter()
-        .map(|c| (15.0 * (c * FONT_GAIN).clamp(0.0, 1.0).powf(FONT_GAMMA)).round() as u8)
-        .collect();
-    Ok((w, h, texels))
+
+    fn place(&self, author: bool, ch: u8) -> Result<(usize, usize)> {
+        self.cells
+            .iter()
+            .find(|(key, _)| *key == (author, ch))
+            .map(|(_, at)| *at)
+            .ok_or_else(|| format!("no cell for {:?}", ch as char).into())
+    }
+
+    /// The image as 32 bit words, 8 texels each, row by row: the VRAM rectangle's contents (64 halfwords wide).
+    fn words(&self) -> Vec<u32> {
+        self.texels
+            .chunks(8)
+            .map(|t| t.iter().enumerate().fold(0u32, |w, (i, &v)| w | u32::from(v) << (4 * i)))
+            .collect()
+    }
 }
 
 /// What the original's `Prologue Text` animation does to the poem: when each of the five lines fades in
@@ -410,50 +450,58 @@ fn curve_at(curve: usize, t: f64) -> f64 {
 /// The generated source of the poem: its rows of glyphs in the game's font, centred and grouped by line
 /// (each line of the poem fades as one), and the table of how bright each line is, in `ALPHA_STEP_MS`
 /// steps, with the cover's last.
-fn poem_source(font: &Font) -> Result<String> {
+fn poem_source(font: &Font, poem: &PoemFont) -> Result<String> {
     let rows: Vec<Vec<String>> = POEM[..4]
         .iter()
         .map(|line| wrap(font, line, POEM_WIDTH))
         .collect::<Result<_>>()?;
-    let (author_w, author_h, author) = author_strip(font, POEM[4])?;
+    let all_rows: Vec<String> = rows.iter().flatten().cloned().collect();
+    let strip = PoemStrip::new(poem, &all_rows, POEM[4]);
     let count: i64 = rows.iter().map(|r| r.len() as i64).sum();
-    let height = count * POEM_ROW_PITCH + 3 * POEM_LINE_GAP + POEM_AUTHOR_GAP + author_h as i64;
+    let height = count * POEM_ROW_PITCH + 3 * POEM_LINE_GAP + POEM_AUTHOR_GAP + poem.author_h as i64;
     if POEM_BOTTOM - height < POEM_TOP_LIMIT {
         return Err(format!("the poem is {height} lines tall, ending at {POEM_BOTTOM} it would start above {POEM_TOP_LIMIT}").into());
     }
     let mut y = POEM_BOTTOM - height;
-    let mut glyphs = String::new();
-    let mut widths = String::new();
-    let (mut total, mut ends) = (0usize, Vec::new());
+    let mut drawn: Vec<PoemGlyph> = Vec::new();
+    let mut ends = Vec::new();
     for (group, line) in rows.iter().enumerate() {
         for row in line {
-            for (u, v, x, w) in font.glyphs(row, (320 - font.width(row)?) / 2)? {
-                glyphs += &format!("    ({u}, {v}, {x}, {y}),\n");
-                widths += &format!("{w}, ");
-                total += 1;
+            let mut x = (320 - font.width(row)?) / 2;
+            for b in row.bytes() {
+                if b != b' ' {
+                    // As wide as the glyph's advance and a little over: the cells carry a stray texel at their far edge.
+                    let (u, v) = strip.place(false, b)?;
+                    let w = (font.advance(b)? + 2).min(poem.body_w as i64) as usize;
+                    drawn.push(PoemGlyph { u, v, x, y, w, h: poem.body_h });
+                }
+                x += font.advance(b)?;
             }
             y += POEM_ROW_PITCH;
         }
-        ends.push(total);
+        ends.push(drawn.len());
         y += if group == 3 { POEM_AUTHOR_GAP } else { POEM_LINE_GAP };
     }
-    // The author's line has no glyphs of its own: its group is empty, its picture is drawn instead.
-    ends.push(total);
-    let author_x = AUTHOR_RIGHT - author_w as i64;
-    // 4 bits a texel: a row is a whole number of words (8 texels), the upload as wide as the rows.
-    let row_words = author_w.div_ceil(8);
-    let (vram_x, vram_y) = AUTHOR_VRAM;
-    let (vram_w, word_count) = (row_words * 2, row_words * author_h);
-    let mut words = String::new();
-    for row in author.chunks(author_w) {
-        for word in 0..row_words {
-            let mut value = 0u32;
-            for texel in 0..8 {
-                value |= u32::from(*row.get(word * 8 + texel).unwrap_or(&0)) << (4 * texel);
-            }
-            words += &format!("{value:#010x}, ");
+    // The author's line: its own cells, right aligned at AUTHOR_RIGHT.
+    let mut x = AUTHOR_RIGHT - poem.author_width(POEM[4])?;
+    for b in POEM[4].bytes() {
+        if b != b' ' {
+            let (u, v) = strip.place(true, b)?;
+            // Its stray texel sits one past the advance.
+            let w = (poem.author_advance(b)? + 1).min(poem.author_w as i64) as usize;
+            drawn.push(PoemGlyph { u, v, x, y, w, h: poem.author_h });
         }
+        x += poem.author_advance(b)?;
     }
+    ends.push(drawn.len());
+    let total = drawn.len();
+    let glyphs: String = drawn.iter().map(|g| format!("    ({}, {}, {}, {}),\n", g.u, g.v, g.x, g.y)).collect();
+    let sizes: String = drawn.iter().map(|g| format!("{}, ", g.w | g.h << 16)).collect();
+    // 4 bits a texel, 256 texels (64 halfwords) a row.
+    let words: String = strip.words().iter().map(|w| format!("{w:#010x}, ")).collect();
+    let word_count = strip.rows * 32;
+    let (vram_x, vram_y) = STRIP_VRAM;
+    let vram_rows = strip.rows;
     let steps = POEM_END_MS / ALPHA_STEP_MS + 2;
     let mut table = String::new();
     for curve in 0..KEYS.len() {
@@ -466,16 +514,15 @@ fn poem_source(font: &Font) -> Result<String> {
     }
     Ok(format!(
         "pub const POEM_GLYPHS: [(u8, u8, i16, i16); {total}] = [\n{glyphs}];\n\
-         pub const POEM_GLYPH_WIDTHS: [u16; {total}] = [{widths}];\n\
+         /// Each glyph's rectangle: its width, and its height in the high halfword.\n\
+         pub const POEM_GLYPH_SIZES: [u32; {total}] = [{sizes}];\n\
          /// Index in `POEM_GLYPHS` where each of the five lines ends.\n\
          pub const POEM_LINE_END: [usize; 5] = {ends:?};\n\
          pub const POEM_END_MS: u32 = {POEM_END_MS};\n\
-         /// The author's line as a picture of its own: where it is drawn, its size in texels, the VRAM rectangle\n\
-         /// (halfwords) it is uploaded to and its words (4 bits a texel, palette indices of the font's CLUT).\n\
-         pub const AUTHOR_POS: (i16, i16) = ({author_x}, {y});\n\
-         pub const AUTHOR_SIZE: (u16, u16) = ({author_w}, {author_h});\n\
-         pub const AUTHOR_VRAM: (u16, u16, u16, u16) = ({vram_x}, {vram_y}, {vram_w}, {author_h});\n\
-         pub const AUTHOR_WORDS: [u32; {word_count}] = [{words}];\n\
+         /// The poem's cells as one picture (the verse's, then the author's): the VRAM rectangle (halfwords) it is\n\
+         /// uploaded to and its words (4 bits a texel, palette indices of the font's CLUT).\n\
+         pub const POEM_STRIP_VRAM: (u16, u16, u16, u16) = ({vram_x}, {vram_y}, 64, {vram_rows});\n\
+         pub const POEM_STRIP_WORDS: [u32; {word_count}] = [{words}];\n\
          pub const POEM_ALPHA_STEP_MS: u32 = {ALPHA_STEP_MS};\n\
          /// Brightness 0 to 255 of the four lines of the poem, the author's line and (last) the black cover, per step.\n\
          pub const POEM_ALPHA: [[u8; {steps}]; 6] = [\n{table}];\n"
@@ -489,7 +536,11 @@ pub fn compile(repository: &Path, psoxide: &Path) -> Result<PathBuf> {
     let read = |name: &str| std::fs::read_to_string(repository.join("data").join(name));
     std::fs::write(
         dir(repository).join("prompt.rs"),
-        prompt_source(&read("font_layout.rs")?, &read("read_points.rs")?, &std::fs::read(repository.join("data/read_font.hk"))?)?,
+        prompt_source(
+            &read("font_layout.rs")?,
+            &read("read_points.rs")?,
+            &std::fs::read(repository.join("data/poem-font.hk"))?,
+        )?,
     )?;
     let map = dir(repository).join("hk-intro.map");
     let mut command = Command::new("cargo");
@@ -548,49 +599,61 @@ mod tests {
             "pub const ADVANCES:[u8;95]=[{}];\n",
             advances.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
         );
-        let image = vec![0u8; 32 + 100 * 128];
-        let source = prompt_source(layout, &points, &image).unwrap();
+        let poem = poem_blob();
+        let source = prompt_source(layout, &points, &poem).unwrap();
         // 24 characters, 4 of them spaces.
         assert!(source.contains("pub const GLYPHS: [(u8, u8, i16); 20]"), "{source}");
         // `P` is cell 48: row 2, column 10; the second glyph starts after P's advance.
         assert!(source.contains("(134, 134, 0),"), "{source}");
         assert!(source.contains(", 9),"), "{source}");
         assert!(source.contains("WIDTH: i16 = "), "{source}");
-        assert!(prompt_source("", &points, &image).is_err());
+        assert!(prompt_source("", &points, &poem).is_err());
         // The poem: every line is there, rows wrap under the picture's width and each line ends after the one before it.
         assert!(source.contains("POEM_LINE_END: [usize; 5]"), "{source}");
         assert!(source.contains("POEM_ALPHA: [[u8; 288]; 6]"), "{source}");
-        // The author's line is a picture of its own: right aligned at AUTHOR_RIGHT, 11 rows (14 at 0.77).
-        assert!(source.contains("AUTHOR_SIZE: (u16, u16) = ("), "{source}");
-        assert!(source.contains("AUTHOR_VRAM: (u16, u16, u16, u16) = (576, 256, "), "{source}");
+        // The poem's cells are one picture, uploaded in the movies' third buffer; the author's line is glyphs of its own.
+        assert!(source.contains("POEM_STRIP_VRAM: (u16, u16, u16, u16) = (576, 256, 64, "), "{source}");
+        assert!(source.contains("POEM_GLYPH_SIZES: [u32; "), "{source}");
+    }
+
+    /// A poem-font.hk of the real shape (13x17 verse cells, 11x14 author cells, 5 texel advances) whose cell
+    /// `i` is filled with the palette index `i % 16`.
+    fn poem_blob() -> Vec<u8> {
+        let mut blob = vec![13, 17, 11, 14];
+        blob.extend([5u8; 95]);
+        for i in 0..95 {
+            blob.extend(vec![(i % 16) as u8; 13 * 17]);
+        }
+        for i in 0..95 {
+            blob.extend(vec![(i % 16) as u8; 11 * 14]);
+        }
+        blob
     }
 
     #[test]
-    fn the_authors_picture_is_in_the_movies_third_buffer() {
+    fn the_poems_cells_are_in_the_movies_third_buffer() {
         let buffers = include_str!("../../intro/src/buffers.rs");
-        let (x, y) = AUTHOR_VRAM;
+        let (x, y) = STRIP_VRAM;
         assert!(buffers.contains(&format!("({x}, {y})];")), "{buffers}");
     }
 
     #[test]
-    fn the_authors_line_is_the_cells_scaled_down_with_their_ink_kept() {
-        // A font whose every cell is solid at the top palette index: a scaled line keeps its mean coverage.
-        let mut image = vec![0u8; 32 + 100 * 128];
-        for byte in &mut image[32..] {
-            *byte = 0xFF;
-        }
-        let font = Font { advances: vec![10; 95], image, u0: 0, w: 13, per_row: 19, v0: 0, pitch: 15 };
-        let (w, h, texels) = author_strip(&font, "ab").unwrap();
-        // 2 cells of 10 and the cell's overhang: 33 texels, 0.77 of it, rounded up.
-        assert_eq!((w, h), (26, 11));
-        // The middle of the picture is solid ink; the rounded-up edge row is partly covered.
-        assert_eq!(texels[5 * w + 10], 15);
-        assert!(texels[10 * w + 10] < 15);
+    fn the_strip_holds_each_cell_once_and_the_descender_rows_with_it() {
+        let font = PoemFont::read(&poem_blob()).unwrap();
+        let strip = PoemStrip::new(&font, &["gag".to_string()], "ag");
+        // Verse cells g and a, author cells a and g: four cells, a verse row of 17 and an author row of 14.
+        assert_eq!(strip.cells.len(), 4);
+        assert_eq!(strip.rows, 17 + 14);
+        let (u, v) = strip.place(false, b'g').unwrap();
+        // g is character 71: the verse's cell is filled with 71 % 16 down to its last (17th) row.
+        assert_eq!(strip.texels[(v + 16) * 256 + u], 71 % 16);
+        assert_eq!(strip.words().len(), strip.rows * 32);
+        assert!(strip.place(false, b'z').is_err());
     }
 
     #[test]
     fn a_wrapped_line_breaks_near_its_middle_not_after_the_last_word_that_fits() {
-        let font = Font { advances: vec![5; 95], image: Vec::new(), u0: 0, w: 13, per_row: 19, v0: 0, pitch: 15 };
+        let font = Font { advances: vec![5; 95], u0: 0, w: 13, per_row: 19, v0: 0, pitch: 15 };
         // 5 px a character, a space included: 12 characters a row fit 60 px.
         let rows = wrap(&font, "one two three four five six", 100).unwrap();
         assert_eq!(rows, ["one two three", "four five six"]);

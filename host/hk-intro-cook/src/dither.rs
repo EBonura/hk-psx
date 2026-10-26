@@ -4,10 +4,11 @@
 //! dither: each frame goes through a tone correction (the measured transfer of the whole chain, [`Transfer`])
 //! and then to 5 bits against an ordered Bayer threshold, the same for the three channels (so the noise is in
 //! the picture's brightness, not its colour) and offset by a different amount for every picture ([`phase`]).
-//! Blue noise was tried too: it has no regular rows, but the busiest frame then needs about 424 KB of the
-//! scene arena's 415 KB.
-//! Lowering the amplitude where the picture is flat was tried as well: the gradients there then fall back into
-//! contour patches with ragged edges, worse than the mesh.
+//! Blue noise (void and cluster, 16x16 tile) was tried too: at the same dead zone the busiest frame needs
+//! 422,560 B of the scene arena's 415,000 (the Bayer tile 404,000), for a temporal change per picture of
+//! 2.2 against 2.6; at a dead zone that fits it has the same banding as the Bayer tile.
+//! A dead zone ([`DEAD`]) keeps a tone near a level on that level instead of speckling two; past 0.2 the
+//! shallow gradients fall back into contour patches (the teal oval of the Intro's frame 79 returns at 0.3).
 
 /// Where in the matrix picture `n` starts: the matrix is offset by a different amount for every picture, in a
 /// low-discrepancy sequence (the plastic number's R2 sequence), so that no pixel keeps the same threshold from
@@ -98,11 +99,22 @@ impl Transfer {
     }
 }
 
+/// The dead zone [`five_bits`] is given: 0.2 of a level at each end. Measured on the Intro's flat fog (std of a 16x16
+/// block against the clip's 0.5): 3.98 with none, 3.36 at 0.15, 2.97 at 0.2, 2.63 at 0.25; the shallow gradients of
+/// frames 79 and 180 show no contour at 0.2 and the oval at 0.3.
+pub const DEAD: f64 = 0.2;
+
 /// `v` (0..=255) reduced to 5 bits against `threshold` and expanded back by bit replication, the way the
-/// display expands the MDEC's 5 bits, so that the mean of the dithered values is `v`.
-pub fn five_bits(v: u8, threshold: f64) -> u8 {
+/// display expands the MDEC's 5 bits, so that the mean of the dithered values is `v` (when `dead` is 0).
+///
+/// `dead` is the share of a level, at each end, within which the value is not dithered but taken to the nearer
+/// level: a flat area whose tone lands near a level then keeps one level instead of speckling two, and only
+/// a tone between levels (the middle 1 - 2 `dead` of the span) mixes them, over a steeper ramp.
+pub fn five_bits(v: u8, threshold: f64, dead: f64) -> u8 {
     let level = f64::from(v) * 31.0 / 255.0;
-    let q = ((level + threshold).floor() as i32).clamp(0, 31) as u8;
+    let (base, fraction) = (level.floor(), level.fract());
+    let mixed = if dead > 0.0 { ((fraction - 0.5) / (1.0 - 2.0 * dead) + 0.5).clamp(0.0, 1.0) } else { fraction };
+    let q = ((base + f64::from(u8::from(mixed + threshold >= 1.0))) as i32).clamp(0, 31) as u8;
     (q << 3) | (q >> 2)
 }
 
@@ -138,7 +150,7 @@ mod tests {
             let mut sum = 0u64;
             for y in 0..SIDE {
                 for x in 0..SIDE {
-                    sum += u64::from(five_bits(v, n.threshold(x, y)));
+                    sum += u64::from(five_bits(v, n.threshold(x, y), 0.0));
                 }
             }
             let mean = sum as f64 / (SIDE * SIDE) as f64;

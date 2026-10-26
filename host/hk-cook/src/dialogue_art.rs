@@ -395,6 +395,8 @@ pub fn main(root: &Path, source: Option<&Path>) -> Result<()> {
         let caps = font_data(&source, &shared, "TrajanPro-Bold")?;
         let strip = crate::font_strip::cook(&body.1, &caps.1, &cell)?;
         std::fs::write(root.join("data/read_font.hk"), &strip.blob).map_err(|e| e.to_string())?;
+        let poem = crate::font_strip::cook_poem(&body.1)?;
+        std::fs::write(root.join("data/poem-font.hk"), poem.blob()).map_err(|e| e.to_string())?;
         let list = |v: &[u8]| v.iter().map(|a| a.to_string()).collect::<Vec<_>>().join(", ");
         std::fs::write(
             root.join("data/font-metrics.json"),

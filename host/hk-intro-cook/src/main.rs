@@ -570,7 +570,7 @@ fn prepare_picture(ffmpeg: &Path, movie: &Path, work: &Path) -> Result<PathBuf, 
             for x in 0..w {
                 let t = noise.threshold(x + ox, y + oy);
                 for c in 0..3 {
-                    dst[((y + bar) * w + x) * 3 + c] = dither::five_bits(corrected[c].apply(src[(y * w + x) * 3 + c]), t);
+                    dst[((y + bar) * w + x) * 3 + c] = dither::five_bits(corrected[c].apply(src[(y * w + x) * 3 + c]), t, dither::DEAD);
                 }
             }
         }

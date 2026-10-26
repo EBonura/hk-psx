@@ -300,6 +300,48 @@ pub fn cook(body_bytes: &[u8], caps_bytes: &[u8], coin: &[u8]) -> Result<Strip> 
     Ok(Strip { blob, advances, caps_advances, caps_w: cw, preview })
 }
 
+/// The opening poem's cells (host/hk-build/intro.rs): the verse in the dialogue's own 14 px cells but three
+/// rows taller, so that the descenders the dialogue's 14 row cells cut (the `g`'s lower bowl) are whole,
+/// and the author's line at the original's smaller size (3.85 against 5), rasterised and grid fitted at
+/// its own em instead of the verse's cells scaled down.
+pub const POEM_BODY_W: usize = CELL_W;
+pub const POEM_BODY_H: usize = CELL_H + 3;
+pub const POEM_AUTHOR_W: usize = 11;
+pub const POEM_AUTHOR_H: usize = 14;
+pub const POEM_AUTHOR_EM: f32 = EM * 3.85 / 5.0;
+
+/// The poem's cells for ASCII 32..127 (one byte of palette index a texel, row by row).
+pub struct PoemFont {
+    pub body: Vec<Vec<u8>>,
+    pub author: Vec<Vec<u8>>,
+    /// The author's advances at its em (the verse's are the dialogue's, data/font-metrics.json).
+    pub author_advances: Vec<u8>,
+}
+
+impl PoemFont {
+    /// The file: the two cell sizes, the author's 95 advances, then the verse's and the author's 95 cells.
+    pub fn blob(&self) -> Vec<u8> {
+        let mut out = vec![POEM_BODY_W as u8, POEM_BODY_H as u8, POEM_AUTHOR_W as u8, POEM_AUTHOR_H as u8];
+        out.extend_from_slice(&self.author_advances);
+        for cell in self.body.iter().chain(&self.author) {
+            out.extend_from_slice(cell);
+        }
+        out
+    }
+}
+
+pub fn cook_poem(body_bytes: &[u8]) -> Result<PoemFont> {
+    let body = Font::new(body_bytes)?;
+    let chars: Vec<char> = (32u8..127).map(char::from).collect();
+    let zones = ['x', 'H', 'l', 'p'];
+    // The verse: the same em, baseline and fit as the dialogue's cells, so its rows match them exactly.
+    let (verse, _) = cells(&body, &chars, EM, POEM_BODY_W, POEM_BODY_H, (EM * 0.75).round(), 0, &zones)?;
+    // The author: a baseline row lower, as the cell keeps its first row blank.
+    let (author, author_advances) =
+        cells(&body, &chars, POEM_AUTHOR_EM, POEM_AUTHOR_W, POEM_AUTHOR_H, (POEM_AUTHOR_EM * 0.75).round() + 1.0, 0, &zones)?;
+    Ok(PoemFont { body: verse, author, author_advances })
+}
+
 /// The area and boss cards' main lines, which the card strip carries the glyphs of
 /// (host/title_cards.py asserts every cooked main line is drawable from them).
 pub const CARD_MAINS: [&str; 8] =
