@@ -311,7 +311,7 @@ pub fn install_boot(m: usize, chunk: &[u8]) -> bool {
     if hash(words, 0x811c_9dc5) != chunk_hash(c) {
         return false;
     }
-    let Some(mut job) = find(words, m).and_then(|p| begin(p, 0)) else {
+    let Some(mut job) = find(words, m).and_then(|p| begin(p, Mods::EMPTY)) else {
         return false;
     };
     loop {
