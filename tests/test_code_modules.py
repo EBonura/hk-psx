@@ -61,8 +61,8 @@ class SceneTableTest(unittest.TestCase):
         # The arena controller (hk_sim::boss) is inlined into its callers: no module of its own, so the boss room needs only the boss.
         self.assertEqual(cm.scene_table(packed, self.REGIONS),
                          {0: [names.index('husks')], 2: [names.index('false_knight')]})
-        # The resident mask is a u32: the modules and packages together must not pass 32.
-        self.assertLessEqual(len(cm.all_names()), 32)
+        # The resident set is two words: the modules and packages together must not pass 64.
+        self.assertLessEqual(len(cm.all_names()), 64)
 
 
 class MapFilterTest(unittest.TestCase):
@@ -141,3 +141,38 @@ class CompressedArtTests(unittest.TestCase):
         self.assertFalse(cm.inplace_fits(z, len(blob), len(z)))
         # Incompressible bytes, or a saving under one sector, ship raw.
         self.assertIsNone(cm.art_stored(bytes((i * 7919) & 255 for i in range(3000))))
+
+
+class ResidentMaskTest(unittest.TestCase):
+    """The guest's resident set is two words (game/src/modules.rs `Mods`); a room's own set is one."""
+
+    def test_the_resident_set_holds_more_than_thirty_two_ids(self):
+        self.assertEqual(cm.MAX_MODULES, 64)
+        self.assertGreater(len(cm.all_names()), 32)
+
+    def test_a_room_names_only_the_first_thirty_two_ids(self):
+        # SCENE_MODULES, CODE_MASK, ALWAYS and FSM3_* are u32 on the guest: only code and room art sit below 32.
+        names = cm.all_names()
+        room = [*cm.MODULES, *cm.DATA_MODULES]
+        self.assertLessEqual(len(room), cm.ROOM_MODULE_IDS)
+        self.assertEqual(names[:len(room)], room)
+        for carried in cm.CARRIED:
+            self.assertGreaterEqual(names.index(carried), len(room))
+
+    def test_more_than_the_resident_set_holds_is_refused(self):
+        saved = dict(cm.CARRIED)
+        try:
+            for k in range(cm.MAX_MODULES):
+                cm.CARRIED[f'art_extra_{k}'] = 'data/none.hk'
+            with self.assertRaises(ValueError):
+                cm.all_names()
+        finally:
+            cm.CARRIED.clear()
+            cm.CARRIED.update(saved)
+
+    def test_fsm3_masks_and_the_code_mask_fit_one_word(self):
+        names = cm.all_names()
+        for label in {*cm.FSM3_TREE.values(), cm.FSM3_SCRIPTS}:
+            for m in cm.fsm3_modules(label):
+                self.assertLess(names.index(m), 32)
+        self.assertLess(len(cm.MODULES), 32)

@@ -44,9 +44,9 @@ corpse's `HORNET LEAVE`. `HK_HORNET_ART=off` leaves her out of a build.
 ## Where it lives (RAM)
 
 Everything of hers is carried with her room; the resident image holds three small calls (`game/src/boss_hooks.rs`), the draw
-pass's packet loop and the telemetry words. The resident mask is a u32 and the build now refuses a thirty-third module or package
-(Hornet's second module made it 33 for a build, which aliased the ability effects' package onto module 0; the empty `arena`
-module was dropped).
+pass's packet loop and the telemetry words. The resident set is two words (`modules::Mods`, 64 ids; it was a u32 and the build refused a thirty-third module or package
+when Hornet's second module aliased the ability effects' package onto module 0, so the empty `arena` module was dropped). A
+room's own set stays one word, so code and room art take the first 32 ids and the carried packages come after them.
 
 | piece | where | bytes |
 | --- | --- | ---: |

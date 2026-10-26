@@ -59,6 +59,9 @@ LINK_BASE = 0x80408000
 LINK_STRIDE = 0x10000
 TRAMP_WORDS = 96
 MAX_IMPORTS = 256
+# Module ids the guest's resident set holds (two words), and how many of them (the first) a room's own set can name (one word).
+MAX_MODULES = 64
+ROOM_MODULE_IDS = 32
 # The pool: a fixed region below the stack reserve. A module never straddles
 # a 64 KiB `lui` window boundary inside it (the guest's allocator skips them).
 # 100 KiB since the FSM v2 kernel (2026-10-17, was 92 KiB since the 2026-10-02 merge): at 96 KiB the merged resident image
@@ -316,10 +319,15 @@ def scene_modules(regions_rs, debris=()):
 
 def all_names():
     names = list(MODULES) + list(DATA_MODULES) + list(CARRIED)
-    # The guest keeps which modules are resident in one u32 (game/src/modules.rs `resident`, `1 << m`): module 32 would shift
-    # onto module 0 without a word. The empty `arena` module (hk_sim::boss, inlined into its callers) was dropped to make room.
-    if len(names) > 32:
-        raise ValueError(f'{len(names)} modules and packages, one more than the resident mask holds: {names[32:]}')
+    # The guest keeps which modules are resident in two words (game/src/modules.rs `Mods`, psx_math::Mask64): id 64 would
+    # shift onto id 0 without a word. The rooms' own modules (code, then room art: `ROOM_MODULE_IDS`) are the first 32
+    # ids, because a room's module set (`SCENE_MODULES`, `CODE_MASK`, `ALWAYS`, `FSM3_*`) is one u32 on the guest; the
+    # carried packages come last and may use the second word.
+    if len(names) > MAX_MODULES:
+        raise ValueError(f'{len(names)} modules and packages, one more than the resident mask holds: {names[MAX_MODULES:]}')
+    if len(MODULES) + len(DATA_MODULES) > ROOM_MODULE_IDS:
+        raise ValueError(f'{len(MODULES) + len(DATA_MODULES)} room modules, one more than a room\'s one-word set holds: '
+                         f'{(*MODULES, *DATA_MODULES)[ROOM_MODULE_IDS:]}')
     return names
 
 

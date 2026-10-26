@@ -18,6 +18,11 @@
 //! modules are pinned; anything else is evicted least recently used first.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/modules.rs"));
 
+/// A set of modules, one bit each: 64 of them in two words (a `u64` mask is not allowed in guest code).
+/// A room's own modules (`SCENE_MODULES`, `CODE_MASK`, `ALWAYS`) are the first 32 ids and stay one word;
+/// what gameplay carries into a room (`carry`) may use the rest.
+type Mods = psx_math::Mask64;
+
 const J26: u32 = 1;
 const HI16: u32 = 2;
 const LO16: u32 = 3;
@@ -51,7 +56,7 @@ pub static mut HK_MODULE_IMPORT_RANGE: [u32; MODULE_COUNT] = [u32::MAX; MODULE_C
 /// without evicting the current room's code), pool bytes in use and peak,
 /// the last gate install's check, copy, fixups and binding in HBlanks.
 #[no_mangle]
-pub static mut HK_MODULE_RESIDENT: u32 = 0;
+pub static mut HK_MODULE_RESIDENT: Mods = Mods::EMPTY;
 #[no_mangle]
 pub static mut HK_MODULE_INSTALLS: u32 = 0;
 #[no_mangle]
@@ -123,7 +128,7 @@ const EMPTY: Slot = Slot {
 };
 static mut SLOTS: [Slot; MODULE_COUNT] = [EMPTY; MODULE_COUNT];
 /// Modules the resident room needs: never evicted.
-static mut PINNED: u32 = 0;
+static mut PINNED: Mods = Mods::EMPTY;
 /// The resident room (manifest index), for its art.
 static mut CURRENT: usize = usize::MAX;
 /// Pool bytes a chunk read is landing in: (offset, bytes), bytes 0 when none.
@@ -133,8 +138,16 @@ static mut CLOCK: u32 = 0;
 fn pool() -> usize {
     unsafe { &raw const POOL_BASE as usize }
 }
-fn resident() -> u32 {
+fn resident() -> Mods {
     unsafe { HK_MODULE_RESIDENT }
+}
+/// Module `m` is resident.
+fn is_resident(m: usize) -> bool {
+    resident().test(m)
+}
+/// The first 32 modules that are resident (every room module).
+fn resident_low() -> u32 {
+    resident().low()
 }
 fn slots() -> &'static mut [Slot; MODULE_COUNT] {
     unsafe { &mut *(&raw mut SLOTS) }
@@ -146,11 +159,11 @@ fn hblanks() -> u16 {
 /// Room logic module `m` is resident: guard its entry points with this
 /// where nothing should happen outside its room anyway.
 pub fn loaded(m: usize) -> bool {
-    (resident() | ALWAYS) & (1 << m) != 0
+    (resident().low() | ALWAYS) & (1 << m) != 0
 }
 /// The code for actors of module `m` may run now.
 pub fn require(m: usize) -> bool {
-    if (resident() | ALWAYS) & (1 << m) != 0 {
+    if (resident().low() | ALWAYS) & (1 << m) != 0 {
         return true;
     }
     unsafe {
@@ -160,7 +173,7 @@ pub fn require(m: usize) -> bool {
 }
 /// Every module of the bitmask `m` is resident (an HKFSM03 tree's family modules); counts a miss otherwise.
 pub fn require_all(m: u32) -> bool {
-    if (resident() | ALWAYS) & m == m {
+    if (resident().low() | ALWAYS) & m == m {
         return true;
     }
     unsafe {
@@ -170,7 +183,7 @@ pub fn require_all(m: u32) -> bool {
 }
 /// Every module of the bitmask `m` is resident, without counting a miss (a tick that simply waits for its room).
 pub fn loaded_all(m: u32) -> bool {
-    (resident() | ALWAYS) & m == m
+    (resident().low() | ALWAYS) & m == m
 }
 pub const fn scene_modules(scene: usize) -> u32 {
     SCENE_MODULES[scene]
@@ -210,29 +223,33 @@ pub fn carry(m: usize, scene: Option<usize>) {
 }
 /// Every module `scene` needs: its rooms' own and what is carried into it.
 #[inline(never)]
-fn wanted(scene: usize) -> u32 {
-    let mut w = scene_modules(scene);
+fn wanted(scene: usize) -> Mods {
+    let mut w = Mods::from_words(scene_modules(scene), 0);
     for &(m, s) in unsafe { &*(&raw const CARRIED) } {
         if m != u8::MAX && s as usize == scene {
-            w |= 1 << m;
+            w.set(m as usize);
         }
     }
     w
 }
+/// The data modules of `m`: everything but code.
+fn data_of(m: Mods) -> Mods {
+    m.and_not(Mods::from_words(CODE_MASK, 0))
+}
 /// The chunk that brings `scene` a missing data module: its own art chunk
 /// first, then a carried module's.
 fn missing_art_chunk(scene: usize) -> Option<usize> {
-    let missing = wanted(scene) & !CODE_MASK & !resident();
-    if missing == 0 {
+    let missing = data_of(wanted(scene)).and_not(resident());
+    if missing.is_empty() {
         return None;
     }
-    if missing & scene_modules(scene) != 0 {
+    if missing.low() & scene_modules(scene) != 0 {
         if let Some(c) = art_chunk(scene) {
             return Some(c);
         }
     }
     (0..MODULE_COUNT)
-        .find(|&m| missing & (1 << m) != 0 && MODULE_CHUNK[m] != u8::MAX)
+        .find(|&m| missing.test(m) && MODULE_CHUNK[m] != u8::MAX)
         .map(|m| MODULE_CHUNK[m] as usize)
 }
 /// A resident data package's bytes (room art), or None while it is not.
@@ -248,7 +265,7 @@ pub fn data(m: usize) -> Option<&'static [u8]> {
 /// `data`, for art whose absence is expected and handled (a carried pack that is asked about before
 /// it has arrived): no miss is counted.
 pub fn bytes(m: usize) -> Option<&'static [u8]> {
-    if resident() & (1 << m) == 0 {
+    if !is_resident(m) {
         return None;
     }
     let s = slots()[m];
@@ -263,7 +280,7 @@ pub fn bytes(m: usize) -> Option<&'static [u8]> {
 #[cfg(feature = "hornet")]
 #[inline(never)]
 pub fn data_mut(m: usize) -> Option<*mut u8> {
-    if resident() & (1 << m) == 0 {
+    if !is_resident(m) {
         return None;
     }
     let s = slots()[m];
@@ -283,7 +300,7 @@ pub const fn boot_chunk(m: usize) -> Option<usize> {
 /// its place; `evict_boot` frees it earlier. True when the module is resident.
 #[inline(never)]
 pub fn install_boot(m: usize, chunk: &[u8]) -> bool {
-    if resident() & (1 << m) != 0 {
+    if is_resident(m) {
         return true;
     }
     let Some(c) = boot_chunk(m) else { return false };
@@ -308,17 +325,17 @@ pub fn install_boot(m: usize, chunk: &[u8]) -> bool {
 /// Free boot module `m`'s pool bytes and point its import sites back at the trap.
 #[inline(never)]
 pub fn evict_boot(m: usize) {
-    if resident() & (1 << m) != 0 {
+    if is_resident(m) {
         evict(m);
     }
 }
 /// Every module `scene`'s actors need is resident.
 pub fn all_resident(scene: usize) -> bool {
-    SCENE_MODULES[scene] & !resident() == 0
+    SCENE_MODULES[scene] & !resident_low() == 0
 }
 /// Every code module `scene`'s actors need is resident.
 pub fn all_code_resident(scene: usize) -> bool {
-    SCENE_MODULES[scene] & CODE_MASK & !resident() == 0
+    SCENE_MODULES[scene] & CODE_MASK & !resident_low() == 0
 }
 pub const fn code_chunk(scene: usize) -> Option<usize> {
     let c = SCENE_CODE[scene];
@@ -503,7 +520,7 @@ fn gap_in(bytes: u32, fenced: bool) -> Option<u32> {
             moved = true;
         }
         for (m, s) in slots().iter().enumerate() {
-            if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
+            if is_resident(m) && s.offset < at + bytes && at < s.offset + s.bytes {
                 at = s.offset + s.bytes;
                 moved = true;
             }
@@ -526,11 +543,11 @@ fn gap_in(bytes: u32, fenced: bool) -> Option<u32> {
 }
 /// Room for `bytes`, evicting least recently used modules outside `keep`.
 #[inline(never)]
-fn allocate(bytes: u32, keep: u32) -> Option<u32> {
+fn allocate(bytes: u32, keep: Mods) -> Option<u32> {
     allocate_in(bytes, keep, true)
 }
 /// `allocate`, unfenced for data (`gap_in`).
-fn allocate_in(bytes: u32, keep: u32, fenced: bool) -> Option<u32> {
+fn allocate_in(bytes: u32, keep: Mods, fenced: bool) -> Option<u32> {
     if let Some(at) = gap_in(bytes, fenced) {
         return Some(at);
     }
@@ -548,13 +565,13 @@ fn allocate_in(bytes: u32, keep: u32, fenced: bool) -> Option<u32> {
         art: true,
         newest: u32::MAX,
         count: usize::MAX,
-        victims: 0,
+        victims: Mods::EMPTY,
         at: u32::MAX,
         fenced,
     };
     best.consider(0, bytes, keep);
     for m in 0..MODULE_COUNT {
-        if resident() & (1 << m) != 0 {
+        if is_resident(m) {
             best.consider(slots()[m].offset, bytes, keep);
             best.consider(slots()[m].offset + slots()[m].bytes, bytes, keep);
         }
@@ -573,7 +590,7 @@ fn allocate_in(bytes: u32, keep: u32, fenced: bool) -> Option<u32> {
         return None;
     }
     for m in 0..MODULE_COUNT {
-        if best.victims & (1 << m) != 0 {
+        if best.victims.test(m) {
             evict(m);
         }
     }
@@ -585,13 +602,13 @@ struct Place {
     art: bool,
     newest: u32,
     count: usize,
-    victims: u32,
+    victims: Mods,
     at: u32,
     fenced: bool,
 }
 impl Place {
     #[inline(never)]
-    fn consider(&mut self, at: u32, bytes: u32, keep: u32) {
+    fn consider(&mut self, at: u32, bytes: u32, keep: Mods) {
         let start = pool() as u32 + at;
         if bytes == 0
             || at + bytes > POOL_BYTES as u32
@@ -607,18 +624,18 @@ impl Place {
         if cb != 0 && c < at + bytes && at < c + cb {
             return;
         }
-        let (mut victims, mut newest, mut count) = (0u32, 0u32, 0usize);
+        let (mut victims, mut newest, mut count) = (Mods::EMPTY, 0u32, 0usize);
         for (m, s) in slots().iter().enumerate() {
-            if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
-                if keep & (1 << m) != 0 {
+            if is_resident(m) && s.offset < at + bytes && at < s.offset + s.bytes {
+                if keep.test(m) {
                     return;
                 }
-                victims |= 1 << m;
+                victims.set(m);
                 newest = newest.max(s.used);
                 count += 1;
             }
         }
-        let art = victims & !CODE_MASK != 0;
+        let art = !data_of(victims).is_empty();
         if (art, newest, count) < (self.art, self.newest, self.count) {
             *self = Place {
                 art,
@@ -675,7 +692,7 @@ fn evict(m: usize) {
     bind(m, None);
     flush_instruction_cache_idle();
     unsafe {
-        HK_MODULE_RESIDENT &= !(1 << m);
+        HK_MODULE_RESIDENT.clear(m);
         HK_MODULE_POOL_USED -= slots()[m].bytes;
         HK_MODULE_EVICTIONS = HK_MODULE_EVICTIONS.saturating_add(1);
     }
@@ -744,7 +761,7 @@ impl Install {
                 bytes: (words * 4) as u32,
                 used: CLOCK,
             };
-            HK_MODULE_RESIDENT |= 1 << self.module;
+            HK_MODULE_RESIDENT.set(self.module);
             HK_MODULE_POOL_USED += (words * 4) as u32;
             HK_MODULE_POOL_PEAK = HK_MODULE_POOL_PEAK.max(HK_MODULE_POOL_USED);
             HK_MODULE_INSTALLS = HK_MODULE_INSTALLS.saturating_add(1);
@@ -752,7 +769,7 @@ impl Install {
         Ok(true)
     }
 }
-fn begin(pkg: Package, keep: u32) -> Option<Install> {
+fn begin(pkg: Package, keep: Mods) -> Option<Install> {
     let at = allocate((pkg.words * 4) as u32, keep)?;
     // Reserve the bytes now: mark nothing resident until bound, but keep the
     // slot so a second allocation does not reuse them.
@@ -838,7 +855,7 @@ pub fn service() {
     let Some(c) = code_chunk(scene) else { return };
     let len = chunk_len(c);
     if matches!(bg(), Bg::Idle) {
-        let missing = scene_modules(scene) & CODE_MASK & !resident();
+        let missing = scene_modules(scene) & CODE_MASK & !resident_low();
         if missing == 0 || unsafe { BG_DONE } == (scene, gen) || landed < len {
             return;
         }
@@ -910,8 +927,8 @@ pub fn service() {
 }
 fn next_background(scene: usize, gen: u32, chunk: &[u32]) {
     let want = scene_modules(scene) & CODE_MASK;
-    let missing = want & !resident();
-    let Some(m) = (0..MODULE_COUNT).find(|&m| missing & (1 << m) != 0) else {
+    let missing = want & !resident_low();
+    let Some(m) = (0..CODE_MODULES).find(|&m| missing & (1 << m) != 0) else {
         *bg() = Bg::Idle;
         unsafe {
             BG_DONE = (scene, gen);
@@ -919,7 +936,7 @@ fn next_background(scene: usize, gen: u32, chunk: &[u32]) {
         return;
     };
     // Never evict the room the Knight is in, nor what this room needs.
-    match find(chunk, m).and_then(|p| begin(p, unsafe { PINNED } | want)) {
+    match find(chunk, m).and_then(|p| begin(p, unsafe { PINNED }.or(Mods::from_words(want, 0)))) {
         Some(job) => *bg() = Bg::Install { scene, gen, job },
         None => {
             unsafe {
@@ -976,14 +993,14 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
         GAVE_UP = usize::MAX;
     }
     for m in 0..MODULE_COUNT {
-        if wanted(scene) & resident() & (1 << m) != 0 {
+        if wanted(scene).and(resident()).test(m) {
             slots()[m].used = unsafe { CLOCK };
         }
     }
     if want == 0 {
         return true;
     }
-    if want & !resident() == 0 {
+    if want & !resident_low() == 0 {
         unsafe {
             HK_MODULE_GATE_HITS = HK_MODULE_GATE_HITS.saturating_add(1);
         }
@@ -1022,35 +1039,35 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
         if !install_missing(want, words) {
             return false;
         }
-        if want & !resident() == 0 {
+        if want & !resident_low() == 0 {
             break;
         }
     }
     unsafe {
         HK_MODULE_GATE_HBLANKS = hblanks().wrapping_sub(t1) as u32;
     }
-    want & !resident() == 0
+    want & !resident_low() == 0
 }
 /// Words of install work (copy or fix-up) or hash between two pad services on the gate path: about 20,000 cycles of each.
 const INSTALL_STEP: usize = 4096;
 fn install_missing(want: u32, words: &[u32]) -> bool {
-    for m in 0..MODULE_COUNT {
-        if want & !resident() & (1 << m) == 0 {
+    for m in 0..CODE_MODULES {
+        if want & !resident_low() & (1 << m) == 0 {
             continue;
         }
         let Some(pkg) = find(words, m) else {
             return false;
         };
-        let mut job = match begin(pkg, want) {
+        let mut job = match begin(pkg, Mods::from_words(want, 0)) {
             Some(job) => job,
             None => {
                 // Fragmented: start over with only this room's code.
                 for r in 0..MODULE_COUNT {
-                    if resident() & (1 << r) != 0 {
+                    if is_resident(r) {
                         evict(r);
                     }
                 }
-                let Some(job) = find(words, m).and_then(|p| begin(p, want)) else {
+                let Some(job) = find(words, m).and_then(|p| begin(p, Mods::from_words(want, 0))) else {
                     return false;
                 };
                 job
@@ -1139,7 +1156,7 @@ pub fn code_coming(scene: usize) -> bool {
 /// Plan a fetch of `scene`'s code if it is not resident (called with the
 /// prefetch's predicted room, before the prefetch is planned).
 pub fn plan_code(scene: usize) {
-    if pf().state != Pf::Idle || scene_modules(scene) & CODE_MASK & !resident() == 0 {
+    if pf().state != Pf::Idle || scene_modules(scene) & CODE_MASK & !resident_low() == 0 {
         return;
     }
     if let Some(c) = code_chunk(scene) {
@@ -1151,7 +1168,7 @@ fn plan(kind: Kind, scene: usize, c: usize) {
         return;
     }
     let bytes = reserve_bytes(c);
-    let keep = unsafe { PINNED } | wanted(scene);
+    let keep = unsafe { PINNED }.or(wanted(scene));
     match allocate_in(bytes, keep, kind == Kind::Code) {
         Some(at) => {
             unsafe {
@@ -1228,7 +1245,7 @@ fn pool_service(budget: usize) {
             }
         } else if let Some(next) = crate::disc::predicted_scene().filter(|&n| n != current) {
             if art_missing(next)
-                && (scene_modules(next) & CODE_MASK & !resident() == 0
+                && (scene_modules(next) & CODE_MASK & !resident_low() == 0
                     || code_chunk(next).is_none())
             {
                 if let Some(c) = missing_art_chunk(next) {
@@ -1371,7 +1388,7 @@ fn pool_service(budget: usize) {
                 };
                 let (m, n) = (pkg.module, pkg.words);
                 p.state = Pf::Install { at: w + consumed };
-                if resident() & (1 << m) != 0 {
+                if is_resident(m) {
                     continue;
                 }
                 let image = pool() as u32 + at + 4 * (w as u32 + 5);
@@ -1387,7 +1404,7 @@ fn pool_service(budget: usize) {
                         pkg,
                     })
                 } else {
-                    begin(pkg, unsafe { PINNED } | wanted(p.scene))
+                    begin(pkg, unsafe { PINNED }.or(wanted(p.scene)))
                 };
                 if p.job.is_none() {
                     let (k, s) = (p.kind, p.scene);
@@ -1456,13 +1473,13 @@ pub fn fetch_pending() -> bool {
         && unsafe { &*(&raw const CARRIED) }.iter().any(|&(m, s)| {
             m != u8::MAX
                 && s as usize == current
-                && resident() & (1 << m) == 0
+                && !is_resident(m as usize)
                 && MODULE_CHUNK[m as usize] != u8::MAX
         })
 }
 /// Some of `scene`'s art is not resident.
 pub fn art_missing(scene: usize) -> bool {
-    wanted(scene) & !CODE_MASK & !resident() != 0
+    !data_of(wanted(scene)).and_not(resident()).is_empty()
 }
 /// Start reading `scene`'s art into the pool if it is missing and the drive's
 /// pool fetch is free: called by the gate once the group's last sector has
