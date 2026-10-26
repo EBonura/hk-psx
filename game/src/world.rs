@@ -1068,10 +1068,10 @@ impl State {
     #[inline(never)]
     pub fn tick_debris(&mut self, region: &Region, room: &Room) {
         particles::pool().tick(region.scene, region.particle_bank);
+        particles::pool().defer_break_tick();
         self.refresh_edges(region, room);
         let count = room.counts[5];
         let edge = terrain(&self.edge_cache[..self.edge_cache_count]);
-        particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
         if debris_here() {
             self.debris.tick(
                 region.scene,
@@ -1081,6 +1081,17 @@ impl State {
                 edge,
             );
         }
+    }
+    /// The break particles' pass for the simulation ticks since the last picture, before it.
+    #[inline(never)]
+    pub fn tick_break_particles(&mut self, region: &Region, room: &Room) {
+        if particles::pool().active() == 0 {
+            return;
+        }
+        self.refresh_edges(region, room);
+        let count = room.counts[5];
+        let edge = terrain(&self.edge_cache[..self.edge_cache_count]);
+        particles::pool().tick_break(region.scene, region.collision_bounds, count, &edge);
     }
     /// The resident scene payload is immutable. Explicit world generation plus
     /// global region ID and the borrowed room view select the local edge

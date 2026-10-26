@@ -1231,6 +1231,8 @@ fn main() {
                 camera,
                 scene_npcs.iter().flatten().next().map(|(_, n)| n.position),
             );
+            // The break particles' one pass for the ticks since the last picture (world.rs).
+            game.state.tick_break_particles(r, &room);
             let prims = frame::render(
                 &mut game, r, &rv, &room, other_npc, &mut fb, region_npc, camera, sim_clock,
             );

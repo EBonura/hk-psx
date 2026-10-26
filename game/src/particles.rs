@@ -79,6 +79,8 @@ pub struct Pool {
     /// slots, so the scans stop here instead of stepping over the empty tail
     /// (a quarter of the break particles' tick was that step).
     high: u16,
+    /// Simulation ticks of the break particles put off by `tick_break`.
+    pending_steps: u8,
     active_count: u32,
     pub spawned: u32,
     pub dropped: u32,
@@ -116,6 +118,7 @@ impl Pool {
             particles: [None; CAPACITY],
             tracks: [0; CAPACITY],
             high: 0,
+            pending_steps: 0,
             active_count: 0,
             spawned: 0,
             dropped: 0,
@@ -165,6 +168,9 @@ impl Pool {
                 self.active_count -= 1;
             }
         }
+        if self.active_count == 0 {
+            self.pending_steps = 0;
+        }
         self.publish();
     }
     pub fn spawn_break(&mut self, scene: usize, owner: usize, kind: u8, facing: i32) {
@@ -203,6 +209,16 @@ impl Pool {
             salt,
         );
     }
+    /// One simulation tick has passed for the break particles. They are only drawn, so the work
+    /// waits for the next picture (`tick_break`) and is done there once for all the ticks since
+    /// the last: a burst of eighty shards cost half a vblank a tick, and a simulation tick that
+    /// takes a vblank never lets the frame it is in end.
+    pub fn defer_break_tick(&mut self) {
+        if self.active_count != 0 {
+            self.pending_steps = (self.pending_steps + 1).min(break_effects::MAX_STEPS as u8);
+        }
+    }
+    /// The break particles' pass for the ticks put off since the last one, before a picture.
     pub fn tick_break(
         &mut self,
         scene: usize,
@@ -210,13 +226,18 @@ impl Pool {
         count: usize,
         edge: impl Fn(usize) -> [i32; 4],
     ) {
-        break_effects::tick_specs(
+        let steps = u32::from(core::mem::take(&mut self.pending_steps));
+        if steps == 0 {
+            return;
+        }
+        break_effects::tick_specs_by(
             self,
             scene,
             break_effects::scene_styles(scene),
             coverage,
             count,
             edge,
+            steps,
         );
     }
     pub fn spawn_grass(&mut self, scene: usize, emitter: EmitterSpec, bank: Bank) {
@@ -586,6 +607,7 @@ mod tests {
             particles: fast.particles,
             tracks: [0; CAPACITY],
             high: fast.high,
+            pending_steps: 0,
             active_count: CAPACITY as u32,
             spawned: CAPACITY as u32,
             dropped: 11,

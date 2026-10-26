@@ -868,10 +868,8 @@ fn ordered(p: [i32; 2]) -> [i32; 2] {
 /// callback returns 16 bytes through memory and a burst visits ~10k edges per
 /// tick. Larger future rooms keep the direct callback rather than dropping terrain.
 const EDGE_SCRATCH: usize = 128;
-/// Swept-circle extent for this tick; identical inputs give identical bounds in both passes.
-fn sweep(p: &Particle) -> [i32; 3] {
-    core::array::from_fn(|j| p.position[j] + p.velocity[j] / 60)
-}
+/// Most simulation ticks one `tick_specs` call may stand for (the input queue's lag bound is 8).
+pub const MAX_STEPS: u32 = 8;
 fn overlaps(e: &[i32; 4], b: &[i32; 4]) -> bool {
     e[0].min(e[2]) <= b[2]
         && e[0].max(e[2]) >= b[0]
@@ -892,6 +890,20 @@ pub fn tick_specs(
     count: usize,
     edge: impl Fn(usize) -> [i32; 4],
 ) {
+    tick_specs_by(pool, scene, styles, coverage, count, edge, 1);
+}
+/// `tick_specs` for `steps` simulation ticks at once (1 to `MAX_STEPS`): each particle's velocity
+/// follows every tick and the shape, spin, step and contacts are taken once over the distance
+/// they add up to. One step is exactly one tick.
+pub fn tick_specs_by(
+    pool: &mut Pool,
+    scene: usize,
+    styles: &[Style],
+    coverage: [i32; 4],
+    count: usize,
+    edge: impl Fn(usize) -> [i32; 4],
+    steps: u32,
+) {
     tick_specs_with_tracks(
         pool,
         scene,
@@ -900,6 +912,7 @@ pub fn tick_specs(
         count,
         edge,
         generated_tracks(styles),
+        steps,
     );
 }
 #[inline(never)]
@@ -911,7 +924,9 @@ fn tick_specs_with_tracks(
     count: usize,
     edge: impl Fn(usize) -> [i32; 4],
     tracks: &[[[u32; 2]; 33]],
+    steps: u32,
 ) {
+    let steps = steps.clamp(1, MAX_STEPS) as u16;
     let mut union = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
     let mut pending = [0u32; super::CAPACITY / 32];
     // Pass one alone changes velocity/age. A pending collision keeps its
@@ -927,11 +942,17 @@ fn tick_specs_with_tracks(
             continue;
         }
         checkpoint();
+        // The simulation ticks this call stands for: those left after the particle's wait.
+        let mut run = steps;
         if p.delay > 0 {
-            p.delay -= 1;
-            continue;
+            if u16::from(p.delay) >= steps {
+                p.delay -= steps as u8;
+                continue;
+            }
+            run = steps - u16::from(p.delay);
+            p.delay = 0;
         }
-        p.age += 1;
+        p.age = p.age.saturating_add(run);
         if p.age >= p.life.get() {
             *slot = None;
             pool.active_count -= 1;
@@ -947,38 +968,48 @@ fn tick_specs_with_tracks(
         }
         let words = cached_frame(pool.tracks[index], phase(p), tracks);
         let (base_spin, radius) = tick_shape(p, s, words);
-        p.velocity[1] += p.force;
-        for j in [0, 2] {
-            if (s.force[j][0] | s.force[j][1]) != 0 {
-                p.velocity[j] += lerp(s.force[j], p.gradient) / 60;
-            }
-        }
         let spin_by_speed =
             (s.spin_speed[0] | s.spin_speed[1]) != 0 && s.spin_range[1] > s.spin_range[0];
         // A limit of zero (the smoke and dust styles) scales the velocity by one minus the
         // damping every tick, whatever the speed: the same result as scaling to
         // `speed - dampen * speed` over `speed`, without the root and the three wide quotients.
         let flat_limit = s.limit == 0 && (s.spin_speed[0] | s.spin_speed[1]) == 0;
-        // The root only matters for spin or above the limit: isqrt(L) > limit
-        // exactly when L >= (limit+1)^2, so below it the square decides alone.
-        let speed = if flat_limit {
-            0
-        } else if spin_by_speed
-            || (s.limit >= 0
-                && super::length_squared(p.velocity) >= WideU::mul(s.limit as u32 + 1, s.limit as u32 + 1))
-        {
-            length3(p.velocity)
-        } else {
-            0
-        };
-        if flat_limit {
-            for v in &mut p.velocity {
-                *v = mulq(*v, ONE - s.dampen);
+        // The velocity follows every tick the call stands for; the rest (shape, spin, the step
+        // and the contacts) is done once, over the distance the ticks add up to.
+        let mut speed = 0;
+        let mut moved = [0i32; 3];
+        for _ in 0..run {
+            p.velocity[1] += p.force;
+            for j in [0, 2] {
+                if (s.force[j][0] | s.force[j][1]) != 0 {
+                    p.velocity[j] += lerp(s.force[j], p.gradient) / 60;
+                }
             }
-        } else if s.limit >= 0 && speed > s.limit {
-            let limited = speed - mulq(speed - s.limit, s.dampen);
-            for v in &mut p.velocity {
-                *v = scale_velocity(*v, limited, speed);
+            // The root only matters for spin or above the limit: isqrt(L) > limit
+            // exactly when L >= (limit+1)^2, so below it the square decides alone.
+            speed = if flat_limit {
+                0
+            } else if spin_by_speed
+                || (s.limit >= 0
+                    && super::length_squared(p.velocity)
+                        >= WideU::mul(s.limit as u32 + 1, s.limit as u32 + 1))
+            {
+                length3(p.velocity)
+            } else {
+                0
+            };
+            if flat_limit {
+                for v in &mut p.velocity {
+                    *v = mulq(*v, ONE - s.dampen);
+                }
+            } else if s.limit >= 0 && speed > s.limit {
+                let limited = speed - mulq(speed - s.limit, s.dampen);
+                for v in &mut p.velocity {
+                    *v = scale_velocity(*v, limited, speed);
+                }
+            }
+            for j in 0..3 {
+                moved[j] += p.velocity[j];
             }
         }
         let spin = base_spin
@@ -988,9 +1019,9 @@ fn tick_specs_with_tracks(
                 0
             };
         if spin != 0 || !(0..360 * ONE).contains(&p.angle) {
-            p.angle = (p.angle + spin / 60).rem_euclid(360 * ONE);
+            p.angle = (p.angle + spin * i32::from(run) / 60).rem_euclid(360 * ONE);
         }
-        let next = sweep(p);
+        let next: [i32; 3] = core::array::from_fn(|j| p.position[j] + moved[j] / 60);
         if s.collision && !outside {
             let old = p.position;
             union = [
@@ -1664,6 +1695,62 @@ mod tests {
         }
     }
     #[test]
+    fn one_call_for_several_ticks_flies_as_far_as_that_many_calls() {
+        // A free flight (no contacts): the velocity follows every tick either way, so it ends the
+        // same; the position is the sum of the same steps, divided once.
+        curve!(
+            FLIGHT = [Sample {
+                size: [ONE / 2, ONE],
+                alpha: [0, 255],
+                spin: [-200 * ONE, 200 * ONE],
+            }; 33]
+        );
+        for steps in 2..=MAX_STEPS {
+            let styles = [Style {
+                count: 40,
+                life: [200, 400],
+                speed: [3 * ONE, 30 * ONE],
+                force: [[-ONE, ONE], [-86 * ONE, -40 * ONE], [-ONE, ONE]],
+                limit: 12 * ONE,
+                dampen: 19661,
+                spin_speed: [3 * ONE, 12 * ONE],
+                spin_range: [0, ONE],
+                samples: FLIGHT,
+                ..STYLE
+            }];
+            let emitters = [Emitter { style: 0, source: 77, ..EMITTER }];
+            let (mut once, mut every) = (Pool::new(), Pool::new());
+            for p in [&mut once, &mut every] {
+                spawn_specs(p, 0, 7, 0, 1, &emitters, &styles);
+                for slot in p.particles.iter_mut().flatten().step_by(3) {
+                    slot.delay = (slot.delay % 5) + 1;
+                }
+            }
+            for round in 0..40i32 {
+                tick_specs_by(&mut once, 0, &styles, COVER, 0, |_| [0; 4], steps);
+                for _ in 0..steps {
+                    tick_specs(&mut every, 0, &styles, COVER, 0, |_| [0; 4]);
+                }
+                for (a, b) in once.particles.iter().zip(&every.particles) {
+                    match (a, b) {
+                        (Some(a), Some(b)) => {
+                            assert_eq!((a.velocity, a.age, a.delay), (b.velocity, b.age, b.delay));
+                            for j in 0..3 {
+                                assert!(
+                                    (a.position[j] - b.position[j]).abs() <= steps as i32 * (round + 1),
+                                    "steps {steps} round {round}: {a:?} against {b:?}"
+                                );
+                            }
+                        }
+                        (None, None) => {}
+                        _ => panic!("steps {steps} round {round}: one pool lost a particle"),
+                    }
+                }
+                assert_eq!(once.active(), every.active());
+            }
+        }
+    }
+    #[test]
     fn optimized_full_pool_flight_matches_naive_every_tick() {
         flight_matches_naive(0, false);
     }
@@ -1839,6 +1926,7 @@ mod tests {
                 edges.len() + padding,
                 |i| if i < cached.len() { cached[i] } else { [0; 4] },
                 &tracks,
+                1,
             );
             tick_reference(
                 &mut reference,
