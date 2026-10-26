@@ -383,6 +383,24 @@ impl Pool {
         }
         self.publish();
     }
+    /// The break particles that go in front of the Knight and his slash (`Style` additive bit 1),
+    /// after everything that is behind him; counted with the rest in `drawn`.
+    #[inline(never)]
+    pub fn draw_front(&mut self, scene: usize, camera: (i32, i32)) -> u32 {
+        let span = self.span();
+        let before = self.drawn;
+        for (i, slot) in self.particles[..span].iter().enumerate() {
+            let Some(p) = slot.as_ref() else {
+                continue;
+            };
+            if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
+                self.drawn +=
+                    u32::from(break_effects::draw_particle(p, self.tracks[i], camera, true));
+            }
+        }
+        self.publish();
+        self.drawn - before
+    }
     #[inline(never)]
     pub fn draw(
         &mut self,
@@ -398,7 +416,8 @@ impl Pool {
                 continue;
             };
             if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
-                self.drawn += u32::from(break_effects::draw_particle(p, self.tracks[i], camera));
+                self.drawn +=
+                    u32::from(break_effects::draw_particle(p, self.tracks[i], camera, false));
             }
         }
         let Some(bank) = bank else {

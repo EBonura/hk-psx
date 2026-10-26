@@ -564,6 +564,8 @@ pub fn render(
     if slashes {
         prims += hit_fx::draw(camera);
     }
+    // The flash of a break and the light it throws go over the Knight and his slash.
+    prims += game.state.draw_front_particles(r.scene, camera);
     // Lines Anim and Heal Anim sit just in front of the Knight, additive.
     for i in fx_frames.into_iter().flatten() {
         prims += ability_art::draw_additive(
@@ -1591,6 +1593,7 @@ pub fn simulate(
                 .hit_impact(r, game.attacks as usize, bounds, game.player.x);
             fx::raise(r.scene, fx::HIT_DUST, at);
             fx::raise(r.scene, fx::HIT_CHIPS, at);
+            fx::raise(r.scene, fx::HIT_FLASH, at);
             if mining.depleted > 0 {
                 camera::request(camera::Shake::Kill);
                 fx::raise(r.scene, fx::HIT_CHIPS, at);
@@ -1717,6 +1720,14 @@ pub fn simulate(
             fx::raise(r.scene, fx::HIT_DUST, [x, y]);
             fx::raise(r.scene, fx::HIT_CHIPS, [x, y]);
             fx::raise(r.scene, fx::DOOR_CHIPS, [0, 0]);
+            // `Strike Nail R` and the light that runs up the door; the hits that change its pose
+            // and the one that opens it strike twice as hard.
+            fx::raise(r.scene, fx::HIT_FLASH, [x, y]);
+            fx::raise(r.scene, fx::DOOR_PULSE, [0, 0]);
+            if door_hit.staged || door_hit.opened {
+                fx::raise(r.scene, fx::HIT_FLASH, [x, y]);
+                fx::raise(r.scene, fx::DOOR_PULSE, [0, 0]);
+            }
             if door_hit.staged {
                 fx::raise(r.scene, fx::DOOR_RUBBLE, [0, 0]);
                 fx::raise(r.scene, fx::DOOR_CHIPS, [0, 0]);

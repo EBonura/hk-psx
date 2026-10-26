@@ -31,6 +31,10 @@ pub const FX_DOOR_RUBBLE: i64 = FX_OWNER | 0x11;
 pub const FX_DOOR_CHIPS: i64 = FX_OWNER | 0x12;
 /// `Particle Rock Small` at the nail (anchor: the hit).
 pub const FX_HIT_CHIPS: i64 = FX_OWNER | 0x13;
+/// The nail's impact (`Strike Nail R`): a flash and spark streaks (anchor: the hit).
+pub const FX_HIT_FLASH: i64 = FX_OWNER | 0x14;
+/// The pale light that runs up the Great Door's face with every hit (cooked in place).
+pub const FX_DOOR_PULSE: i64 = FX_OWNER | 0x15;
 /// The cocoon's spatters and globs (anchor: the cocoon), and its cap flown either way.
 pub const FX_COCOON: i64 = FX_OWNER | 0x20;
 pub const FX_COCOON_CAP_RIGHT: i64 = FX_OWNER | 0x21;
@@ -109,6 +113,8 @@ struct Burst {
     splash: Option<(u8, u8, u8)>,
     /// Full size until this fraction of the life, then shrinking away.
     fade_from: f64,
+    /// Drawn this many times the size the art is cut for (the cell keeps its texels).
+    zoom: f64,
 }
 
 /// Sprites stacked as the cells of one sheet (cell 0 at the bottom, where the cook's cell
@@ -186,7 +192,7 @@ fn burst_style(b: &Burst, side: f64, gravity: f64, cells: i64, texture: &str) ->
     Ok(Style {
         life: b.life,
         speed: if circle { qs(b.speed)? } else { [0, 0] },
-        size: qs([side * b.size[0], side * b.size[1]])?,
+        size: qs([side * b.size[0] / b.zoom, side * b.size[1] / b.zoom])?,
         rotation: [0, q(359.0)?],
         colors: [[128; 3]; 2],
         start_alpha: [255; 2],
@@ -210,6 +216,7 @@ fn burst_style(b: &Burst, side: f64, gravity: f64, cells: i64, texture: &str) ->
         kill_speed: 0,
         radius_scale: q(b.radius)?,
         opaque: true,
+        stretch: 0,
         // Landing splash (ticks, cell, quarters), and always flying on outside the coverage.
         splash: 0x8000
             | b.splash.map_or(0, |(cell, ticks, quarters)| {
@@ -218,6 +225,7 @@ fn burst_style(b: &Burst, side: f64, gravity: f64, cells: i64, texture: &str) ->
         samples: curve(b.fade_from)
             .into_iter()
             .map(|mut s| {
+                s.size = s.size.map(|v| py_round(v as f64 * b.zoom));
                 s.spin = [spin.min(-spin), spin.max(-spin)];
                 s
             })
@@ -281,6 +289,238 @@ fn push_burst(
         ("system".into(), Json::Str("synthetic burst".into())),
         ("texture".into(), Json::Str(texture)),
         ("shader".into(), Json::Str("Sprites/Default".into())),
+        ("scaling_mode".into(), Json::Int(0)),
+        ("ps_sha256".into(), Json::Str(String::new())),
+    ]));
+    Ok(())
+}
+
+// ---------------------------------------------------------------- light
+
+/// A flash, streak, halo, petal or chunk the cook draws itself: light of the effects' own that the
+/// original's prefabs make with sprites and lit particles. They are soft additive styles (the
+/// guest's soft path adds the texel at its tint times its opacity, `B + F`), so one grey art cell
+/// serves every colour: the style's tint names it.
+struct Glow {
+    /// Art: `disc` (a radial falloff), `bar` (a thin line, bright in the middle), `lens` (a
+    /// petal, pointed at both ends) or `chunk` (an angular shard).
+    art: &'static str,
+    count: i64,
+    life: [i64; 2],
+    /// A circle sector of launch angles (degrees, counter-clockwise from +X) and speeds in
+    /// world units per second; `None` starts in place with `velocity` alone.
+    angle: Option<[f64; 2]>,
+    speed: [f64; 2],
+    velocity: [f64; 2],
+    /// Half extents of the box the particles start in.
+    spread: [f64; 2],
+    /// World units on a side (the width of a stretched one).
+    size: [f64; 2],
+    /// World units on a side that the art is cut for, when that is less than the size drawn: the
+    /// cell keeps its few texels and the quad is stretched (the effects' VRAM is eight kilobytes).
+    cell: f64,
+    /// The size at the end of the life, as a multiple of the start's.
+    grow: f64,
+    /// Opacity at the start (0..1), held for `hold` of the life and fading to nothing after.
+    alpha: f64,
+    hold: f64,
+    /// The colour a fully lit texel adds, 0..255 a channel.
+    tint: [f64; 3],
+    /// World units of length on each side per unit of speed (0: a square quad).
+    stretch: f64,
+    gravity_scale: f64,
+    /// Drawn over the Knight and his slash rather than behind him.
+    front: bool,
+    /// Degrees per second of spin, plus or minus.
+    spin: f64,
+    /// Lands on the terrain and bounces (`bounce`), like the rigid pieces.
+    collision: bool,
+    bounce: f64,
+}
+impl Glow {
+    const fn new(art: &'static str) -> Glow {
+        Glow {
+            art,
+            count: 1,
+            life: [6, 6],
+            angle: None,
+            speed: [0.0, 0.0],
+            velocity: [0.0, 0.0],
+            spread: [0.0, 0.0],
+            size: [1.0, 1.0],
+            cell: 1.0,
+            grow: 1.0,
+            alpha: 1.0,
+            hold: 0.0,
+            tint: [255.0, 255.0, 255.0],
+            stretch: 0.0,
+            gravity_scale: 0.0,
+            front: false,
+            spin: 0.0,
+            collision: false,
+            bounce: 0.0,
+        }
+    }
+}
+
+/// The colour a style stores for a texel that should add `tint`: the guest's soft draw (game/src/
+/// break_effects.rs `SOFT_GAIN_HALVES` 6) multiplies it by 3 at full opacity, and the GPU reads 128
+/// as 1.0.
+fn soft_colors(tint: [f64; 3]) -> [[i64; 3]; 2] {
+    let c = tint.map(|v| (v * 128.0 / 255.0 / 3.0).round().clamp(0.0, 255.0) as i64);
+    [c, c]
+}
+
+/// A 32 by 32 grey cell of light. RGB is the brightness (the soft draw adds it); the alpha only
+/// marks where there is any.
+fn glow_image(kind: &str) -> hk_pil::Image {
+    let n = 32usize;
+    let mut im = hk_pil::Image::new(hk_pil::Mode::Rgba, n, n);
+    for y in 0..n {
+        for x in 0..n {
+            let u = (x as f64 + 0.5) / n as f64 * 2.0 - 1.0;
+            let v = (y as f64 + 0.5) / n as f64 * 2.0 - 1.0;
+            let k = match kind {
+                // A soft disc: bright core, long tail.
+                "disc" => (1.0 - (u * u + v * v).sqrt()).max(0.0).powf(1.4),
+                // A line along x: bright in the middle, fading to both ends, thin across.
+                "bar" => {
+                    let along = (1.0 - u.abs()).max(0.0).powf(0.6);
+                    let across = (1.0 - v.abs() / 0.2).max(0.0);
+                    along * across
+                }
+                // A petal: widest at a third of its length, pointed ends, lit along its middle.
+                "lens" => {
+                    let w = 0.55 * (1.0 - u * u).max(0.0) * (1.0 - 0.25 * u);
+                    if w <= 0.0 || v.abs() >= w {
+                        0.0
+                    } else {
+                        (0.55 + 0.45 * (1.0 - v.abs() / w)) * (1.0 - 0.35 * u.abs())
+                    }
+                }
+                // A jagged shard: a pentagon-ish polygon, shaded by a light from the top left.
+                _ => {
+                    let a = v.atan2(u);
+                    let edge = 0.78 + 0.18 * (a * 3.0 + 0.7).sin() + 0.08 * (a * 5.0).cos();
+                    let d = (u * u + v * v).sqrt();
+                    if d >= edge {
+                        0.0
+                    } else {
+                        (0.62 + 0.38 * (-(u + v) * 0.7).clamp(-1.0, 1.0)).clamp(0.3, 1.0)
+                    }
+                }
+            };
+            let l = (k.clamp(0.0, 1.0) * 255.0).round() as u8;
+            let at = (y * n + x) * 4;
+            let opaque = if kind == "chunk" { k > 0.0 } else { l >= 10 };
+            im.data[at..at + 4].copy_from_slice(&[l, l, l, if opaque { 255 } else { 0 }]);
+        }
+    }
+    im
+}
+
+fn glow_curve(g: &Glow, scale: f64) -> Vec<Sample> {
+    let spin = py_round(g.spin * 65536.0);
+    (0..33)
+        .map(|n| {
+            let t = n as f64 / 32.0;
+            let size = scale * (1.0 + (g.grow - 1.0) * t);
+            let alpha = if t <= g.hold {
+                g.alpha
+            } else {
+                g.alpha * ((1.0 - t) / (1.0 - g.hold)).clamp(0.0, 1.0)
+            };
+            Sample {
+                size: [py_round(size * 65536.0); 2],
+                alpha: [py_round(alpha * 255.0).clamp(0, 255); 2],
+                spin: [spin.min(-spin), spin.max(-spin)],
+            }
+        })
+        .collect()
+}
+
+/// One light effect as an emitter of `owner`, started at `origin` (world, from the owner's anchor).
+fn push_glow(
+    c: &mut Collected,
+    scene_id: i64,
+    owner: i64,
+    g: &Glow,
+    gravity: f64,
+    origin: [f64; 3],
+    what: &str,
+) -> Result<()> {
+    let key = format!("glow_{}", g.art);
+    let texture = format!("fx:{key}");
+    let image = glow_image(g.art);
+    let (sheet_image, side) = sheet(&[(image, [-0.5, -0.5, 0.5, 0.5])])?;
+    let burst = Burst {
+        count: g.count,
+        life: g.life,
+        speed: g.speed,
+        angle: g.angle.unwrap_or([0.0, 0.0]),
+        spread: g.spread,
+        gravity_scale: g.gravity_scale,
+        bounce: g.bounce,
+        life_loss: 0.0,
+        spin: g.spin,
+        size: g.size,
+        radius: 0.4,
+        splash: None,
+        fade_from: 1.0,
+        zoom: 1.0,
+    };
+    let mut style = burst_style(&burst, side, gravity, 1, &texture)?;
+    // The art is cut for `cell` world units; the curve scales the quad up to the size asked.
+    let scale = (g.size[0].max(g.size[1]) / g.cell).max(1.0);
+    style.size = [q(side * g.size[0] / scale)?, q(side * g.size[1] / scale)?];
+    style.collision = g.collision;
+    style.additive = 1 | i64::from(g.front) << 1;
+    style.stretch = q(g.stretch)?;
+    style.colors = soft_colors(g.tint);
+    style.samples = glow_curve(g, scale);
+    style.opaque = true;
+    style.splash = if g.collision { 0x8000 } else { 0 };
+    if g.angle.is_none() {
+        // A start in place: the style carries its velocity (burst_style's cone is for the rest).
+        style.velocity = [
+            [q(g.velocity[0])?; 2],
+            [q(g.velocity[1])?; 2],
+            [0; 2],
+        ];
+    }
+    if !c.synthetic.iter().any(|t| t.0 == texture) {
+        c.synthetic.push((texture.clone(), Arc::new(sheet_image)));
+    }
+    let mut m = [[0.0; 4]; 4];
+    let rot = match g.angle {
+        Some(a) => rotation_about_z(a[0]),
+        None => rotation_about_z(0.0),
+    };
+    for r in 0..3 {
+        for k in 0..3 {
+            m[r][k] = rot[r][k];
+        }
+        m[r][3] = origin[r];
+    }
+    m[3][3] = 1.0;
+    let (placed, basis) = placement(&m)?;
+    let style = c.style_index(style);
+    c.emitters.push(EmitterRow {
+        scene: scene_id,
+        owner,
+        source: owner * 16 + key.bytes().fold(7i64, |h, b| (h * 31 + b as i64) % 4093) + c.emitters.len() as i64 % 7,
+        style,
+        angle_offset: 0,
+        origin: placed,
+        basis,
+    });
+    c.records.push(Json::Obj(vec![
+        ("owner".into(), Json::Str(format!("fx {owner:#x}"))),
+        ("name".into(), Json::Str(what.into())),
+        ("part".into(), Json::Str(key)),
+        ("system".into(), Json::Str("synthetic light".into())),
+        ("texture".into(), Json::Str(texture)),
+        ("shader".into(), Json::Str("Legacy Shaders/Particles/Additive (Soft)".into())),
         ("scaling_mode".into(), Json::Int(0)),
         ("ps_sha256".into(), Json::Str(String::new())),
     ]));
@@ -408,6 +648,15 @@ fn prefab_owner(
                     e.style.count = (e.style.count + 1) / 2;
                 }
             }
+            // The door's cloud read as speckle: a few puffs, nearly twice the size.
+            if owner == FX_DOOR_DUST || owner == FX_DOOR_RUBBLE {
+                for e in &mut found {
+                    e.style.count = (e.style.count * 3 / 5).max(1);
+                    for sample in &mut e.style.samples {
+                        sample.size = sample.size.map(|v| v * 9 / 5);
+                    }
+                }
+            }
             push_found(c, scene_id, owner, found, what, [0.0; 3])
         }
         Err(e) => {
@@ -430,7 +679,7 @@ pub fn collect(
     c: &mut Collected,
 ) -> Result<()> {
     if kinds.door || kinds.rocks || kinds.breakables {
-        collect_hits(source, scene_id, gravity, kinds.door || kinds.rocks, c)?;
+        collect_hits(source, scene_id, gravity, kinds.door || kinds.rocks, kinds.door, c)?;
     }
     if kinds.door {
         collect_door(source, sc, scene_id, gravity, c)?;
@@ -472,6 +721,7 @@ fn collect_hits(
     scene_id: i64,
     gravity: f64,
     chips: bool,
+    flash: bool,
     c: &mut Collected,
 ) -> Result<()> {
     prefab_owner(
@@ -494,7 +744,7 @@ fn collect_hits(
         scene_id,
         FX_HIT_CHIPS,
         &Burst {
-            count: 4,
+            count: 3,
             life: [90, 150],
             speed: [15.0, 20.0],
             angle: [100.0, 140.0],
@@ -503,16 +753,60 @@ fn collect_hits(
             bounce: 0.5,
             life_loss: 0.0,
             spin: 300.0,
-            size: [1.25, 2.0],
+            size: [2.2, 3.4],
             radius: 0.45,
             splash: None,
             fade_from: 0.8,
+            zoom: 1.8,
         },
         &rock_frames(source)?,
         gravity,
         [0.0; 3],
         "rocks",
         "Particle Rock Small, 3..5 at the nail",
+    )?;
+    if !flash {
+        return Ok(());
+    }
+    // `Strike Nail R`: a white flash at the nail and thin spark streaks thrown out of it.
+    push_glow(
+        c,
+        scene_id,
+        FX_HIT_FLASH,
+        &Glow {
+            count: 1,
+            life: [8, 8],
+            size: [3.4, 3.4],
+            cell: 0.6,
+            grow: 1.35,
+            alpha: 1.0,
+            hold: 0.25,
+            front: true,
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0; 3],
+        "Strike Nail R flash",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_HIT_FLASH,
+        &Glow {
+            count: 9,
+            life: [8, 11],
+            angle: Some([0.0, 360.0]),
+            speed: [18.0, 30.0],
+            size: [0.3, 0.45],
+            alpha: 1.0,
+            hold: 0.3,
+            stretch: 0.055,
+            front: true,
+            ..Glow::new("bar")
+        },
+        gravity,
+        [0.0; 3],
+        "Strike Nail R streaks",
     )
 }
 
@@ -560,7 +854,7 @@ fn collect_door(
         scene_id,
         FX_DOOR_CHIPS,
         &Burst {
-            count: 11,
+            count: 6,
             life: [90, 150],
             speed: [15.0, 25.0],
             angle: [100.0, 140.0],
@@ -569,16 +863,59 @@ fn collect_door(
             bounce: 0.0,
             life_loss: 0.0,
             spin: 300.0,
-            size: [1.25, 2.0],
+            size: [2.4, 3.6],
             radius: 0.45,
             splash: None,
             fade_from: 0.8,
+            zoom: 1.8,
         },
         &rocks,
         gravity,
         at,
         "rocks",
         "Particle Rock Small Transient, 10..12 at the door",
+    )?;
+    // Every hit sends a pale light up the door's face, and a few soft clouds of dust rise from it.
+    push_glow(
+        c,
+        scene_id,
+        FX_DOOR_PULSE,
+        &Glow {
+            count: 1,
+            life: [14, 14],
+            velocity: [0.0, 9.0],
+            size: [2.6, 2.6],
+            cell: 0.6,
+            alpha: 0.85,
+            hold: 0.2,
+            tint: [215.0, 190.0, 255.0],
+            stretch: 0.55,
+            ..Glow::new("disc")
+        },
+        gravity,
+        [at[0] - 0.6, at[1] - 4.0, at[2] - 0.2],
+        "Great Door light pulse",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_DOOR_DUST,
+        &Glow {
+            count: 3,
+            life: [36, 52],
+            velocity: [0.0, 2.2],
+            spread: [0.9, 3.5],
+            size: [2.8, 4.2],
+            cell: 0.6,
+            grow: 1.5,
+            alpha: 0.32,
+            hold: 0.2,
+            tint: [160.0, 145.0, 135.0],
+            ..Glow::new("disc")
+        },
+        gravity,
+        at,
+        "Door dust, rising clouds",
     )?;
     Ok(())
 }
@@ -595,30 +932,70 @@ fn collect_cocoon(
         .iter()
         .map(|&id| native(source, "resources.assets", id))
         .collect::<Result<Vec<_>>>()?;
-    push_burst(
+    // Spatter Blue, flung: petals of saturated cyan turned along their flight (the original stretches
+    // the sprite along its velocity), with the nail's two long white streaks and a cyan wash over
+    // the whole picture that fades away.
+    push_glow(
         c,
         scene_id,
         FX_COCOON,
-        &Burst {
-            count: 50,
-            life: [120, 180],
+        &Glow {
+            count: 30,
+            life: [34, 58],
+            angle: Some([100.0, 440.0]),
             speed: [5.0, 20.0],
-            angle: [100.0, 440.0],
-            spread: [0.0, 0.0],
+            size: [0.55, 0.8],
+            alpha: 1.0,
+            hold: 0.55,
+            tint: [30.0, 200.0, 255.0],
+            stretch: 0.045,
             gravity_scale: 1.0,
-            bounce: 0.0,
-            life_loss: 0.0,
-            spin: 0.0,
-            size: [1.15, 1.35],
-            radius: 0.3,
-            splash: Some((1, 12, 4)),
-            fade_from: 0.8,
+            front: true,
+            ..Glow::new("lens")
         },
-        &spatter,
         gravity,
         COCOON_BODY,
-        "spatter_blue",
-        "Spatter Blue x50",
+        "Spatter Blue x50, as petals",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_COCOON,
+        &Glow {
+            count: 5,
+            life: [6, 9],
+            angle: Some([0.0, 360.0]),
+            speed: [30.0, 55.0],
+            size: [0.28, 0.4],
+            alpha: 1.0,
+            hold: 0.3,
+            stretch: 0.05,
+            front: true,
+            ..Glow::new("bar")
+        },
+        gravity,
+        COCOON_BODY,
+        "Cocoon strike streaks",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_COCOON,
+        &Glow {
+            count: 1,
+            life: [40, 40],
+            size: [26.0, 26.0],
+            cell: 0.6,
+            grow: 1.2,
+            alpha: 0.3,
+            hold: 0.1,
+            tint: [20.0, 150.0, 220.0],
+            front: true,
+            ..Glow::new("disc")
+        },
+        gravity,
+        COCOON_BODY,
+        "Cocoon cyan wash",
     )?;
     // `ScuttlerControl`'s SpawnBlood: 12 to 18 drops, speed 4 to 22, angle 30 to 150, in the spatter's
     // blue; it shares the spatters' sheet.
@@ -640,6 +1017,7 @@ fn collect_cocoon(
             radius: 0.3,
             splash: Some((1, 12, 4)),
             fade_from: 0.8,
+            zoom: 1.0,
         },
         &spatter,
         gravity,
@@ -663,10 +1041,11 @@ fn collect_cocoon(
             bounce: 0.0,
             life_loss: 0.0,
             spin: 0.0,
-            size: [0.6, 1.6],
+            size: [1.0, 2.4],
             radius: 0.3,
             splash: Some((1, 100, 4)),
             fade_from: 0.8,
+            zoom: 1.5,
         },
         &glob,
         gravity,
@@ -707,6 +1086,7 @@ fn collect_cocoon(
                     radius: 0.4,
                     splash: None,
                     fade_from: 0.8,
+                    zoom: 1.0,
                 },
                 &cap_frames,
                 gravity,
@@ -744,6 +1124,14 @@ fn collect_jar(
                     // One opacity level, a third of the art: the jars' own scene (Crossroads_05)
                     // had no room for the glass at three.
                     e.style.opaque = true;
+                    // Lit glass: added to the room, big, thrown wide and falling for longer, as it
+                    // is in the original (the cut sprites were dark specks of two or three pixels).
+                    e.style.additive = 3;
+                    for sample in &mut e.style.samples {
+                        sample.size = sample.size.map(|v| v * 5 / 2);
+                    }
+                    e.style.speed = e.style.speed.map(|v| v * 3 / 2);
+                    e.style.life = e.style.life.map(|v| v * 7 / 5);
                     push_found(c, scene_id, FX_JAR_GLASS, vec![*e], &name, origin)?;
                 }
                 Ok(_) => {}
@@ -754,6 +1142,73 @@ fn collect_jar(
                 )),
             }
         }
+        // The break itself: a white flash on the hit, a pale blue halo that lingers, and three
+        // big pieces of the bottle that spin and bounce.
+        let glass = [200.0, 225.0, 255.0];
+        push_glow(
+            c,
+            scene_id,
+            FX_JAR_GLASS,
+            &Glow {
+                count: 1,
+                life: [6, 6],
+                size: [5.0, 5.0],
+                cell: 0.6,
+                grow: 1.3,
+                alpha: 1.0,
+                hold: 0.3,
+                front: true,
+                ..Glow::new("disc")
+            },
+            gravity,
+            [0.0, 0.7, 0.0],
+            "Grub jar flash",
+        )?;
+        push_glow(
+            c,
+            scene_id,
+            FX_JAR_GLASS,
+            &Glow {
+                count: 1,
+                life: [26, 26],
+                size: [9.0, 9.0],
+                cell: 0.6,
+                grow: 1.25,
+                alpha: 0.5,
+                hold: 0.2,
+                tint: [140.0, 185.0, 255.0],
+                front: true,
+                ..Glow::new("disc")
+            },
+            gravity,
+            [0.0, 0.7, 0.0],
+            "Grub jar halo",
+        )?;
+        push_glow(
+            c,
+            scene_id,
+            FX_JAR_GLASS,
+            &Glow {
+                count: 3,
+                life: [90, 140],
+                angle: Some([55.0, 125.0]),
+                speed: [7.0, 14.0],
+                size: [1.5, 2.4],
+                cell: 0.5,
+                alpha: 1.0,
+                hold: 0.85,
+                tint: glass,
+                gravity_scale: 1.0,
+                spin: 420.0,
+                collision: true,
+                bounce: 0.35,
+                front: true,
+                ..Glow::new("chunk")
+            },
+            gravity,
+            [0.0, 0.7, 0.0],
+            "Grub jar pieces",
+        )?;
         break;
     }
     Ok(())
@@ -778,6 +1233,7 @@ mod tests {
             radius: 0.3,
             splash: Some((1, 12, 4)),
             fade_from: 0.8,
+            zoom: 1.0,
         }
     }
 

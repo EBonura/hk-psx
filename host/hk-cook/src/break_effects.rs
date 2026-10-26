@@ -57,7 +57,7 @@ const SECRET_BREAK_BUDGET: i64 = 96;
 const EMIT_RATE: f64 = 10000.0;
 const FX_MAGIC: &[u8] = b"HKFX0001";
 const FX_LIMITS: [(&str, usize); 5] = [
-    ("styles", 28),
+    ("styles", 40),
     ("emitters", 128),
     ("art", 96),
     ("uploads", 64),
@@ -268,6 +268,9 @@ struct Style {
     opaque: bool,
     /// A landing particle's splash (guest `Style::splash`): ticks, frame and quarter-scale, 0 for none.
     splash: i64,
+    /// Drawn as a quad turned along its velocity and longer by this (Q16 world units per unit of
+    /// speed) on each side of the centre: the original's stretched sprites. 0 for a square quad.
+    stretch: i64,
     samples: Vec<Sample>,
     cells: i64,
     texture: String,
@@ -328,6 +331,7 @@ impl Style {
             ("kill_speed".into(), Json::Int(self.kill_speed)),
             ("radius_scale".into(), Json::Int(self.radius_scale)),
             ("splash".into(), Json::Int(self.splash)),
+            ("stretch".into(), Json::Int(self.stretch)),
             (
                 "samples".into(),
                 Json::List(self.samples.iter().map(Sample::json).collect()),
@@ -756,6 +760,7 @@ fn style(
         kill_speed: q(f(collision, "minKillSpeed")?)?,
         radius_scale: q(f(collision, "radiusScale")?)?,
         splash: 0,
+        stretch: 0,
         opaque: false,
         samples,
         cells,
@@ -2948,7 +2953,7 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
             .map_or(&empty_frames, |f| &f.1);
         let first = frames.len();
         frames.extend(cells.iter().copied());
-        let mut r = Vec::with_capacity(168);
+        let mut r = Vec::with_capacity(172);
         let h = |r: &mut Vec<u8>, v: i64| r.extend_from_slice(&(v as u16).to_le_bytes());
         let w = |r: &mut Vec<u8>, v: i64| r.extend_from_slice(&(v as i32).to_le_bytes());
         for v in st.life {
@@ -2993,7 +2998,8 @@ fn pack_scene_effects(data: &SceneArt, curves: &mut Vec<String>) -> Result<Vec<u
         for v in [curve as i64, first as i64, cells.len() as i64, st.splash] {
             h(&mut r, v);
         }
-        debug_assert_eq!(r.len(), 168);
+        w(&mut r, st.stretch);
+        debug_assert_eq!(r.len(), 172);
         style_records.push(r);
     }
     let (art, uploads): (&[[i64; 6]], &[[i64; 5]]) =
@@ -3456,6 +3462,7 @@ mod tests {
             kill_speed: 0,
             radius_scale: 0,
             splash: 0,
+            stretch: 0,
             opaque: false,
             samples: Vec::new(),
             cells,

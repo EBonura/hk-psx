@@ -63,6 +63,9 @@ pub struct Style {
     /// frame it shows then; 12..14 its size in quarters; 15 set for a burst that flies on
     /// outside the region's collision coverage instead of pausing there.
     pub splash: u16,
+    /// Q16 world units a quad grows on each side along its velocity, per unit of speed (0: a
+    /// square quad turned by the particle's own angle).
+    pub stretch: i32,
     pub samples: &'static Curve,
     pub frames: &'static [[u16; 3]],
 }
@@ -124,7 +127,7 @@ pub static PARTICLE_TRACKS: &[[[u32; 2]; 33]] = &[];
 #[cfg(test)]
 pub static EMITTER_TRACK_BASES: &[u16] = &[];
 #[cfg(test)]
-pub const FX_MAX_STYLES: usize = 28;
+pub const FX_MAX_STYLES: usize = 40;
 #[cfg(test)]
 pub const FX_MAX_EMITTERS: usize = 128;
 #[cfg(test)]
@@ -153,6 +156,9 @@ struct Resident {
     /// Styles of `Legacy Shaders/Particles/Additive (Soft)` (the Knight's rising motes): soft, and
     /// drawn as the full `B + F` of their texel rather than a quarter of it.
     additive: [bool; FX_MAX_STYLES],
+    /// Styles drawn after the Knight and his slash, over them (`Pool::draw_front`): light that the
+    /// original lets through in front, the flash of a break and the glass it throws.
+    front: [bool; FX_MAX_STYLES],
     /// Each soft palette and its copy, every coloured entry semi-transparent,
     /// that soft draws use instead.
     soft_cluts: [(u16, u16); SOFT_CLUT_SLOTS.len()],
@@ -197,6 +203,7 @@ const EMPTY_STYLE: Style = Style {
     kill_speed: 0,
     radius_scale: 0,
     splash: 0,
+    stretch: 0,
     samples: &Curve {
         size: [&[0; 33]; 2],
         alpha: [&[0; 33]; 2],
@@ -231,6 +238,7 @@ static mut RESIDENT: Resident = Resident {
     frames: [[0; 3]; FX_MAX_FRAMES],
     soft: [false; FX_MAX_STYLES],
     additive: [false; FX_MAX_STYLES],
+    front: [false; FX_MAX_STYLES],
     soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
     soft_clut_count: 0,
     hero_dust: NO_STYLE,
@@ -260,7 +268,7 @@ fn scene_art(scene: usize) -> &'static [Art] {
         &[]
     }
 }
-const STYLE_BYTES: usize = 168;
+const STYLE_BYTES: usize = 172;
 const EMITTER_BYTES: usize = 64;
 const ART_BYTES: usize = 8;
 const UPLOAD_BYTES: usize = 12;
@@ -440,10 +448,12 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             kill_speed: i32_at(b, 152),
             radius_scale: i32_at(b, 156),
             splash: u16_at(b, 166),
+            stretch: i32_at(b, 168),
             samples: &CURVES[curve],
             frames: frame_pool,
         };
-        r.additive[i] = b[43] != 0;
+        r.additive[i] = b[43] & 1 != 0;
+        r.front[i] = b[43] & 2 != 0;
         if r.styles[i].lands() && ((r.styles[i].splash >> 8) & 15) as usize >= count {
             return false;
         }
@@ -1209,18 +1219,40 @@ const SOFT_GAIN_HALVES: u32 = match option_env!("HK_DUST_GAIN") {
     }
     None => 6,
 };
+/// The corners (top left, top right, bottom left, bottom right, in the quad's own frame) of a
+/// stretched particle: `half` wide on each side of its path and `half` plus `gain` times its speed
+/// long on each side along it. None for a style that does not stretch, or a particle at rest.
+#[inline(never)]
+fn stretch_corners(p: &Particle, gain: i32, half: i32) -> Option<[[i32; 2]; 4]> {
+    if gain == 0 {
+        return None;
+    }
+    let speed = length3([p.velocity[0], p.velocity[1], 0]);
+    if speed < ONE / 4 {
+        return None;
+    }
+    let ux = psx_math::int32::mul_div_i32(p.velocity[0], ONE, speed);
+    let uy = psx_math::int32::mul_div_i32(p.velocity[1], ONE, speed);
+    let long = half + mulq(speed, gain);
+    Some([[-long, half], [long, half], [-long, -half], [long, -half]].map(|[a, b]| {
+        [mulq(ux, a) - mulq(uy, b), mulq(uy, a) + mulq(ux, b)]
+    }))
+}
 #[cfg(not(test))]
 #[inline(never)]
-pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> bool {
+pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32), front: bool) -> bool {
     use psx_gpu::{
         material::{BlendMode, TextureMaterial},
         prim::QuadTextured,
     };
+    let resident = unsafe { &*(&raw const RESIDENT) };
+    if resident.front[(p.kind - 2) as usize] != front {
+        return false;
+    }
     let s = &scene_styles(p.scene as usize)[(p.kind - 2) as usize];
     let words = cached_frame(track, phase(p), PARTICLE_TRACKS);
     let (half, level) = draw_shape(p, s, words);
     // A soft style (soft_styles) adds its densest art at colour times opacity.
-    let resident = unsafe { &*(&raw const RESIDENT) };
     let soft = resident.soft[(p.kind - 2) as usize];
     let (art_level, tint, blend) = if soft {
         let sample = sample(p, s);
@@ -1270,9 +1302,14 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
     } else {
         super::perspective::scale(depth)
     };
-    let rotation = crate::world::debris::Rotation::new(p.angle);
-    let vertices = [[-half, half], [half, half], [-half, -half], [half, -half]].map(|q| {
-        let v = rotation.apply(q);
+    let offsets = match stretch_corners(p, s.stretch, half) {
+        Some(corners) => corners,
+        None => {
+            let rotation = crate::world::debris::Rotation::new(p.angle);
+            [[-half, half], [half, half], [-half, -half], [half, -half]].map(|q| rotation.apply(q))
+        }
+    };
+    let vertices = offsets.map(|v| {
         (
             160 + Wide::of(p.position[0]).plus(v[0]).sub_w(Wide::of(camera.0)).times(scale).shr_i32(28),
             120 - Wide::of(p.position[1]).plus(v[1]).sub_w(Wide::of(camera.1)).times(scale).shr_i32(28),
@@ -1309,7 +1346,7 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32)) -> boo
     true
 }
 #[cfg(test)]
-pub(super) fn draw_particle(_: &Particle, _: u16, _: (i32, i32)) -> bool {
+pub(super) fn draw_particle(_: &Particle, _: u16, _: (i32, i32), _: bool) -> bool {
     false
 }
 #[cfg(test)]
@@ -1540,6 +1577,7 @@ mod tests {
         kill_speed: 0,
         radius_scale: ONE,
         splash: 0,
+        stretch: 0,
         samples: CURVE,
         frames: &FRAMES,
     };
@@ -1693,6 +1731,36 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn a_stretched_quad_is_turned_along_its_velocity_and_longer_by_its_speed() {
+        let styles = [Style { count: 1, life: [100, 100], ..STYLE }];
+        let emitters = [Emitter { style: 0, source: 5, ..EMITTER }];
+        let mut pool = Pool::new();
+        spawn_specs(&mut pool, 0, 7, 0, 1, &emitters, &styles);
+        let p = pool.particles.iter_mut().flatten().next().unwrap();
+        let (half, gain) = (ONE / 4, ONE / 20);
+        // At rest, or for a style that does not stretch: the plain square.
+        p.velocity = [0, 0, 0];
+        assert!(stretch_corners(p, gain, half).is_none());
+        p.velocity = [ONE * 10, 0, 0];
+        assert!(stretch_corners(p, 0, half).is_none());
+        // Along +x at speed 10: half + 10 * gain long each way, half wide.
+        let long = half + 10 * gain;
+        let c = stretch_corners(p, gain, half).unwrap();
+        for (corner, expect) in c.iter().zip([[-long, half], [long, half], [-long, -half], [long, -half]]) {
+            assert!((corner[0] - expect[0]).abs() <= 2 && (corner[1] - expect[1]).abs() <= 2, "{c:?}");
+        }
+        // Along +y: the same quad turned a quarter, so the long side is vertical.
+        p.velocity = [0, ONE * 10, 0];
+        let c = stretch_corners(p, gain, half).unwrap();
+        assert!(c[1][1] > c[0][1] && (c[1][0] - c[0][0]).abs() <= 2 && c[1][1] - c[0][1] >= 2 * long - 4);
+        // A diagonal flight keeps the width: the sides it spans are `2 * half` and `2 * long`.
+        p.velocity = [ONE * 6, ONE * 8, 0];
+        let c = stretch_corners(p, gain, half).unwrap();
+        let side = |a: [i32; 2], b: [i32; 2]| length3([b[0] - a[0], b[1] - a[1], 0]);
+        assert!((side(c[0], c[1]) - 2 * long).abs() <= 8, "{c:?}");
+        assert!((side(c[0], c[2]) - 2 * half).abs() <= 8, "{c:?}");
     }
     #[test]
     fn one_call_for_several_ticks_flies_as_far_as_that_many_calls() {
@@ -2416,6 +2484,7 @@ mod tests {
             frames: [[0; 3]; FX_MAX_FRAMES],
             soft: [false; FX_MAX_STYLES],
             additive: [false; FX_MAX_STYLES],
+            front: [false; FX_MAX_STYLES],
             soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
             soft_clut_count: 0,
             hero_dust: NO_STYLE,

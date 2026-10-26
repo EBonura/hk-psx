@@ -1061,6 +1061,10 @@ impl State {
         self.effect_draw_dropped = self.effect_draw_dropped.saturating_add(skipped);
         debris + impacts + particles::pool().draw(region.scene, region.particle_bank, room, camera)
     }
+    /// The break particles that are drawn in front of the Knight and his slash.
+    pub fn draw_front_particles(&mut self, scene: usize, camera: (i32, i32)) -> u32 {
+        particles::pool().draw_front(scene, camera)
+    }
     /// Rigid debris pieces in flight or at rest.
     pub fn debris_active(&self) -> usize {
         self.debris.active()
