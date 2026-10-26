@@ -279,6 +279,9 @@ struct Style {
     /// Drawn as a quad turned along its velocity and longer by this (Q16 world units per unit of
     /// speed) on each side of the centre: the original's stretched sprites. 0 for a square quad.
     stretch: i64,
+    /// The size (Q16 world units) the art is cut for when that is less than the size drawn (the cell
+    /// keeps its few texels and the quad is stretched); 0 for the size itself. Not in the cooked style.
+    art_size: i64,
     samples: Vec<Sample>,
     cells: i64,
     texture: String,
@@ -769,6 +772,7 @@ fn style(
         radius_scale: q(f(collision, "radiusScale")?)?,
         splash: 0,
         stretch: 0,
+        art_size: 0,
         opaque: false,
         samples,
         cells,
@@ -2676,7 +2680,7 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
         let count = rows[0] as usize;
         let biggest = group
             .iter()
-            .map(|s| s.size[0].max(s.size[1]))
+            .map(|s| if s.art_size > 0 { s.art_size } else { s.size[0].max(s.size[1]) })
             .max()
             .unwrap_or(0);
         let target = target_size(biggest as f64) as usize;
@@ -3471,6 +3475,7 @@ mod tests {
             radius_scale: 0,
             splash: 0,
             stretch: 0,
+            art_size: 0,
             opaque: false,
             samples: Vec::new(),
             cells,

@@ -217,6 +217,7 @@ fn burst_style(b: &Burst, side: f64, gravity: f64, cells: i64, texture: &str) ->
         radius_scale: q(b.radius)?,
         opaque: true,
         stretch: 0,
+        art_size: 0,
         // Landing splash (ticks, cell, quarters), and always flying on outside the coverage.
         splash: 0x8000
             | b.splash.map_or(0, |(cell, ticks, quarters)| {
@@ -398,7 +399,26 @@ fn glow_image(kind: &str) -> hk_pil::Image {
                         (0.55 + 0.45 * (1.0 - v.abs() / w)) * (1.0 - 0.35 * u.abs())
                     }
                 }
-                // A jagged shard: a pentagon-ish polygon, shaded by a light from the top left.
+                // A glass shard: a long thin triangle, its two facets lit differently.
+                "shard" => {
+                    // Points of the triangle: (-0.95, 0.05), (0.9, -0.28), (0.55, 0.32).
+                    let inside = |x: f64, y: f64| {
+                        let e = |ax: f64, ay: f64, bx: f64, by: f64| (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+                        let (d1, d2, d3) = (
+                            e(-0.95, 0.05, 0.9, -0.28),
+                            e(0.9, -0.28, 0.55, 0.32),
+                            e(0.55, 0.32, -0.95, 0.05),
+                        );
+                        !((d1 < 0.0 || d2 < 0.0 || d3 < 0.0) && (d1 > 0.0 || d2 > 0.0 || d3 > 0.0))
+                    };
+                    if inside(u, v) {
+                        let facet = if v > 0.05 - 0.2 * (u + 0.95) { 1.0 } else { 0.62 };
+                        facet * (0.78 + 0.22 * ((u + 1.0) / 2.0))
+                    } else {
+                        0.0
+                    }
+                }
+                // A jagged piece: a pentagon-ish polygon, shaded by a light from the top left.
                 _ => {
                     let a = v.atan2(u);
                     let edge = 0.78 + 0.18 * (a * 3.0 + 0.7).sin() + 0.08 * (a * 5.0).cos();
@@ -412,7 +432,7 @@ fn glow_image(kind: &str) -> hk_pil::Image {
             };
             let l = (k.clamp(0.0, 1.0) * 255.0).round() as u8;
             let at = (y * n + x) * 4;
-            let opaque = if kind == "chunk" { k > 0.0 } else { l >= 44 };
+            let opaque = if kind == "chunk" || kind == "shard" { k > 0.0 } else { l >= 44 };
             im.data[at..at + 4].copy_from_slice(&[l, l, l, if opaque { 255 } else { 0 }]);
         }
     }
@@ -426,9 +446,9 @@ fn glow_curve(g: &Glow, scale: f64) -> Vec<Sample> {
             let t = n as f64 / 32.0;
             let size = scale * (1.0 + (g.grow - 1.0) * t);
             let alpha = if t <= g.hold {
-                g.alpha
+                1.0
             } else {
-                g.alpha * ((1.0 - t) / (1.0 - g.hold)).clamp(0.0, 1.0)
+                ((1.0 - t) / (1.0 - g.hold)).clamp(0.0, 1.0)
             };
             Sample {
                 size: [py_round(size * 65536.0); 2],
@@ -470,13 +490,15 @@ fn push_glow(
         zoom: 1.0,
     };
     let mut style = burst_style(&burst, side, gravity, 1, &texture)?;
-    // The art is cut for `cell` world units; the curve scales the quad up to the size asked.
-    let scale = (g.size[0].max(g.size[1]) / g.cell).max(1.0);
-    style.size = [q(side * g.size[0] / scale)?, q(side * g.size[1] / scale)?];
+    // The art is cut for `cell` world units and the quad drawn larger.
+    let scale = 1.0;
+    style.art_size = q(side * g.cell.min(g.size[0].max(g.size[1])))?;
     style.collision = g.collision;
     style.additive = 1 | i64::from(g.front) << 1;
     style.stretch = q(g.stretch)?;
     style.colors = soft_colors(g.tint);
+    // The opacity is the style's start alpha, so the curves are few: full, held for `hold`, then gone.
+    style.start_alpha = [py_round(g.alpha * 255.0).clamp(0, 255); 2];
     style.samples = glow_curve(g, scale);
     style.opaque = true;
     style.splash = if g.collision { 0x8000 } else { 0 };
@@ -652,8 +674,10 @@ fn prefab_owner(
             if owner == FX_DOOR_DUST || owner == FX_DOOR_RUBBLE {
                 for e in &mut found {
                     e.style.count = (e.style.count * 3 / 5).max(1);
-                    for sample in &mut e.style.samples {
-                        sample.size = sample.size.map(|v| v * 9 / 5);
+                    if owner == FX_DOOR_DUST {
+                        for sample in &mut e.style.samples {
+                            sample.size = sample.size.map(|v| v * 9 / 5);
+                        }
                     }
                 }
             }
@@ -778,9 +802,9 @@ fn collect_hits(
             life: [8, 8],
             size: [3.4, 3.4],
             cell: 0.6,
-            grow: 1.35,
+            grow: 1.3,
             alpha: 1.0,
-            hold: 0.25,
+            hold: 0.3,
             front: true,
             ..Glow::new("disc")
         },
@@ -820,31 +844,29 @@ fn collect_door(
     let gate = named_go(sc, "Hallownest_Main_Gate").ok_or("no gate")?;
     let door = kid(&kids(sc, gate)?, "Door").ok_or("no Door under the gate")?;
     let at = sc.point(door, 0.0, 0.0, 0.0).map_err(|e| e.to_string())?;
-    // `Hit`: Door_dust at the door + (-0.5, 0, -1), euler (1, 0, -180).
-    prefab_owner(
-        source,
-        c,
-        scene_id,
-        FX_DOOR_DUST,
-        "sharedassets6.assets",
-        486,
-        gravity,
-        [at[0] - 0.5, at[1], at[2] - 1.0],
-        Some([1.0, 0.0, -180.0]),
-        "Door_dust",
-    )?;
-    // `Break 1` and `Break 2`: Rubble Fall Short at the fixed world point (185, 75, 0.1), euler (90, -180, 0).
-    prefab_owner(
-        source,
+    // The original's `Door_dust` and `Rubble Fall Short` are clouds of dust sprites; the sprite
+    // art went to the screen as flat grey patches, so they are soft glows of the cook's own: rising
+    // clouds over the door on every hit (below), and dust falling from the lintel on the stage hits.
+    push_glow(
         c,
         scene_id,
         FX_DOOR_RUBBLE,
-        "sharedassets6.assets",
-        465,
+        &Glow {
+            count: 6,
+            life: [40, 64],
+            velocity: [0.0, -3.0],
+            spread: [3.0, 0.8],
+            size: [2.4, 3.6],
+            cell: 0.6,
+            grow: 1.3,
+            alpha: 0.4,
+            hold: 0.2,
+            tint: [150.0, 138.0, 128.0],
+            ..Glow::new("disc")
+        },
         gravity,
         [185.0, 75.0, 0.1],
-        Some([90.0, -180.0, 0.0]),
-        "Rubble Fall Short",
+        "Rubble falling from the lintel",
     )?;
     let rocks = rock_frames(source)?;
     // `Hit`: SpawnRandomObjectsV2 Particle Rock Small Transient 10..12 over the door's height,
@@ -901,13 +923,13 @@ fn collect_door(
         scene_id,
         FX_DOOR_DUST,
         &Glow {
-            count: 3,
+            count: 5,
             life: [36, 52],
             velocity: [0.0, 2.2],
             spread: [0.9, 3.5],
             size: [2.8, 4.2],
             cell: 0.6,
-            grow: 1.5,
+            grow: 1.3,
             alpha: 0.32,
             hold: 0.2,
             tint: [160.0, 145.0, 135.0],
@@ -941,12 +963,12 @@ fn collect_cocoon(
         FX_COCOON,
         &Glow {
             count: 22,
-            life: [26, 44],
+            life: [22, 38],
             angle: Some([100.0, 440.0]),
             speed: [5.0, 20.0],
             size: [0.8, 1.1],
             alpha: 1.0,
-            hold: 0.4,
+            hold: 0.3,
             tint: [30.0, 200.0, 255.0],
             stretch: 0.02,
             gravity_scale: 1.0,
@@ -986,9 +1008,9 @@ fn collect_cocoon(
             life: [40, 40],
             size: [26.0, 26.0],
             cell: 0.6,
-            grow: 1.2,
+            grow: 1.3,
             alpha: 0.3,
-            hold: 0.1,
+            hold: 0.2,
             tint: [20.0, 150.0, 220.0],
             front: true,
             ..Glow::new("disc")
@@ -1127,13 +1149,21 @@ fn collect_jar(
                     // Lit glass: added to the room, big, thrown wide and falling for longer, as it
                     // is in the original (the cut sprites were dark specks of two or three pixels).
                     e.style.additive = 3;
-                    // Dimmer than the particle system's white: eighty of them overlap.
-                    e.style.colors = [[44, 52, 64]; 2];
-                    for sample in &mut e.style.samples {
-                        sample.size = sample.size.map(|v| v * 2);
+                    // Shards of the cook's own (long thin triangles, two lit facets) in place of the
+                    // sprite sheet's clumps, pale blue and dim enough for eighty of them to overlap.
+                    e.style.texture = "fx:glow_shard".to_string();
+                    e.style.cells = 1;
+                    if !c.synthetic.iter().any(|t| t.0 == "fx:glow_shard") {
+                        let (image, _) = sheet(&[(glow_image("shard"), [-0.5, -0.5, 0.5, 0.5])])?;
+                        c.synthetic.push(("fx:glow_shard".to_string(), Arc::new(image)));
                     }
-                    e.style.speed = e.style.speed.map(|v| v * 3 / 2);
+                    e.style.colors = soft_colors([150.0, 170.0, 205.0]);
+                    for sample in &mut e.style.samples {
+                        sample.size = sample.size.map(|v| v * 5 / 4);
+                    }
+                    e.style.speed = [(e.style.speed[0] * 2).max(8 * 65536), e.style.speed[1] * 2];
                     e.style.life = e.style.life.map(|v| v * 7 / 5);
+                    e.style.count = (e.style.count * 11 / 20).max(1);
                     push_found(c, scene_id, FX_JAR_GLASS, vec![*e], &name, origin)?;
                 }
                 Ok(_) => {}
@@ -1146,15 +1176,14 @@ fn collect_jar(
         }
         // The break itself: a white flash on the hit, a pale blue halo that lingers, and three
         // big pieces of the bottle that spin and bounce.
-        let glass = [200.0, 225.0, 255.0];
         push_glow(
             c,
             scene_id,
             FX_JAR_GLASS,
             &Glow {
                 count: 1,
-                life: [5, 5],
-                size: [3.4, 3.4],
+                life: [4, 4],
+                size: [2.8, 2.8],
                 cell: 0.6,
                 grow: 1.3,
                 alpha: 1.0,
@@ -1175,7 +1204,7 @@ fn collect_jar(
                 life: [26, 26],
                 size: [7.5, 7.5],
                 cell: 0.6,
-                grow: 1.25,
+                grow: 1.3,
                 alpha: 0.3,
                 hold: 0.2,
                 tint: [120.0, 165.0, 235.0],
@@ -1195,11 +1224,11 @@ fn collect_jar(
                 life: [90, 140],
                 angle: Some([55.0, 125.0]),
                 speed: [7.0, 14.0],
-                size: [1.5, 2.4],
+                size: [1.0, 1.6],
                 cell: 0.5,
                 alpha: 1.0,
                 hold: 0.85,
-                tint: glass,
+                tint: [100.0, 115.0, 150.0],
                 gravity_scale: 1.0,
                 spin: 420.0,
                 collision: true,

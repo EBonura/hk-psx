@@ -386,6 +386,7 @@ impl Pool {
     /// The break particles that go in front of the Knight and his slash (`Style` additive bit 1),
     /// after everything that is behind him; counted with the rest in `drawn`.
     #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn draw_front(&mut self, scene: usize, camera: (i32, i32)) -> u32 {
         let span = self.span();
         let before = self.drawn;

@@ -1088,6 +1088,7 @@ impl State {
     }
     /// The break particles' pass for the simulation ticks since the last picture, before it.
     #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn tick_break_particles(&mut self, region: &Region, room: &Room) {
         if particles::pool().active() == 0 {
             return;
