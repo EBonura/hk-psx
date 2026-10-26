@@ -77,6 +77,9 @@ class StoredSchedulerTests(unittest.TestCase):
 mod gate_probe{pub fn event(_:u8,_:u32,_:u32){}}
 fn bank_needed(_:usize)->usize{0}
 fn plan_bank(_:usize,_:usize,_:usize){}
+fn spill_upload(){}
+struct SpillStub{ready:bool,scene:usize,want:usize}
+fn spill_state()->SpillStub{SpillStub{ready:false,scene:usize::MAX,want:0}}
 const EMPTY:usize=usize::MAX;
 const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
@@ -111,8 +114,8 @@ const ARENA_TOTAL:usize=16*SECTOR_BYTES;
 struct Buffer{words:[u32;ARENA_TOTAL/4]}
 static mut BUFFERS:Buffer=Buffer{words:[0;ARENA_TOTAL/4]};
 #[derive(Clone,Copy,PartialEq)]enum Fetch{Idle,Reading,Ready}
-struct Prefetch{hint:usize,scene:usize,total:usize,sectors:usize,state:Fetch,code_only:bool,want:Option<(usize,usize,usize,u32,*mut u32,usize,bool)>}
-static mut PREFETCH:Prefetch=Prefetch{hint:EMPTY,scene:EMPTY,total:0,sectors:0,state:Fetch::Idle,code_only:false,want:None};
+struct Prefetch{hint:usize,scene:usize,total:usize,sectors:usize,state:Fetch,code_only:bool,spill_first:usize,spill_want:usize,want:Option<(usize,usize,usize,u32,*mut u32,usize,bool)>}
+static mut PREFETCH:Prefetch=Prefetch{hint:EMPTY,scene:EMPTY,total:0,sectors:0,state:Fetch::Idle,code_only:false,spill_first:0,spill_want:0,want:None};
 fn prefetch_state()->&'static mut Prefetch{unsafe{&mut *(&raw mut PREFETCH)}}
 mod cd_stream{pub fn cancel(){panic!("resident traversal touched transport");}}
 // Rooms without streamed code: planning a code read is a no-op here.
@@ -130,6 +133,7 @@ impl Cache{
  fn staged_prefix(&self,scene:usize)->usize{self.group_sectors(scene)}
  fn group_lba(&self,scene:usize)->u32{100+scene as u32}
  fn code_skip(&self,_scene:usize)->usize{0}
+ fn spill_plan(&self,_scene:usize,_skip:usize,_total:usize,_slack:usize)->Option<usize>{Some(0)}
 METHODS
 }
 #[test]fn exclusive_views_require_matching_complete_scene_atlas_and_proof_owners(){
@@ -227,7 +231,7 @@ static mut PAYLOADS:[[u32;6];2]=[[0,2,3,2,1,2],[1,1,2,1,3,0]];
 mod input{pub fn checkpoint(){}}
 fn checkpoint(){input::checkpoint();}
 mod ambience{pub fn missing(_:usize)->u8{0}}
-mod gate_probe{pub const SCENE_CHECK:u8=0;pub fn set(_:u8){}pub fn event(_:u8,_:u32,_:u32){}pub fn decoder(_:u32)->u8{0}}
+mod gate_probe{pub const SCENE_CHECK:u8=0;pub const RELOCATE:u8=0;pub const HASH_RAW:u8=0;pub const VALIDATE:u8=0;pub fn set(_:u8){}pub fn event(_:u8,_:u32,_:u32){}pub fn decoder(_:u32)->u8{0}}
 // Rooms without streamed code or art: the module calls are no-ops, and the
 // admission never touches the drive for art.
 mod modules{pub fn gate_begin(_:usize){} pub fn art_missing(_:usize)->bool{false} pub fn art_begin(_:usize)->bool{false} pub fn admit_art(_:usize)->bool{true}}

@@ -65,6 +65,10 @@ pub mod gpu {
     pub mod gp0{pub const CLEAR_CACHE:u32=0x01000000;}
     pub fn wait_cmd_ready(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Wait));}
     pub fn write_gp0(word:u32){assert_eq!(word,gp0::CLEAR_CACHE);super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Clear));}
+    pub struct Stat(pub u32);
+    impl Stat{pub fn bits(&self)->u32{self.0}}
+    pub fn status()->Stat{Stat(u32::MAX)}
+    pub fn read_data()->u32{0}
 }
 pub fn draw_sync(){LOG.with(|l|{let mut log=l.borrow_mut();assert_eq!(log.events.last(),Some(&Event::Clear));log.pending=false;log.events.push(Event::Sync);});}
 fn value(kind:u8,id:usize,word:usize)->u16 {
