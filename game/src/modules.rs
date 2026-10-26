@@ -446,7 +446,7 @@ pub fn claim_top(bytes: u32) -> Option<*mut u32> {
             .then(|| core::ptr::with_exposed_provenance_mut::<u32>(pool() + at as usize));
     }
     for (m, s) in slots().iter().enumerate() {
-        if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
+        if is_resident(m) && s.offset < at + bytes && at < s.offset + s.bytes {
             return None;
         }
     }
@@ -467,7 +467,7 @@ pub fn pool_has_room(bytes: u32) -> bool {
         return false;
     };
     for (m, s) in slots().iter().enumerate() {
-        if resident() & (1 << m) != 0 && s.offset < at + bytes && at < s.offset + s.bytes {
+        if is_resident(m) && s.offset < at + bytes && at < s.offset + s.bytes {
             return false;
         }
     }
