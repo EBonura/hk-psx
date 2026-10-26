@@ -598,6 +598,10 @@ pub fn render(
         prims += unsafe { spstack::sim(|| render::scenery(camera, true)) };
         prims += game.state.draw_secrets(view, camera, true);
     }
+    // The spell's blast and impact cross the floor in the original: over the front scenery.
+    if fx {
+        prims += ability_fx::draw_world(&game.player, camera);
+    }
     // The heal's white flash: over the world, under the HUD.
     if let Some((i, tint)) = flash {
         prims += ability_art::draw_additive(

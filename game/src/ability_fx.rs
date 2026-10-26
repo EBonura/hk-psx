@@ -246,12 +246,25 @@ fn draw_one(i: usize, player: &Player, camera: (i32, i32)) -> u32 {
     }
     drawn
 }
-/// Draw the live effects. Only after `request` said yes this frame.
+/// Draw the effects that follow the Knight (the dash, the wings, the puff and the flash), a hair behind
+/// him. Only after `request` said yes this frame.
 #[cfg(not(test))]
 #[inline(never)]
 pub fn draw(player: &Player, camera: (i32, i32)) -> u32 {
     let mut drawn = 0;
-    for i in 0..CLIPS.len() {
+    for i in 0..FIRST_WORLD {
+        drawn += draw_one(i, player, camera);
+    }
+    drawn
+}
+/// Draw the spell's effects, spawned in the world: after the front scenery, because the original's sparks
+/// cross the floor and the arches below it (Vengeful Spirit's blast and wall impact over the bridge of the
+/// Elder Baldur's room) where the port's floor strip would otherwise hide the middle of the fan.
+#[cfg(not(test))]
+#[inline(never)]
+pub fn draw_world(player: &Player, camera: (i32, i32)) -> u32 {
+    let mut drawn = 0;
+    for i in FIRST_WORLD..CLIPS.len() {
         drawn += draw_one(i, player, camera);
     }
     drawn
