@@ -1992,7 +1992,6 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    unsafe { HK_BAD_DECODE = 1 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2078,7 +2077,6 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    unsafe { HK_BAD_DECODE = 2 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2150,7 +2148,6 @@ impl Cache {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    unsafe { HK_BAD_DECODE = 3 * 1000 + self.loaded_atlases as u32; }
                     return Err(match error {
                         DecodeError::Checksum => LoadError::Checksum,
                         DecodeError::Decompress => LoadError::Decompress,
@@ -2264,7 +2261,6 @@ impl Cache {
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        unsafe { HK_BAD_DECODE = 4 * 1000 + self.loaded_atlases as u32; }
                         return Err(match error {
                             DecodeError::Checksum => LoadError::Checksum,
                             DecodeError::Decompress => LoadError::Decompress,
@@ -2481,7 +2477,6 @@ impl Cache {
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        unsafe { HK_BAD_DECODE = 5 * 1000 + self.loaded_atlases as u32; }
                         return Err(match error {
                             DecodeError::Checksum => LoadError::Checksum,
                             DecodeError::Decompress => LoadError::Decompress,
@@ -3496,8 +3491,6 @@ impl Verify {
 }
 static mut GATE_VERIFIED: psx_math::Mask64 = psx_math::Mask64::EMPTY;
 static mut GATE_SCENE: usize = EMPTY;
-#[no_mangle]
-pub static mut HK_BAD_DECODE: u32 = 0;
 #[no_mangle]
 pub static mut HK_PREVERIFIED_BYTES: u32 = 0;
 #[no_mangle]
