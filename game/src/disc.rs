@@ -4253,8 +4253,12 @@ fn cut_music() {
     unsafe {
         DRIVE.music = false;
     }
+    // The drive stops at the next sector once it has found one: a refill still seeking (about
+    // 19 VBlanks at the far end of the disc) is waited out here, so the pad and the audio stream
+    // are served meanwhile (journey-crossroads missed 8 VBlanks of polls and underran a stream
+    // when its gate cut a refill that was still seeking).
     while matches!(cd_stream::status(), cd_stream::Status::Busy) {
-        core::hint::spin_loop();
+        crate::input::checkpoint();
     }
     let landed = match cd_stream::status() {
         cd_stream::Status::Failed(_) => 0,
