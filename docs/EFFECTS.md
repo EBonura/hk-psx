@@ -37,6 +37,23 @@ the break-effect particle pool (`game/src/particles.rs`, `break_effects.rs`) and
 | 0xD023 SCUTTLER_BLOOD | a struck Scuttler's blood x15 | resources:5399 sprites |
 | 0xD030 JAR_GLASS | a jar's glass | scene `Pt Glass L/S` |
 
+| 0xD014 HIT_FLASH | `Strike Nail R` at every door hit: a white flash and nine spark streaks (anchor: the hit; twice on the hits that change the door's pose and the one that opens it) | the cook's own light |
+| 0xD015 DOOR_PULSE | the pale light that runs up the door's face with every hit (cooked in place) | the cook's own light |
+
+The owners marked "the cook's own light" and the cocoon's petals, streaks and wash, the jar's flash, halo, shards and
+pieces, and the door's rising dust and falling dust are made by `host/hk-cook/src/break_effects/fx.rs` `Glow`: a soft
+additive style of a grey art cell (`disc`, `bar`, `lens`, `shard`, `chunk`, drawn by the cook) that the style's tint
+colours. A style may `stretch` (Style bytes 168..171): its quad is turned along the particle's velocity and is longer
+on each side by that many world units per unit of speed (a streak, a petal, the pulse's tall quad), and a style with
+additive bit 1 is a front style, drawn after the Knight and his slash (`Pool::draw_front`) so a flash is not hidden by
+the slash. The art is cut for a few texels (`art_size`) and the quad is drawn larger, because the effects' VRAM is eight
+kilobytes. The Great Door's `Door_dust` and `Rubble Fall Short` prefabs are not cooked any more: their sprite art went
+to the screen as flat grey patches.
+
+The soft styles need a copy of their palette in one of four rows (368, 236..239). A scene whose own uploads reached one
+lost every soft style and drew its smoke as dithered coverage (Tutorial_01's "web-like noise" on the door): the cook's
+`VRAM_RECTS` now stops at row 236 so no upload reaches them.
+
 `.hkpsx/break-effects/report.json` lists, per scene, which owners fit and why the others were dropped.
 
 ## Memory
