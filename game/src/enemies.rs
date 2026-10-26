@@ -1705,7 +1705,7 @@ impl Actor {
     }
     fn blocker(&self) -> Option<BlockerRuntime> {
         if let Runtime::Blocker(b) = self.runtime {
-            crate::modules::require(crate::modules::BLOCKER).then_some(b)
+            crate::modules::require(crate::modules::BALDUR).then_some(b)
         } else {
             None
         }
