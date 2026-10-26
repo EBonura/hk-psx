@@ -412,7 +412,7 @@ fn glow_image(kind: &str) -> hk_pil::Image {
             };
             let l = (k.clamp(0.0, 1.0) * 255.0).round() as u8;
             let at = (y * n + x) * 4;
-            let opaque = if kind == "chunk" { k > 0.0 } else { l >= 10 };
+            let opaque = if kind == "chunk" { k > 0.0 } else { l >= 44 };
             im.data[at..at + 4].copy_from_slice(&[l, l, l, if opaque { 255 } else { 0 }]);
         }
     }
@@ -940,15 +940,15 @@ fn collect_cocoon(
         scene_id,
         FX_COCOON,
         &Glow {
-            count: 30,
-            life: [34, 58],
+            count: 22,
+            life: [26, 44],
             angle: Some([100.0, 440.0]),
             speed: [5.0, 20.0],
-            size: [0.55, 0.8],
+            size: [0.8, 1.1],
             alpha: 1.0,
-            hold: 0.55,
+            hold: 0.4,
             tint: [30.0, 200.0, 255.0],
-            stretch: 0.045,
+            stretch: 0.02,
             gravity_scale: 1.0,
             front: true,
             ..Glow::new("lens")
@@ -1127,8 +1127,10 @@ fn collect_jar(
                     // Lit glass: added to the room, big, thrown wide and falling for longer, as it
                     // is in the original (the cut sprites were dark specks of two or three pixels).
                     e.style.additive = 3;
+                    // Dimmer than the particle system's white: eighty of them overlap.
+                    e.style.colors = [[44, 52, 64]; 2];
                     for sample in &mut e.style.samples {
-                        sample.size = sample.size.map(|v| v * 5 / 2);
+                        sample.size = sample.size.map(|v| v * 2);
                     }
                     e.style.speed = e.style.speed.map(|v| v * 3 / 2);
                     e.style.life = e.style.life.map(|v| v * 7 / 5);
@@ -1151,8 +1153,8 @@ fn collect_jar(
             FX_JAR_GLASS,
             &Glow {
                 count: 1,
-                life: [6, 6],
-                size: [5.0, 5.0],
+                life: [5, 5],
+                size: [3.4, 3.4],
                 cell: 0.6,
                 grow: 1.3,
                 alpha: 1.0,
@@ -1171,12 +1173,12 @@ fn collect_jar(
             &Glow {
                 count: 1,
                 life: [26, 26],
-                size: [9.0, 9.0],
+                size: [7.5, 7.5],
                 cell: 0.6,
                 grow: 1.25,
-                alpha: 0.5,
+                alpha: 0.3,
                 hold: 0.2,
-                tint: [140.0, 185.0, 255.0],
+                tint: [120.0, 165.0, 235.0],
                 front: true,
                 ..Glow::new("disc")
             },

@@ -871,6 +871,73 @@ fn spawn_specs_with_bases(
     }
     pool.publish();
 }
+/// The velocity and the distance of `run` ticks (2 or more) of one particle in one go: what the tick
+/// loop does one tick at a time (`v = (v + force) * (1 - dampen)` for a flat drag; the speed above the limit
+/// losing `dampen` of itself for the rest). A frame that has to catch up runs the break particles once for
+/// all its ticks, and a root and three quotients a tick for every shard was what made a burst cost a
+/// frame. The flat drag is exact (two sums over the ticks); over a limit the excess speed is taken as
+/// the mean of its two ends decaying by the drag, along the flight's end direction.
+/// Returns the speed the spin reads and the distance (Q16 units, 60 of them a unit of speed).
+#[inline(never)]
+fn coarse_flight(
+    p: &mut Particle,
+    s: &Style,
+    run: u16,
+    flat_limit: bool,
+    spin_by_speed: bool,
+) -> (i32, [i32; 3]) {
+    let n = i32::from(run);
+    let start = p.velocity;
+    let mut push = [0, p.force, 0];
+    for j in [0, 2] {
+        if (s.force[j][0] | s.force[j][1]) != 0 {
+            push[j] += lerp(s.force[j], p.gradient) / 60;
+        }
+    }
+    let sum = n * (n + 1) / 2;
+    let drag = ONE - s.dampen;
+    // v(k) = v0 * drag^k + force * b(k), b(k) = (b(k-1) + 1) * drag: what a flat drag, or the excess over the
+    // limit, does tick by tick; the sums of both over the ticks are the distance.
+    let (mut a, mut b, mut sum_a, mut sum_b) = (ONE, 0, 0, 0);
+    for _ in 0..run {
+        a = mulq(a, drag);
+        b = mulq(b + ONE, drag);
+        sum_a += a;
+        sum_b += b;
+    }
+    if flat_limit {
+        for j in 0..3 {
+            p.velocity[j] = mulq(start[j], a) + mulq(push[j], b);
+        }
+        return (0, core::array::from_fn(|j| mulq(start[j], sum_a) + mulq(push[j], sum_b)));
+    }
+    let end = core::array::from_fn::<i32, 3, _>(|j| start[j] + push[j] * n);
+    let undamped = core::array::from_fn(|j| start[j] * n + push[j] * sum);
+    p.velocity = end;
+    if s.limit < 0 && !spin_by_speed {
+        return (0, undamped);
+    }
+    let (s0, s1) = (length3(start), length3(end));
+    if s.limit < 0 || s1 == 0 || (s0 <= s.limit && s1 <= s.limit) {
+        return (s1, undamped);
+    }
+    // Over the limit: the excess speed follows the same recurrence, pushed by the part of the force along
+    // the flight (the fall of a shard settles at a speed above the limit, where the push meets the drag).
+    let along = (0..3).fold(0i32, |acc, j| {
+        acc + psx_math::int32::mul_div_i32(push[j], end[j], s1)
+    });
+    let excess = (s0 - s.limit).max(0);
+    let left = (mulq(excess, a) + mulq(along, b)).max(0);
+    let travelled = n * s.limit + mulq(excess, sum_a) + mulq(along, sum_b);
+    let speed = s.limit + left;
+    for v in &mut p.velocity {
+        *v = scale_velocity(*v, speed, s1);
+    }
+    let distance = travelled.max(n * s.limit);
+    let moved = core::array::from_fn(|j| psx_math::int32::mul_div_i32(end[j], distance, s1));
+    (s1, moved)
+}
+
 fn ordered(p: [i32; 2]) -> [i32; 2] {
     [p[0].min(p[1]), p[0].max(p[1])]
 }
@@ -988,7 +1055,10 @@ fn tick_specs_with_tracks(
         // and the contacts) is done once, over the distance the ticks add up to.
         let mut speed = 0;
         let mut moved = [0i32; 3];
-        for _ in 0..run {
+        if run > 1 {
+            (speed, moved) = coarse_flight(p, s, run, flat_limit, spin_by_speed);
+        }
+        for _ in 0..u16::from(run == 1) {
             p.velocity[1] += p.force;
             for j in [0, 2] {
                 if (s.force[j][0] | s.force[j][1]) != 0 {
@@ -1794,6 +1864,7 @@ mod tests {
                     slot.delay = (slot.delay % 5) + 1;
                 }
             }
+            let (mut sum_v, mut sum_p, mut samples) = (0i64, 0i64, 0i64);
             for round in 0..40i32 {
                 tick_specs_by(&mut once, 0, &styles, COVER, 0, |_| [0; 4], steps);
                 for _ in 0..steps {
@@ -1802,12 +1873,18 @@ mod tests {
                 for (a, b) in once.particles.iter().zip(&every.particles) {
                     match (a, b) {
                         (Some(a), Some(b)) => {
-                            assert_eq!((a.velocity, a.age, a.delay), (b.velocity, b.age, b.delay));
+                            assert_eq!((a.age, a.delay), (b.age, b.delay));
+                            // A call of several ticks takes its drag over the limit as one recurrence
+                            // (`coarse_flight`), so a velocity and a place are close ones, not the same.
                             for j in 0..3 {
-                                assert!(
-                                    (a.position[j] - b.position[j]).abs() <= steps as i32 * (round + 1),
-                                    "steps {steps} round {round}: {a:?} against {b:?}"
+                                let (dv, dp) = (
+                                    (a.velocity[j] - b.velocity[j]).abs(),
+                                    (a.position[j] - b.position[j]).abs(),
                                 );
+                                assert!(dv <= 6 * ONE && dp <= 3 * ONE, "steps {steps} round {round}: {a:?} against {b:?}");
+                                sum_v += i64::from(dv);
+                                sum_p += i64::from(dp);
+                                samples += 1;
                             }
                         }
                         (None, None) => {}
@@ -1816,6 +1893,9 @@ mod tests {
                 }
                 assert_eq!(once.active(), every.active());
             }
+            // On the whole they stay within a quarter of a unit a second and under half a unit.
+            assert!(sum_v / samples.max(1) < i64::from(ONE / 4), "steps {steps}: mean velocity error {}", sum_v / samples.max(1));
+            assert!(sum_p / samples.max(1) < i64::from(ONE / 2), "steps {steps}: mean place error {}", sum_p / samples.max(1));
         }
     }
     #[test]

@@ -35,8 +35,16 @@ use std::sync::Arc;
 
 mod fx;
 
-const VRAM_RECTS: [(i64, i64, i64, i64); 3] =
-    [(352, 176, 32, 64), (360, 32, 24, 32), (352, 64, 32, 32)];
+/// The effects' share of VRAM. The first column stops four rows short of the bottom of
+/// (352,176,32,64): rows 236 to 239 from x 368 are the soft styles' palette copies (the guest's
+/// `SOFT_CLUT_SLOTS`), which no upload may reach or a scene loses every soft style (its smoke
+/// falls back to dithered coverage); the sliver left of them is used.
+const VRAM_RECTS: [(i64, i64, i64, i64); 4] = [
+    (352, 176, 32, 60),
+    (360, 32, 24, 32),
+    (352, 64, 32, 32),
+    (352, 236, 16, 4),
+];
 const ALPHAS: [u32; 3] = [43, 85, 128];
 /// Slots in the guest particle pool, game/src/particles.rs CAPACITY. An
 /// emitter authored above this can never finish emitting even into an empty
