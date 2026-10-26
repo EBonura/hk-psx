@@ -903,11 +903,12 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     }
     // `--intro`: the player compiled into data/intro.exe and HK_INTRO set before
     // the guest build reads them; the movies go onto the disc packed below.
+    // The glyph strip and its advances (data/font-metrics.json) and the poem's cells (data/poem-font.hk, which
+    // the intro stage reads) come out of this stage; the title art cooked next carries the advances. A fifth
+    // of a second, so it runs every build, and before the intro stage on a fresh data directory.
+    rust_step(root, "dialogue-art")?;
     let intro = intro_stage(root, intro_plan(options, shipping_guest()))?;
     let pgo = mode == BuildMode::Pgo;
-    // The glyph strip and its advances (data/font-metrics.json) come out of this stage; the
-    // title art cooked next carries the advances. A fifth of a second, so it runs every build.
-    rust_step(root, "dialogue-art")?;
     // The title styles' backgrounds and logos, which the title art cooked next is made from.
     rust_step(root, "title-style")?;
     menu_cached(root, options.recook)?;
