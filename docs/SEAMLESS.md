@@ -23,20 +23,22 @@ The tour (`--features gate-tour,tour-walk`, `HK_GATE_LOG`) walks the Knight stra
 | --- | ---: | ---: | ---: |
 | main 7226e94 behaviour (study knobs off) | 33 of 102 | 37 / 97 / 196 | 2,373 |
 | prefetch work of the 10-17 branch on main | 73 | 24 / 59 / 181 | 887 |
-| + arena padding fix, radius 32, decode step 16,384, spill (the tour of that build; the code now has radius 16 and decode step 8,192, which pass hornet-road and the journeys and have NOT been toured) | 84 | 23 / 43 / 127 | 474 |
+| + arena padding fix, spill, radius 16, decode step 8,192 (this code, rebased onto main 9c48f99, tour of 10-26) | 76 | 23 / 50 / 146 | 630 |
 
-Run to run the same gate moves by 20 vb or more when anything else in the build changes, so compare sums, not single gates. A real play check: the 10-24 16:16 tape of Manny's replayed on a gate-log build crosses five doorways; four are 20 to 22 vb and the first (King's Pass to Dirtmouth) was 92 vb before the spill and is 36 after.
+Run to run the same gate moves by 20 vb or more when anything else in the build changes, so compare sums, not single gates. A real play check: Manny's 10-24 16:16 tape replayed on this build (gate-log, route-input) drifts and crosses two doorways, King's Pass to Dirtmouth at 46 vb (92 on main before this work) and Dirtmouth to Crossroads_01 at 16; on 10-24 the same tape crossed five, four of them 20 to 22 vb.
 
 ## Still above 0.5 s
 
+(26 of the 102 tour gates, from the 10-26 tour of the rebased code; the tour build itself missed 10 pad vblanks in 74,000 polls, the shipping twin passes every route and journey check.)
+
 | Gate | black (vb) | Why |
 | --- | ---: | --- |
-| Tutorial_01 to Town (every new game) | 36 | Town's group is 172 sectors; King's Pass leaves no slack (341,532 B scene and 73,516 B metadata in the arena), 83 sectors are spilled, the rest is CPU: stored hash 218 ms, LZ4 290, upload 90 |
+| Tutorial_01 to Town (every new game) | 38 to 46 | Town's group is 172 sectors; King's Pass leaves no slack (341,532 B scene and 73,516 B metadata in the arena), 83 sectors are spilled, the rest is CPU: stored hash 218 ms, LZ4 290, upload 90 |
 | Town to Tutorial_01 | 69 | scene and metadata (window B, 99 sectors) are read at the gate, 0.6 s of CD then 0.3 s of LZ4 |
-| Crossroads_06 or 21 to Crossroads_10 (False Knight arena) | 79 and 127 | window B is the 100-sector scene chunk, which holds the boss's animation frames (220,924 B of its 367,628 B); 0.75 s of CD, 0.3 s of LZ4, and on the second a 0.7 s ambience clip read |
-| Crossroads_06 to Crossroads_ShamanTemple | 67 | window B again (0.56 s of CD) |
+| Crossroads_06 or 21 to Crossroads_10 (False Knight arena) | 84 and 146 | window B is the 100-sector scene chunk, which holds the boss's animation frames (220,924 B of its 367,628 B); 0.75 s of CD, 0.3 s of LZ4, and on the second a 0.7 s ambience clip read |
+| Crossroads_06 to Crossroads_ShamanTemple | 73 | window B again (0.56 s of CD) |
 | Fungus1_01 to 01b or Crossroads_11_alt | 70 and 91 | a return through the gate just used: the runner bank read in flight at the trigger is waited for (`bank_settle`, 0.3 s) and the group has not started |
-| Crossroads_08, 19, 50, 4 and a few others | 42 to 72 | slack 0 to 40 sectors of 116 to 167, spill pages and arrival time limit the prefix |
+| Crossroads_08, 19, 50, 4, 27, 9 and a few others | 42 to 72 | slack 0 to 40 sectors of 116 to 167, spill pages and arrival time limit the prefix |
 
 Measured on the way and not kept: a prefetch radius of 32 (735 against 817 vblanks of black over 30 on the tour) or 64 (644, once ended a gate without its room's art); from 24 up, hornet-road lost 13 pad polls and a music refill while Fungus1_21's gate loaded, which 16 does not. Scene groups laid out by gate adjacency (annealed over the silicon seek curve), a head park for groups with no slack, and a trusted metadata parse changed the sum of black over 30 vb by less than the run-to-run noise (patch kept in the lane notes).
 
