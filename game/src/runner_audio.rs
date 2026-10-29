@@ -13,7 +13,6 @@ mod mossman {
 }
 pub const MOSSMAN_BANK_BYTES:usize=mossman::BANK_BYTES;
 pub const MOSSMAN_BANK_CHECKSUM:u32=mossman::BANK_CHECKSUM;
-pub fn scene_is_mossman(scene_id:usize)->bool {mossman::SCENE_IDS.contains(&(scene_id as u16))}
 fn clips(mossman:bool)->&'static [hk_sim::runner_audio::Clip] {if mossman {&mossman::CLIPS}else{&CLIPS}}
 pub fn family_ready(mossman:bool)->bool {unsafe{HK_RUNNER_AUDIO_READY==if mossman{2}else{1}}}
 pub fn validate_fragment(mossman:bool,offset:usize,data:&[u8])->bool {

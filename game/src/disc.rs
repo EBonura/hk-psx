@@ -1576,7 +1576,9 @@ impl Cache {
     /// failure leaves publication revoked, so a partial bank is never published.
     #[inline(never)]
     fn prepare_runner_audio(&mut self,scene:usize)->Result<(),LoadError> {
-        let mossman=crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
+        // A room without a Runner or Zombie Shield never plays the bank: keep whichever family the
+        // SPU holds, so only the gate into a room of the other family pays for the swap.
+        let Some(mossman)=runner_family(scene) else {return Ok(());};
         if crate::runner_audio::family_ready(mossman) {return Ok(());}
         self.init()?;
         let index=if mossman {MOSSMAN_BANK}else{2};
@@ -1624,33 +1626,31 @@ impl Cache {
         prefetch_discard();
         room_drive();
         let mut words=[0u32;SECTOR_WORDS];
-        // One pass: each sector is checked and uploaded as it arrives, and the hash is judged at the
-        // end. Publication stays revoked from `begin_overlay` until `finish_overlay`, so a failure
-        // leaves the family unpublished and the load fails, as a failed second pass did before; the
-        // separate validating pass cost a second seek and a second read of the bank (up to 0.5 s).
-        if !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-        if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
-            unsafe{self.reader.stop();}
-            return Err(LoadError::PayloadRead);
-        }
-        let result=(|| {
-            let mut hash=0x811c9dc5u32;
-            let mut offset=0;
-            while offset<size {
-                checkpoint();
-                if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
-                let n=(size-offset).min(SECTOR_BYTES);
-                let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
-                if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
-                for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
-                crate::runner_audio::upload_fragment(offset,bytes);
-                offset+=n;
+        for pass in 0..2 {
+            if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
+            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
+                unsafe{self.reader.stop();}
+                return Err(LoadError::PayloadRead);
             }
-            if hash!=checksum {return Err(LoadError::RoomMismatch);}
-            Ok(())
-        })();
-        unsafe{self.reader.stop();}
-        result?;
+            let result=(|| {
+                let mut hash=0x811c9dc5u32;
+                let mut offset=0;
+                while offset<size {
+                    checkpoint();
+                    if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
+                    let n=(size-offset).min(SECTOR_BYTES);
+                    let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
+                    if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
+                    for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
+                    if pass==1 {crate::runner_audio::upload_fragment(offset,bytes);}
+                    offset+=n;
+                }
+                if hash!=checksum {return Err(LoadError::RoomMismatch);}
+                Ok(())
+            })();
+            unsafe{self.reader.stop();}
+            result?;
+        }
         crate::runner_audio::finish_overlay(mossman);
         Ok(())
     }
@@ -2848,7 +2848,7 @@ impl Cache {
     pub fn is_ready(&self, region: usize) -> bool {
         REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene, _)| {
             let scene = scene as usize;
-            if !crate::runner_audio::family_ready(crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize)) {return false;}
+            if runner_family(scene).is_some_and(|m| !crate::runner_audio::family_ready(m)) {return false;}
             if SCENE_GATE_LOAD {
                 self.loaded_scenes == 1
                     && scene == self.resident_scene
@@ -3395,12 +3395,17 @@ fn bank_needed(scene: usize) -> usize {
     if option_env!("HK_NO_BANK_AHEAD").is_some() {
         return 0;
     }
-    let m = crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
-    if crate::runner_audio::family_ready(m) {
-        0
-    } else {
-        AUDIO_BANKS[if m { MOSSMAN_BANK } else { 2 }].0.div_ceil(SECTOR_BYTES)
+    match runner_family(scene) {
+        Some(m) if !crate::runner_audio::family_ready(m) => {
+            AUDIO_BANKS[if m { MOSSMAN_BANK } else { 2 }].0.div_ceil(SECTOR_BYTES)
+        }
+        _ => 0,
     }
+}
+/// The runner audio family `scene` plays (true: Mossman), None for a room that places no Runner and
+/// no Zombie Shield.
+fn runner_family(scene: usize) -> Option<bool> {
+    crate::world::runner_family(SCENE_MANIFEST[scene].scene_id as usize)
 }
 /// Plan the bank read for the group prefix of `sectors` just planned (the bank
 /// goes right below it): `bank` sectors from `bank_needed`, 0 for none.
@@ -3414,7 +3419,7 @@ fn plan_bank(scene: usize, sectors: usize, bank: usize) {
     if bank == 0 || sectors == 0 {
         return;
     }
-    let m = crate::runner_audio::scene_is_mossman(SCENE_MANIFEST[scene].scene_id as usize);
+    let m = runner_family(scene).unwrap_or(false);
     let lba = unsafe { BANK_LBA[m as usize] };
     if lba == 0 {
         return;

@@ -88,6 +88,7 @@ const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(0,2),(1,0),(1,1),(1,2)];
 struct SceneDesc{raw_len:usize,scene_id:usize}
 const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{raw_len:4096,scene_id:0},SceneDesc{raw_len:2048,scene_id:46}];
+mod world{pub fn runner_family(scene:usize)->Option<bool>{Some(scene==46)}}
 mod runner_audio{
  pub static mut READY:bool=true;
  pub fn scene_is_mossman(scene:usize)->bool{scene==46}
@@ -556,6 +557,7 @@ const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
 struct SceneDesc{scene_id:usize}
 const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{scene_id:0},SceneDesc{scene_id:46}];
+mod world{pub fn runner_family(scene:usize)->Option<bool>{Some(scene==46)}}
 mod runner_audio{pub fn scene_is_mossman(scene:usize)->bool{scene==46}pub fn family_ready(_:bool)->bool{true}}
 const ATLASES:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}

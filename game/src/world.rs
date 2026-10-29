@@ -263,6 +263,17 @@ pub fn region_actors_indexed(
         .filter(|(_, o)| o.kind() == KIND_ACTOR && o.flags() & 64 != 0)
         .map(move |(i, o)| (i, actor_placement(&o), &specs[o.extra(0) as usize]))
 }
+/// The runner audio family the actors of scene `scene_id` play (true: Mossman), None when it places no
+/// Runner and no Zombie Shield, so no bank is needed to enter it.
+pub fn runner_family(scene_id: usize) -> Option<bool> {
+    SCENE_ACTORS.get(scene_id)?.iter().find_map(|spec| match spec.controller {
+        hk_sim::ActorController::Runner { params, .. } => {
+            Some(params.attack == hk_sim::runner::Attack::SwipeCalm)
+        }
+        hk_sim::ActorController::ZombieShield { .. } => Some(false),
+        _ => None,
+    })
+}
 /// The placement `region_actors_indexed` listed at `index`.
 #[inline(never)]
 pub fn region_actor(
