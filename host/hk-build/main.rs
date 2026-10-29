@@ -74,6 +74,8 @@ const ASSET_SCRIPTS: &[&str] = &[
     "shade.py",
     "rust:focus-art",
     "ability_art.py",
+    // Desolate Dive, Howling Wraiths and the nail arts: times, speeds, damages and shapes (data/ability_params.rs).
+    "rust:ability-params",
     // Goams, stalactites and grub jars: their placements come from the region
     // report and the cooked scene draws regions.py wrote. Ported to Rust
     // (hk-cook), so it runs in-process.
@@ -836,6 +838,7 @@ fn rust_step(root: &Path, tool: &str) -> Result<()> {
         "geo-audio" => hk_cook::geo_audio::main(root, None)?,
         "focus-audio" => hk_cook::focus_audio::main(root, None)?,
         "focus-art" => hk_cook::focus_art::main(root, None)?,
+        "ability-params" => hk_cook::ability_params::main(root, None)?,
         "dialogue-art" => hk_cook::dialogue_art::main(root, None)?,
         "title-style" => hk_cook::title_style::main(root, None, &[])?,
         "ambience" => hk_cook::ambience::main(root, None)?,

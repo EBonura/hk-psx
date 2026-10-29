@@ -127,7 +127,7 @@ const _: () = assert!(CHEAT_ITEMS.len() == crate::cheats::CHEAT_ROWS);
 /// The title's Cheats page after the toggles: the action that unlocks every menu style, then Back.
 pub const UNLOCK_ROW: usize = CHEAT_ITEMS.len();
 pub const CHEAT_BACK: usize = UNLOCK_ROW + 1;
-pub const CHEAT_ITEMS: [&str; 12] = [
+pub const CHEAT_ITEMS: [&str; 15] = [
     "Invincibility",
     "Pure Nail (21 damage)",
     "Infinite SOUL",
@@ -140,6 +140,9 @@ pub const CHEAT_ITEMS: [&str; 12] = [
     "Dream Nail (hold Triangle)",
     "Vengeful Spirit (tap O)",
     "All charms found",
+    "Desolate Dive (Down + O)",
+    "Howling Wraiths (Up + O)",
+    "Abyss Shriek, Descending Dark",
 ];
 pub const OPTION_ITEMS: [&str; 8] = [
     "Sound effects",

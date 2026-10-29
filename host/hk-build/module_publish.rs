@@ -578,8 +578,8 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
     }
     // The guest decides which optional carried packages (the Knight's ability effects) it asks for into a
     // scene (`modules::fx_fit`): `HK_FX_FIT`, per manifest scene, one bit for each optional pack that fits
-    // beside the scene's own modules and the Death and respawn clips (bits 0, 1) or beside those and the
-    // Shade's art too (bits 2, 3), filled in the order the packs are listed.
+    // beside the scene's own modules and the Death and respawn clips (bits 0 to 2) or beside those and the
+    // Shade's art too (bits 3 to 5), filled in the order the packs are listed.
     {
         let scenes = config["room_scenes"].as_array().ok_or("room_scenes")?;
         let optional: Vec<u32> = config["optional"]
@@ -606,8 +606,8 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 } as u32)
             })
             .collect::<std::result::Result<_, Box<dyn std::error::Error>>>()?;
-        if optional.len() > 2 {
-            return Err("HK_FX_FIT holds two optional packs".into());
+        if optional.len() > 3 {
+            return Err("HK_FX_FIT holds three optional packs".into());
         }
         let symbol = symbols
             .iter()
@@ -630,7 +630,7 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 let mut room = limit.saturating_sub(need + beside);
                 for (k, bytes) in optional.iter().enumerate() {
                     if *bytes <= room {
-                        bits |= 1 << (2 * row + k);
+                        bits |= 1 << (3 * row + k);
                         room -= bytes;
                     }
                 }

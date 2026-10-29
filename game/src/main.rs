@@ -11,6 +11,7 @@ use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/ability_params.rs"));
 /// Where a new game starts: x and y in Q16 world units (the `top1` gate of Tutorial_01 at x 34.5,
 /// just inside the scene's top edge y 92) and the global region whose activation bounds hold that
 /// point (regions.json index 78, chunk 79: x 24..48, y 91..100). The drop to SPAWN is a straight
@@ -18,6 +19,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
 mod ability_art;
 mod ability_fx;
+mod spells;
 mod unpack;
 mod ambience;
 mod animation_cache;
@@ -737,7 +739,7 @@ fn apply_hurt(
         damage,
         direction,
         hazard,
-        player.shadow_dashing,
+        player.shadow_dashing || (player.immune && !hazard),
     );
     respond_to_hurt(hurt, [player.x, player.y], nail, response, focus);
     hurt
@@ -950,6 +952,8 @@ fn main() {
         focus: hk_sim::Focus::new(),
         dream: hk_sim::DreamNail::new(),
         cast: hk_sim::Cast::new(),
+        quake: hk_sim::Quake::new(),
+        scream: hk_sim::Scream::new(),
         state: world::State::new(),
         reveals: reveal_masks::State::new(),
         enemies: enemies::EnemyWorld::new(),
