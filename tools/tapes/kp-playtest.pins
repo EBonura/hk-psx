@@ -1,3 +1,4 @@
 pacing = 173
 frame_time = 227
-long_frames = 5
+long_frames = 6
+# 2026-10-29 doorways (lazy runner family): 4 to 6 frames of 5+ vblanks, mean frame time unchanged (217 of 978 frames); the open-loop tape moves a few frames with any code change.
