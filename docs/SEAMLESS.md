@@ -24,8 +24,10 @@ The tour (`--features gate-tour,tour-walk`, `HK_GATE_LOG`) walks the Knight stra
 | main 7226e94 behaviour (study knobs off) | 33 of 102 | 37 / 97 / 196 | 2,373 |
 | prefetch work of the 10-17 branch on main | 73 | 24 / 59 / 181 | 887 |
 | + arena padding fix, spill, radius 16, decode step 8,192 (this code, rebased onto main 9c48f99, tour of 10-26) | 76 | 23 / 50 / 146 | 630 |
+| + word hash for the stored chunks, one-pass runner bank (this code on main 9a0bca6, tour of 10-26) | 77 | 23 / 49 / 108 | 550 |
+| the same code rebased onto main 30182f5 (tour of 10-29; main's own tour on that base was not run) | 76 | 23 / 54 / 135 | 631 |
 
-Run to run the same gate moves by 20 vb or more when anything else in the build changes, so compare sums, not single gates. A real play check: Manny's 10-24 16:16 tape replayed on this build (gate-log, route-input) drifts and crosses two doorways, King's Pass to Dirtmouth at 46 vb (92 on main before this work) and Dirtmouth to Crossroads_01 at 16; on 10-24 the same tape crossed five, four of them 20 to 22 vb.
+The word hash halves the stored-chunk hashing at a gate (mean 56 ms against 119) and the one-pass bank install cuts the runner bank wait; the two tours of the same code differ by what main gained in between (set-piece effects, module pool), so the rows are comparable in kind only to rows on the same base. Run to run the same gate moves by 20 vb or more when anything else in the build changes, so compare sums, not single gates. A real play check: Manny's 10-24 16:16 tape replayed on this build (gate-log, route-input) drifts and crosses two doorways, King's Pass to Dirtmouth at 46 vb (92 on main before this work) and Dirtmouth to Crossroads_01 at 16; on 10-24 the same tape crossed five, four of them 20 to 22 vb.
 
 ## Still above 0.5 s
 
