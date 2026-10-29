@@ -23,3 +23,5 @@ HK_CLIMBER_HP = 8
 HK_SCRIPT_TRANSITIONS = 1
 HK_SCRIPT_WRITES = 1
 HK_SCRIPT_FLAGS = 2
+missed_vblanks = 1
+# 2026-10-29 doorways (lazy runner family): one pad vblank is missed inside the second gate's admission (room_decode::fast_sequences with the SPU and VRAM uploads, black screen), the route ends in the same place; a phase-dependent poll miss, as the pins of journey-kings and the other gate routes carry.
