@@ -397,6 +397,8 @@ impl Pool {
             if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, true));
+                // A burst's draw can outlast a vblank: take the pad poll that came due.
+                crate::input::poll_only();
             }
         }
         self.publish();
@@ -419,6 +421,8 @@ impl Pool {
             if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, false));
+                // A burst's draw can outlast a vblank: take the pad poll that came due.
+                crate::input::poll_only();
             }
         }
         let Some(bank) = bank else {
