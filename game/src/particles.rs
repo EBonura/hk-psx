@@ -398,6 +398,7 @@ impl Pool {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, true));
                 // A burst's draw can outlast a vblank: take the pad poll that came due.
+                #[cfg(not(test))]
                 crate::input::poll_only();
             }
         }
@@ -422,6 +423,7 @@ impl Pool {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, false));
                 // A burst's draw can outlast a vblank: take the pad poll that came due.
+                #[cfg(not(test))]
                 crate::input::poll_only();
             }
         }
