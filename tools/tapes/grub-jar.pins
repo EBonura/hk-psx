@@ -1,4 +1,4 @@
-pacing = 62
+pacing = 40
 frame_time = 251
 long_frames = 6
 card = grub-jar.mcd

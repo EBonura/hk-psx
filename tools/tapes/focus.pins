@@ -1,4 +1,4 @@
-pacing = 40
+pacing = 28
 frame_time = 217
 long_frames = 2
-# Round 3 (2026-10-29): the Knight's focus dust is the soft glow of the original (it was dithered speckle on main), so it draws every particle: measured on a main-equivalent twin 207 of 389 frames with 25 over 2 vblanks (worst streak 8), now 210 of 382 with 38 (worst streak 18); the ceiling is 40. Follow-up: win it back with fewer or cheaper glow particles.
+# Round 4 (2026-10-29): the Knight's focus dust is the soft glow of the original (dithered speckle on main) in bursts of four per side: 206 of 391 frames with 21 over 2 vblanks (worst streak 8 on 9a0bca6: 207 of 389, 25; at six per side it was 210 of 382, 38).

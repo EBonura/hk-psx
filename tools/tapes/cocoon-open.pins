@@ -8,6 +8,6 @@ HK_LIFEBLOOD_OPENED = 1
 HK_REGION_ID = 44
 HK_SAVE_LOADED = 1
 HK_DEATHS = 0
-# The round 3 cocoon burst spawns 38 particles.
-HK_PARTICLES_SPAWNED >= 38
+# The cocoon's burst (42 bubbles, 9 globs, the splat, the strike) spawns 59 particles.
+HK_PARTICLES_SPAWNED >= 59
 pacing = 98
