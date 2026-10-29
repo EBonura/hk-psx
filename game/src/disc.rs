@@ -3407,7 +3407,22 @@ fn bank_needed(scene: usize) -> usize {
 /// The runner audio family `scene` plays (true: Mossman), None for a room that places no Runner and
 /// no Zombie Shield.
 fn runner_family(scene: usize) -> Option<bool> {
-    crate::world::runner_family(SCENE_MANIFEST[scene].scene_id as usize)
+    // Looked up once per scene: the scan walks the scene's actor specs, which `is_ready` would otherwise
+    // repeat every frame and flush the 1 KiB data cache with.
+    static mut FAMILY: [u8; SCENE_COUNT] = [0; SCENE_COUNT];
+    let family = unsafe { &mut *(&raw mut FAMILY) };
+    if family[scene] == 0 {
+        family[scene] = match crate::world::runner_family(SCENE_MANIFEST[scene].scene_id as usize) {
+            None => 1,
+            Some(false) => 2,
+            Some(true) => 3,
+        };
+    }
+    match family[scene] {
+        1 => None,
+        2 => Some(false),
+        _ => Some(true),
+    }
 }
 /// Plan the bank read for the group prefix of `sectors` just planned (the bank
 /// goes right below it): `bank` sectors from `bank_needed`, 0 for none.
