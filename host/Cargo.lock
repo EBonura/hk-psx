@@ -200,6 +200,7 @@ version = "0.1.0"
 dependencies = [
  "hk-cook",
  "hk-fsm-cook",
+ "libc",
  "psoxide-hazard",
  "psx-library",
  "psx-residency",

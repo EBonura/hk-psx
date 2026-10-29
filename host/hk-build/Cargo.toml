@@ -21,6 +21,8 @@ path = "module_publish.rs"
 hk-cook = { path = "../hk-cook" }
 serde_json = "1"
 sha2 = "0.10"
+# clonefile and the extent query of the cook store (host/hk-build/cook_store.rs); macOS only in use.
+libc = "0.2"
 hk-fsm-cook = { path = "../hk-fsm" }
 # The games-library install, shared by every game. A host-only crate, so it is pinned on its own
 # revision and does not move the guest SDK pin (sdk.lock.json).

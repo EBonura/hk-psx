@@ -10,6 +10,7 @@ use std::process::Command;
 
 mod budget_doc;
 mod card_check;
+mod cook_store;
 mod disc;
 mod earned_focus;
 mod intro;
@@ -561,7 +562,16 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 }
 
 fn assets_key(root: &Path) -> Result<String> {
-    let mut hasher = Sha256::new();
+    let mut files = asset_code_files(root)?;
+    files.push(root.join(REGIONS_BASE));
+    files.push(root.join(".hkpsx/regions-cook-cache.json"));
+    files.push(root.join(".hkpsx/menu-provenance.json"));
+    hash_files(root, files)
+}
+
+/// Every cooker source the asset stage runs: the Python and C scripts of host/ and tools/, the Rust
+/// cookers and the readers they share (host/hk-cook, hk-unity, hk-pil, hk-dotnet).
+fn asset_code_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut files: Vec<PathBuf> = Vec::new();
     for dir in ["host", "tools"] {
         for entry in std::fs::read_dir(root.join(dir))? {
@@ -571,8 +581,6 @@ fn assets_key(root: &Path) -> Result<String> {
             }
         }
     }
-    // The Rust cookers and the readers they share (host/hk-cook, hk-unity,
-    // hk-pil, hk-dotnet) decide asset outputs too.
     for dir in [
         "host/hk-cook/src",
         "host/hk-unity/src",
@@ -582,9 +590,12 @@ fn assets_key(root: &Path) -> Result<String> {
     ] {
         collect_files(&root.join(dir), &mut files)?;
     }
-    files.push(root.join(REGIONS_BASE));
-    files.push(root.join(".hkpsx/regions-cook-cache.json"));
-    files.push(root.join(".hkpsx/menu-provenance.json"));
+    Ok(files)
+}
+
+/// One digest over the repo-relative names and contents of `files`, in path order.
+fn hash_files(root: &Path, mut files: Vec<PathBuf>) -> Result<String> {
+    let mut hasher = Sha256::new();
     files.sort();
     for path in files {
         hasher.update(
@@ -600,6 +611,110 @@ fn assets_key(root: &Path) -> Result<String> {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect())
+}
+
+/// The name of the cook state these inputs produce in the shared cook store: the region cooker's
+/// code, the retail source manifest (`.hkpsx/regions-source-inputs.json`, written by
+/// `write_source_input_fingerprints`) and every asset cooker's code, but not the cook's own
+/// outputs, so a lane can compute it before it has cooked anything. It only picks which snapshot
+/// to try; the three caches still verify every output they vouch for.
+fn cook_store_key(root: &Path) -> Result<String> {
+    let mut hasher = Sha256::new();
+    hasher.update(b"hk-cook-store-v1\n");
+    hasher.update(serde_json::to_vec(&code_fingerprint(root)?)?);
+    hasher.update(sha256_file(&root.join(".hkpsx/regions-source-inputs.json"))?.as_bytes());
+    hasher.update(hash_files(root, asset_code_files(root)?)?.as_bytes());
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// A short name for the snapshot a publish records: the checkout's branch and commit.
+fn cook_store_label(root: &Path) -> String {
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default()
+    };
+    format!("{} {}", git(&["rev-parse", "--abbrev-ref", "HEAD"]), git(&["rev-parse", "--short", "HEAD"]))
+}
+
+/// Before the region cook: if the shared store holds the snapshot for these cooker inputs and
+/// this lane is not already at it, make the lane's cook state that snapshot, so the three
+/// caches hit. Never fails the build: any problem is a warning and a normal cook.
+fn cook_store_restore(root: &Path) {
+    let Some(store) = cook_store::Store::from_env() else {
+        return;
+    };
+    let outcome = (|| -> Result<()> {
+        let source = selected_source(root)?;
+        write_source_input_fingerprints(root, &source)?;
+        let key = cook_store_key(root)?;
+        let short = &key[..16];
+        if cook_store::lane_in_sync(root, &key) {
+            println!("Cook store: this lane is already at snapshot {short}.");
+        } else if store.has_key(&key) {
+            let r = cook_store::restore(root, &store, &key)?;
+            println!(
+                "Cook store: restored snapshot {short}: {} files, {:.2} GB, {} replaced, {} stale removed.",
+                r.files,
+                r.bytes as f64 / 1e9,
+                r.replaced,
+                r.pruned
+            );
+        } else {
+            println!("Cook store: no snapshot for {short}; this build cooks and publishes one.");
+        }
+        Ok(())
+    })();
+    if let Err(error) = outcome {
+        println!("Cook store: restore skipped ({error}); cooking normally.");
+    }
+}
+
+/// After the asset stage: publish this lane's cook state under its key if the store lacks it,
+/// and give bytes the store already holds back to its blocks. Never fails the build.
+fn cook_store_publish(root: &Path, asset_hit: bool) {
+    let Some(store) = cook_store::Store::from_env() else {
+        return;
+    };
+    let outcome = (|| -> Result<()> {
+        let key = cook_store_key(root)?;
+        let short = &key[..16];
+        if store.has_key(&key) {
+            let r = cook_store::dedupe(root, &store)?;
+            if asset_hit {
+                cook_store::mark_synchronised(root, &key)?;
+            }
+            println!(
+                "Cook store: snapshot {short} exists; {} files ({:.2} GB) given back to the store's blocks.",
+                r.relinked,
+                r.relinked_bytes as f64 / 1e9
+            );
+        } else {
+            let r = cook_store::publish(root, &store, &key, &cook_store_label(root))?;
+            println!(
+                "Cook store: published snapshot {short}: {} files, {} new objects ({:.2} GB), {} files relinked ({:.2} GB).",
+                r.files,
+                r.new_objects,
+                r.new_bytes as f64 / 1e9,
+                r.relinked,
+                r.relinked_bytes as f64 / 1e9
+            );
+        }
+        Ok(())
+    })();
+    if let Err(error) = outcome {
+        println!("Cook store: publish skipped ({error}).");
+    }
 }
 
 /// Every generated file the guest link reads: all of data/ plus the packed
@@ -878,6 +993,7 @@ fn prepare_cook(root: &Path, options: &Options) -> Result<()> {
     // Hornet's boss trees come first: the cook below appends her sprite clips to Fungus1_04's banks and reads which clips
     // each of her objects plays from the manifests this writes (data/hornet3_art.json).
     hk_fsm_cook::cook3::cook_hornet3(root).map_err(|e| e.to_string())?;
+    cook_store_restore(root);
     cook_cached(root, options.recook)?;
     Ok(())
 }
@@ -912,7 +1028,8 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // The title styles' backgrounds and logos, which the title art cooked next is made from.
     rust_step(root, "title-style")?;
     menu_cached(root, options.recook)?;
-    assets_cached(root, options.recook)?;
+    let asset_hit = assets_cached(root, options.recook)?;
+    cook_store_publish(root, asset_hit);
     // Every HKFSM03 bank the guest links: the enemies' original graphs and the scene scripts.
     hk_fsm_cook::cook3::cook_all(root).map_err(|e| e.to_string())?;
     // The boot art chunk and its offsets (data/boot_art.rs) are generated data
@@ -2049,7 +2166,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2075,9 +2192,96 @@ fn usage() -> ! {
          --library applies to build, pgo, validate and disc\n\
          disc --intro  the same disc with the opening movies (the shipping disc has them already; a\n          \
          disc built with guest features, the replay gates' route-input one, or --no-intro, has not)\n\
+         store status|key|restore [--force]|publish [--label L]|dedupe|gc [--keep N] [--apply]|verify|phys DIR...  the shared cook store\n          \
+         (HK_COOK_STORE=DIR; docs/COOK-STORE.md): restore exits 3 when it holds no snapshot for this checkout\n\
          intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe"
     );
     std::process::exit(2)
+}
+
+/// `store status|key|restore|publish|dedupe|gc|verify|phys`: the shared cook store (docs/COOK-STORE.md).
+/// Exit status 0 is success; `restore` exits 3 when the store has no snapshot for this checkout.
+fn store_command(root: &Path, args: &[String]) -> Result<i32> {
+    let sub = args.first().map(String::as_str).unwrap_or("status");
+    if sub == "phys" {
+        let dirs: Vec<PathBuf> = args[1..].iter().map(PathBuf::from).collect();
+        cook_store::physical_report(&dirs)?;
+        return Ok(0);
+    }
+    let store = cook_store::Store::from_env()
+        .ok_or_else(|| format!("set {} to the store directory", cook_store::STORE_ENV))?;
+    let flag = |name: &str| args.iter().any(|a| a == name);
+    let value = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1));
+    // The key needs the selected install (doctor.json) and the source manifest.
+    let key = || -> Result<String> {
+        std::fs::create_dir_all(root.join(".hkpsx"))?;
+        if !root.join(".hkpsx/doctor.json").exists() {
+            run("python3", &[root.join("tools/doctor.py").to_str().unwrap()], root)?;
+        }
+        write_source_input_fingerprints(root, &selected_source(root)?)?;
+        cook_store_key(root)
+    };
+    match sub {
+        "status" => {
+            cook_store::status(&store, root)?;
+            Ok(0)
+        }
+        "key" => {
+            println!("{}", key()?);
+            Ok(0)
+        }
+        "restore" => {
+            let key = key()?;
+            if cook_store::lane_in_sync(root, &key) && !flag("--force") {
+                println!("this lane is already at snapshot {}", &key[..16]);
+            } else if store.has_key(&key) {
+                let r = cook_store::restore(root, &store, &key)?;
+                println!(
+                    "restored snapshot {}: {} files, {:.2} GB, {} replaced, {} stale removed",
+                    &key[..16],
+                    r.files,
+                    r.bytes as f64 / 1e9,
+                    r.replaced,
+                    r.pruned
+                );
+            } else {
+                println!("no snapshot for {} in {}", &key[..16], store.dir().display());
+                return Ok(3);
+            }
+            Ok(0)
+        }
+        "publish" => {
+            let key = key()?;
+            let label = value("--label").cloned().unwrap_or_else(|| cook_store_label(root));
+            let r = cook_store::publish(root, &store, &key, &label)?;
+            println!("published {}: {} files, {} new objects, {} relinked", &key[..16], r.files, r.new_objects, r.relinked);
+            Ok(0)
+        }
+        "dedupe" => {
+            let r = cook_store::dedupe(root, &store)?;
+            println!("{} files ({:.2} GB) given back to the store's blocks", r.relinked, r.relinked_bytes as f64 / 1e9);
+            Ok(0)
+        }
+        "gc" => {
+            let keep = value("--keep").and_then(|v| v.parse().ok()).unwrap_or(3);
+            let r = cook_store::gc(&store, keep, flag("--apply"))?;
+            println!(
+                "{} {} snapshot(s) beyond the newest {keep}, {} object(s) ({:.2} GB){}",
+                if flag("--apply") { "dropped" } else { "would drop" },
+                r.dropped_keys.len(),
+                r.removed_objects,
+                r.removed_bytes as f64 / 1e9,
+                if flag("--apply") { "" } else { " (dry run; pass --apply)" }
+            );
+            Ok(0)
+        }
+        "verify" => {
+            let bad = cook_store::verify(&store)?;
+            println!("{} corrupt object(s)", bad.len());
+            Ok(if bad.is_empty() { 0 } else { 1 })
+        }
+        _ => usage(),
+    }
 }
 
 fn main() {
@@ -2147,6 +2351,16 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+    if action == "store" {
+        let rest: Vec<String> = args.collect();
+        match store_command(&root(), &rest) {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("error: {error}");
+                std::process::exit(1);
+            }
+        }
     }
     if action == "region-cache-check" || action == "region-cache-record" {
         let region = args.next().unwrap_or_else(|| usage());
@@ -2667,6 +2881,37 @@ mod tests {
         assert_ne!(changed("host/hk-cook/src/lib.rs", "// other\n"), cold, "a Rust cooker");
         assert_ne!(changed(".hkpsx/menu-provenance.json", "{\"m\": 1}"), cold, "the menu cook");
         assert_eq!(assets_key(&dir).unwrap(), cold, "restoring the inputs restores the key");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_store_key_follows_cooker_code_and_the_source_not_the_cook_outputs() {
+        let dir = asset_key_tree("store-key");
+        for line in COOK_INPUTS.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+            let path = dir.join(line);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            if !path.exists() {
+                std::fs::write(path, "cook input\n").unwrap();
+            }
+        }
+        std::fs::write(dir.join(".hkpsx/regions-source-inputs.json"), "{\"inputs\": {}}").unwrap();
+        let cold = cook_store_key(&dir).unwrap();
+        let changed = |path: &str, bytes: &str| {
+            let file = dir.join(path);
+            let before = std::fs::read(&file).unwrap();
+            std::fs::write(&file, bytes).unwrap();
+            let key = cook_store_key(&dir).unwrap();
+            std::fs::write(&file, before).unwrap();
+            key
+        };
+        // A lane that has cooked nothing yet computes the same key as one that has.
+        assert_eq!(changed(REGIONS_BASE, "{\"base\": 2}"), cold, "the region report is an output");
+        assert_eq!(changed(".hkpsx/menu-provenance.json", "{\"m\": 1}"), cold, "the menu cook is an output");
+        assert_eq!(changed(".hkpsx/regions-cook-cache.json", "{\"c\": 1}"), cold, "the region cache is an output");
+        assert_ne!(changed("host/charms.py", "x = 2\n"), cold, "a Python cooker");
+        assert_ne!(changed("host/hk-cook/src/lib.rs", "// other\n"), cold, "a Rust cooker");
+        assert_ne!(changed(".hkpsx/regions-source-inputs.json", "{\"inputs\": {\"a\": \"b\"}}"), cold, "the retail source");
+        assert_eq!(cook_store_key(&dir).unwrap(), cold);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
