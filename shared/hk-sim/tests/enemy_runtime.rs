@@ -531,7 +531,7 @@ mod title_card {
     pub const FALSE_KNIGHT: u8 = 0;
     pub const MAWLEK: u8 = 1;
     pub const BIGFLY: u8 = 2;
-    pub fn show_boss(_title: u8) {}
+    pub fn show_boss(_title: u8, _delay: u16) {}
 }
 /// Each actor carries the off-view resolver's cached answer; these fixtures
 /// resolve through their own closures, which ignore it. The stand-in has the
