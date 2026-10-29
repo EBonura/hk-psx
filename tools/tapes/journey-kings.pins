@@ -1,6 +1,7 @@
 pacing = 1657
 frame_time = 243
 long_frames = 91
+missed_vblanks = 1
 journey = 1
 scene_gate = true
 # The journey: Start Game to the False Knight and back, on one card and
