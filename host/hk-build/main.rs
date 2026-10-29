@@ -2254,7 +2254,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2273,6 +2273,7 @@ fn usage() -> ! {
          --tape NAME with two or more scene loads (HK_CUTS_MIN=1 lets a one-load route have a cut list, for a wait)\n\
          pace-pins [RUN_DIR]  rewrite the pacing ceilings of the route pin files from a validate run (default .hkpsx/validate)\n\
          tape-hold NAME FIRST LAST BUTTON  hold BUTTON over polls FIRST..LAST of tools/tapes/NAME.pxtape\n\
+         tape-extend NAME POLLS  add POLLS neutral polls to the end of tools/tapes/NAME.pxtape (then tape-hold presses into them)\n\
          tape-stall NAME POLL TICKS  repeat sample POLL of tools/tapes/NAME.pxtape TICKS more times (a hard landing's lock)\n\
          card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
@@ -2404,6 +2405,24 @@ fn main() {
             let path = root().join(format!("tools/tapes/{name}.pxtape"));
             std::fs::write(&path, routes::hold_buttons(&std::fs::read(&path)?, first, last, mask)?)?;
             println!("{name}: {button} held over polls {first}..{last}");
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "tape-extend" {
+        // tape-extend NAME POLLS: add POLLS neutral polls to the end of tools/tapes/NAME.pxtape.
+        let (name, polls) = (args.next(), args.next());
+        let (Some(name), Some(Ok(polls))) = (name, polls.map(|v| v.parse::<usize>())) else {
+            usage()
+        };
+        let result = (|| -> Result<()> {
+            let path = root().join(format!("tools/tapes/{name}.pxtape"));
+            std::fs::write(&path, routes::extend_tape(&std::fs::read(&path)?, polls)?)?;
+            println!("{name}: {polls} neutral polls added");
             Ok(())
         })();
         if let Err(error) = result {

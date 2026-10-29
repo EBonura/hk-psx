@@ -14,8 +14,8 @@ scene_gate = true
 # seven items restored are the six King's Pass walls and the arena.
 HK_SAVE_LOADED = 1
 HK_WORLD_RESTORED = 10
-HK_WORLD_ITEMS = 10
-HK_WORLD_PLAYER = 3
+HK_WORLD_ITEMS = 11
+HK_WORLD_PLAYER = 259
 HK_FK_TRIGGERED = 0
 HK_FK_DROPPED = 0
 HK_FK_DEATHS = 0
@@ -29,3 +29,13 @@ HK_ARENA_GATES = 1
 HK_DEATHS = 0
 HK_REGION_ID = 232
 HK_FK_FLOOR = 2
+# Taking the Crest records a world item (11) and sets the player flag hasCityKey (bit 8: 3 becomes 259).
+# The reward (docs/FALSE_KNIGHT.md, hk-fk-audit item 3). The tape goes on from the room below the broken
+# floor: 75 polls right to x 37.9, UP (the shiny's inspect press), and a wait for the kneel. The City Crest
+# (Key Giver, Crossroads_10, hasCityKey) is taken, and nothing else: judged on the game state, not on
+# the banner, which the presentation lanes change. The 200 Geo chest (x 6.7, y 12.8, behind Battle Gate
+# 2 (1)) is not here: it sits about 9 units above this room's floor, and the Knight who walks left
+# along the floor leaves the room at x 6 instead. A route to it has to climb; HK_CHESTS_OPENED
+# stays unpinned until one exists.
+HK_PICKUPS_TAKEN >= 1
+HK_HEALTH >= 5

@@ -701,6 +701,18 @@ pub fn hold_buttons(tape: &[u8], first: usize, last: usize, mask: u16) -> Result
     Ok(out)
 }
 
+/// `tape` with `polls` neutral samples (no buttons, sticks centred) added at the end, so a route
+/// can be continued past where it was recorded; `hold_buttons` then presses into the new polls.
+pub fn extend_tape(tape: &[u8], polls: usize) -> Result<Vec<u8>> {
+    let parsed = Tape::parse(tape)?;
+    let mut out = tape.to_vec();
+    for _ in 0..polls {
+        out.extend_from_slice(&[0, 0, 128, 128, 128, 128]);
+    }
+    out[8..12].copy_from_slice(&((parsed.len() + polls) as u32).to_le_bytes());
+    Ok(out)
+}
+
 /// `tape` with `ticks` more copies of sample `poll` right after it: the Knight is locked for those
 /// ticks (a hard landing), so the recorded walk resumes where it would have after a soft landing.
 pub fn stall_sample(tape: &[u8], poll: usize, ticks: usize) -> Result<Vec<u8>> {
@@ -841,6 +853,22 @@ mod tests {
         let tape = Tape::parse(&hold_buttons(&bytes, 1, 3, 4).unwrap()).unwrap();
         assert_eq!((0..3).map(|i| tape.mask(i)).collect::<Vec<_>>(), vec![0, 0xc, 4]);
         assert!(hold_buttons(&bytes, 2, 4, 4).is_err());
+    }
+
+    #[test]
+    fn an_extended_tape_is_neutral_and_holds_can_press_into_it() {
+        let base = {
+            let mut t = b"PXITAPE2".to_vec();
+            t.extend_from_slice(&2u32.to_le_bytes());
+            t.extend_from_slice(&0u32.to_le_bytes());
+            t.extend_from_slice(&[0, 0, 128, 128, 128, 128, 0, 0, 128, 128, 128, 128]);
+            t
+        };
+        let longer = extend_tape(&base, 3).unwrap();
+        assert_eq!(Tape::parse(&longer).unwrap().len(), 5);
+        let held = hold_buttons(&longer, 3, 5, button_mask("right").unwrap()).unwrap();
+        assert_eq!(&held[16 + 3 * 6..16 + 3 * 6 + 2], &32u16.to_le_bytes());
+        assert_eq!(&held[16 + 2 * 6..16 + 2 * 6 + 2], &[0, 0]);
     }
 
     #[test]
