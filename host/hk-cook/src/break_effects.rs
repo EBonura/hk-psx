@@ -2152,7 +2152,7 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
 /// ticks while Focus runs, moved to the Knight (game/src/frame.rs). Optional like the
 /// stalactites' effects: a scene whose art budget has no room for the dust texture goes without.
 pub const HERO_DUST_OWNER: i64 = 0xFFFF;
-const HERO_DUST_BURST: i64 = 6;
+const HERO_DUST_BURST: i64 = 4;
 /// The Knight's `Can Focus Particles` (resources.assets:7585), the rising motes: Soul Orb Control's
 /// `Can Heal 2` sends CAN HEAL EFFECT when the SOUL first reaches the Focus cost with health not
 /// full, and the system's own FSM plays it once (0.25 s at 200 a second: fifty motes). Cooked as

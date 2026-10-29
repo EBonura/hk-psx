@@ -159,6 +159,8 @@ struct Resident {
     /// Styles drawn after the Knight and his slash, over them (`Pool::draw_front`): light that the
     /// original lets through in front, the flash of a break and the glass it throws.
     front: [bool; FX_MAX_STYLES],
+    /// Styles whose cells are the frames of a clip: the cell shown follows the age, not a random pick.
+    anim: [bool; FX_MAX_STYLES],
     /// Each soft palette and its copy, every coloured entry semi-transparent,
     /// that soft draws use instead.
     soft_cluts: [(u16, u16); SOFT_CLUT_SLOTS.len()],
@@ -239,6 +241,7 @@ static mut RESIDENT: Resident = Resident {
     soft: [false; FX_MAX_STYLES],
     additive: [false; FX_MAX_STYLES],
     front: [false; FX_MAX_STYLES],
+    anim: [false; FX_MAX_STYLES],
     soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
     soft_clut_count: 0,
     hero_dust: NO_STYLE,
@@ -454,6 +457,7 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
         };
         r.additive[i] = b[43] & 1 != 0;
         r.front[i] = b[43] & 2 != 0;
+        r.anim[i] = b[43] & 4 != 0;
         if r.styles[i].lands() && ((r.styles[i].splash >> 8) & 15) as usize >= count {
             return false;
         }
@@ -1292,7 +1296,12 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32), front:
             BlendMode::Average,
         )
     };
-    let a = scene_art(p.scene as usize)[s.frames[p.cell as usize][art_level as usize - 1] as usize];
+    let cell = if resident.anim[(p.kind - 2) as usize] {
+        (phase(p) * s.frames.len() / 33).min(s.frames.len() - 1)
+    } else {
+        p.cell as usize
+    };
+    let a = scene_art(p.scene as usize)[s.frames[cell][art_level as usize - 1] as usize];
     let depth = 2496922 + p.position[2];
     if depth <= ONE {
         return false;
@@ -2486,6 +2495,7 @@ mod tests {
             soft: [false; FX_MAX_STYLES],
             additive: [false; FX_MAX_STYLES],
             front: [false; FX_MAX_STYLES],
+            anim: [false; FX_MAX_STYLES],
             soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
             soft_clut_count: 0,
             hero_dust: NO_STYLE,

@@ -37,11 +37,25 @@ the break-effect particle pool (`game/src/particles.rs`, `break_effects.rs`) and
 | 0xD023 SCUTTLER_BLOOD | a struck Scuttler's blood x15 | resources:5399 sprites |
 | 0xD030 JAR_GLASS | a jar's glass | scene `Pt Glass L/S` |
 
-| 0xD014 HIT_FLASH | `Strike Nail R` at every door hit: a white flash and nine spark streaks (anchor: the hit; twice on the hits that change the door's pose and the one that opens it) | the cook's own light |
-| 0xD015 DOOR_PULSE | the pale light that runs up the door's face with every hit (cooked in place) | the cook's own light |
+| 0xD014 HIT_FLASH | the nail's strike at every door hit: `Strike Nail R`'s spark cluster (its own three sprites), a white core, thirteen white-pink streaks fanned out of the hit and a lavender pool of light on the floor (anchor: the hit; twice on the hits that change the door's pose and the one that opens it) | resources:7281 (tk2d resources:21014 sprites 8 to 10) |
+| 0xD015 DOOR_PULSE | the pale light that runs up the door's face with every hit, gone in ten ticks (cooked in place) | the cook's own light |
 
-The owners marked "the cook's own light" and the cocoon's petals, streaks and wash, the jar's flash, halo, shards and
-pieces, and the door's rising dust and falling dust are made by `host/hk-cook/src/break_effects/fx.rs` `Glow`: a soft
+Round 4 (2026-10-29) read the original's own data for these (the tools were a git-excluded inspector over `hk-unity`,
+see NOTES): every nail strike on an object with `slashEffects` (the cocoon's list is `Slash Impact R` and `Strike Nail R`)
+spawns the spark cluster of `Strike Nail R` (tk2d resources:21014, sprites 8 to 10, the clip `Sword`, 15 frames a second)
+and `Slash Impact` streaks (sprites 45 to 54, single thin streak sprites, 30 frames a second); the cocoon flings
+`Spatter Blue` x50 (sprite 1802, a small round blue bubble, speed 5 to 20), `Blue Glob` x8 to 10 (the ring ovals) and turns on
+`Splat Effect` (the clip `Splat`, sprites 76, 73, 74, 75, 72, 77, tinted cyan (0, 1, 1), scale 2 by 3), which is the aqua leaves of
+the burst; the jar's `Pt Glass L` and `S` draw four pale translucent glass pieces (107 by 428 texels). `light_frames` turns
+such a sprite into a cell of light (its luminance times its alpha as the grey of the cell), so the soft additive path adds
+the original's own shapes at the style's tint: `strike_frames`, `splat_frames` (one of the six frames, grown over its life,
+because the art has no room for six), and the glass sheet. A style whose additive byte has bit 2 shows the cells of its sheet
+in turn over the particle's life (the clips: the strike's three frames) instead of a random one. The effects' art in
+Tutorial_01 is nearly full (6,912 bytes of the 7,552 the four VRAM fragments hold; the Great Door's own debris takes three times its
+cells for the opacity levels), so the door's scene has no hit dust and the cocoon's flung cap is not cooked
+(`COCOON_CAP_ART`).
+
+The owners marked "the cook's own light", and the door's rising dust and falling dust are made by `host/hk-cook/src/break_effects/fx.rs` `Glow`: a soft
 additive style of a grey art cell (`disc`, `bar`, `lens`, `shard`, `chunk`, drawn by the cook) that the style's tint
 colours. A style may `stretch` (Style bytes 168..171): its quad is turned along the particle's velocity and is longer
 on each side by that many world units per unit of speed (a streak, a petal, the pulse's tall quad), and a style with
@@ -89,6 +103,10 @@ frame map's object index is found once per region.
 
 ## Not done
 
-Strike Nail R's own art (the impact is the grass Slash Impact), the door's `Tute Door Piece A/B`, the jar's rigid
-glass pieces (the debris bank carries them now, docs/DEBRIS.md) and lid, `Dig Dust`, the grub's voices, the cocoon's
-sweat idle and splat animation, Spatter's stretch along its velocity.
+The door's `Tute Door Piece A/B`, the jar's rigid glass pieces (the debris bank carries them now, docs/DEBRIS.md) and
+lid, `Dig Dust`, the grub's voices, the cocoon's cap, sweat idle and the other five frames of its `Splat` clip, Spatter's
+stretch along its velocity, the Slash Impact clips as such (the streaks are the cook's `bar` cell, thick and long as the
+original's sprites, not their five sprites).
+
+The Knight's Focus dust is a burst of four per side (the original's loop makes six): drawn as the soft glow it is the
+`focus` route's cost (207 of 389 frames with 25 over 2 vblanks on 9a0bca6, 210 of 382 with 38 at six, 206 of 391 with 21 at four).
