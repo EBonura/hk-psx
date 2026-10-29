@@ -17,14 +17,12 @@ art_late = 44
 # in with nothing to fight. Walking right again drops the boss a second
 # time: TRIGGERED and DROPPED are 2, and GATE_CLOSES is 2.
 # 
-# The tape stops at poll 1,600 and that is not where the fight ends. At
-# poll 1,897, about 490 polls into the second fight, the frame collapses:
-# two missed VBlanks per poll, every poll, with the input queue climbing
-# from 5 to 16 in 21 polls until the sampler faults QueueFull and the guest
-# panics. Health is steady at 3 through all of it, so it is not damage. A
-# fight with a Shade in the room is the ordinary case after any death, and
-# it is the one case the port cannot currently survive. Do not extend this
-# tape past 1,600 expecting it to pass; fix that first.
+# The tape stops at poll 1,600 and that is not where the second fight ends. An earlier build
+# collapsed at poll 1,897, about 490 polls into it (two missed VBlanks per poll, the input queue
+# climbing until the sampler faulted QueueFull and the guest panicked). On main 2a79fc7 it does not
+# reproduce: the hk-fk-audit lane played the retry out to 3,750 polls with a Shade in the room and
+# the frame held. The tape is still cut at 1,600 because the pins below are measured there; a longer
+# one is possible, and its pins have to be measured again.
 #
 # The Knight wakes 24 ticks later than he did (the killing hit's hit stop, vitals.rs DEATH_FREEZE_TICKS), so the
 # second walk right is held to poll 1,545 instead of 1,519 (tape-hold) and still reaches the trigger.

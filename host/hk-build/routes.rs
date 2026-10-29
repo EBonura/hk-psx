@@ -34,9 +34,48 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pin {
     pub symbol: String,
-    /// `false`: exactly `value`; `true`: at least `value`.
-    pub at_least: bool,
+    pub op: PinOp,
     pub value: u64,
+}
+
+/// How a pin compares the final telemetry word with its value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinOp {
+    /// `SYMBOL = value`: exactly.
+    Eq,
+    /// `SYMBOL >= value`.
+    AtLeast,
+    /// `SYMBOL <= value`: with `>=` a band (health, Geo, a count that may wander).
+    AtMost,
+}
+
+impl PinOp {
+    /// Whether `actual` satisfies the pin against `value`.
+    pub fn holds(self, actual: u64, value: u64) -> bool {
+        match self {
+            PinOp::Eq => actual == value,
+            PinOp::AtLeast => actual >= value,
+            PinOp::AtMost => actual <= value,
+        }
+    }
+
+    /// The `psoxide-gate` assert operator.
+    pub fn gate(self) -> &'static str {
+        match self {
+            PinOp::Eq => "eq",
+            PinOp::AtLeast => "ge",
+            PinOp::AtMost => "le",
+        }
+    }
+
+    /// For messages: "expected <this>value".
+    pub fn words(self) -> &'static str {
+        match self {
+            PinOp::Eq => "",
+            PinOp::AtLeast => "at least ",
+            PinOp::AtMost => "at most ",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -82,7 +121,13 @@ pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
         if let Some((key, value)) = line.split_once(">=") {
             route.pins.push(Pin {
                 symbol: key.trim().to_string(),
-                at_least: true,
+                op: PinOp::AtLeast,
+                value: number(value.trim())?,
+            });
+        } else if let Some((key, value)) = line.split_once("<=") {
+            route.pins.push(Pin {
+                symbol: key.trim().to_string(),
+                op: PinOp::AtMost,
                 value: number(value.trim())?,
             });
         } else if let Some((key, value)) = line.split_once('=') {
@@ -98,7 +143,7 @@ pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
                 "missed_vblanks" => route.missed_vblanks = number(value)?,
                 k if k.starts_with("HK_") || k.starts_with("__") => route.pins.push(Pin {
                     symbol: k.to_string(),
-                    at_least: false,
+                    op: PinOp::Eq,
                     value: number(value)?,
                 }),
                 _ => return Err(at(&format!("unknown key {key}")).into()),
@@ -441,7 +486,7 @@ pub fn write_journey(route: &Route, tape: &Tape, cuts: &Cuts, setup: &Setup, out
                 toml,
                 "[[step.assert]]\nkind = \"ram\"\nsym = \"{}\"\nop = \"{}\"\nvalue = {}\nnote = \"{}\"",
                 p.symbol,
-                if p.at_least { "ge" } else { "eq" },
+                p.op.gate(),
                 p.value,
                 p.symbol
             );
@@ -745,16 +790,18 @@ mod tests {
     fn pin_files_parse() {
         let r = parse_pins(
             "x",
-            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nframe_time = 231\nlong_frames = 1\nart_late = 3\nmissed_vblanks = 7\nHK_A = 7\nHK_B >= 2\n",
+            "# c\ncard = a.mcd\nscene_gate = true\njourney = 2\npacing = 5\nframe_time = 231\nlong_frames = 1\nart_late = 3\nmissed_vblanks = 7\nHK_A = 7\nHK_B >= 2\nHK_C <= 9\n",
         )
         .unwrap();
         assert_eq!(r.card.as_deref(), Some("a.mcd"));
         assert!(r.scene_gate);
         assert_eq!((r.journey, r.pacing, r.art_late, r.missed_vblanks), (Some(2), 5, 3, 7));
         assert_eq!((r.frame_time, r.long_frames), (Some(231), Some(1)));
-        assert_eq!(r.pins.len(), 2);
-        assert!(!r.pins[0].at_least && r.pins[0].value == 7);
-        assert!(r.pins[1].at_least && r.pins[1].value == 2);
+        assert_eq!(r.pins.len(), 3);
+        assert!(r.pins[0].op == PinOp::Eq && r.pins[0].value == 7);
+        assert!(r.pins[1].op == PinOp::AtLeast && r.pins[1].value == 2);
+        assert!(r.pins[2].op == PinOp::AtMost && r.pins[2].value == 9);
+        assert!(PinOp::AtMost.holds(9, 9) && !PinOp::AtMost.holds(10, 9) && !PinOp::Eq.holds(8, 9));
         assert!(parse_pins("x", "bogus = 1").is_err());
         assert!(parse_pins("x", "HK_A = x").is_err());
     }

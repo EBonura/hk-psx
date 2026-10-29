@@ -945,15 +945,18 @@ writes one.
   The section below has the measurement and why the missing half is a recook.
 - **The pre-battle Zombies.** Recorded, not admitted, so `KILL ALL ENEMIES` has
   no target. The arena counts only the boss, which is what the source does.
-- **The wave's particles.** The wave itself hurts and is drawn (see "The slam
-  wave"); its `Roll Dust` and `Burst Rocks Stomp` emitters wait on the particle
-  model.
-- **The 200 Geo and the City Crest.** Neither is `FalseyControl`'s. The Crest
-  is `Key Giver`'s `Shiny Item` (`hasCityKey`, trinket 9) in Crossroads_10's
-  lower room, which activates on `FK DEATH` or a loaded `falseKnightDefeated`;
-  the Geo is the `Chest` at x 6.7 y 12.78 behind `Battle Gate 2 (1)`, which the
-  won arena opens. The port has no pickup or chest object yet, so both wait on
-  that system rather than on this fight; the flags that gate them are written.
+- **The wave's look and particles.** The wave hurts and is drawn (see "The slam wave"), as
+  blue crystal spikes one in three; the original's wave is white jagged spurts. Its `Roll Dust`
+  and `Burst Rocks Stomp` emitters are not ported.
+- **The reward, on disc.** The City Crest is `Key Giver`'s `Shiny Item` (`hasCityKey`,
+  trinket 9) in Crossroads_10's lower room, which activates on `FK DEATH` or a loaded
+  `falseKnightDefeated`; the Geo is the `Chest` at x 6.7 y 12.78 behind `Battle Gate 2 (1)`,
+  which the won arena opens. Both exist as pickup objects now (`game/src/pickups.rs`): from the
+  earned `journey-false-knight` card, an UP press at x 37.98 takes the Crest (`HK_PICKUPS_TAKEN`
+  1, banner "City Crest"). The chest has only been opened in a host test
+  (`tests/pickups_runtime.rs`), never on a disc, and no route pins `HK_CHESTS_OPENED` or
+  `HK_PICKUPS_TAKEN`. Missing: the Hero Down kneel and the item message that waits for a button
+  (the port shows a floating line and no kneel).
 - **The defeat sting.** `Boss Death Sting`'s `Boss Defeat` is refused on SPU
   bytes with the rest listed under "The voices".
 - **The staff.** Refused on rotation, not on bytes, as before: the draw paths
@@ -961,8 +964,10 @@ writes one.
 - **Most particles and two shakes.** `Floor Break`'s fling, the rubble, the
   steam and the blood are particle work; `Blow` and `Steam` shake, `Floor Break`
   shakes, and the Death Head's own Rigidbody2D is a slide along the floor.
-- **Most of the fight's voices.** Two play; see "The voices" for the rest and
-  where they have to go.
+- **Some of the fight's voices.** The scene bank now carries `false_knight_strike_ground`,
+  `false_knight_rage`, `false_knight_jump` and `boss_final_hit` besides land and swing
+  (`hk-cook scene-sfx`); "The voices" below describes the older state and has to be checked
+  against `data/scene-sfx` before it is relied on.
 - Corpse and Aspid shot art still cannot tile. `host/effects.py`'s `_ClipCooker`
   calls `Atlas.add(streamed=True)`, which refuses a frame past one slot, and the
   shot loop in `prepare_draws` draws one quad without consulting the grid. An

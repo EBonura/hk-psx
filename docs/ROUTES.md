@@ -126,3 +126,13 @@ The check does trip. A scratch build of the real tree (7ac2c5b, not committed) w
 
 * The gate is built from a newer emulator core than the pinned frontend (`b3848054`): pins are function, not cycles. Pacing stays on the frontend.
 * New scenes: a route written as goals (walk right until `HK_REGION_ID == n`, `hold_until` on `HK_PLAYER_X`) needs no tape at all; the tape is the exception, kept for bit-exact combat.
+
+## Closed loop first (2026-10-29)
+
+Open-loop tapes that cross a code change move by chance: the same pad poll lands in another frame phase, a fight resolves differently, a pacing figure shifts by a few frames. Chasing those by hand cost hours (journey-kings' one missed poll, the hornet routes' chaotic divergence). The rules now are:
+
+* A route with a cut list (`.cuts`) is judged closed loop and keeps its exact pins. Everything else is judged on its outcome pins (`HK_REGION_ID`, boss dead, the flags and counters a player would notice) and its pacing follows the disc.
+* Pins compare with `=`, `>=` and `<=`, so health, Geo and counts that may wander are bands (`HK_HEALTH >= 3`, `HK_GEO <= 120`).
+* `cargo hk-build validate --repin` moves the pacing ceilings (`pacing`, `frame_time`, `long_frames`) of an open-loop route that only exceeded them, never one whose outcome pins failed, writes the new pin files and appends the old and new figures to `docs/REPIN-LOG.md`; commit both with the change that caused the move. A frame time more than 10 percent over its pin is not drift: the route fails and the lane investigates (`repin.rs`, `SLOWDOWN_PERCENT`). A lane chases a move only when an outcome pin or a slowdown fails.
+* `cargo hk-build determinism` (HK_VALIDATE_ONLY narrows) replays each selected open-loop route twice on the same disc and fails if any final telemetry word or the per-poll route log differs. It pins no number, and it is what separates "the tape moved because the code did" from "the replay is not repeatable". cocoon-open, focus and grub-jar are identical on the round 5 shipping disc.
+* Judge a reward or any presentation on game state (`HK_PICKUPS_TAKEN`, `HK_CHESTS_OPENED`, the flags), not on pixels: the presentation lanes change what the screen shows.

@@ -261,11 +261,10 @@ pub fn write_pins(root: &Path, run: &Path) -> Result<()> {
             continue;
         }
         let command: Value = serde_json::from_slice(&std::fs::read(dir.join("command.json"))?)?;
-        let held = route.pins.iter().all(|pin| match command["final_ram"][pin.symbol.as_str()].as_u64() {
-            Some(v) if pin.at_least => v >= pin.value,
-            Some(v) => v == pin.value,
-            None => false,
-        });
+        let held = route
+            .pins
+            .iter()
+            .all(|pin| command["final_ram"][pin.symbol.as_str()].as_u64().is_some_and(|v| pin.op.holds(v, pin.value)));
         if route.cuts.is_some() && !held {
             println!("{}: the open-loop tape drifted on this disc, left alone", route.name);
             continue;

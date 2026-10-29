@@ -16,6 +16,7 @@ mod earned_focus;
 mod intro;
 mod pacing;
 mod region_cache;
+mod repin;
 mod routes;
 mod scene_gate;
 
@@ -124,6 +125,8 @@ struct Options {
     jobs: Option<usize>,
     /// Delete each passing route's replay dumps once it is judged, keeping its record.
     prune: bool,
+    /// `validate`: move the pacing ceilings of open-loop routes that drifted (host/hk-build/repin.rs).
+    repin: bool,
     /// `disc`: the guest build directory to pack (default build/), the library
     /// to put the pair in (default the disc library) and Red Book tracks to
     /// add, for comparing against an older disc.
@@ -1477,6 +1480,74 @@ fn frontend(root: &Path, options: &Options) -> Result<PathBuf> {
     Ok(frontend)
 }
 
+/// `determinism`: replay each selected open-loop route twice on the same disc and fail if the two
+/// runs differ in any final telemetry word or in the per-poll route log. A route that is not
+/// deterministic cannot be pinned; this finds it without pinning a single number
+/// (HK_VALIDATE_ONLY=a,b narrows; the journey segments chain cards and are skipped).
+fn determinism(root: &Path, options: &Options) -> Result<()> {
+    let frontend = frontend(root, options)?;
+    let library = selected_library(options);
+    let only: Option<Vec<String>> =
+        std::env::var("HK_VALIDATE_ONLY").ok().map(|list| list.split(',').map(str::to_owned).collect());
+    let base = root.join(".hkpsx/determinism");
+    let _ = std::fs::remove_dir_all(&base);
+    let (first, second) = (base.join("a"), base.join("b"));
+    std::fs::create_dir_all(&first)?;
+    std::fs::create_dir_all(&second)?;
+    let mut bad = Vec::new();
+    let mut checked = 0usize;
+    for route in routes::load(root)? {
+        if route.journey.is_some() || only.as_ref().is_some_and(|o| !o.iter().any(|x| *x == route.name)) {
+            continue;
+        }
+        let spawn = |out: &Path| -> std::io::Result<std::process::Child> {
+            // The replay writes the card back: each run gets its own copy of the fixture.
+            let card = route.card.as_ref().map(|card| {
+                let scratch = out.join(format!("{}.mcd", route.name));
+                let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
+                scratch
+            });
+            replay_command(root, &frontend, out, &library, &route.name, card).spawn()
+        };
+        let (a, b);
+        if options.jobs.unwrap_or(2) >= 2 {
+            let (ca, cb) = (spawn(&first)?, spawn(&second)?);
+            (a, b) = (ca.wait_with_output()?, cb.wait_with_output()?);
+        } else {
+            a = spawn(&first)?.wait_with_output()?;
+            b = spawn(&second)?.wait_with_output()?;
+        }
+        checked += 1;
+        let (da, db) = repin::run_dirs(root, &route.name);
+        let found = if a.status.success() && b.status.success() {
+            repin::differences(&da, &db)?
+        } else {
+            let tail = |o: &std::process::Output| {
+                let text = String::from_utf8_lossy(&o.stderr).to_string() + &String::from_utf8_lossy(&o.stdout);
+                text.lines().rev().take(3).collect::<Vec<_>>().join(" | ")
+            };
+            vec![format!("a replay failed (exit {:?} and {:?}): {}", a.status.code(), b.status.code(), tail(&a))]
+        };
+        if found.is_empty() {
+            println!("PASS {}: two replays identical", route.name);
+            let _ = std::fs::remove_dir_all(&da);
+            let _ = std::fs::remove_dir_all(&db);
+        } else {
+            println!("FAIL {}: not deterministic", route.name);
+            for line in found.iter().take(8) {
+                println!("{}: {line}", route.name);
+            }
+            bad.push(route.name.clone());
+        }
+    }
+    if bad.is_empty() {
+        println!("{checked} route(s) deterministic on this disc.");
+        Ok(())
+    } else {
+        Err(format!("nondeterministic: {}", bad.join(", ")).into())
+    }
+}
+
 /// Replay every route tape against the final CUE; a fault or an incomplete tape fails the build.
 /// The replay of one route tape, against `card` when the route boots with one.
 fn replay_command(
@@ -1759,6 +1830,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     // that predecessor left, and fails on its own pins.
     let mut summary = serde_json::Map::new();
     let failed: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+    let repins: std::cell::RefCell<Vec<repin::Change>> = std::cell::RefCell::new(Vec::new());
     let mut baseline_qualified = 0usize;
     let mut evaluate = |route: &routes::Route,
                         replay: std::io::Result<std::process::Output>,
@@ -1875,11 +1947,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         let closed = route.cuts.is_some();
         let mut open_pins_hold = true;
         for pin in &route.pins {
-            let held = match ram[pin.symbol.as_str()].as_u64() {
-                Some(v) if pin.at_least => v >= pin.value,
-                Some(v) => v == pin.value,
-                None => false,
-            };
+            let held = ram[pin.symbol.as_str()].as_u64().is_some_and(|v| pin.op.holds(v, pin.value));
             if !held {
                 open_pins_hold = false;
                 if !closed {
@@ -1887,7 +1955,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                         "{name}: {}={} expected {}{}",
                         pin.symbol,
                         ram[pin.symbol.as_str()],
-                        if pin.at_least { "at least " } else { "" },
+                        pin.op.words(),
                         pin.value
                     );
                     ok = false;
@@ -1909,7 +1977,19 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                         println!("{name}: pacing over its ceiling: {failure}");
                     }
                     if !failures.is_empty() {
-                        ok = false;
+                        // An open-loop route with no cut list is judged on its outcome pins (above);
+                        // its pacing follows the disc unless the frame time is a real slowdown.
+                        match repin::decide(route, &measured) {
+                            repin::Decision::Repin(changes) if options.repin && !closed && ok => {
+                                println!("REPIN {name}: pacing ceilings follow the disc ({} moved)", changes.len());
+                                repins.borrow_mut().extend(changes);
+                            }
+                            repin::Decision::Slowdown(why) if options.repin && !closed && ok => {
+                                println!("{name}: {why}");
+                                ok = false;
+                            }
+                            _ => ok = false,
+                        }
                     }
                 }
             }
@@ -2019,6 +2099,14 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 closed_card = judge_closed(route, run)?;
             }
         }
+    }
+    let repins = repins.into_inner();
+    if !repins.is_empty() {
+        let stamp = repin::utc_stamp(
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+        );
+        repin::apply(root, &all_routes, &repins, &disc_sha, &stamp)?;
+        println!("{} pacing ceiling(s) moved; recorded in {} (commit it with the change)", repins.len(), repin::LOG);
     }
     summary.insert("closed_loop".into(), Value::Object(closed_summary));
     summary.insert("disc_sha256".into(), Value::String(disc_sha.clone()));
@@ -2166,7 +2254,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2175,6 +2263,8 @@ fn usage() -> ! {
          from --emulator-source, default ../PSoXide-emulator); needs a checkout path without spaces\n\
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
+         determinism  replay each selected open-loop route twice on the same disc and fail on any difference\n          \
+         (HK_VALIDATE_ONLY narrows); validate --repin moves drifted pacing ceilings and logs them in docs/REPIN-LOG.md\n\
          measure   play the closed-loop routes without the route lock and write each load's\n          \
          neutral ticks (telemetry) into the cuts files\n\
          routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
@@ -2385,6 +2475,7 @@ fn main() {
         tapes: Vec::new(),
         jobs: None,
         prune: false,
+        repin: false,
         work: None,
         library: None,
         cdda: Vec::new(),
@@ -2421,6 +2512,7 @@ fn main() {
                 )
             }
             "--prune" => options.prune = true,
+            "--repin" => options.repin = true,
             "--intro" => options.intro = true,
             "--no-intro" => options.no_intro = true,
             "--work" => options.work = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
@@ -2440,6 +2532,7 @@ fn main() {
         "build" => build(&root, &options, BuildMode::Normal),
         "pgo" => build(&root, &options, BuildMode::Pgo),
         "validate" => validate(&root, &options),
+        "determinism" => determinism(&root, &options),
         "routes" => closed_routes(&root, &options, false),
         "measure" => closed_routes(&root, &options, true),
         "cuts" => routes::write_cuts(&root, &options.work.clone().unwrap_or_else(|| root.join(".hkpsx/validate")), &options.tapes.iter().filter_map(|t| t.file_stem().map(|s| s.to_string_lossy().to_string())).collect::<Vec<_>>(), std::env::var("HK_CUTS_MIN").ok().and_then(|v| v.parse().ok()).unwrap_or(2)),
@@ -2507,6 +2600,7 @@ mod tests {
             tapes: Vec::new(),
             jobs: None,
             prune: false,
+        repin: false,
             work: None,
             library: None,
             cdda: Vec::new(),
@@ -2740,6 +2834,7 @@ mod tests {
             tapes: Vec::new(),
             jobs: Some(2),
             prune: false,
+        repin: false,
             work: None,
             library: Some(library.clone()),
             cdda: Vec::new(),
