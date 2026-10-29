@@ -19,6 +19,7 @@ mod region_cache;
 mod repin;
 mod routes;
 mod scene_gate;
+mod verdicts;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -127,6 +128,8 @@ struct Options {
     prune: bool,
     /// `validate`: move the pacing ceilings of open-loop routes that drifted (host/hk-build/repin.rs).
     repin: bool,
+    /// `validate`: replay only the open-loop routes with no stored passing verdict for this disc and judge (host/hk-build/verdicts.rs).
+    resume: bool,
     /// `disc`: the guest build directory to pack (default build/), the library
     /// to put the pair in (default the disc library) and Red Book tracks to
     /// add, for comparing against an older disc.
@@ -1832,11 +1835,50 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     let failed: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
     let repins: std::cell::RefCell<Vec<repin::Change>> = std::cell::RefCell::new(Vec::new());
     let mut baseline_qualified = 0usize;
+    // What a stored verdict depends on besides the route's own files: the judge and the replayer.
+    let judge_sha = verdicts::key(&[
+        &sha256_file(&std::env::current_exe()?)?,
+        &sha256_file(&root.join("tools/replay_cue.py"))?,
+        &sha256_file(&root.join("tools/validate_scene_gates.py"))?,
+        &sha256_file(&frontend)?,
+    ]);
+    // Only an open-loop route with no cut list has a verdict worth keeping: the journey segments chain
+    // cards, and a route with a cut list is judged again by the gate.
+    let verdict_key = |route: &routes::Route| -> Result<Option<String>> {
+        if route.journey.is_some() || route.cuts.is_some() {
+            return Ok(None);
+        }
+        let tapes = root.join("tools/tapes");
+        let card = match &route.card {
+            Some(card) => sha256_file(&root.join("tools/cards").join(card))?,
+            None => String::new(),
+        };
+        Ok(Some(verdicts::key(&[
+            &disc_sha,
+            &judge_sha,
+            &sha256_file(&tapes.join(format!("{}.pxtape", route.name)))?,
+            &sha256_file(&tapes.join(format!("{}.pins", route.name)))?,
+            &card,
+        ])))
+    };
     let mut evaluate = |route: &routes::Route,
-                        replay: std::io::Result<std::process::Output>,
-                        input_card_sha: Option<&str>|
+                        replay: Option<std::io::Result<std::process::Output>>,
+                        input_card_sha: Option<&str>,
+                        key: Option<&str>|
      -> Result<()> {
         let name = route.name.as_str();
+        let repins_before = repins.borrow().len();
+        let Some(replay) = replay else {
+            // A stored passing verdict for exactly this disc, judge, tape, pins and card.
+            let entry = key.and_then(|k| verdicts::load(root, name, k)).ok_or("the stored verdict vanished")?;
+            println!("CACHED {}", entry.line);
+            verdicts::restore_record(root, name, &out.join(name))?;
+            summary.insert(name.to_string(), entry.summary);
+            if entry.baseline_qualified {
+                baseline_qualified += 1;
+            }
+            return Ok(());
+        };
         let gates = route.scene_gate;
         let output = out.join(name);
         let replay = replay?;
@@ -1998,7 +2040,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 ok = false;
             }
         }
-        println!(
+        let line = format!(
             "{} {name}: completed={} faults={} x={} y={} region={} scene_loads={} gate_loads={}",
             if !ok {
                 "FAIL"
@@ -2015,6 +2057,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             ram["HK_SCENE_LOADS"],
             ram["HK_SCENE_GATE_LOADS"]
         );
+        println!("{line}");
         if !ok {
             failed.borrow_mut().push(name.to_string());
         } else if baseline_input_gap {
@@ -2040,10 +2083,22 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
                 }
             }
         }
-        summary.insert(
-            name.to_string(),
-            serde_json::json!({"pass": ok && !baseline_input_gap, "baseline_qualified": ok && baseline_input_gap, "verdict": verdict}),
-        );
+        let entry = serde_json::json!({"pass": ok && !baseline_input_gap, "baseline_qualified": ok && baseline_input_gap, "verdict": verdict});
+        // A pass is kept for `--resume`, unless this very run moved the route's pins.
+        if ok && repins.borrow().len() == repins_before {
+            if let Some(key) = key {
+                let stored = verdicts::Entry {
+                    key: key.to_string(),
+                    baseline_qualified: baseline_input_gap,
+                    line,
+                    summary: entry.clone(),
+                };
+                if let Err(error) = verdicts::store(root, name, &stored, &output) {
+                    println!("{name}: verdict not kept ({error})");
+                }
+            }
+        }
+        summary.insert(name.to_string(), entry);
         Ok(())
     };
     // Closed-loop routes (those with a cut list) are judged by `psoxide-gate` walking the
@@ -2062,9 +2117,22 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         Ok(result.card)
     };
     for chunk in plain.chunks(jobs) {
-        let children: Vec<_> = chunk.iter().map(|route| spawn(route)).collect();
-        for (route, child) in chunk.iter().zip(children) {
-            evaluate(route, child.and_then(|c| c.wait_with_output()), None)?;
+        let keys: Vec<Option<String>> = chunk.iter().map(|route| verdict_key(route)).collect::<Result<_>>()?;
+        let cached: Vec<bool> = chunk
+            .iter()
+            .zip(&keys)
+            .map(|(route, key)| {
+                options.resume && key.as_deref().is_some_and(|k| verdicts::load(root, &route.name, k).is_some())
+            })
+            .collect();
+        let children: Vec<_> = chunk
+            .iter()
+            .zip(&cached)
+            .map(|(route, cached)| if *cached { None } else { Some(spawn(route)) })
+            .collect();
+        for ((route, child), key) in chunk.iter().zip(children).zip(&keys) {
+            let replay = child.map(|c| c.and_then(|c| c.wait_with_output()));
+            evaluate(route, replay, None, key.as_deref())?;
         }
         if let Some(gate) = &gate {
             let runs: Vec<_> = chunk
@@ -2091,7 +2159,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             None
         };
         let output = replay_command(root, &frontend, &out, &library, name, Some(card.clone())).output();
-        evaluate(route, output, input_card_sha.as_deref())?;
+        evaluate(route, Some(output), input_card_sha.as_deref(), None)?;
         open_card = Some(card);
         if let Some(gate) = &gate {
             if route.cuts.is_some() {
@@ -2255,7 +2323,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 fn usage() -> ! {
     eprintln!(
         "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
-         [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune]\n\
+         [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune] [--repin] [--resume]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
          pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
@@ -2264,7 +2332,8 @@ fn usage() -> ! {
          validate  replay the route tapes in tools/tapes against the current CUE, on the pinned\n          \
          emulator unless --frontend (or HK_PSX_FRONTEND) names another\n\
          determinism  replay each selected open-loop route twice on the same disc and fail on any difference\n          \
-         (HK_VALIDATE_ONLY narrows); validate --repin moves drifted pacing ceilings and logs them in docs/REPIN-LOG.md\n\
+         (HK_VALIDATE_ONLY narrows); validate --repin moves drifted pacing ceilings and logs them in docs/REPIN-LOG.md;\n          \
+         validate --resume skips the open-loop routes that already passed on this disc, judge, tape, pins and card\n\
          measure   play the closed-loop routes without the route lock and write each load's\n          \
          neutral ticks (telemetry) into the cuts files\n\
          routes    play only the closed-loop routes (those with a .cuts file) with psoxide-gate (--gate, or\n          \
@@ -2495,6 +2564,7 @@ fn main() {
         jobs: None,
         prune: false,
         repin: false,
+        resume: false,
         work: None,
         library: None,
         cdda: Vec::new(),
@@ -2532,6 +2602,7 @@ fn main() {
             }
             "--prune" => options.prune = true,
             "--repin" => options.repin = true,
+            "--resume" => options.resume = true,
             "--intro" => options.intro = true,
             "--no-intro" => options.no_intro = true,
             "--work" => options.work = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
@@ -2620,6 +2691,7 @@ mod tests {
             jobs: None,
             prune: false,
         repin: false,
+        resume: false,
             work: None,
             library: None,
             cdda: Vec::new(),
@@ -2854,6 +2926,7 @@ mod tests {
             jobs: Some(2),
             prune: false,
         repin: false,
+        resume: false,
             work: None,
             library: Some(library.clone()),
             cdda: Vec::new(),

@@ -138,3 +138,5 @@ Open-loop tapes that cross a code change move by chance: the same pad poll lands
 * Judge a reward or any presentation on game state (`HK_PICKUPS_TAKEN`, `HK_CHESTS_OPENED`, the flags), not on pixels: the presentation lanes change what the screen shows.
 
 `cargo hk-build tape-extend NAME POLLS` adds neutral polls to the end of a tape; `tape-hold` then presses into them, which is how a route is continued past where it was recorded (journey-reload goes on to take the City Crest this way).
+
+`cargo hk-build validate --resume` skips an open-loop route (no cut list, not a journey segment) that already passed under the same disc, judge (the `hk-psx-build` executable, `replay_cue.py`, `validate_scene_gates.py`, the frontend), tape, pin file and card fixture. Verdicts are kept in `.hkpsx/validate-verdicts/` (a validate run does not wipe them), written as each route passes, so a validate that was killed half way resumes where it stopped, a repeat on an identical disc replays nothing, and editing one route's pins replays that route alone. A failed route is never cached. Without `--resume` nothing is read from the store, so a run is as before.
