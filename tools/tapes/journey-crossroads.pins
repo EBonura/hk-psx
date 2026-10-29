@@ -1,6 +1,6 @@
 pacing = 1816
 frame_time = 257
-long_frames = 40
+long_frames = 37
 journey = 2
 scene_gate = true
 # journey-crossroads continues from that save and crosses nine scene gates

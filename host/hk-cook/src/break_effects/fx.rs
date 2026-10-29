@@ -498,16 +498,10 @@ fn light_frames(frames: &[(hk_pil::Image, [f64; 4])]) -> Vec<(hk_pil::Image, [f6
         .collect()
 }
 
-/// `Strike Nail R`: the spark cluster of a nail strike, tk2d resources.assets:21014 sprites 8 to 10
-/// (`Sword`, 15 frames a second).
-fn strike_frames(source: &Source) -> Result<Vec<(hk_pil::Image, [f64; 4])>> {
-    Ok(light_frames(&tk2d_ids(source, "resources.assets", 21014, &[8, 9, 10])?))
-}
-
 /// The cocoon's `Splat Effect` (tk2d resources.assets:21014, clip `Splat` at 24 frames a second, tinted
 /// cyan, scale 2 by 3): the aqua leaves it throws.
 fn splat_frames(source: &Source) -> Result<Vec<(hk_pil::Image, [f64; 4])>> {
-    let frames = tk2d_ids(source, "resources.assets", 21014, &[77])?;
+    let frames = tk2d_ids(source, "resources.assets", 21014, &[75, 74])?;
     let scaled = frames
         .into_iter()
         .map(|(im, b)| {
@@ -866,11 +860,11 @@ fn collect_hits(
         &Glow {
             count: 1,
             life: [20, 20],
-            size: [7.5, 5.0],
-            cell: 0.6,
-            alpha: 0.32,
+            size: [6.5, 4.5],
+            cell: 0.9,
+            alpha: 0.4,
             hold: 0.25,
-            tint: [150.0, 120.0, 235.0],
+            tint: [190.0, 175.0, 255.0],
             ..Glow::new("disc")
         },
         gravity,
@@ -878,48 +872,50 @@ fn collect_hits(
         "Strike light pool",
     )?;
     // `Strike Nail R` and the nail's `Slash Impact` streaks at the hit.
-    push_nail_strike(c, source, scene_id, FX_HIT_FLASH, gravity, [0.0; 3], [-35.0, 55.0], 9, "Strike Nail R")
+    push_nail_strike(
+        c,
+        scene_id,
+        FX_HIT_FLASH,
+        gravity,
+        [0.0; 3],
+        18,
+        &[
+            // Three thick streaks fall from the hit through the floor line, two long thin ones cross the door.
+            Streaks { count: 3, fan: [-100.0, -80.0], speed: [8.0, 14.0], width: [0.6, 0.8], stretch: 0.08, life: [8, 12] },
+            Streaks { count: 2, fan: [15.0, 45.0], speed: [25.0, 35.0], width: [0.18, 0.24], stretch: 0.11, life: [7, 10] },
+        ],
+        "Strike Nail R",
+    )
+}
+
+/// A group of the thin white streaks a nail strike throws (the `Slash Impact` sprites: one long tapered
+/// streak each): a fan of directions, the speed it flies at, its width, and the length each side
+/// as a multiple of the speed.
+struct Streaks {
+    count: i64,
+    fan: [f64; 2],
+    speed: [f64; 2],
+    width: [f64; 2],
+    stretch: f64,
+    life: [i64; 2],
 }
 
 /// What every nail strike on an object that has `slashEffects` throws (the cocoon's list is `Slash Impact
-/// R` and `Strike Nail R`): the spark cluster of `Strike Nail R` (3 frames at 15 a second), a white
-/// core at the first moment, and thin white-pink streaks fanned out of the hit (the `Slash Impact`
-/// clips are single streak sprites, 5 frames at 30 a second, up to ten world units long).
+/// R` and `Strike Nail R`): a white core, a ring of thin short needles (the spark cluster of `Strike Nail R`
+/// is about fifteen of them round a white point) and the long streaks of `Slash Impact`, which each object
+/// aims its own way (`groups`). All of it white with a trace of lilac: the original's light is not cold.
 #[allow(clippy::too_many_arguments)]
 fn push_nail_strike(
     c: &mut Collected,
-    source: &Source,
     scene_id: i64,
     owner: i64,
     gravity: f64,
     origin: [f64; 3],
-    fan: [f64; 2],
-    streaks: i64,
+    needles: i64,
+    groups: &[Streaks],
     what: &str,
 ) -> Result<()> {
-    let strike = strike_frames(source)?;
-    push_glow_art(
-        c,
-        scene_id,
-        owner,
-        &Glow {
-            count: 2,
-            life: [12, 12],
-            size: [4.2, 4.2],
-            cell: 0.85,
-            alpha: 1.0,
-            hold: 0.7,
-            tint: [255.0, 232.0, 245.0],
-            front: true,
-            anim: true,
-            ..Glow::new("strike")
-        },
-        &strike,
-        "strike_nail",
-        gravity,
-        origin,
-        what,
-    )?;
+    let tint = [250.0, 245.0, 255.0];
     push_glow(
         c,
         scene_id,
@@ -927,10 +923,11 @@ fn push_nail_strike(
         &Glow {
             count: 1,
             life: [3, 3],
-            size: [1.6, 1.6],
+            size: [1.1, 1.1],
             cell: 0.6,
             alpha: 1.0,
             hold: 0.4,
+            tint,
             front: true,
             ..Glow::new("disc")
         },
@@ -943,23 +940,48 @@ fn push_nail_strike(
         scene_id,
         owner,
         &Glow {
-            count: streaks * 3 / 2,
-            life: [7, 11],
-            angle: Some(fan),
-            speed: [14.0, 26.0],
-            size: [0.5, 0.7],
+            count: needles,
+            life: [5, 8],
+            angle: Some([0.0, 360.0]),
+            speed: [3.0, 7.0],
+            size: [0.14, 0.2],
             cell: 1.0,
             alpha: 1.0,
-            hold: 0.35,
-            tint: [255.0, 235.0, 248.0],
-            stretch: 0.16,
+            hold: 0.4,
+            tint,
+            stretch: 0.26,
             front: true,
             ..Glow::new("bar")
         },
         gravity,
         origin,
         what,
-    )
+    )?;
+    for g in groups {
+        push_glow(
+            c,
+            scene_id,
+            owner,
+            &Glow {
+                count: g.count,
+                life: g.life,
+                angle: Some(g.fan),
+                speed: g.speed,
+                size: g.width,
+                cell: 1.0,
+                alpha: 1.0,
+                hold: 0.35,
+                tint,
+                stretch: g.stretch,
+                front: true,
+                ..Glow::new("bar")
+            },
+            gravity,
+            origin,
+            what,
+        )?;
+    }
+    Ok(())
 }
 
 fn collect_door(
@@ -1036,9 +1058,9 @@ fn collect_door(
             velocity: [0.0, 9.0],
             size: [2.2, 2.2],
             cell: 0.6,
-            alpha: 0.5,
+            alpha: 0.36,
             hold: 0.1,
-            tint: [205.0, 185.0, 255.0],
+            tint: [190.0, 190.0, 255.0],
             stretch: 0.4,
             ..Glow::new("disc")
         },
@@ -1089,7 +1111,7 @@ fn collect_cocoon(
         scene_id,
         FX_COCOON,
         &Burst {
-            count: 42,
+            count: 36,
             life: [120, 180],
             speed: [5.0, 20.0],
             angle: [100.0, 440.0],
@@ -1120,13 +1142,13 @@ fn collect_cocoon(
         &Glow {
             count: 1,
             life: [15, 15],
-            size: [3.6, 3.6],
-            cell: 1.6,
-            grow: 1.5,
-            alpha: 0.85,
+            size: [7.0, 7.0],
+            cell: 1.8,
+            alpha: 0.9,
             hold: 0.5,
-            tint: [0.0, 225.0, 255.0],
+            tint: [0.0, 228.0, 255.0],
             front: true,
+            anim: true,
             ..Glow::new("splat")
         },
         &splat,
@@ -1136,7 +1158,16 @@ fn collect_cocoon(
         "Splat Effect",
     )?;
     // The nail's own strike: `slashEffects` are `Slash Impact R` and `Strike Nail R`.
-    push_nail_strike(c, source, scene_id, FX_COCOON, gravity, COCOON_BODY, [-14.0, 14.0], 3, "Cocoon slashEffects")?;
+    push_nail_strike(
+        c,
+        scene_id,
+        FX_COCOON,
+        gravity,
+        COCOON_BODY,
+        10,
+        &[Streaks { count: 3, fan: [18.0, 42.0], speed: [26.0, 34.0], width: [0.18, 0.24], stretch: 0.11, life: [8, 12] }],
+        "Cocoon slashEffects",
+    )?;
     // `ScuttlerControl`'s SpawnBlood: 12 to 18 drops, speed 4 to 22, angle 30 to 150, in the spatter's
     // blue; it shares the spatters' sheet.
     push_burst(
@@ -1268,7 +1299,7 @@ fn collect_jar(
                     e.style.opaque = true;
                     // Lit glass: the original's own four pieces (`Pt Glass`, 107 by 428 texels, pale
                     // translucent polygons) as light added to the room in a pale blue.
-                    e.style.additive = 3;
+                    e.style.additive = 1;
                     let sheet_im = hk_unity::texture::texture_image(source, &e.texture, true)
                         .map_err(|x| x.to_string())?
                         .to_rgba();
@@ -1278,11 +1309,16 @@ fn collect_jar(
                         c.synthetic.push((key.clone(), Arc::new(light)));
                     }
                     e.style.texture = key;
-                    e.style.colors = soft_colors([175.0, 192.0, 240.0]);
-                    // The large pieces as they are (20), a few of the small ones (80 in the original):
-                    // the original's own speed (a little less) keeps them over the jar.
-                    e.style.speed = [e.style.speed[0] * 3 / 5, e.style.speed[1] * 3 / 5];
-                    e.style.count = if name.ends_with('L') { e.style.count * 2 } else { e.style.count / 3 };
+                    e.style.colors = soft_colors([170.0, 180.0, 215.0]);
+                    e.style.start_alpha = [170, 170];
+                    e.style.speed[0] = e.style.speed[0].max(5 * 65536);
+                    // The pieces are cut small (13 texels) and drawn large: four 32-texel cells of the
+                    // big ones did not fit Crossroads_05's art and the cook dropped them, which left
+                    // only the small pieces.
+                    e.style.art_size = q(0.9)?;
+                    // The original's own speed over the jar, the large pieces 28 (the original has
+                    // 20) and a sixth of the small ones.
+                    e.style.count = if name.ends_with('L') { e.style.count * 11 / 10 } else { e.style.count / 6 };
                     for sample in &mut e.style.samples {
                         sample.size = sample.size.map(|v| v * 3 / 2);
                     }
@@ -1297,7 +1333,19 @@ fn collect_jar(
             }
         }
         // The nail's strike on the jar: the spark cluster and the white streaks.
-        push_nail_strike(c, source, scene_id, FX_JAR_GLASS, gravity, [0.0, 0.7, 0.0], [-5.0, 70.0], 6, "Grub jar strike")?;
+        push_nail_strike(
+            c,
+            scene_id,
+            FX_JAR_GLASS,
+            gravity,
+            [0.0, 0.7, 0.0],
+            14,
+            &[
+                Streaks { count: 4, fan: [-8.0, 8.0], speed: [14.0, 20.0], width: [0.22, 0.3], stretch: 0.05, life: [6, 9] },
+                Streaks { count: 2, fan: [172.0, 188.0], speed: [14.0, 20.0], width: [0.22, 0.3], stretch: 0.05, life: [6, 9] },
+            ],
+            "Grub jar strike",
+        )?;
         break;
     }
     Ok(())
