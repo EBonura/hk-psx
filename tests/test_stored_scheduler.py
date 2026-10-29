@@ -251,6 +251,7 @@ fn prefetch_guard(_:usize){}
 struct Decoder{length:usize}
 impl Decoder{
  fn new_scene(_:usize,_:u32,length:usize,_:u32)->Self{Self{length}}
+ fn word_stored(self)->Self{self}
  fn at(self,_:usize)->Self{self}
  fn hashed(self,_:bool)->Self{self}
  fn phase_id(&self)->u32{0}

@@ -607,7 +607,7 @@ def cook_scene_banks(metadata,output_dir,page_limit=20,allow_reduction=False,ded
     for payload,entry in results:
         path=output_dir/f'scene_{entry["scene_id"]}.hk';path.write_bytes(payload);entry['path']=rel(path)
         stored=compressed(payload);stored_path=output_dir/f'scene_{entry["scene_id"]}.hlzc';stored_path.write_bytes(stored)
-        entry.update(stored_path=rel(stored_path),stored_bytes=len(stored),stored_sha256=digest(stored),stored_fnv=fnv(stored),raw_fnv=fnv(payload))
+        entry.update(stored_path=rel(stored_path),stored_bytes=len(stored),stored_sha256=digest(stored),stored_fnv=stored_hash(stored),raw_fnv=fnv(payload))
     result={'format':'HKSCNE01','source_metadata_sha256':digest(source),'cooker_sha256':digest(Path(__file__).read_bytes()),'scenes':[e for _,e in results]}
     (output_dir/'report.json').write_text(json.dumps(result,indent=2)+'\n')
     (output_dir/'scene_manifest.rs').write_text(manifest(result,report))
@@ -618,6 +618,23 @@ def fnv(data):
     value=0x811c9dc5
     for byte in data:value=((value^byte)*0x01000193)&0xffffffff
     return value
+
+
+def stored_hash(data):
+    """The word hash of a stored chunk (game/src/room_decode.rs `word_hash`, `word_finish`): Jenkins'
+    one-at-a-time mix over little-endian 32-bit words, a last partial word padded with zeros, the
+    length added before the final mix. The guest checks it four bytes a round where byte-wise FNV-1a
+    took eleven cycles a byte; the pack directory's own checksum stays FNV-1a (mkisopsx), and the guest
+    does not compare it for these chunks."""
+    value=0x811c9dc5;size=len(data)
+    whole=size&~3
+    for w in memoryview(bytes(data[:whole])).cast('I') if sys.byteorder=='little' else struct.unpack('<%dI'%(whole//4),data[:whole]):
+        value=(value+w)&0xffffffff;value=(value+(value<<10))&0xffffffff;value^=value>>6
+    if size&3:
+        w=int.from_bytes(bytes(data[whole:]),'little')
+        value=(value+w)&0xffffffff;value=(value+(value<<10))&0xffffffff;value^=value>>6
+    value=(value+size)&0xffffffff;value=(value+(value<<3))&0xffffffff;value^=value>>11
+    return (value+(value<<15))&0xffffffff
 
 
 def manifest(result,metadata):
