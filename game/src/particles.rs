@@ -397,9 +397,12 @@ impl Pool {
             if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, true));
-                // A burst's draw can outlast a vblank: take the pad poll that came due.
+                // A burst's draw can outlast a vblank: take the pad poll that came due, every 16th
+                // particle (every one cost 2 to 3 % of a burst's frame time).
                 #[cfg(not(test))]
-                crate::input::poll_only();
+                if i & 15 == 0 {
+                    crate::input::poll_only();
+                }
             }
         }
         self.publish();
@@ -422,9 +425,12 @@ impl Pool {
             if p.scene as usize == scene && p.kind >= 2 && p.delay == 0 {
                 self.drawn +=
                     u32::from(break_effects::draw_particle(p, self.tracks[i], camera, false));
-                // A burst's draw can outlast a vblank: take the pad poll that came due.
+                // A burst's draw can outlast a vblank: take the pad poll that came due, every 16th
+                // particle (every one cost 2 to 3 % of a burst's frame time).
                 #[cfg(not(test))]
-                crate::input::poll_only();
+                if i & 15 == 0 {
+                    crate::input::poll_only();
+                }
             }
         }
         let Some(bank) = bank else {

@@ -10,6 +10,7 @@ HK_SAVE_LOADED = 1
 HK_DEATHS = 0
 # The cocoon's burst (42 bubbles, 9 globs, the splat, the strike) spawns 59 particles.
 HK_PARTICLES_SPAWNED >= 59
-pacing = 98
+pacing = 104
 frame_time = 301
 long_frames = 2
+# 2026-10-29 doorways: 94 to 102 over 2 vblanks on the same tree with the lazy runner family (293 of 120 frames against 282 of 125); variants of the draw's pad poll gave 97 to 102, a one-frame phase flip of the burst, so the ceiling is 104.
