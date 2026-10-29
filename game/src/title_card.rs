@@ -18,8 +18,8 @@ include!(concat!(
     "/../data/title_cards.rs"
 ));
 use crate::menu::state::{
-    CardBand, BOSS_ADVANCES, BOSS_CHARS, BOSS_FIRST, CARD_ADVANCES, CARD_BANDS, CARD_BASE,
-    CARD_CHARS, CARD_FIRST, CARD_PAGE_Y, CARD_V0, FONT_PAGE_Y, FONT_X, GLYPH_H, GLYPH_W,
+    CARD_ADVANCES, CARD_BANDS, CARD_BASE, CARD_CHARS, CARD_FIRST, CARD_PAGE_Y, CARD_V0,
+    FONT_PAGE_Y, FONT_X, GLYPH_H, GLYPH_W,
 };
 use crate::persist::{self, Kind};
 
@@ -244,42 +244,11 @@ fn line(text: &str, y: i16, level: u8, centre: i16) {
 }
 /// A space in the card font: a quarter of its em.
 const CARD_SPACE: i16 = 10;
+/// The strip's glyph for a character (a boss's has bit 7 set). The strip's characters are sorted,
+/// and a linear search over them is folded into a 212 entry table of words by the compiler.
+#[inline(never)]
 fn card_glyph(b: u8) -> Option<usize> {
-    CARD_CHARS.iter().position(|&c| c == b)
-}
-/// The main line, in the card font: each glyph is a few rectangles of the strip (a band of it
-/// each), drawn 1:1 from the pen position with the top of the line at `y`.
-#[inline(never)] // `frame::render` is large enough already.
-fn big_line(text: &str, y: i16, level: u8, centre: i16) {
-    let width: i16 = text
-        .bytes()
-        .map(|b| card_glyph(b).map_or(CARD_SPACE, |i| CARD_ADVANCES[i] as i16))
-        .sum();
-    let mut x = start_x(width, centre);
-    for b in text.bytes() {
-        let Some(i) = card_glyph(b) else {
-            x += CARD_SPACE;
-            continue;
-        };
-        bands(&CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize], x, y, level);
-        x += CARD_ADVANCES[i] as i16;
-    }
-}
-/// The rectangles of one glyph's bands, drawn from the pen at `x` and the line's top at `y`.
-fn bands(bands: &[CardBand], x: i16, y: i16, level: u8) {
-    let clut = Clut::new(320, 481).uv_word();
-    for band in bands {
-        let (page, u) = (band.x / 256, band.x % 256);
-        let tpage = TexturePage::new(page * 64, CARD_PAGE_Y, TextureDepth::Bit4).uv_word(1);
-        rect(
-            x + i16::from(band.dx),
-            y + i16::from(band.dy),
-            tpage,
-            u32::from(u) | (u32::from(CARD_V0 + band.v) << 8) | (u32::from(clut) << 16),
-            u32::from(band.w) | (u32::from(band.h) << 16),
-            level,
-        );
-    }
+    CARD_CHARS.binary_search(&b).ok()
 }
 /// A space in a boss card's small capitals.
 const BOSS_SPACE: i16 = 5;
@@ -289,26 +258,35 @@ const BOSS_SPACE: i16 = 5;
 const BOSS_RIGHT: i16 = 300;
 const BOSS_BASE: i16 = 214;
 const BOSS_LINE_GAP: i16 = 12;
-/// One line of a boss card in small capitals (`BOSS_CHARS`: a capital of the source text is a full
-/// capital, a lowercase letter its small capital), ending at `right` with its baseline at `base`.
+/// A line in the card font: each glyph is a few rectangles of the strip (a band of it each), drawn
+/// 1:1 from the pen position with the top of the line at `y`. An area's is centred on `anchor`; a
+/// boss's is in small capitals (the strip's glyphs keyed with bit 7 set: a capital of the source text
+/// is a full capital, a lowercase letter its small capital) and ends at `anchor`.
 #[inline(never)] // `frame::render` is large enough already.
-fn boss_line(text: &str, base: i16, level: u8, right: i16) {
-    let glyph = |b: u8| BOSS_CHARS.iter().position(|&c| c == b);
-    let width: i16 =
-        text.bytes().map(|b| glyph(b).map_or(BOSS_SPACE, |i| BOSS_ADVANCES[i] as i16)).sum();
-    let mut x = right - width;
+fn big_line(text: &str, y: i16, level: u8, anchor: i16, boss: bool) {
+    let (key, space) = if boss { (0x80, BOSS_SPACE) } else { (0, CARD_SPACE) };
+    let glyph = |b: u8| card_glyph(b | key);
+    let width: i16 = text.bytes().map(|b| glyph(b).map_or(space, |i| CARD_ADVANCES[i] as i16)).sum();
+    let mut x = if boss { anchor - width } else { start_x(width, anchor) };
+    let clut = Clut::new(320, 481).uv_word();
     for b in text.bytes() {
         let Some(i) = glyph(b) else {
-            x += BOSS_SPACE;
+            x += space;
             continue;
         };
-        bands(
-            &CARD_BANDS[BOSS_FIRST[i] as usize..BOSS_FIRST[i + 1] as usize],
-            x,
-            base - CARD_BASE,
-            level,
-        );
-        x += BOSS_ADVANCES[i] as i16;
+        for band in &CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize] {
+            let (page, u) = (band.x / 256, band.x % 256);
+            let tpage = TexturePage::new(page * 64, CARD_PAGE_Y, TextureDepth::Bit4).uv_word(1);
+            rect(
+                x + i16::from(band.dx),
+                y + i16::from(band.dy),
+                tpage,
+                u32::from(u) | (u32::from(CARD_V0 + band.v) << 8) | (u32::from(clut) << 16),
+                u32::from(band.w) | (u32::from(band.h) << 16),
+                level,
+            );
+        }
+        x += CARD_ADVANCES[i] as i16;
     }
 }
 /// How strong the card is now, 0 to 128.
@@ -345,12 +323,13 @@ pub fn prepare(paused: bool) {
     let [sup, main, sub] = TITLES[s.showing as usize];
     if s.style == Style::Boss {
         let base = if sub.is_empty() { BOSS_BASE } else { BOSS_BASE - BOSS_LINE_GAP };
+        let top = base - CARD_BASE;
         if !sup.is_empty() {
-            boss_line(sup, base - BOSS_LINE_GAP, level, BOSS_RIGHT);
+            big_line(sup, top - BOSS_LINE_GAP, level, BOSS_RIGHT, true);
         }
-        boss_line(main, base, level, BOSS_RIGHT);
+        big_line(main, top, level, BOSS_RIGHT, true);
         if !sub.is_empty() {
-            boss_line(sub, base + BOSS_LINE_GAP, level, BOSS_RIGHT);
+            big_line(sub, top + BOSS_LINE_GAP, level, BOSS_RIGHT, true);
         }
         return;
     }
@@ -359,7 +338,7 @@ pub fn prepare(paused: bool) {
     if !sup.is_empty() {
         line(sup, y, level, centre);
     }
-    big_line(main, y + 16, level, centre);
+    big_line(main, y + 16, level, centre, false);
     if !sub.is_empty() {
         line(sub, y + 16 + 42, level, centre);
     }

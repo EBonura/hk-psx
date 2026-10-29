@@ -388,11 +388,10 @@ pub struct CardGlyph {
 pub struct Cards {
     /// `CARD_STRIP_BYTES` of 4bpp texels, uploaded at `CARD_RECT`.
     pub blob: Vec<u8>,
-    /// Sorted by character.
+    /// Sorted by character. The boss title's glyphs (`BOSS_LINES`) follow the area glyphs, keyed by
+    /// the source text's letter with bit 7 set: a capital is the full size capital and a lowercase
+    /// letter its small capital.
     pub glyphs: Vec<CardGlyph>,
-    /// The boss title's glyphs (`BOSS_LINES`), sorted by character: a capital is the full size
-    /// capital and a lowercase letter its small capital. Their bands share the flat band table.
-    pub boss: Vec<CardGlyph>,
     /// Texels used out of the strip's 15,360.
     pub used: usize,
 }
@@ -478,7 +477,6 @@ pub fn cook_cards(body_bytes: &[u8], caps_bytes: &[u8]) -> Result<Cards> {
     for &ch in &chars {
         rasters.push(raster(&font, ch, ch, CARD_EM, &fit, 0)?);
     }
-    let area_count = rasters.len();
     let mut boss_chars: Vec<char> = BOSS_LINES.iter().flat_map(|m| m.chars()).filter(|&c| c != ' ').collect();
     boss_chars.sort_unstable();
     boss_chars.dedup();
@@ -487,7 +485,10 @@ pub fn cook_cards(body_bytes: &[u8], caps_bytes: &[u8]) -> Result<Cards> {
         let cap = if ch.is_ascii_uppercase() { BOSS_BIG_CAP } else { BOSS_SMALL_CAP };
         let em = cap / cap_unit;
         let fit = fit_for(&trajan, em, &['H'])?;
-        rasters.push(raster(&trajan, ch, ch.to_ascii_uppercase(), em, &fit, 1)?);
+        rasters.push(raster(&trajan, char::from(ch as u8 | 0x80), ch.to_ascii_uppercase(), em, &fit, 1)?);
+    }
+    if rasters.windows(2).any(|w| w[0].ch >= w[1].ch) {
+        return err("the card glyphs are not sorted by key: the guest binary searches them");
     }
     // Bands: equal heights, as few as the 12 row limit allows.
     struct Piece {
@@ -534,8 +535,7 @@ pub fn cook_cards(body_bytes: &[u8], caps_bytes: &[u8]) -> Result<Cards> {
     }
     let blob: Vec<u8> = image.chunks_exact(2).map(|t| t[0] | (t[1] << 4)).collect();
     assert_eq!(blob.len(), CARD_STRIP_BYTES);
-    let boss = glyphs.split_off(area_count);
-    Ok(Cards { blob, glyphs, boss, used })
+    Ok(Cards { blob, glyphs, used })
 }
 
 /// The card strip as a grey-ramp image, 1280 x 12, for a preview.
@@ -551,16 +551,16 @@ pub fn cards_preview(cards: &Cards) -> Vec<u8> {
 /// `font_layout.rs`' card glyph table: a flat band table and, for each character in `CARD_CHARS`,
 /// the index of its first band (and one past the last), so a glyph costs no pointer.
 pub fn cards_rust(cards: &Cards) -> String {
-    let chars: String = cards.glyphs.iter().map(|g| g.ch).collect();
-    let boss_chars: String = cards.boss.iter().map(|g| g.ch).collect();
+    // A boss glyph's key has bit 7 set: written as a byte escape.
+    let chars: String = cards
+        .glyphs
+        .iter()
+        .map(|g| if g.ch.is_ascii() { g.ch.to_string() } else { format!("\\x{:02x}", g.ch as u32 as u8) })
+        .collect();
     let mut first = vec![0usize];
-    let mut boss_first = Vec::new();
     let mut bands = String::new();
     let mut n = 0;
-    for (k, g) in cards.glyphs.iter().chain(&cards.boss).enumerate() {
-        if k == cards.glyphs.len() {
-            boss_first.push(n);
-        }
+    for g in &cards.glyphs {
         for b in &g.bands {
             bands += &format!(
                 "    CardBand {{ x: {}, v: {}, w: {}, h: {}, dx: {}, dy: {} }},\n",
@@ -568,30 +568,21 @@ pub fn cards_rust(cards: &Cards) -> String {
             );
             n += 1;
         }
-        if k < cards.glyphs.len() {
-            first.push(n);
-        } else {
-            boss_first.push(n);
-        }
+        first.push(n);
     }
     let list = |v: &[String]| v.join(", ");
-    let nums = |v: &[usize]| list(&v.iter().map(|f| f.to_string()).collect::<Vec<_>>());
     format!(
-        "/// The area cards' main lines at {em} px (font_strip.rs `cook_cards`): the glyphs the\n\
-         /// cards use, each cut into bands of at most {rows} rows that sit in the {bytes} byte strip\n\
-         /// uploaded at ({rx}, {ry}) as {rw}x{rh} halfwords (texture pages x 0..256 at y 256, rows 244..255).\n\
+        "/// The cards' main lines (font_strip.rs `cook_cards`): the area titles at {em} px in Perpetua and\n\
+         /// the boss titles' small capitals ({big} and {small} rows, TrajanPro-Bold; their keys are the\n\
+         /// source text's letters with bit 7 set), each glyph cut into bands of at most {rows} rows that sit\n\
+         /// in the {bytes} byte strip uploaded at ({rx}, {ry}) as {rw}x{rh} halfwords (texture pages x\n\
+         /// 0..256 at y 256, rows 244..255).\n\
          pub const CARD_BYTES: usize = {bytes};\n\
          pub const CARD_PAGE_Y: u16 = 256;\n\
          pub const CARD_V0: u8 = {v0};\n\
          pub const CARD_CHARS: &[u8] = b\"{chars}\";\n\
          pub const CARD_ADVANCES: [u8; {count}] = [{adv}];\n\
          pub const CARD_FIRST: [u8; {firsts}] = [{first}];\n\
-         /// The boss cards' small capitals (`BOSS_LINES`): the glyphs by the source text's letter, a\n\
-         /// capital at {big} rows and a lowercase letter as the same capital at {small}. Their bands\n\
-         /// follow the area glyphs' in `CARD_BANDS`; `BOSS_FIRST` indexes them as `CARD_FIRST` does.\n\
-         pub const BOSS_CHARS: &[u8] = b\"{boss_chars}\";\n\
-         pub const BOSS_ADVANCES: [u8; {bcount}] = [{badv}];\n\
-         pub const BOSS_FIRST: [u16; {bfirsts}] = [{bfirst}];\n\
          /// Ink position in the strip, size, and where it draws from the pen and the line's top.\n\
          pub struct CardBand {{ pub x: u16, pub v: u8, pub w: u8, pub h: u8, pub dx: i8, pub dy: u8 }}\n\
          pub static CARD_BANDS: [CardBand; {nbands}] = [\n{bands}];\n\
@@ -611,12 +602,7 @@ pub fn cards_rust(cards: &Cards) -> String {
         count = cards.glyphs.len(),
         adv = list(&cards.glyphs.iter().map(|g| g.advance.to_string()).collect::<Vec<_>>()),
         firsts = first.len(),
-        first = nums(&first),
-        boss_chars = boss_chars,
-        bcount = cards.boss.len(),
-        badv = list(&cards.boss.iter().map(|g| g.advance.to_string()).collect::<Vec<_>>()),
-        bfirsts = boss_first.len(),
-        bfirst = nums(&boss_first),
+        first = list(&first.iter().map(|f| f.to_string()).collect::<Vec<_>>()),
         nbands = n,
         bands = bands,
         base = CARD_BASE,

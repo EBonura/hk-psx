@@ -93,15 +93,18 @@ def check_card_font(lines, boss_lines):
     (BOSS_LINES), which is all the card strip carries."""
     import re
     layout = (ROOT / 'data/font_layout.rs').read_text()
-    chars = re.search(r'CARD_CHARS: &\[u8\] = b"([^"]*)"', layout)
-    boss = re.search(r'BOSS_CHARS: &\[u8\] = b"([^"]*)"', layout)
-    if not chars or not boss:
-        raise ValueError('data/font_layout.rs has no CARD_CHARS or BOSS_CHARS: run hk-cook dialogue-art first')
-    missing = sorted({c for _, main, _ in lines for c in main if c != ' ' and c not in chars[1]})
+    found = re.search(r'CARD_CHARS: &\[u8\] = b"([^"]*)"', layout)
+    if not found:
+        raise ValueError('data/font_layout.rs has no CARD_CHARS: run hk-cook dialogue-art first')
+    # A boss glyph's key is the source text's letter with bit 7 set, written as a byte escape.
+    keys = re.sub(r'\\x([0-9a-f]{2})', lambda m: chr(int(m.group(1), 16)), found[1])
+    chars = [c for c in keys if ord(c) < 128]
+    boss = [chr(ord(c) & 127) for c in keys if ord(c) >= 128]
+    missing = sorted({c for _, main, _ in lines for c in main if c != ' ' and c not in chars})
     if missing:
         raise ValueError(f'the card font has no glyph for {missing}: add the title to CARD_MAINS in '
                          'host/hk-cook/src/font_strip.rs and cook again')
-    missing = sorted({c for t in boss_lines for part in t for c in part if c != ' ' and c not in boss[1]})
+    missing = sorted({c for t in boss_lines for part in t for c in part if c != ' ' and c not in boss})
     if missing:
         raise ValueError(f'the boss card font has no glyph for {missing}: add the title to BOSS_LINES in '
                          'host/hk-cook/src/font_strip.rs and cook again')
