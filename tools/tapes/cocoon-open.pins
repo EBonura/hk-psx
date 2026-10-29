@@ -11,3 +11,5 @@ HK_DEATHS = 0
 # The cocoon's burst (42 bubbles, 9 globs, the splat, the strike) spawns 59 particles.
 HK_PARTICLES_SPAWNED >= 59
 pacing = 98
+frame_time = 301
+long_frames = 2
