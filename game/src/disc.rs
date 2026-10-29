@@ -1571,9 +1571,11 @@ impl Cache {
     /// The arena is word aligned and the bank starts at its front, which is
     /// what keeps the SDK's SPU DMA upload path available; the banks used to
     /// get that from their own `repr(align(4))` static.
-    /// One pass through a stack sector preserves every admitted arena byte: each sector is checked
-    /// and installed while publication is revoked, and the hash is judged at the end. I/O/hash
-    /// failure leaves publication revoked, so a partial bank is never published.
+    /// Two passes through a stack sector preserve every admitted arena byte.
+    /// The first validates the complete bank; the second installs it while
+    /// publication is revoked. I/O/hash failure cannot publish a partial bank.
+    /// (A single validate-and-install pass measured slower on the gate tour: the voices' release
+    /// then has to finish before the read instead of behind the validating pass.)
     #[inline(never)]
     fn prepare_runner_audio(&mut self,scene:usize)->Result<(),LoadError> {
         // A room without a Runner or Zombie Shield never plays the bank: keep whichever family the
