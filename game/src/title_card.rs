@@ -10,15 +10,16 @@
 //!
 //! The text uses the dialogue font the disc already has for the small lines; the main line is
 //! the card strip's glyphs (font_strip.rs `cook_cards`): Perpetua rasterised at 40 px, grid
-//! fitted, in bands that sit in VRAM rows 500..511 and are drawn 1:1 as rectangles.
+//! fitted, in bands that sit in VRAM rows 500..511 and are drawn 1:1 as rectangles. A boss card is
+//! the original's small capitals at the lower right (TrajanPro-Bold in two sizes, the same strip).
 use psx_vram::{Clut, TextureDepth, TexturePage};
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/title_cards.rs"
 ));
 use crate::menu::state::{
-    CARD_ADVANCES, CARD_BANDS, CARD_CHARS, CARD_FIRST, CARD_PAGE_Y, CARD_V0, FONT_PAGE_Y, FONT_X,
-    GLYPH_H, GLYPH_W,
+    CardBand, BOSS_ADVANCES, BOSS_CHARS, BOSS_FIRST, CARD_ADVANCES, CARD_BANDS, CARD_BASE,
+    CARD_CHARS, CARD_FIRST, CARD_PAGE_Y, CARD_V0, FONT_PAGE_Y, FONT_X, GLYPH_H, GLYPH_W,
 };
 use crate::persist::{self, Kind};
 
@@ -38,12 +39,15 @@ enum Style {
 /// visit is the source's `Title Large`: `Area Title Control` waits 0.6 s (Titles Up), then fades it
 /// in over 4 s (the FadeGroup's fadeInTime) while its Fleurs Up state waits 4.75 s, and fades it out
 /// over 1.5 s. A later visit is `Title Small` (1.5 s in and out), held 6 s from its start. Bosses
-/// and item names keep their own timing.
+/// and item names keep their own timing. A boss's is the original's `Boss Title` (hkref frames of the
+/// False Knight): it fades in over 1.4 s, holds 4.5 s and fades out over 1.5 s, starting after the wait
+/// the boss's own FSM gives it (`show_boss`'s `delay`).
 const fn timing(style: Style) -> (u16, u16, u16, u16) {
     match style {
         Style::Area => (36, 240, 45, 90),
         Style::Seen => (0, 90, 270, 90),
-        Style::Boss | Style::Item => (0, FADE, HOLD, FADE),
+        Style::Boss => (0, 86, 270, 92),
+        Style::Item => (0, FADE, HOLD, FADE),
     }
 }
 /// `showing` while an item's name is up rather than a title.
@@ -56,6 +60,8 @@ struct State {
     wait: u16,
     showing: u8,
     style: Style,
+    /// Ticks a boss's card waits before it begins to fade in (an area's is in `timing`).
+    delay: u16,
     age: u16,
     /// The tick a revisit's small card began its quick fade-out at (0: none), and how strong it was.
     cut: u16,
@@ -75,6 +81,7 @@ static mut STATE: State = State {
     wait: 0,
     showing: NONE,
     style: Style::Area,
+    delay: 0,
     age: 0,
     cut: 0,
     cut_level: 0,
@@ -91,10 +98,11 @@ fn state() -> &'static mut State {
 fn visited(title: u8) -> bool {
     persist::get(Kind::Visited, title as usize, 0).is_some()
 }
-fn show(title: u8, style: Style) {
+fn show(title: u8, style: Style, delay: u16) {
     let s = state();
     s.showing = title;
     s.style = style;
+    s.delay = delay;
     s.age = 0;
     s.cut = 0;
     unsafe {
@@ -118,9 +126,9 @@ pub fn enter_scene(scene: usize) {
         }
     }
 }
-/// A boss's own name card, from the `Titles` sheet (e.g. `FALSE_KNIGHT`).
-pub fn show_boss(title: u8) {
-    show(title, Style::Boss);
+/// A boss's own name card, from the `Titles` sheet (e.g. `FALSE_KNIGHT`), fading in after `delay` ticks.
+pub fn show_boss(title: u8, delay: u16) {
+    show(title, Style::Boss, delay);
 }
 /// A pickup's message: the charm or item name its `Shiny Control` shows.
 pub fn show_item(name: &'static str) {
@@ -130,7 +138,7 @@ pub fn show_item(name: &'static str) {
     unsafe {
         ITEM_NAME = name;
     }
-    show(ITEM, Style::Item);
+    show(ITEM, Style::Item, 0);
 }
 /// A new session or the development reset: nothing announced yet.
 pub fn reset() {
@@ -141,6 +149,7 @@ pub fn reset() {
         wait: 0,
         showing: NONE,
         style: Style::Area,
+        delay: 0,
         age: 0,
         cut: 0,
         cut_level: 0,
@@ -165,7 +174,8 @@ pub fn tick(body: [i32; 4]) {
     let s = state();
     if s.showing != NONE {
         s.age += 1;
-        let (delay, fade_in, hold, fade_out) = timing(s.style);
+        let (_, fade_in, hold, fade_out) = timing(s.style);
+        let delay = s.delay;
         if s.cut == 0 && s.style == Style::Seen && crate::dialogue::npc_speaking().is_some() {
             (s.cut, s.cut_level) = (s.age, level(s));
         }
@@ -194,19 +204,12 @@ pub fn tick(body: [i32; 4]) {
     if area.only_on_revisit && !seen {
         return;
     }
-    show(area.title, if seen { Style::Seen } else { Style::Area });
+    let style = if seen { Style::Seen } else { Style::Area };
+    show(area.title, style, timing(style).0);
 }
-/// The horizontal centre of a card's lines: mid-screen for an area or item,
-/// and for a boss the original's lower left, never so far left that a long
-/// name starts off screen (`BOSS_CENTRE`, `BOSS_MARGIN`).
-const BOSS_CENTRE: i16 = 56;
-const BOSS_MARGIN: i16 = 12;
+/// The first column of a line centred on `centre`.
 fn start_x(width: i16, centre: i16) -> i16 {
-    if centre < 160 {
-        (centre - width / 2).max(BOSS_MARGIN)
-    } else {
-        centre - width / 2
-    }
+    centre - width / 2
 }
 /// One rectangle of the frame's card, in the panels' packet table (`dialogue::raw_rect`): `wh`
 /// and `uv` as the GPU packs them. The most a card draws is a small line's letters and the main
@@ -253,25 +256,59 @@ fn big_line(text: &str, y: i16, level: u8, centre: i16) {
         .map(|b| card_glyph(b).map_or(CARD_SPACE, |i| CARD_ADVANCES[i] as i16))
         .sum();
     let mut x = start_x(width, centre);
-    let clut = Clut::new(320, 481).uv_word();
     for b in text.bytes() {
         let Some(i) = card_glyph(b) else {
             x += CARD_SPACE;
             continue;
         };
-        for band in &CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize] {
-            let (page, u) = (band.x / 256, band.x % 256);
-            let tpage = TexturePage::new(page * 64, CARD_PAGE_Y, TextureDepth::Bit4).uv_word(1);
-            rect(
-                x + i16::from(band.dx),
-                y + i16::from(band.dy),
-                tpage,
-                u32::from(u) | (u32::from(CARD_V0 + band.v) << 8) | (u32::from(clut) << 16),
-                u32::from(band.w) | (u32::from(band.h) << 16),
-                level,
-            );
-        }
+        bands(&CARD_BANDS[CARD_FIRST[i] as usize..CARD_FIRST[i + 1] as usize], x, y, level);
         x += CARD_ADVANCES[i] as i16;
+    }
+}
+/// The rectangles of one glyph's bands, drawn from the pen at `x` and the line's top at `y`.
+fn bands(bands: &[CardBand], x: i16, y: i16, level: u8) {
+    let clut = Clut::new(320, 481).uv_word();
+    for band in bands {
+        let (page, u) = (band.x / 256, band.x % 256);
+        let tpage = TexturePage::new(page * 64, CARD_PAGE_Y, TextureDepth::Bit4).uv_word(1);
+        rect(
+            x + i16::from(band.dx),
+            y + i16::from(band.dy),
+            tpage,
+            u32::from(u) | (u32::from(CARD_V0 + band.v) << 8) | (u32::from(clut) << 16),
+            u32::from(band.w) | (u32::from(band.h) << 16),
+            level,
+        );
+    }
+}
+/// A space in a boss card's small capitals.
+const BOSS_SPACE: i16 = 5;
+/// The right edge of a boss card's lines and the baseline of its main line: the original's lower
+/// right, 94 % of the width across and (the card sits under the floor line) a little above the
+/// bottom edge. A card with a line below the main one lifts it so that line stays on screen.
+const BOSS_RIGHT: i16 = 300;
+const BOSS_BASE: i16 = 214;
+const BOSS_LINE_GAP: i16 = 12;
+/// One line of a boss card in small capitals (`BOSS_CHARS`: a capital of the source text is a full
+/// capital, a lowercase letter its small capital), ending at `right` with its baseline at `base`.
+#[inline(never)] // `frame::render` is large enough already.
+fn boss_line(text: &str, base: i16, level: u8, right: i16) {
+    let glyph = |b: u8| BOSS_CHARS.iter().position(|&c| c == b);
+    let width: i16 =
+        text.bytes().map(|b| glyph(b).map_or(BOSS_SPACE, |i| BOSS_ADVANCES[i] as i16)).sum();
+    let mut x = right - width;
+    for b in text.bytes() {
+        let Some(i) = glyph(b) else {
+            x += BOSS_SPACE;
+            continue;
+        };
+        bands(
+            &CARD_BANDS[BOSS_FIRST[i] as usize..BOSS_FIRST[i + 1] as usize],
+            x,
+            base - CARD_BASE,
+            level,
+        );
+        x += BOSS_ADVANCES[i] as i16;
     }
 }
 /// How strong the card is now, 0 to 128.
@@ -279,8 +316,8 @@ fn level(s: &State) -> u8 {
     if s.cut != 0 {
         return (u16::from(s.cut_level) * (QUICK - (s.age - s.cut).min(QUICK)) / QUICK) as u8;
     }
-    let (delay, fade_in, hold, fade_out) = timing(s.style);
-    let age = s.age.saturating_sub(delay);
+    let (_, fade_in, hold, fade_out) = timing(s.style);
+    let age = s.age.saturating_sub(s.delay);
     (if age < fade_in {
         age * 128 / fade_in
     } else if age < fade_in + hold {
@@ -306,13 +343,19 @@ pub fn prepare(paused: bool) {
         return;
     }
     let [sup, main, sub] = TITLES[s.showing as usize];
-    // The original's boss card sits at the lower left of the screen; its area
-    // card is the one at the top centre.
-    let (y, centre) = if matches!(s.style, Style::Area | Style::Seen) {
-        (46, 160)
-    } else {
-        (150, BOSS_CENTRE)
-    };
+    if s.style == Style::Boss {
+        let base = if sub.is_empty() { BOSS_BASE } else { BOSS_BASE - BOSS_LINE_GAP };
+        if !sup.is_empty() {
+            boss_line(sup, base - BOSS_LINE_GAP, level, BOSS_RIGHT);
+        }
+        boss_line(main, base, level, BOSS_RIGHT);
+        if !sub.is_empty() {
+            boss_line(sub, base + BOSS_LINE_GAP, level, BOSS_RIGHT);
+        }
+        return;
+    }
+    // An area's card is the one at the top centre.
+    let (y, centre) = (46, 160);
     if !sup.is_empty() {
         line(sup, y, level, centre);
     }

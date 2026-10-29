@@ -344,8 +344,15 @@ pub fn cook_poem(body_bytes: &[u8]) -> Result<PoemFont> {
 
 /// The area and boss cards' main lines, which the card strip carries the glyphs of
 /// (host/title_cards.py asserts every cooked main line is drawable from them).
-pub const CARD_MAINS: [&str; 8] =
-    ["Crossroads", "Dirtmouth", "Greenpath", "King's Pass", "Mound", "False Knight", "Mawlek", "Gruz"];
+pub const CARD_MAINS: [&str; 5] = ["Crossroads", "Dirtmouth", "Greenpath", "King's Pass", "Mound"];
+/// Every line of a boss card (`Titles` sheet: `_SUPER`, `_MAIN`, `_SUB`). They are drawn in small
+/// capitals, as the original's boss title is: a capital of the source text is a full capital, a
+/// lowercase letter is the same capital at the small size.
+pub const BOSS_LINES: [&str; 5] = ["Brooding", "False Knight", "Mawlek", "Gruz", "Mother"];
+/// The boss title's capital height in texels, full and small. The original's is 3.7 % and 2.6 % of
+/// the screen height (hkref frames of Crossroads_10 at 960x540: 20 and 14 rows of 540).
+pub const BOSS_BIG_CAP: f32 = 9.0;
+pub const BOSS_SMALL_CAP: f32 = 6.0;
 /// The cards' em in pixels: Perpetua rasterised at this size, grid fitted, instead of the 14 px
 /// glyphs doubled.
 pub const CARD_EM: f32 = 40.0;
@@ -383,6 +390,9 @@ pub struct Cards {
     pub blob: Vec<u8>,
     /// Sorted by character.
     pub glyphs: Vec<CardGlyph>,
+    /// The boss title's glyphs (`BOSS_LINES`), sorted by character: a capital is the full size
+    /// capital and a lowercase letter its small capital. Their bands share the flat band table.
+    pub boss: Vec<CardGlyph>,
     /// Texels used out of the strip's 15,360.
     pub used: usize,
 }
@@ -424,10 +434,12 @@ fn pack(sizes: &[(usize, usize)]) -> Result<Vec<(usize, usize)>> {
     Ok(at)
 }
 
-/// Cook the glyphs of `CARD_MAINS` at `CARD_EM`: each grid fitted, trimmed to its ink and cut into
-/// bands of at most `CARD_ROWS` rows, packed into the strip.
-pub fn cook_cards(body_bytes: &[u8]) -> Result<Cards> {
+/// Cook the glyphs of `CARD_MAINS` at `CARD_EM` (Perpetua) and of `BOSS_LINES` in two capital
+/// sizes (TrajanPro-Bold): each grid fitted, trimmed to its ink and cut into bands of at most
+/// `CARD_ROWS` rows, packed into the strip.
+pub fn cook_cards(body_bytes: &[u8], caps_bytes: &[u8]) -> Result<Cards> {
     let font = Font::new(body_bytes)?;
+    let trajan = Font::new(caps_bytes)?;
     let mut chars: Vec<char> = CARD_MAINS.iter().flat_map(|m| m.chars()).filter(|&c| c != ' ').collect();
     chars.sort_unstable();
     chars.dedup();
@@ -440,13 +452,13 @@ pub fn cook_cards(body_bytes: &[u8]) -> Result<Cards> {
         rows: Vec<Vec<u8>>,
     }
     const PAD: usize = 4;
-    let mut rasters = Vec::new();
-    for &ch in &chars {
-        let a = font.advance(ch, CARD_EM)?;
-        let advance = a.round().max(1.0) as usize;
+    /// One glyph of `font` at `em`: its ink trimmed from a canvas whose baseline is `CARD_BASE`.
+    fn raster(font: &Font, key: char, glyph: char, em: f32, fit: &Fit, tracking: u8) -> Result<Raster> {
+        let a = font.advance(glyph, em)?;
+        let advance = a.round().max(1.0) as usize + usize::from(tracking);
         let shift = PAD as f32 + (a.round() - a) / 2.0;
         let w = advance + 2 * PAD + 4;
-        let cov = font.coverage(ch, CARD_EM, &fit, shift, CARD_BASE as f32, w, CARD_CANVAS_H);
+        let cov = font.coverage(glyph, em, fit, shift, CARD_BASE as f32, w, CARD_CANVAS_H);
         let lv: Vec<u8> = cov.iter().map(|&c| level(c)).collect();
         let ink = |x: usize, y: usize| lv[y * w + x] != 0;
         let rows: Vec<usize> = (0..CARD_CANVAS_H).filter(|&y| (0..w).any(|x| ink(x, y))).collect();
@@ -454,13 +466,28 @@ pub fn cook_cards(body_bytes: &[u8]) -> Result<Cards> {
         let (Some(&y0), Some(&y1), Some(&x0), Some(&x1)) =
             (rows.first(), rows.last(), cols.first(), cols.last())
         else {
-            return err(format!("card glyph {ch:?} has no ink"));
+            return err(format!("card glyph {key:?} has no ink"));
         };
         if y1 + 1 >= CARD_CANVAS_H || y0 == 0 {
-            return err(format!("card glyph {ch:?} leaves the {CARD_CANVAS_H} row canvas"));
+            return err(format!("card glyph {key:?} leaves the {CARD_CANVAS_H} row canvas"));
         }
         let strip: Vec<Vec<u8>> = (y0..=y1).map(|y| lv[y * w + x0..y * w + x1 + 1].to_vec()).collect();
-        rasters.push(Raster { ch, advance: advance as u8, dx: x0 as i32 - PAD as i32, top: y0, rows: strip });
+        Ok(Raster { ch: key, advance: advance as u8, dx: x0 as i32 - PAD as i32, top: y0, rows: strip })
+    }
+    let mut rasters = Vec::new();
+    for &ch in &chars {
+        rasters.push(raster(&font, ch, ch, CARD_EM, &fit, 0)?);
+    }
+    let area_count = rasters.len();
+    let mut boss_chars: Vec<char> = BOSS_LINES.iter().flat_map(|m| m.chars()).filter(|&c| c != ' ').collect();
+    boss_chars.sort_unstable();
+    boss_chars.dedup();
+    let cap_unit = trajan.extent('H', 1.0)?.1;
+    for &ch in &boss_chars {
+        let cap = if ch.is_ascii_uppercase() { BOSS_BIG_CAP } else { BOSS_SMALL_CAP };
+        let em = cap / cap_unit;
+        let fit = fit_for(&trajan, em, &['H'])?;
+        rasters.push(raster(&trajan, ch, ch.to_ascii_uppercase(), em, &fit, 1)?);
     }
     // Bands: equal heights, as few as the 12 row limit allows.
     struct Piece {
@@ -507,7 +534,8 @@ pub fn cook_cards(body_bytes: &[u8]) -> Result<Cards> {
     }
     let blob: Vec<u8> = image.chunks_exact(2).map(|t| t[0] | (t[1] << 4)).collect();
     assert_eq!(blob.len(), CARD_STRIP_BYTES);
-    Ok(Cards { blob, glyphs, used })
+    let boss = glyphs.split_off(area_count);
+    Ok(Cards { blob, glyphs, boss, used })
 }
 
 /// The card strip as a grey-ramp image, 1280 x 12, for a preview.
@@ -524,10 +552,15 @@ pub fn cards_preview(cards: &Cards) -> Vec<u8> {
 /// the index of its first band (and one past the last), so a glyph costs no pointer.
 pub fn cards_rust(cards: &Cards) -> String {
     let chars: String = cards.glyphs.iter().map(|g| g.ch).collect();
+    let boss_chars: String = cards.boss.iter().map(|g| g.ch).collect();
     let mut first = vec![0usize];
+    let mut boss_first = Vec::new();
     let mut bands = String::new();
     let mut n = 0;
-    for g in &cards.glyphs {
+    for (k, g) in cards.glyphs.iter().chain(&cards.boss).enumerate() {
+        if k == cards.glyphs.len() {
+            boss_first.push(n);
+        }
         for b in &g.bands {
             bands += &format!(
                 "    CardBand {{ x: {}, v: {}, w: {}, h: {}, dx: {}, dy: {} }},\n",
@@ -535,11 +568,16 @@ pub fn cards_rust(cards: &Cards) -> String {
             );
             n += 1;
         }
-        first.push(n);
+        if k < cards.glyphs.len() {
+            first.push(n);
+        } else {
+            boss_first.push(n);
+        }
     }
     let list = |v: &[String]| v.join(", ");
+    let nums = |v: &[usize]| list(&v.iter().map(|f| f.to_string()).collect::<Vec<_>>());
     format!(
-        "/// The area and boss cards' main lines at {em} px (font_strip.rs `cook_cards`): the glyphs the\n\
+        "/// The area cards' main lines at {em} px (font_strip.rs `cook_cards`): the glyphs the\n\
          /// cards use, each cut into bands of at most {rows} rows that sit in the {bytes} byte strip\n\
          /// uploaded at ({rx}, {ry}) as {rw}x{rh} halfwords (texture pages x 0..256 at y 256, rows 244..255).\n\
          pub const CARD_BYTES: usize = {bytes};\n\
@@ -548,12 +586,20 @@ pub fn cards_rust(cards: &Cards) -> String {
          pub const CARD_CHARS: &[u8] = b\"{chars}\";\n\
          pub const CARD_ADVANCES: [u8; {count}] = [{adv}];\n\
          pub const CARD_FIRST: [u8; {firsts}] = [{first}];\n\
+         /// The boss cards' small capitals (`BOSS_LINES`): the glyphs by the source text's letter, a\n\
+         /// capital at {big} rows and a lowercase letter as the same capital at {small}. Their bands\n\
+         /// follow the area glyphs' in `CARD_BANDS`; `BOSS_FIRST` indexes them as `CARD_FIRST` does.\n\
+         pub const BOSS_CHARS: &[u8] = b\"{boss_chars}\";\n\
+         pub const BOSS_ADVANCES: [u8; {bcount}] = [{badv}];\n\
+         pub const BOSS_FIRST: [u16; {bfirsts}] = [{bfirst}];\n\
          /// Ink position in the strip, size, and where it draws from the pen and the line's top.\n\
          pub struct CardBand {{ pub x: u16, pub v: u8, pub w: u8, pub h: u8, pub dx: i8, pub dy: u8 }}\n\
          pub static CARD_BANDS: [CardBand; {nbands}] = [\n{bands}];\n\
          /// Rows from the top of a card line to its baseline.\n\
          pub const CARD_BASE: i16 = {base};\n",
         em = CARD_EM,
+        big = BOSS_BIG_CAP,
+        small = BOSS_SMALL_CAP,
         rows = CARD_ROWS,
         bytes = CARD_STRIP_BYTES,
         rx = CARD_RECT.0,
@@ -565,7 +611,12 @@ pub fn cards_rust(cards: &Cards) -> String {
         count = cards.glyphs.len(),
         adv = list(&cards.glyphs.iter().map(|g| g.advance.to_string()).collect::<Vec<_>>()),
         firsts = first.len(),
-        first = list(&first.iter().map(|f| f.to_string()).collect::<Vec<_>>()),
+        first = nums(&first),
+        boss_chars = boss_chars,
+        bcount = cards.boss.len(),
+        badv = list(&cards.boss.iter().map(|g| g.advance.to_string()).collect::<Vec<_>>()),
+        bfirsts = boss_first.len(),
+        bfirst = nums(&boss_first),
         nbands = n,
         bands = bands,
         base = CARD_BASE,

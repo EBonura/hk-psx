@@ -3284,8 +3284,9 @@ impl Actor {
                     // FalseyControl's Music state follows the entrance drop:
                     // Boss1 as an XA song for the fight.
                     crate::music::boss(true);
-                    // The same state raises the area title with FALSE_KNIGHT.
-                    crate::title_card::show_boss(crate::title_card::FALSE_KNIGHT);
+                    // The same state raises the area title with FALSE_KNIGHT: the original's
+                    // card begins to fade in 36 ticks after the landing (hkref, 60 Hz frames).
+                    crate::title_card::show_boss(crate::title_card::FALSE_KNIGHT, 36);
                     let cleared = boss.arena.kill_all_enemies();
                     self.apply_arena(boss, cleared);
                 }
@@ -3560,7 +3561,7 @@ impl Actor {
                     let waiting = boss.arena.kill_all_enemies();
                     self.apply_battle_scene(waiting);
                 }
-                Action::Title => crate::title_card::show_boss(crate::title_card::MAWLEK),
+                Action::Title => crate::title_card::show_boss(crate::title_card::MAWLEK, 0),
                 Action::RoarLock(on) => unsafe { ROAR_LOCK = on },
                 // `Music`: ApplyMusicCue EnemyBattle, as an XA song like the False
                 // Knight's Boss1.
@@ -3875,7 +3876,7 @@ impl Actor {
                 | Action::HeroDamager
                 | Action::Loop(_)
                 | Action::SnoreOff => {}
-                Action::Title => crate::title_card::show_boss(crate::title_card::BIGFLY),
+                Action::Title => crate::title_card::show_boss(crate::title_card::BIGFLY, 0),
                 Action::StartBattle => {
                     unsafe { HK_GZ_WOKEN = HK_GZ_WOKEN.saturating_add(1) }
                     let started = boss.arena.hero_entered();

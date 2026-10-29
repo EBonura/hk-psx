@@ -11,7 +11,7 @@ test. Boss names come from the same sheet (`FALSE_KNIGHT_MAIN` and so on) and
 are shown by the boss's own code.
 
 The text is drawn with the dialogue font the disc already carries, the main
-line from its own card strip at 40 px (hk-cook dialogue-art); the source's Trajan face is not cooked. It reads the
+line from its own card strip at 40 px (hk-cook dialogue-art); a boss card is drawn in small capitals of the TrajanPro-Bold the menus' capitals use. It reads the
 source scenes and cooks nothing, so it is not a cooker input. Regenerate with
 
     .venv/bin/python host/title_cards.py
@@ -87,17 +87,23 @@ def texts(source, keys):
     return out
 
 
-def check_card_font(lines):
-    """Every main line must be drawable from the glyphs `hk-cook dialogue-art` cooked for the cards
-    (host/hk-cook/src/font_strip.rs CARD_MAINS), which is all the card strip carries."""
+def check_card_font(lines, boss_lines):
+    """Every area main line must be drawable from the glyphs `hk-cook dialogue-art` cooked for the cards
+    (host/hk-cook/src/font_strip.rs CARD_MAINS) and every line of a boss card from the boss small capitals
+    (BOSS_LINES), which is all the card strip carries."""
     import re
     layout = (ROOT / 'data/font_layout.rs').read_text()
     chars = re.search(r'CARD_CHARS: &\[u8\] = b"([^"]*)"', layout)
-    if not chars:
-        raise ValueError('data/font_layout.rs has no CARD_CHARS: run hk-cook dialogue-art first')
+    boss = re.search(r'BOSS_CHARS: &\[u8\] = b"([^"]*)"', layout)
+    if not chars or not boss:
+        raise ValueError('data/font_layout.rs has no CARD_CHARS or BOSS_CHARS: run hk-cook dialogue-art first')
     missing = sorted({c for _, main, _ in lines for c in main if c != ' ' and c not in chars[1]})
     if missing:
         raise ValueError(f'the card font has no glyph for {missing}: add the title to CARD_MAINS in '
+                         'host/hk-cook/src/font_strip.rs and cook again')
+    missing = sorted({c for t in boss_lines for part in t for c in part if c != ' ' and c not in boss[1]})
+    if missing:
+        raise ValueError(f'the boss card font has no glyph for {missing}: add the title to BOSS_LINES in '
                          'host/hk-cook/src/font_strip.rs and cook again')
 
 
@@ -126,12 +132,13 @@ def main():
     areas, refused = survey(source, SCENE_TABLE)
     events = sorted({a['event'] for a in areas}) + [b for b in BOSSES]
     lines = texts(source, events)
-    check_card_font(lines)
+    check_card_font(lines[:len(events) - len(BOSSES)], lines[len(events) - len(BOSSES):])
     (ROOT / 'data/title_cards.rs').write_text(rust(areas, events, lines))
     (ROOT / '.hkpsx/title-cards.json').write_text(json.dumps({'areas': areas, 'refused': refused,
         'titles': dict(zip(events, lines)),
-        'limitations': ['Drawn in the dialogue font, the main line in its own 40 px card strip; the source Trajan face, ',
-                        'its ornaments and its exact timing curves are not presented.']}, indent=2) + '\n')
+        'limitations': ['Drawn in the dialogue font, an area title\'s main line in its own 40 px card strip and a boss title in ',
+                        'two sizes of capitals; the source area title\'s Trajan face, its ornaments and its exact timing ',
+                        'curves are not presented.']}, indent=2) + '\n')
     print(f'{len(areas)} area title controllers, {len(events)} titles: '
           + ', '.join(' '.join(x for x in l if x) for l in lines), flush=True)
 
