@@ -7083,6 +7083,25 @@ impl EnemyWorld {
                 }
                 verts
             };
+            // A frame of the room's actor bank (game/src/actor_bank.rs) draws the parts of its sprite from the bank's bytes.
+            if base as u16 == crate::actor_bank::marker() {
+                let (sprite, _) =
+                    crate::actor_bank::frame_sprite(core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4)));
+                let flash = if actor.health.dead { 0 } else { actor.health.flash };
+                crate::actor_bank::pieces(sprite, |piece| {
+                    let verts = project(piece.bounds);
+                    if verts.iter().all(|v| v.0 < 0)
+                        || verts.iter().all(|v| v.0 >= 320)
+                        || verts.iter().all(|v| v.1 < 0)
+                        || verts.iter().all(|v| v.1 >= 240)
+                    {
+                        return;
+                    }
+                    assert!(draws.can_push(piece.key), "visible enemy cache budget exceeded");
+                    draws.push_part(piece.key, verts, flash, piece.clut, (piece.width, piece.height));
+                });
+                continue;
+            }
             // An actor frame past one 64x64 animation slot binds a rectangle of
             // them, the way NPC art already does, and each tile is its own quad
             // over its own share of the frame's world box. The grid rides in the
@@ -7643,6 +7662,14 @@ struct Draw {
     verts: [(i16, i16); 4],
     /// `health.flash` of the actor this frame belongs to; 0 draws no flash.
     flash: u8,
+    /// A bank part (`texture` is its animation-cache key, at or above `actor_bank::KEY_BASE`): its palette's CLUT word and size.
+    clut: u16,
+    size: (u8, u8),
+}
+/// Whether `texture` is an actor bank part's key rather than a texture id of the room.
+#[inline(always)]
+fn is_part(texture: u16) -> bool {
+    texture >= crate::actor_bank::KEY_BASE
 }
 pub struct Draws {
     entries: [Option<Draw>; MAX_DRAWS],
@@ -7654,16 +7681,22 @@ impl Draws {
     #[inline(never)]
     fn can_push(&self, texture: u16) -> bool {
         self.len < MAX_DRAWS && (self.keys < MAX_VISIBLE
-            || !crate::render::streamed(texture as usize)
+            || !(is_part(texture) || crate::render::streamed(texture as usize))
             || self.entries[..self.len].iter().flatten().any(|d| d.texture == texture))
     }
     fn push(&mut self, texture: u16, verts: [(i16, i16); 4], flash: u8) {
-        let new_key = crate::render::streamed(texture as usize)
+        self.push_part(texture, verts, flash, 0, (0, 0));
+    }
+    /// A draw of a room texture (`clut` and `size` unused) or of an actor bank part.
+    fn push_part(&mut self, texture: u16, verts: [(i16, i16); 4], flash: u8, clut: u16, size: (u8, u8)) {
+        let new_key = (is_part(texture) || crate::render::streamed(texture as usize))
             && !self.entries[..self.len].iter().flatten().any(|d| d.texture == texture);
         self.entries[self.len] = Some(Draw {
             texture,
             verts,
             flash,
+            clut,
+            size,
         });
         self.len += 1;
         if new_key {
@@ -7673,7 +7706,7 @@ impl Draws {
     pub fn append_needed(&self, needed: &mut [u16], len: &mut usize) {
         for entry in self.entries.iter().flatten() {
             // A texture in the scene's pages is already in VRAM.
-            if !crate::render::streamed(entry.texture as usize) {
+            if !is_part(entry.texture) && !crate::render::streamed(entry.texture as usize) {
                 continue;
             }
             if needed[..*len].contains(&entry.texture) {
@@ -7686,6 +7719,10 @@ impl Draws {
     }
     pub fn draw(&self) -> u32 {
         for entry in self.entries.iter().flatten() {
+            if is_part(entry.texture) {
+                crate::actor_bank::draw_piece(entry.texture, entry.clut, entry.size.0, entry.size.1, entry.verts, entry.flash);
+                continue;
+            }
             crate::render::texture(entry.texture as usize, entry.verts, (128, 128, 128));
             if entry.flash != 0 {
                 crate::render::texture_flash(

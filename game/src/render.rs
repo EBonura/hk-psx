@@ -371,6 +371,7 @@ pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>)
         }
         ACTIVE_BANK = bank;
         assert!(room.counts[1] <= MAX_TEXTURES);
+        crate::actor_bank::bind(room);
         DRAW_COUNT = room.counts[2];
         assert!(DRAW_COUNT <= MAX_DRAWS);
         TEXTURE_COUNT = room.counts[1];
