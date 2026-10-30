@@ -43,6 +43,11 @@ pub const FX_COCOON_CAP_LEFT: i64 = FX_OWNER | 0x22;
 pub const FX_SCUTTLER_BLOOD: i64 = FX_OWNER | 0x23;
 /// A grub jar's `Pt Glass L` and `Pt Glass S` (anchor: the jar).
 pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
+/// The False Knight's landing and slam dust, and the mist along his arena's floor.
+pub const FX_FK_DUST: i64 = FX_OWNER | 0x40;
+pub const FX_FK_MIST: i64 = FX_OWNER | 0x41;
+/// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
+pub const FK_SCENE_ID: i64 = 11;
 
 /// Where the cocoon's bursts leave it, from the cocoon's origin: the `Splat Sprite`'s place, and
 /// the `Cocoon Cap`'s local position (Tutorial_01, level6).
@@ -64,10 +69,12 @@ pub struct Kinds {
     pub rocks: bool,
     /// A Breakable stands here: its hits raise dust.
     pub breakables: bool,
+    /// The False Knight's arena: his landings and slams raise dust and mist.
+    pub boss: bool,
 }
 impl Kinds {
     pub fn any(self) -> bool {
-        self.door || self.cocoon || self.jar || self.rocks || self.breakables
+        self.door || self.cocoon || self.jar || self.rocks || self.breakables || self.boss
     }
 }
 
@@ -770,7 +777,60 @@ pub fn collect(
     if kinds.jar {
         collect_jar(source, sc, scene_id, gravity, c)?;
     }
+    if kinds.boss {
+        collect_boss(scene_id, gravity, c)?;
+    }
     Ok(())
+}
+
+/// The False Knight's dust (hkref frames of the fight: a grey-white cloud at every landing and slam,
+/// heavy white mist along the floor), made of the soft glow cells the door's dust uses, so the
+/// arena's effect art (nearly full) takes no new texels. The dust is a fan of puffs that rise and
+/// spread from the feet, the mist a few wide, faint discs that drift along the floor and last.
+fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
+    push_glow(
+        c,
+        scene_id,
+        FX_FK_DUST,
+        &Glow {
+            count: 8,
+            life: [34, 50],
+            angle: Some([10.0, 170.0]),
+            speed: [1.5, 5.5],
+            spread: [3.0, 0.2],
+            size: [2.4, 2.4],
+            cell: 0.9,
+            grow: 2.0,
+            alpha: 0.5,
+            hold: 0.25,
+            tint: [215.0, 222.0, 235.0],
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0; 3],
+        "False Knight landing dust",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_FK_MIST,
+        &Glow {
+            count: 7,
+            life: [150, 210],
+            velocity: [0.5, 0.1],
+            spread: [9.0, 0.3],
+            size: [9.0, 3.2],
+            cell: 0.9,
+            grow: 1.2,
+            alpha: 0.2,
+            hold: 0.6,
+            tint: [200.0, 215.0, 240.0],
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0; 3],
+        "False Knight floor mist",
+    )
 }
 
 fn named_go(sc: &Scene, name: &str) -> Option<i64> {

@@ -2068,7 +2068,8 @@ fn collect(source: &Source, metadata: &J) -> Result<Collected> {
         if stalactites {
             stalactite_scenes.push((scene_id, jstr(desc, "file")));
         }
-        let kinds = fx::detect(&sc);
+        let mut kinds = fx::detect(&sc);
+        kinds.boss = scene_id == fx::FK_SCENE_ID;
         if kinds.any() {
             fx_scenes.push((scene_id, jstr(desc, "file"), kinds));
         }

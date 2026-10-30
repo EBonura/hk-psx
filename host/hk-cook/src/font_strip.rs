@@ -485,7 +485,7 @@ pub fn cook_cards(body_bytes: &[u8], caps_bytes: &[u8]) -> Result<Cards> {
         let cap = if ch.is_ascii_uppercase() { BOSS_BIG_CAP } else { BOSS_SMALL_CAP };
         let em = cap / cap_unit;
         let fit = fit_for(&trajan, em, &['H'])?;
-        rasters.push(raster(&trajan, char::from(ch as u8 | 0x80), ch.to_ascii_uppercase(), em, &fit, 1)?);
+        rasters.push(raster(&trajan, char::from(ch as u8 | 0x80), ch.to_ascii_uppercase(), em, &fit, 0)?);
     }
     if rasters.windows(2).any(|w| w[0].ch >= w[1].ch) {
         return err("the card glyphs are not sorted by key: the guest binary searches them");
