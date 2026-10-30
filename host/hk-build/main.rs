@@ -1809,8 +1809,17 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
     };
     let plain: Vec<&routes::Route> =
         all_routes.iter().filter(|r| r.journey.is_none() && selected(r)).collect();
-    let chain: Vec<&routes::Route> =
-        all_routes.iter().filter(|r| r.journey.is_some() && selected(r)).collect();
+    // A journey segment boots from the card the previous one wrote: selecting one runs the ones before it.
+    let last_journey = routes::last_journey_picked(&all_routes, |r| selected(r));
+    let chain: Vec<&routes::Route> = all_routes
+        .iter()
+        .filter(|r| r.journey.is_some() && (selected(r) || routes::needs_card_from(r, last_journey)))
+        .collect();
+    let brought: Vec<&str> =
+        chain.iter().filter(|r| !selected(r)).map(|r| r.name.as_str()).collect();
+    if !brought.is_empty() {
+        println!("Also running {} first: a journey segment boots from the card the one before it wrote.", brought.join(", "));
+    }
     let jobs = options.jobs.unwrap_or(plain.len()).max(1);
     let gate = if all_routes.iter().any(|r| r.cuts.is_some()) {
         Some(gate_binary(options)?)
@@ -2266,14 +2275,23 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
     std::fs::create_dir_all(&out)?;
     let only: Option<Vec<String>> =
         std::env::var("HK_VALIDATE_ONLY").ok().map(|list| list.split(',').map(str::to_owned).collect());
-    let selected: Vec<routes::Route> = routes::load(root)?
-        .into_iter()
+    let everything = routes::load(root)?;
+    let named = |r: &routes::Route| {
+        only.as_ref()
+            .is_none_or(|o| o.iter().any(|x| *x == r.name || (r.journey.is_some() && x == "journey")))
+    };
+    // A journey segment boots from the card the previous one wrote: selecting one runs the ones before it.
+    let last_journey = routes::last_journey_picked(&everything, |r| r.cuts.is_some() && named(r));
+    let selected: Vec<routes::Route> = everything
+        .iter()
         .filter(|r| r.cuts.is_some())
-        .filter(|r| {
-            only.as_ref()
-                .is_none_or(|o| o.iter().any(|x| *x == r.name || (r.journey.is_some() && x == "journey")))
-        })
+        .filter(|r| named(r) || routes::needs_card_from(r, last_journey))
+        .cloned()
         .collect();
+    let brought: Vec<&str> = selected.iter().filter(|r| !named(r)).map(|r| r.name.as_str()).collect();
+    if !brought.is_empty() {
+        println!("Also running {} first: a journey segment boots from the card the one before it wrote.", brought.join(", "));
+    }
     let jobs = options.jobs.unwrap_or(2).max(1);
     let mut failed = Vec::new();
     let mut judge = |route: &routes::Route, run: routes::ClosedRun| -> Result<Option<PathBuf>> {

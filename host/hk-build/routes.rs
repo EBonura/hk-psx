@@ -192,6 +192,18 @@ pub fn load(root: &Path) -> Result<Vec<Route>> {
     Ok(routes)
 }
 
+/// The last journey segment `picked` selects. A segment boots from the card the one before it
+/// wrote, so selecting segment N means running segments 1..N too (see [`needs_card_from`]).
+pub fn last_journey_picked(all: &[Route], picked: impl Fn(&Route) -> bool) -> Option<u32> {
+    all.iter().filter(|r| picked(r)).filter_map(|r| r.journey).max()
+}
+
+/// True when `route` is a journey segment the selection did not name but that an earlier-numbered
+/// pick needs for its card.
+pub fn needs_card_from(route: &Route, last_picked: Option<u32>) -> bool {
+    matches!((route.journey, last_picked), (Some(n), Some(last)) if n < last)
+}
+
 /// One scene load seen by the baseline replay, in port-1 polls.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Load {
@@ -853,6 +865,18 @@ mod tests {
         let tape = Tape::parse(&hold_buttons(&bytes, 1, 3, 4).unwrap()).unwrap();
         assert_eq!((0..3).map(|i| tape.mask(i)).collect::<Vec<_>>(), vec![0, 0xc, 4]);
         assert!(hold_buttons(&bytes, 2, 4, 4).is_err());
+    }
+
+    #[test]
+    fn a_picked_journey_segment_brings_the_segments_whose_cards_it_boots_from() {
+        let seg = |name: &str, journey: Option<u32>| Route { name: name.into(), journey, ..Route::default() };
+        let all = [seg("plain", None), seg("a", Some(1)), seg("b", Some(2)), seg("c", Some(3))];
+        let last = last_journey_picked(&all, |r| r.name == "c");
+        assert_eq!(last, Some(3));
+        let run: Vec<&str> = all.iter().filter(|r| r.name == "c" || needs_card_from(r, last)).map(|r| r.name.as_str()).collect();
+        assert_eq!(run, ["a", "b", "c"], "the plain route and later segments stay out");
+        assert_eq!(last_journey_picked(&all, |r| r.name == "plain"), None);
+        assert!(!needs_card_from(&all[0], last), "a plain route has no card chain");
     }
 
     #[test]
