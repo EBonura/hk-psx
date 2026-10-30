@@ -166,7 +166,8 @@ impl State {
         let mut events = Events::default();
         match self.phase {
             Phase::Idle => {
-                if !(up_pressed && grounded && can_control) {
+                if !(grounded && can_control) {
+                    unsafe { crate::dialogue::HINT_ONLY = false };
                     return events;
                 }
                 let bench = crate::world::benches(region).find(|b: &Bench| {
@@ -175,8 +176,14 @@ impl State {
                         && b.bounds[1] <= hero_body[3]
                         && b.bounds[3] >= hero_body[1]
                 });
+                // The original shows its `Interact` hint at a bench in reach as at an NPC.
+                unsafe { crate::dialogue::HINT_ONLY = bench.is_some() };
+                if !up_pressed {
+                    return events;
+                }
                 if let Some(bench) = bench {
                     events.sat = true;
+                    unsafe { crate::dialogue::HINT_ONLY = false };
                     self.phase = Phase::Sitting(0);
                     self.seat = bench.seat;
                     self.clip_base = bench.clip_base;

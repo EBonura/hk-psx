@@ -601,6 +601,9 @@ pub fn prepare(
             interact_hint(camera);
         } else {
             prompt_fade_out(camera);
+            if unsafe { HINT_ONLY } {
+                interact_hint(camera);
+            }
         }
         #[cfg(feature = "card-diag")]
         crate::card_diag::overlay();
@@ -1066,6 +1069,8 @@ fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &'static str) {
     };
     draw_prompt(camera, p, label, ramp(age.min(255) as u8, 0, 24), ramp(age.min(255) as u8, 0, 14), age);
 }
+/// The Knight stands at a bench (`bench::in_reach`): the hint alone, with no marker over the bench.
+pub(crate) static mut HINT_ONLY: bool = false;
 /// Where the Knight is (world, Q16), for the hint under him.
 pub(crate) static mut HERO: [i32; 2] = [0; 2];
 /// The original's `Interact` hint while an NPC or a sign is in reach (hkref frames of Dirtmouth): a white
