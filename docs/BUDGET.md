@@ -9,15 +9,15 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 | --- | ---: |
 | Linked code |784,276|
 | Code-to-data alignment |12|
-| Linked data, including menu and HUD |280,904|
+| Linked data, including menu and HUD |281,128|
 | BSS, including shared scene arena and runtime pools |805,908|
-| Total static span |1,871,108|
+| Total static span |1,871,332|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |111,100|
+| Unallocated gap before reserved stack |110,876|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |2,556|
+| Free RAM below the module pool |2,332|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -150,7 +150,7 @@ The 2026-10-25 ability effects pass (docs/ABILITY_EFFECTS.md: the Knight's dash 
 The 2026-10-25 opening-movies hand-off (docs/INTRO.md: the movie program is called from the running game and returns into it, instead of chain-loading `PSX.EXE` and booting twice; the poem and its piano play before the movies) took linked code from 785,684 to 785,232 bytes: the mailbox settings copy, `take` and the resume path in `main` are gone, `intro::play` and its 156-byte enter/leave stub replace `launch`; 9,472 bytes are free below the module pool (9,008 on the main it was cut from). The three `#[inline(never)]` marks on `audio::set_volume`, `music::set_volume` and `music::apply` stay: without them the same tree linked 1,004 bytes larger. The program itself is in the boot art chunk and costs no RAM; its movie buffers (412 KB for the Prologue) are the scene arena, idle between the title and the first scene's load.
 The 2026-10-25 first-scene prefetch (docs/INTRO.md: the first scene's sound banks, ambience clips, sound effects, coverage, effect art and atlases load while the opening poem plays, so only the scene, its metadata and its code wait for the movies) took linked code from 785,232 to 785,136 bytes (-96) and left linked data and BSS where they were, so 9,568 bytes are free below the module pool (9,472 before). The shipping disc's new code is `intro::play`'s three calls and the poem's step (`intro::tick`, `call_program`, about 400 bytes), `Cache::preload` and the early branch of `admit_scenes` (about 150), and a call at each of the admission's checkpoints (`disc::checkpoint`, 40); it is paid for by `prepare_ambience` (4,108 bytes, which `main` had inlined in a speed-optimised copy of about 4,540) going out of line under `optimize(size)` for the build that has the poem, and by `prepare_effect_art` under `optimize(size)` there as well. The route-input twin and every other build without the `intro` feature link the same bytes as before (the twin's disc is byte for byte the main's). The hand-off block is the last 192 bytes of RAM above the game's initial stack pointer (the 256 bytes over it are nobody's), no linked data.
 
-Static data ends at `0x801d8d04`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d8de4`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -604,3 +604,5 @@ The 2026-10-30 boss presentation (the False Knight's landing and slam dust, the 
 The 2026-10-30 False Knight arena split (the scene's stream after its alpha covers, 219,136 bytes of the boss's streamed frames, is a chunk of its own that the room reads after the gate; docs/SEAMLESS.md) took the free RAM below the module pool on the shipping build from 5,676 to 3,044 (-2,632). Both figures are `ship-final.sh` builds, main 795c877 and this tree: linked code 781,252 to 783,840 (+2,588), linked data unchanged at 280,872, BSS 805,844 to 805,900 (+56). The code is the tail's reader (a state machine in a few words of statics: `tail_arm`, `start_tail`, `land_tail`, `tail_service`, `tail_finish`, and `Gap` in room_decode.rs) and the split's tables, built for size; the retries (three tries per burst or check) stay, a real drive fails reads.
 
 The 2026-10-30 NPC interact hint (the original's white up arrow and the word `Interact` under the Knight's feet while an NPC is in reach, `dialogue::interact_hint`: four flat boxes and the dialogue font; the hero's position reaches `dialogue::prepare` through the `HERO` static) took linked code from 783,840 to 784,276 bytes and linked data from 280,872 to 280,904 (the four boxes of the packet table), so free RAM below the module pool on the shipping build went from 3,044 to 2,556 (-488). Main's arena split had already taken free RAM from 5,676 to 3,044 before this pass.
+
+The 2026-10-30 light cells (docs/EFFECTS.md round 6: the soft disc, the bar and the petal cut at 32 texels, bars and petals as long cells of the rows they light, the cocoon's splat as eight petals) are cook only: the guest is main's, so linked code, BSS and the pool are unchanged, and the effects' VRAM rectangles hold the same 7,680 bytes (the largest scene's effect art, Crossroads_05, is 7,032). Only linked data moved, by 224 bytes (280,904 to 281,128: the cooked art tables are sized by the widest scene), so free RAM below the module pool on the shipping build went from 2,556 to 2,332. A first version that generated the disc into an animation slot and drew needles as gouraud polygons cost 3.6 KB of resident code and was dropped. The animation cache's per-frame key count (24 allowed) peaked at 18 in Hornet's fight and 14 in the False Knight's on a probe build.

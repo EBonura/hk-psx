@@ -71,6 +71,21 @@ lost every soft style and drew its smoke as dithered coverage (Tutorial_01's "we
 
 `.hkpsx/break-effects/report.json` lists, per scene, which owners fit and why the others were dropped.
 
+## Round 6 (2026-10-30): light cells at 32 texels
+
+The soft disc, the bar and the petal are cooked light (`glow_image`): grey cells that the style's tint colours. They were cut at the
+size the style draws them at (13 to 27 texels, drawn up to a hundred pixels across), which made hard blocks. They are now cut at the
+largest cell, 32 texels along (`DISC_CELL`, `art_size`): the disc whole, and a bar or a petal only the rows it lights
+(`art_bank`: `fx:glow_bar` rows 13 to 19 of 32, `fx:glow_leaf` rows 7 to 25; the cells are no longer square, which the art
+records already allowed). A bar quad is half as wide as before to keep its lit band at about a pixel and a half. The cocoon's `Splat Effect`
+sprite (one 104 pixel quad of two frames) is now eight separate petals flung up and out of it (`Glow::new("leaf")`), each a drawn
+quad. The strike's pool of light is smaller and dimmer (5.5 by 3.8 units at 0.22, from 6.5 by 4.5 at 0.4), its core smaller (0.8
+units at 0.75) and its needles shorter (stretch 0.15), after same-moment pairs against hkref (review/door-pair-final.png).
+Nothing here is resident: the cells ride the scene's effect chunk and land in the same VRAM rectangles (the largest scene, Crossroads_05,
+holds 7,032 of the 7,552 bytes); the guest is unchanged. A guest that generated the disc into an animation slot and drew needles as
+gouraud polygons was tried first and cost 3.6 KB of resident code, which the budget could not spare; the animation cache's
+working set peaked at 18 unique keys a frame (Hornet's fight), 14 in the False Knight's, so a slot-resident disc fits when the RAM does.
+
 ## Memory
 
 Nothing here is resident per effect. The tables of a scene (`HKFX0001` chunk: styles, emitters, art, frames) are

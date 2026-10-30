@@ -22,6 +22,8 @@ use super::*;
 use crate::cook::{native_sprite, tk_sprite};
 
 pub const FX_OWNER: i64 = 0xD000;
+/// World units a light cell is cut for: 32 texels, the most a cell holds.
+const DISC_CELL: f64 = 2.2;
 /// `Dust Hit Med`, where the nail met an object (anchor: the hit).
 pub const FX_HIT_DUST: i64 = FX_OWNER | 0x01;
 /// The Great Door's `Door_dust` (cooked in place) and its `Rubble Fall Short`.
@@ -405,7 +407,7 @@ fn glow_image(kind: &str) -> hk_pil::Image {
                     along * across
                 }
                 // A petal: widest at a third of its length, pointed ends, lit along its middle.
-                "lens" => {
+                "lens" | "leaf" => {
                     let w = 0.55 * (1.0 - u * u).max(0.0) * (1.0 - 0.25 * u);
                     if w <= 0.0 || v.abs() >= w {
                         0.0
@@ -507,20 +509,6 @@ fn light_frames(frames: &[(hk_pil::Image, [f64; 4])]) -> Vec<(hk_pil::Image, [f6
         .collect()
 }
 
-/// The cocoon's `Splat Effect` (tk2d resources.assets:21014, clip `Splat` at 24 frames a second, tinted
-/// cyan, scale 2 by 3): the aqua leaves it throws.
-fn splat_frames(source: &Source) -> Result<Vec<(hk_pil::Image, [f64; 4])>> {
-    let frames = tk2d_ids(source, "resources.assets", 21014, &[75, 74])?;
-    let scaled = frames
-        .into_iter()
-        .map(|(im, b)| {
-            let (w, h) = (im.width * 2, im.height * 3);
-            (im.resize(w, h, Filter::Lanczos), [b[0] * 2.0, b[1] * 3.0, b[2] * 2.0, b[3] * 3.0])
-        })
-        .collect::<Vec<_>>();
-    Ok(light_frames(&scaled))
-}
-
 /// `push_glow` with the art of a clip or a sprite: `frames` are light cells (`light_frames`) and `size`
 /// is in world units whatever the sheet's own size.
 #[allow(clippy::too_many_arguments)]
@@ -538,6 +526,7 @@ fn push_glow_art(
     let key = key.to_string();
     let texture = format!("fx:{key}");
     let (sheet_image, side) = sheet(frames)?;
+    let width_scale = if g.art == "bar" { 0.5 } else { 1.0 };
     let burst = Burst {
         count: g.count,
         life: g.life,
@@ -548,7 +537,9 @@ fn push_glow_art(
         bounce: g.bounce,
         life_loss: 0.0,
         spin: g.spin,
-        size: [g.size[0] / side, g.size[1] / side],
+        // A bar keeps the rows it lights (see `art_bank`), which are a fifth of the canvas: half the
+        // quad's old width puts that band at about a pixel and a half.
+        size: [g.size[0] * width_scale / side, g.size[1] * width_scale / side],
         radius: 0.4,
         splash: None,
         fade_from: 1.0,
@@ -557,7 +548,9 @@ fn push_glow_art(
     let mut style = burst_style(&burst, side, gravity, frames.len() as i64, &texture)?;
     // The art is cut for `cell` world units and the quad drawn larger.
     let scale = 1.0;
-    style.art_size = q(g.cell.min(g.size[0].max(g.size[1])))?;
+    // The cells of the light the cook draws itself are cut at the largest size, 32 texels along: a smooth
+    // falloff stretches without showing its texels, and a bar or petal keeps only its lit rows.
+    style.art_size = if matches!(g.art, "disc" | "bar" | "leaf") { q(DISC_CELL)? } else { q(g.cell.min(g.size[0].max(g.size[1])))? };
     style.collision = g.collision;
     style.additive = 1 | i64::from(g.front) << 1 | i64::from(g.anim) << 2;
     style.stretch = q(g.stretch)?;
@@ -995,9 +988,9 @@ fn collect_hits(
         &Glow {
             count: 1,
             life: [20, 20],
-            size: [6.5, 4.5],
+            size: [5.5, 3.8],
             cell: 0.9,
-            alpha: 0.4,
+            alpha: 0.22,
             hold: 0.25,
             tint: [190.0, 175.0, 255.0],
             ..Glow::new("disc")
@@ -1058,9 +1051,9 @@ fn push_nail_strike(
         &Glow {
             count: 1,
             life: [3, 3],
-            size: [1.1, 1.1],
+            size: [0.8, 0.8],
             cell: 0.6,
-            alpha: 1.0,
+            alpha: 0.75,
             hold: 0.4,
             tint,
             front: true,
@@ -1084,7 +1077,7 @@ fn push_nail_strike(
             alpha: 1.0,
             hold: 0.4,
             tint,
-            stretch: 0.26,
+            stretch: 0.15,
             front: true,
             ..Glow::new("bar")
         },
@@ -1267,30 +1260,29 @@ fn collect_cocoon(
         "spatter_blue",
         "Spatter Blue x50",
     )?;
-    // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second): the
-    // aqua leaves that burst out of it.
-    let splat = splat_frames(source)?;
-    push_glow_art(
+    // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second) is a burst
+    // of 12 to 16 separate aqua leaves (eight here: each is a drawn quad and the route's frame time counts them) that fan up and out of it: leaves here, each a tapered petal
+    // (a petal cell cut 32 texels long) flown outward along its own length.
+    push_glow(
         c,
         scene_id,
         FX_COCOON,
         &Glow {
-            count: 1,
-            life: [15, 15],
-            size: [7.0, 7.0],
-            cell: 1.8,
-            alpha: 0.9,
+            count: 8,
+            life: [12, 18],
+            angle: Some([10.0, 170.0]),
+            speed: [7.0, 15.0],
+            size: [1.0, 1.4],
+            alpha: 0.95,
             hold: 0.5,
             tint: [0.0, 228.0, 255.0],
+            stretch: 0.02,
             front: true,
-            anim: true,
-            ..Glow::new("splat")
+            ..Glow::new("leaf")
         },
-        &splat,
-        "splat_effect",
         gravity,
         COCOON_BODY,
-        "Splat Effect",
+        "Splat Effect leaves",
     )?;
     // The nail's own strike: `slashEffects` are `Slash Impact R` and `Strike Nail R`.
     push_nail_strike(

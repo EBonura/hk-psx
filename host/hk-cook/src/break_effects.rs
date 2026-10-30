@@ -2667,6 +2667,15 @@ const MAX_CELL: i64 = 32;
 /// `art_bank`: every style's cells cut from its source sheet (`textures`, in
 /// first-use order) at its projected size, one joint palette per opacity level.
 fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank> {
+    if textures.is_empty() {
+        return Ok(Bank {
+            blob: Vec::new(),
+            uploads: Vec::new(),
+            art: Vec::new(),
+            frames: Vec::new(),
+            sheet: Image::new(Mode::Rgba, 1, 1),
+        });
+    }
     let mut cells: Vec<Image> = Vec::new();
     let mut opaque_cells: Vec<bool> = Vec::new();
     let mut families: Vec<(String, usize, usize)> = Vec::new();
@@ -2686,17 +2695,26 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             .unwrap_or(0);
         let target = target_size(biggest as f64) as usize;
         let (w, h) = (im.width, im.height / count);
+        // A thin or petal-shaped glow keeps only the rows it lights, a long cell of fewer rows
+        // (fx.rs `glow_image`): the canvas rows `lo` to `hi` of 32.
+        let (lo, hi) = match sid.as_str() {
+            "fx:glow_bar" => (13, 19),
+            "fx:glow_leaf" => (7, 25),
+            _ => (0, 32),
+        };
+        let rows = ((hi - lo) * target).div_ceil(32).max(1);
         let start = cells.len();
         let opaque = group.iter().all(|s| s.opaque);
         opaque_cells.extend(std::iter::repeat(opaque).take(count));
         for n in 0..count {
+            let top = (count - 1 - n) * h;
             let cell = im.crop_int(
                 0,
-                ((count - 1 - n) * h) as i64,
+                (top + lo * h / 32) as i64,
                 w as i64,
-                ((count - n) * h) as i64,
+                (top + hi * h / 32) as i64,
             );
-            cells.push(cell.resize(target, target, Filter::Lanczos));
+            cells.push(cell.resize(target, rows, Filter::Lanczos));
         }
         families.push((sid.clone(), start, count));
     }
@@ -2869,7 +2887,8 @@ fn scene_art(
             }
             let mut textures: Vec<String> = Vec::new();
             for s in &trimmed {
-                if !textures.contains(&s.texture) {
+                // A style drawn without art (fx.rs `SHAPE_*`) has no texture.
+                if !s.texture.is_empty() && !textures.contains(&s.texture) {
                     textures.push(s.texture.clone());
                 }
             }
