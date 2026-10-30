@@ -5053,6 +5053,26 @@ pub struct FoeSenses {
 }
 /// `FoeSenses::boss_dx` when the scene has no live False Knight.
 pub const FOE_NO_BOSS: i32 = i32::MAX;
+/// Where the False Knight stands (Q16 world units), his body box from there, his Head box being `hk_sim::false_knight::HEAD_BOX`,
+/// and bit 0: the armour refuses a nail, bit 1: he rages (a stagger won in a rage never ends it). Read-only, for walk expressions.
+#[no_mangle]
+pub static mut HK_FK_X: i32 = 0;
+#[no_mangle]
+pub static mut HK_FK_Y: i32 = 0;
+#[no_mangle]
+pub static mut HK_FK_BODY: [i32; 4] = [0; 4];
+#[no_mangle]
+pub static mut HK_FK_FLAGS: u32 = 0;
+/// The slam waves, `{x, dir}` a slot: x in Q16 world units, dir +1 right and -1 left, 0 for a free slot or a stopped wave.
+#[no_mangle]
+pub static mut HK_WAVE: [i32; 2 * WAVES] = [0; 2 * WAVES];
+fn fk_raging(phase: hk_sim::false_knight::Phase) -> bool {
+    use hk_sim::false_knight::Phase::*;
+    matches!(
+        phase,
+        RagePause | RageJumpAntic | RageAir | RageLand | RageAntic | RageSlam | RageTurn | RageEnd
+    )
+}
 /// What the False Knight is doing, for a walker deciding whether to strike or to give ground:
 /// 1 winding up an attack, 2 attacking or in the air, 3 armour rolling or opening, 4 head
 /// exposed, 0 anything else (idle, landing, recovering: the armour can be struck).
@@ -5456,7 +5476,8 @@ impl EnemyWorld {
             nearest: (FOE_NO_BOSS, 0),
         };
         let (mut left, mut right) = (i32::MAX, i32::MAX);
-        for a in self.actors.iter().flatten() {
+        for (slot, a) in self.actors.iter().enumerate() {
+            let Some(a) = a else { continue };
             if a.scene != scene || a.health.dead || matches!(a.runtime, Runtime::Static { .. }) {
                 continue;
             }
@@ -5485,12 +5506,30 @@ impl EnemyWorld {
             if let Runtime::FalseKnight(boss) = &a.runtime {
                 senses.boss_dx = dx;
                 senses.boss_phase = fk_phase_code(boss.controller.phase());
+                // The raw values a walk's expressions derive the rest from (swing reach against his body or Head,
+                // when a nail is refused, when he rages): where he is, his body box from there, and two flags.
+                unsafe {
+                    HK_FK_X = a.x;
+                    HK_FK_Y = a.y;
+                    if let Some(spec) = self.placed_spec[slot] {
+                        HK_FK_BODY = a.local_bounds(spec);
+                    }
+                    HK_FK_FLAGS = u32::from(boss.controller.invincible()) | u32::from(fk_raging(boss.controller.phase())) << 1;
+                }
             }
             if (a.y - y).abs() > FOE_BAND || dx.abs() > FOE_RANGE {
                 continue;
             }
             let side = if dx < 0 { &mut left } else { &mut right };
             *side = (*side).min((dx.abs() - FOE_REACH).max(0));
+        }
+        // The slam waves: x and direction (0 when the slot is empty or the wave has stopped).
+        for (i, wave) in self.waves.iter().enumerate() {
+            let live = wave.filter(|(wave_scene, wave, _)| usize::from(*wave_scene) == scene && wave.moving);
+            unsafe {
+                HK_WAVE[2 * i] = live.map_or(0, |(_, wave, _)| wave.x);
+                HK_WAVE[2 * i + 1] = live.map_or(0, |(_, wave, _)| i32::from(wave.dir));
+            }
         }
         let none = |gap: i32| if gap == i32::MAX { 0 } else { gap };
         senses.left = none(left);
