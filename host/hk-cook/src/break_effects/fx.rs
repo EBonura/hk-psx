@@ -838,18 +838,18 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
     // discs of the one 32 texel glow cell (shared with the dust and the mist) stay soft where one huge
     // quad drew hard steps; they fly out slowly (a particle that starts in place and never moves did not
     // last) and rise.
-    for (dx, count) in [(-9.0, 14), (0.0, 20), (9.0, 14)] {
+    for (dx, count) in [(-9.0, 7), (0.0, 10), (9.0, 7)] {
         push_glow(
             c,
             scene_id,
             FX_FK_FIRE,
             &Glow {
                 count,
-                life: [36, 52],
+                life: [24, 34],
                 angle: Some([40.0, 140.0]),
                 speed: [0.5, 4.0],
                 spread: [3.0, 1.0],
-                size: [2.6, 4.6],
+                size: [2.4, 4.0],
                 cell: 2.2,
                 grow: 1.3,
                 alpha: 0.5,
@@ -867,8 +867,8 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         scene_id,
         FX_FK_FIRE,
         &Glow {
-            count: 8,
-            life: [26, 36],
+            count: 4,
+            life: [20, 28],
             angle: Some([40.0, 140.0]),
             speed: [0.5, 2.5],
             spread: [6.0, 0.4],
