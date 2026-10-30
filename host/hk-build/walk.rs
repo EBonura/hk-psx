@@ -424,6 +424,9 @@ fn heal(out: &mut String, label: &str) {
 /// ```text
 /// at    X Y                  he stands here (the first goal after a load)
 /// walk  X [tol T]            walk to X from either side, to within T (0.1)
+/// drop  X Y                  walk to x X and fall off the edge to the ground at knight height Y (a jump pressed in
+///                            mid-air does nothing, so a leap after a ledge starts from a `drop`). Every landing
+///                            (`hop`, `leap`, `drop`) waits for `HK_WALK_READY`: on the ground, no hard-landing lock
 /// hop   X Y [lead F] [apex A]  jump to a platform at x X, knight height Y: across F (0.75) of the way while
 ///                            rising, up until Y clears (or knight height A, for a gap),
 ///                            steer to X, land
@@ -488,6 +491,21 @@ pub fn macros(text: &str) -> Result<String> {
                 walk_to(&mut out, from, to, tol, label);
                 at_x = Some(to);
             }
+            ["drop", x, y] => {
+                let (to_x, to_y) = (number(Some(x))?, number(Some(y))?);
+                let from = at_x.unwrap_or(to_x);
+                walk_to(&mut out, from, to_x, 0.1, label);
+                let _ = writeln!(
+                    out,
+                    "wait until y between {} {} timeout 300 # {label}: down",
+                    units(to_y - 0.15),
+                    units(to_y + 0.15)
+                );
+                let _ = writeln!(out, "wait 6");
+                let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: on the ground");
+                at_x = Some(to_x);
+                at_y = Some(to_y);
+            }
             ["hop", x, y, rest @ ..] => {
                 let (to_x, to_y) = (number(Some(x))?, number(Some(y))?);
                 let (mut lead, mut apex) = (0.75, None);
@@ -540,6 +558,7 @@ pub fn macros(text: &str) -> Result<String> {
                     units(to_y + 0.15)
                 );
                 let _ = writeln!(out, "wait 6");
+                let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: on the ground");
                 at_x = Some(to_x);
                 at_y = Some(to_y);
             }
@@ -592,6 +611,7 @@ pub fn macros(text: &str) -> Result<String> {
                     units(to_y + 0.15)
                 );
                 let _ = writeln!(out, "wait 6");
+                let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: on the ground");
                 at_x = Some(to_x);
                 at_y = Some(to_y);
             }
@@ -729,6 +749,15 @@ mod tests {
         let toml = compile_text("name t\nsym hp HK_HEALTH\ncheck end hp ge 3 ; x lt 40\n").unwrap();
         assert_eq!(toml.matches("[[step.assert]]").count(), 2);
         assert!(toml.contains("sym = \"HK_HEALTH\""));
+    }
+
+    #[test]
+    fn a_drop_waits_for_the_ground_before_the_next_goal() {
+        let toml = compile_text("name t\nat 10 12.39\ndrop 12 9.39\nleap 12 right 60 20 9.39\n").unwrap();
+        // x ge 11.9, then the landing band 9.24 to 9.54 (in Q16), then the leap's own take-off press.
+        let land = toml.find("value = 605553\nvalue_hi = 625213").expect("a landing band");
+        let jump = toml.find("press = [\"right\", \"cross\"]").expect("a jump");
+        assert!(land < jump, "{toml}");
     }
 
     #[test]

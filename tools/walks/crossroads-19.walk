@@ -1,0 +1,11 @@
+# Crossroads_19 (the Hatcher's room, top left): in at the top of the left wall, two hops up and to the
+# right, out at the top right. The Hatcher is below and does not come up.
+at 0.5 34.4
+guard 3
+walk 5.6
+leap 5.62 right 36 10.60 36.92 cross 24
+guard 3
+leap 10.60 right 40 17.24 40.39 cross 24
+guard 3
+hold right until HK_SCENE_LOADS ge 10 timeout 1500   # out at the top right
+wait until HK_GAME_MODE == 1 timeout 1800

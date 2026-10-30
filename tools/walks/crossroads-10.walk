@@ -1,0 +1,20 @@
+# Crossroads_10 (the False Knight's cave): in at the right on the floor, left to x 52, then up the ledges to
+# the arena's right-hand mouth at y 27.4.
+at 74.5 3.4
+guard 3
+walk 52.3
+leap 52.23 left 30 48.08 8.52 cross 24
+guard 3
+leap 48.08 right 20 50.99 12.39 cross 24
+guard 3
+leap 50.99 right 30 55.14 16.39 cross 24
+guard 3
+leap 55.14 right 80 63.16 19.39 cross 24
+guard 3
+walk 68.4
+leap 68.41 right 46 72.70 20.39 cross 24
+guard 3
+leap 71.73 left 38 67.45 25.39 cross 24
+guard 3
+leap 67.45 left 20 64.54 27.44 cross 24
+guard 3

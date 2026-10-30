@@ -1,15 +1,20 @@
-# Crossroads_13 (the Barger and the Buzzers): in at the left gate, a pit to jump, then a stair of drops and
-# hops down and to the right, out of the right-hand gate. Hop recipes from the journey-crossroads replay.
+# Crossroads_13 (the Barger, the Buzzers and three Goams): in at the left gate, a pit to jump, then a stair
+# of drops and hops down and to the right, out of the right-hand gate. The Goams are waited out one at a
+# time (HK_WALK_GOAM_LEFT and _RIGHT: ticks left in the nearest one's Down window). Hop recipes from the journey-crossroads
+# replay.
 at 0.5 12.4
 guard 3
 walk 8.3
 leap 8.3 right 60 16.4 12.39 cross 24                # over the pit
 guard 3
-walk 25.3                                            # off the ledge, onto the step below
-leap 25.26 right 60 33.55 6.39 cross 24
+drop 25.3 9.39                                       # off the ledge, onto the step below
+leap 25.26 right 60 33.55 6.39 cross 24              # over the first Goam
 guard 3
-walk 38.75
-leap 38.75 right 46 44.75 4.39 cross 24
+walk 35.9                                            # the ledge before the second Goam
+wait until HK_WALK_GOAM_RIGHT ge 45 timeout 900
+drop 38.75 4.39
+wait until HK_WALK_GOAM_RIGHT ge 50 timeout 900      # a wall stops him here; the third Goam's window opens
+leap 38.75 right 46 44.75 4.39 cross 24              # over it
 guard 3
 leap 44.75 right 20 46.55 6.39 cross 24
 guard 3

@@ -1,0 +1,16 @@
+# Crossroads_42 (the Buzzers' corridor): in at the left gate, the floor to the first hop, the stair of
+# hops over the Goam pits, out of the right-hand gate. Hop recipes from the journey-crossroads replay.
+at 0.5 3.4
+guard 3
+walk 45.3
+leap 45.75 right 42 51.84 4.39 cross 24
+guard 3
+walk 71.0
+leap 72.72 right 45 79.9 4.39 cross 24
+leap 79.92 right 50 86.9 4.39 cross 24
+guard 3
+walk 91.7
+leap 91.71 right 58 99.8 8.39 cross 24
+guard 3
+hold right until HK_SCENE_LOADS ge 9 timeout 1500    # out of the right-hand gate
+wait until HK_GAME_MODE == 1 timeout 1800

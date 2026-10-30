@@ -1,0 +1,29 @@
+# Crossroads_03 (the hub): in from the Hatcher's room at the bottom, left along the floor, up the
+# left-hand shaft by its ledges, out of the left gate at the top into Crossroads_21.
+at 15.0 3.39
+guard 3
+walk 17.3
+leap 17.31 left 50 10.25 3.39 cross 24
+guard 3
+leap 10.25 left 50 3.20 8.39 cross 24
+guard 3
+walk 6.45
+leap 6.45 right 40 13.50 12.39 cross 24
+guard 3
+leap 13.50 right 30 17.65 14.39 cross 24
+guard 3
+leap 17.65 left 20 14.96 18.44 cross 24
+guard 3
+leap 14.96 right 30 19.11 20.39 cross 24
+guard 3
+leap 19.11 right 30 22.69 24.39 cross 24
+guard 3
+leap 22.69 left 30 20.14 29.39 cross 24
+guard 3
+leap 20.14 left 40 14.82 31.39 cross 24
+guard 3
+walk 12.06
+leap 12.06 left 61 4.03 31.39 cross 24
+guard 3
+hold left until HK_SCENE_LOADS ge 11 timeout 1500   # out of the left gate at the top
+wait until HK_GAME_MODE == 1 timeout 1800

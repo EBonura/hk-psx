@@ -503,6 +503,11 @@ pub static mut HK_PLAYER_Y: i32 = 0;
 /// tools/hkref ties the count to the tape; `trace` carries the rest of the state.
 #[no_mangle]
 pub static mut HK_PLAYER_FACING: i32 = 0;
+/// The walker's sense (read-only route telemetry): 1 while the Knight stands on the ground with no hard
+/// landing's lock left, so a jump pressed now takes; 0 in the air and in the lock. A script waits for it
+/// where it used to wait a fixed handful of ticks after a drop.
+#[no_mangle]
+pub static mut HK_WALK_READY: u32 = 0;
 #[no_mangle]
 pub static mut HK_SIM_TICKS: u32 = 0;
 #[no_mangle]
@@ -1419,6 +1424,7 @@ fn main() {
                         HK_PLAYER_X = game.player.x;
                         HK_PLAYER_Y = game.player.y;
                         HK_PLAYER_FACING = game.player.facing;
+                        HK_WALK_READY = u32::from(game.player.grounded && game.player.hard_land == 0);
                         HK_FOCUS_LOCKED = u32::from(game.focus.locks_control());
                     }
                     #[cfg(feature = "trace")]
