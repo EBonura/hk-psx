@@ -1379,7 +1379,11 @@ fn main() {
                         HK_FOE_LIVE = foes.live;
                         HK_FK_DX = foes.boss_dx;
                         HK_FK_PHASE = foes.boss_phase;
-                        let ready = game.nail.ready();
+                        // A swing starts only on a press the Knight can act on: not in a hit's recoil or
+                        // freeze, not in a hard landing. A press held through those is never seen as one.
+                        let ready = game.nail.ready()
+                            && game.vitals.can_control()
+                            && !game.player.hard_landing();
                         HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
                         HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
                         HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
