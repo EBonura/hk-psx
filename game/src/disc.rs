@@ -2559,9 +2559,17 @@ impl Cache {
             if d.gap_len > 0 {
                 crate::gate_probe::set(crate::gate_probe::RELOCATE);
                 let mut gap = crate::room_decode::Gap::new(d.gap_off, d.gap_len, d.head_len);
+                // The whole bank, not the decode slice: the slice ends where the staged bytes do, which
+                // may be short of the gap's far end (the gap lies in the arena below the metadata bank).
+                let bank = unsafe {
+                    core::slice::from_raw_parts_mut(
+                        (&raw mut BUFFERS.words).cast::<u8>().add(d.ram_offset),
+                        d.raw_len,
+                    )
+                };
                 loop {
                     checkpoint();
-                    if gap.step(&mut arena[..d.raw_len], DECODE_STEP) {
+                    if gap.step(bank, DECODE_STEP) {
                         break;
                     }
                 }

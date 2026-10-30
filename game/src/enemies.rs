@@ -254,6 +254,18 @@ struct RunnerContext {
     cage_children: u16,
 }
 
+/// The False Knight's streamed art is in the arena (disc.rs `tail_ready`); host tests have no disc.
+#[inline]
+fn fk_art_ready() -> bool {
+    #[cfg(not(test))]
+    {
+        crate::disc::tail_ready()
+    }
+    #[cfg(test)]
+    {
+        true
+    }
+}
 /// The False Knight fight: `hk_sim::false_knight::FalseKnight` is `FalseyControl`
 /// and `hk_sim::boss::Arena` is the `Battle Scene`'s `Battle Control`. The arena
 /// rides on the boss rather than on a world object because the boss is the only
@@ -4198,7 +4210,9 @@ impl Actor {
         };
         if boss.controller.phase() == fk::Phase::Dormant {
             // `Detect`: the hero's collider entered the Battle Scene trigger.
-            if overlap(trigger, context.hero_body) {
+            // The arena waits for the boss's art (a room whose stream is read after its gate): it is in place
+            // long before a walk from the door gets here, so this holds the fight a moment at most.
+            if overlap(trigger, context.hero_body) && fk_art_ready() {
                 let started = boss.arena.hero_entered();
                 // `Detect` arms once; a hero who walks back through the curtain
                 // gets an empty list rather than a second count.
