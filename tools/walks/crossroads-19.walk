@@ -2,8 +2,8 @@
 # right, out at the top right. The Hatcher is below and does not come up.
 at 0.5 34.4
 guard 3
-walk 5.6
-leap 5.62 right 36 10.60 36.92 cross 24
+walk 4.4
+leap 6.3 right 36 10.60 36.92 cross 24
 guard 3
 leap 10.60 right 40 17.24 40.39 cross 24
 guard 3
