@@ -433,7 +433,7 @@ fn heal(out: &mut String, label: &str) {
 /// the direction to press follows from where the last goal left him:
 ///
 /// ```text
-/// at    X Y                  he stands here (the first goal after a load)
+/// at    X Y                  he stands here (the first goal after a load); waits for his control first
 /// walk  X [tol T]            walk to X from either side, to within T (0.1)
 /// drop  X Y                  walk to x X and fall off the edge to the ground at knight height Y (a jump pressed in
 ///                            mid-air does nothing, so a leap after a ledge starts from a `drop`). Every landing
@@ -491,6 +491,9 @@ pub fn macros(text: &str) -> Result<String> {
             ["at", x, y] => {
                 at_x = Some(number(Some(x))?);
                 at_y = Some(number(Some(y))?);
+                // A gate entry owns the pad until it has run its settle, its fade and its walk: nothing
+                // pressed before then takes, so the first goal in a room waits for the Knight's control.
+                let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 900 # {label}: in control");
             }
             ["walk", x, rest @ ..] => {
                 let to = number(Some(x))?;
