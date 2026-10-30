@@ -1,45 +1,45 @@
 at 156.75 5.39
 leap 156.75 left 28 152.88 9.98                # the shaft: a stair up and to the left
-guard 20 152.88
+guard 45 152.88
 leap 152.88 left 36 147.90 14.35
-guard 20 147.90
+guard 45 147.90
 leap 147.90 right 26 150.66 18.35
-guard 20 150.66
+guard 45 150.66
 leap 150.66 left 36 145.68 22.86
-guard 20 145.68
+guard 45 145.68
 leap 144.44 left 40 138.77 21.75               # across a gap, onto a lower ledge
-guard 20 138.77
+guard 45 138.77
 leap 137.52 left 40 131.85 23.39
-guard 20 131.85
+guard 45 131.85
 leap 131.85 left 28 127.98 27.39
-guard 20 127.98
+guard 45 127.98
 leap 127.98 left 96 120.79 31.39
-guard 20 120.79
+guard 45 120.79
 walk 100.0
 walk 87.9                                      # the ledge steps down
 at 87.87 27.39
 leap 83.99 left 40 78.18 31.24
-guard 20 78.18
+guard 45 78.18
 leap 78.18 right 36 83.16 35.04
-guard 20 83.16
+guard 45 83.16
 leap 83.16 right 48 89.80 38.23
-guard 20 89.80
+guard 45 89.80
 leap 89.80 right 28 93.68 41.39
-guard 20 93.68
+guard 45 93.68
 leap 92.43 left 40 86.76 43.72
-guard 20 86.76
+guard 45 86.76
 leap 86.76 left 36 81.78 47.39
-guard 20 81.78
-leap 80.67 left 40 74.86 52.39 cross 30
-guard 20 74.86
+guard 45 81.78
+leap 80.67 left 44 74.86 52.39 cross 36
+guard 45 74.86
 leap 74.86 left 36 69.88 56.39
-guard 20 69.88
-leap 70.63 right 60 79.21 60.39
-guard 20 79.21
+guard 45 69.88
+leap 70.63 right 60 79.21 60.39 cross 32
+guard 45 79.21
 leap 84.47 right 40 90.27 62.39
-guard 20 90.27
+guard 45 90.27
 leap 90.27 right 48 96.91 63.39
-guard 20 96.91
+guard 45 96.91
 heal
 walk 99.5
 bash 8

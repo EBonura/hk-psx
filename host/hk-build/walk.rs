@@ -536,8 +536,8 @@ pub fn macros(text: &str) -> Result<String> {
                 let _ = writeln!(
                     out,
                     "wait until y between {} {} timeout 180 # {label}: land",
-                    units(to_y - 0.06),
-                    units(to_y + 0.06)
+                    units(to_y - 0.15),
+                    units(to_y + 0.15)
                 );
                 let _ = writeln!(out, "wait 6");
                 at_x = Some(to_x);
@@ -575,13 +575,21 @@ pub fn macros(text: &str) -> Result<String> {
                 // is where it starts (take-off x) and where it must end (the landing).
                 let _ = writeln!(out, "hold {held}+cross for {cross} # {label}: jump");
                 if ticks > cross {
-                    let _ = writeln!(out, "hold {held} for {} # {label}: across", ticks - cross);
+                    // Across to the landing's own x, not for a count of ticks: a take-off a few
+                    // tenths off, or a hit on the way, then still ends on the platform.
+                    let (op, stop) =
+                        if held == "left" { ("le", to_x + 0.25) } else { ("ge", to_x - 0.25) };
+                    let _ = writeln!(
+                        out,
+                        "hold {held} until x {op} {} timeout 200 # {label}: across",
+                        units(stop)
+                    );
                 }
                 let _ = writeln!(
                     out,
                     "wait until y between {} {} timeout 180 # {label}: land",
-                    units(to_y - 0.06),
-                    units(to_y + 0.06)
+                    units(to_y - 0.15),
+                    units(to_y + 0.15)
                 );
                 let _ = writeln!(out, "wait 6");
                 at_x = Some(to_x);
