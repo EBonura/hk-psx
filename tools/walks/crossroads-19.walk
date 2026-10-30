@@ -3,9 +3,10 @@
 at 0.5 34.4
 guard 3
 walk 4.4
-leap 6.3 right 36 10.60 36.92 cross 24
+leap 6.7 right 34 10.60 36.92 cross 24
 guard 3
 leap 10.60 right 40 17.24 40.39 cross 24
 guard 3
-hold right until HK_SCENE_LOADS ge 10 timeout 1500   # out at the top right
+hold right+cross for 24                              # up through the gap above the ledge
+hold right until HK_SCENE_LOADS ge 10 timeout 600    # and out of the gate at the top
 wait until HK_GAME_MODE == 1 timeout 1800

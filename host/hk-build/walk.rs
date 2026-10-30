@@ -426,6 +426,8 @@ fn snipe(out: &mut String, label: &str) {
 /// `HK_WALK_FOCUS` as zero otherwise, so the step takes no time when Focus is not wanted.
 fn heal(out: &mut String, label: &str) {
     let _ = writeln!(out, "hold circle until HK_WALK_FOCUS == 0 timeout 240 # {label}: focus");
+    // The heal's release still owns the Knight for a few ticks: a jump pressed in them is lost.
+    let _ = writeln!(out, "wait until HK_FOCUS_LOCKED == 0 timeout 120 # {label}: focus over");
 }
 
 /// Rewrite the walk macros into base directives. The compiler keeps the Knight's expected
