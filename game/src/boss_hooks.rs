@@ -3,21 +3,23 @@
 //! module's import site: the same hooks written inline cost the frame loop's functions 4 KB of code between them.
 use hk_format::Room;
 
-/// The animation-cache key range of the boss bank's parts.
-#[cfg(feature = "hornet")]
-pub const KEY_BASE: u16 = crate::boss_bank::KEY_BASE;
-#[cfg(not(feature = "hornet"))]
-pub const KEY_BASE: u16 = u16::MAX;
+/// The animation-cache key range of the boss bank's parts, which an actor bank (game/src/actor_bank.rs) shares: a scene
+/// carries one or the other.
+pub const KEY_BASE: u16 = crate::actor_bank::KEY_BASE;
 
 /// Decode bank part `key - KEY_BASE` into cache slot `slot`; the bytes uploaded.
-#[cfg(feature = "hornet")]
 #[inline(never)]
 pub fn upload(room: &Room, key: u16, slot: usize) -> Option<u32> {
-    crate::boss_bank::upload(room, (key - KEY_BASE) as usize, slot)
-}
-#[cfg(not(feature = "hornet"))]
-pub fn upload(_room: &Room, _key: u16, _slot: usize) -> Option<u32> {
-    None
+    if crate::actor_bank::active() {
+        return crate::actor_bank::upload((key - KEY_BASE) as usize, slot);
+    }
+    #[cfg(feature = "hornet")]
+    return crate::boss_bank::upload(room, (key - KEY_BASE) as usize, slot);
+    #[cfg(not(feature = "hornet"))]
+    {
+        let _ = room;
+        None
+    }
 }
 
 /// Add this frame's queued parts to the working set.
