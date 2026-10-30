@@ -38,13 +38,12 @@ mod fx;
 /// The effects' share of VRAM. The first column stops four rows short of the bottom of
 /// (352,176,32,64): rows 236 to 239 from x 368 are the soft styles' palette copies (the guest's
 /// `SOFT_CLUT_SLOTS`), which no upload may reach or a scene loses every soft style (its smoke
-/// falls back to dithered coverage); the sliver left of them is used, less its last row, which holds
-/// the grey ramp the generated and polygon effects draw through (game/src/break_effects.rs `RAMP_CLUT`).
+/// falls back to dithered coverage); the sliver left of them is used.
 const VRAM_RECTS: [(i64, i64, i64, i64); 4] = [
     (352, 176, 32, 60),
     (360, 32, 24, 32),
     (352, 64, 32, 32),
-    (352, 236, 16, 3),
+    (352, 236, 16, 4),
 ];
 const ALPHAS: [u32; 3] = [43, 85, 128];
 /// Slots in the guest particle pool, game/src/particles.rs CAPACITY. An
@@ -2696,17 +2695,26 @@ fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank>
             .unwrap_or(0);
         let target = target_size(biggest as f64) as usize;
         let (w, h) = (im.width, im.height / count);
+        // A thin or petal-shaped glow keeps only the rows it lights, a long cell of fewer rows
+        // (fx.rs `glow_image`): the canvas rows `lo` to `hi` of 32.
+        let (lo, hi) = match sid.as_str() {
+            "fx:glow_bar" => (13, 19),
+            "fx:glow_leaf" => (7, 25),
+            _ => (0, 32),
+        };
+        let rows = ((hi - lo) * target).div_ceil(32).max(1);
         let start = cells.len();
         let opaque = group.iter().all(|s| s.opaque);
         opaque_cells.extend(std::iter::repeat(opaque).take(count));
         for n in 0..count {
+            let top = (count - 1 - n) * h;
             let cell = im.crop_int(
                 0,
-                ((count - 1 - n) * h) as i64,
+                (top + lo * h / 32) as i64,
                 w as i64,
-                ((count - n) * h) as i64,
+                (top + hi * h / 32) as i64,
             );
-            cells.push(cell.resize(target, target, Filter::Lanczos));
+            cells.push(cell.resize(target, rows, Filter::Lanczos));
         }
         families.push((sid.clone(), start, count));
     }

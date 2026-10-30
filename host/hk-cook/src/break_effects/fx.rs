@@ -22,10 +22,8 @@ use super::*;
 use crate::cook::{native_sprite, tk_sprite};
 
 pub const FX_OWNER: i64 = 0xD000;
-/// Shapes the guest draws without art (bits 3 to 5 of a style's additive byte, game/src/break_effects.rs
-/// `Shape`): a soft disc generated into an animation slot, and a needle (a gouraud lozenge).
-pub const SHAPE_DISC: i64 = 1;
-pub const SHAPE_NEEDLE: i64 = 2;
+/// World units a light cell is cut for: 32 texels, the most a cell holds.
+const DISC_CELL: f64 = 2.2;
 /// `Dust Hit Med`, where the nail met an object (anchor: the hit).
 pub const FX_HIT_DUST: i64 = FX_OWNER | 0x01;
 /// The Great Door's `Door_dust` (cooked in place) and its `Rubble Fall Short`.
@@ -409,7 +407,7 @@ fn glow_image(kind: &str) -> hk_pil::Image {
                     along * across
                 }
                 // A petal: widest at a third of its length, pointed ends, lit along its middle.
-                "lens" => {
+                "lens" | "leaf" => {
                     let w = 0.55 * (1.0 - u * u).max(0.0) * (1.0 - 0.25 * u);
                     if w <= 0.0 || v.abs() >= w {
                         0.0
@@ -528,6 +526,7 @@ fn push_glow_art(
     let key = key.to_string();
     let texture = format!("fx:{key}");
     let (sheet_image, side) = sheet(frames)?;
+    let width_scale = if g.art == "bar" { 0.5 } else { 1.0 };
     let burst = Burst {
         count: g.count,
         life: g.life,
@@ -538,7 +537,9 @@ fn push_glow_art(
         bounce: g.bounce,
         life_loss: 0.0,
         spin: g.spin,
-        size: [g.size[0] / side, g.size[1] / side],
+        // A bar keeps the rows it lights (see `art_bank`), which are a fifth of the canvas: half the
+        // quad's old width puts that band at about a pixel and a half.
+        size: [g.size[0] * width_scale / side, g.size[1] * width_scale / side],
         radius: 0.4,
         splash: None,
         fade_from: 1.0,
@@ -547,22 +548,11 @@ fn push_glow_art(
     let mut style = burst_style(&burst, side, gravity, frames.len() as i64, &texture)?;
     // The art is cut for `cell` world units and the quad drawn larger.
     let scale = 1.0;
-    style.art_size = q(g.cell.min(g.size[0].max(g.size[1])))?;
+    // The cells of the light the cook draws itself are cut at the largest size, 32 texels along: a smooth
+    // falloff stretches without showing its texels, and a bar or petal keeps only its lit rows.
+    style.art_size = if matches!(g.art, "disc" | "bar" | "leaf") { q(DISC_CELL)? } else { q(g.cell.min(g.size[0].max(g.size[1])))? };
     style.collision = g.collision;
     style.additive = 1 | i64::from(g.front) << 1 | i64::from(g.anim) << 2;
-    // The soft disc and the thin bar need no texels: the guest generates the disc into an animation
-    // slot and draws the bar as a gouraud polygon, so such a style has no art cells at all.
-    let shape = match g.art {
-        "disc" => SHAPE_DISC,
-        "bar" => SHAPE_NEEDLE,
-        _ => 0,
-    };
-    if shape != 0 {
-        style.additive |= shape << 3;
-        style.art_size = 0;
-        style.cells = 0;
-        style.texture = String::new();
-    }
     style.stretch = q(g.stretch)?;
     style.colors = soft_colors(g.tint);
     // The opacity is the style's start alpha, so the curves are few: full, held for `hold`, then gone.
@@ -578,7 +568,7 @@ fn push_glow_art(
             [0; 2],
         ];
     }
-    if shape == 0 && !c.synthetic.iter().any(|t| t.0 == texture) {
+    if !c.synthetic.iter().any(|t| t.0 == texture) {
         c.synthetic.push((texture.clone(), Arc::new(sheet_image)));
     }
     let mut m = [[0.0; 4]; 4];
@@ -1222,8 +1212,8 @@ fn collect_cocoon(
         "Spatter Blue x50",
     )?;
     // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second) is a burst
-    // of 12 to 16 separate aqua leaves that fan up and out of it: leaves here, each a tapered polygon
-    // (the guest's needle shape) flown outward along its own length, sharp at any size.
+    // of 12 to 16 separate aqua leaves that fan up and out of it: leaves here, each a tapered petal
+    // (a petal cell cut 32 texels long) flown outward along its own length.
     push_glow(
         c,
         scene_id,
@@ -1239,7 +1229,7 @@ fn collect_cocoon(
             tint: [0.0, 228.0, 255.0],
             stretch: 0.02,
             front: true,
-            ..Glow::new("bar")
+            ..Glow::new("leaf")
         },
         gravity,
         COCOON_BODY,

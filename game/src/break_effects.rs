@@ -161,8 +161,6 @@ struct Resident {
     front: [bool; FX_MAX_STYLES],
     /// Styles whose cells are the frames of a clip: the cell shown follows the age, not a random pick.
     anim: [bool; FX_MAX_STYLES],
-    /// Styles drawn without art cells (`Shape`): bits 3 to 5 of the style's additive byte.
-    shape: [u8; FX_MAX_STYLES],
     /// Each soft palette and its copy, every coloured entry semi-transparent,
     /// that soft draws use instead.
     soft_cluts: [(u16, u16); SOFT_CLUT_SLOTS.len()],
@@ -244,7 +242,6 @@ static mut RESIDENT: Resident = Resident {
     additive: [false; FX_MAX_STYLES],
     front: [false; FX_MAX_STYLES],
     anim: [false; FX_MAX_STYLES],
-    shape: [0; FX_MAX_STYLES],
     soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
     soft_clut_count: 0,
     hero_dust: NO_STYLE,
@@ -338,7 +335,7 @@ fn soft_styles(r: &mut Resident, styles: usize, uploads: &[[u16; 4]]) {
                 .alpha
                 .iter()
                 .any(|ends| ends.iter().any(|&a| a < 255));
-        let mut ok = faint && (!s.frames.is_empty() || r.shape[i] != 0);
+        let mut ok = faint && !s.frames.is_empty();
         for cell in s.frames.iter().filter(|_| faint) {
             let clut = r.art[cell[2] as usize].clut;
             if r.soft_cluts[..r.soft_clut_count]
@@ -418,7 +415,7 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
         let count = u16_at(b, 164) as usize;
         if curve >= CURVES.len()
             || first + count > frames
-            || (count == 0 && (b[43] >> 3) & 7 == 0)
+            || count == 0
         {
             return false;
         }
@@ -461,7 +458,6 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
         r.additive[i] = b[43] & 1 != 0;
         r.front[i] = b[43] & 2 != 0;
         r.anim[i] = b[43] & 4 != 0;
-        r.shape[i] = (b[43] >> 3) & 7;
         if r.styles[i].lands() && ((r.styles[i].splash >> 8) & 15) as usize >= count {
             return false;
         }
@@ -548,7 +544,6 @@ pub fn load_scene(scene: usize, data: &[u8]) -> bool {
             copied += 1;
         }
     }
-    upload_ramp();
     // Every copy a soft style draws through must exist, or none is used.
     if copied < r.soft_clut_count {
         r.soft = [false; FX_MAX_STYLES];
@@ -862,7 +857,7 @@ fn spawn_specs_with_bases(
                 },
                 // A style with a splash flies its first frame and lands in another.
                 cell: {
-                    let random = (super::random(&mut rng) % s.frames.len().max(1) as u32) as u8;
+                    let random = (super::random(&mut rng) % s.frames.len() as u32) as u8;
                     if s.lands() {
                         0
                     } else {
@@ -1210,112 +1205,6 @@ fn collide(
         }
     }
 }
-// ------------------------------------------------------- shapes drawn without art cells
-
-/// The shapes of `Resident::shape` (host/hk-cook break_effects/fx.rs `SHAPE_*`).
-const SHAPE_DISC: u8 = 1;
-const SHAPE_NEEDLE: u8 = 2;
-/// The grey ramp every such shape draws through: sixteen greys, entry 0 clear and the rest
-/// semi-transparent, in the last row of the effects' sliver of VRAM (host/hk-cook break_effects.rs
-/// `VRAM_RECTS`). A style's own colour comes from the draw's tint, so one palette serves them all.
-const RAMP_CLUT: (u16, u16) = (352, 239);
-/// The animation-cache key of the generated disc: one key above the boss bank's (which sits above
-/// the dialogue panel's tiles), whose 640 parts are the last of the others.
-#[cfg(not(test))]
-pub const DISC_KEY: u16 =
-    crate::dialogue_art::KEY_BASE + crate::dialogue_art::DIALOGUE_TILE_COUNT as u16 + 640;
-#[cfg(not(test))]
-const _: () = assert!((DISC_KEY as usize) < hk_cache::MAX_KEYS);
-/// The disc's falloff, indexed by the squared radius (in 1/4096 of the disc's own, 32 to a step):
-/// quarter levels of the ramp, `(1 - r) ^ 1.4` as the cook's old cell was (a test recomputes it).
-static DISC_PROFILE: [u8; 128] = [
-    57, 51, 49, 47, 45, 43, 42, 41, 40, 38, 37, 36, 36, 35, 34, 33, 32, 31, 31, 30, 29, 29, 28, 27,
-    27, 26, 26, 25, 25, 24, 23, 23, 22, 22, 22, 21, 21, 20, 20, 19, 19, 18, 18, 18, 17, 17, 16, 16,
-    16, 15, 15, 15, 14, 14, 14, 13, 13, 13, 12, 12, 12, 11, 11, 11, 11, 10, 10, 10, 10, 9, 9, 9, 8,
-    8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6, 6, 6, 5, 5, 5, 5, 5, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 2, 2,
-    2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-/// The sixteen greys: entry `n` is `2n` in each 5-bit channel, with the semi-transparency bit.
-const RAMP: [u8; 32] = {
-    let mut out = [0u8; 32];
-    let mut n = 1u16;
-    while n < 16 {
-        let g = 2 * n;
-        let v = (0x8000 | g | g << 5 | g << 10).to_le_bytes();
-        out[n as usize * 2] = v[0];
-        out[n as usize * 2 + 1] = v[1];
-        n += 1;
-    }
-    out
-};
-#[cfg(not(test))]
-#[inline(never)]
-#[cfg_attr(target_arch = "mips", optimize(size))]
-fn upload_ramp() {
-    psx_vram::upload_bytes(psx_vram::VramRect::new(RAMP_CLUT.0, RAMP_CLUT.1, 16, 1), &RAMP);
-}
-#[cfg(test)]
-fn upload_ramp() {}
-/// The ramp's palette word for a quad.
-fn ramp_clut() -> u16 {
-    clut_word(RAMP_CLUT.0, RAMP_CLUT.1)
-}
-/// Four pixels' worth of the ordered dither, in quarter levels, by (x & 1) | (y & 1) << 1.
-const DITHER: [u32; 4] = [0, 2, 3, 1];
-/// Stream the 64x64 soft disc, 4 bits a texel, into the GPU's data port as the copy into `rect`
-/// (an animation slot). Left half of a row from the profile with a 2x2 ordered dither, the right half
-/// its mirror: no texels are stored anywhere. The caller has drained the GPU's DMA channel.
-#[cfg(not(test))]
-#[inline(never)]
-pub fn upload_disc(rect: psx_vram::VramRect) -> u32 {
-    psx_io::gpu::wait_cmd_ready();
-    psx_io::gpu::write_gp0(psx_hw::gpu::gp0::COPY_CPU_TO_VRAM);
-    psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.x, rect.y));
-    psx_io::gpu::write_gp0(psx_hw::gpu::pack_xy(rect.w, rect.h));
-    for y in 0..64u32 {
-        let dy = 63 - 2 * y.min(63 - y) as i32;
-        let dy2 = (dy * dy) as u32;
-        let ybit = (y & 1) << 1;
-        let (mut left, mut right) = ([0u32; 4], [0u32; 4]);
-        for x in 0..32u32 {
-            let dx = 63 - 2 * x as i32;
-            let r2 = (dx * dx) as u32 + dy2;
-            let q = if r2 >= 4096 { 0 } else { u32::from(DISC_PROFILE[(r2 >> 5) as usize]) };
-            // Pixel x of the left half and its mirror, 63 - x, which has the other parity.
-            let a = (q + DITHER[((x & 1) | ybit) as usize]) >> 2;
-            let b = (q + DITHER[((!x & 1) | ybit) as usize]) >> 2;
-            left[(x >> 3) as usize] |= a << ((x & 7) * 4);
-            // The mirror of pixel x is pixel 63 - x: word 7 - x / 8, nibble 7 - x % 8.
-            right[3 - (x >> 3) as usize] |= b << ((7 - (x & 7)) * 4);
-        }
-        for w in left.into_iter().chain(right) {
-            psx_io::gpu::write_gp0(w);
-        }
-        if y & 15 == 15 {
-            crate::input::checkpoint();
-        }
-    }
-    64 * 32
-}
-/// Ask for the keys the live shaped particles of `scene` draw from: the generated disc, last in the
-/// frame's list and left out when no slot is spare (an effect is the first thing to go undrawn).
-#[cfg(not(test))]
-#[inline(never)]
-#[cfg_attr(target_arch = "mips", optimize(size))]
-pub fn request(scene: usize, needed: &mut [u16], needed_len: &mut usize) {
-    let pool = super::pool();
-    if pool.active() == 0 || *needed_len >= needed.len() {
-        return;
-    }
-    let r = unsafe { &*(&raw const RESIDENT) };
-    let wanted = pool.particles[..pool.span()].iter().flatten().any(|p| {
-        p.scene as usize == scene && p.kind >= 2 && r.shape[(p.kind - 2) as usize] == SHAPE_DISC
-    });
-    if wanted {
-        needed[*needed_len] = DISC_KEY;
-        *needed_len += 1;
-    }
-}
 /// A soft style's colour gain in halves. The soft path adds a quarter of the texel at colour times
 /// opacity (`B + a*F/4`) where the source blends `B(1-a) + F*a`: at a gain of 2 (colour times opacity)
 /// the Break Dust puffs add about a quarter of what the source puffs add on a dark room, which the
@@ -1353,59 +1242,6 @@ fn stretch_corners(p: &Particle, gain: i32, half: i32) -> Option<[[i32; 2]; 4]> 
     Some([[-long, half], [long, half], [-long, -half], [long, -half]].map(|[a, b]| {
         [mulq(ux, a) - mulq(uy, b), mulq(uy, a) + mulq(ux, b)]
     }))
-}
-/// The generated disc as art, in whichever animation slot the frame's request got it; none when the
-/// frame was refused one (it draws no disc).
-#[cfg(not(test))]
-#[inline(never)]
-#[cfg_attr(target_arch = "mips", optimize(size))]
-fn disc_art() -> Option<Art> {
-    if !crate::animation_cache::resident(DISC_KEY) {
-        return None;
-    }
-    let (u, v) = crate::render::animation_uv(DISC_KEY);
-    Some(Art {
-        u,
-        v,
-        w: 64,
-        h: 64,
-        clut: ramp_clut(),
-        tpage: crate::render::animation_tpage_word(DISC_KEY),
-    })
-}
-/// A lozenge along the particle's long axis, bright across its middle and black at both tips: the
-/// corners are the stretched quad's (top left, top right, bottom left, bottom right), and the points
-/// are the midpoints of its edges.
-#[cfg(not(test))]
-#[inline(never)]
-#[cfg_attr(target_arch = "mips", optimize(size))]
-fn draw_needle(
-    vertices: [(i32, i32); 4],
-    tint: (u8, u8, u8),
-    blend: psx_gpu::material::BlendMode,
-) {
-    let mid = |a: (i32, i32), b: (i32, i32)| ((a.0 + b.0) / 2, (a.1 + b.1) / 2);
-    let (tail, head) = (mid(vertices[0], vertices[2]), mid(vertices[1], vertices[3]));
-    let centre = mid(tail, head);
-    // The quad's width is the room the stretched sprite has; the lit line down its middle is the
-    // fifth of it (the cook's old bar cell), so the shoulders are drawn two fifths of the way out.
-    let shoulder = |a: (i32, i32), b: (i32, i32)| {
-        let m = mid(a, b);
-        ((centre.0 * 3 + m.0 * 2) / 5, (centre.1 * 3 + m.1 * 2) / 5)
-    };
-    let core = [tint.0, tint.1, tint.2].map(|v| v.saturating_mul(2));
-    let core = (core[0], core[1], core[2]);
-    let pt = |p: (i32, i32)| (p.0 as i16, p.1 as i16);
-    crate::render::light_quad(
-        [
-            pt(tail),
-            pt(shoulder(vertices[0], vertices[1])),
-            pt(shoulder(vertices[2], vertices[3])),
-            pt(head),
-        ],
-        [(0, 0, 0), core, core, (0, 0, 0)],
-        blend,
-    );
 }
 #[cfg(not(test))]
 #[inline(never)]
@@ -1460,22 +1296,12 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32), front:
             BlendMode::Average,
         )
     };
-    let shape = resident.shape[(p.kind - 2) as usize];
-    let a = if shape == 0 {
-        let cell = if resident.anim[(p.kind - 2) as usize] {
-            (phase(p) * s.frames.len() / 33).min(s.frames.len() - 1)
-        } else {
-            p.cell as usize
-        };
-        scene_art(p.scene as usize)[s.frames[cell][art_level as usize - 1] as usize]
-    } else if shape == SHAPE_DISC {
-        match disc_art() {
-            Some(art) => art,
-            None => return false,
-        }
+    let cell = if resident.anim[(p.kind - 2) as usize] {
+        (phase(p) * s.frames.len() / 33).min(s.frames.len() - 1)
     } else {
-        Art { u: 0, v: 0, w: 0, h: 0, clut: 0, tpage: 0 }
+        p.cell as usize
     };
+    let a = scene_art(p.scene as usize)[s.frames[cell][art_level as usize - 1] as usize];
     let depth = 2496922 + p.position[2];
     if depth <= ONE {
         return false;
@@ -1505,10 +1331,6 @@ pub(super) fn draw_particle(p: &Particle, track: u16, camera: (i32, i32), front:
         || vertices.iter().all(|p| p.1 >= 240)
     {
         return false;
-    }
-    if shape == SHAPE_NEEDLE {
-        draw_needle(vertices, tint, blend);
-        return true;
     }
     let r = (a.u as u16 + a.w as u16 - 1) as u8;
     let b = (a.v as u16 + a.h as u16 - 1) as u8;
@@ -2635,23 +2457,6 @@ mod tests {
         p.clear_scene(0);
         assert_eq!(p.active(), 0);
     }
-    /// The disc's profile table is the falloff its comment names: `(1 - r) ^ 1.4` in quarter levels,
-    /// the centre step taken a little inside the first bin.
-    #[test]
-    fn the_disc_profile_is_the_falloff_it_documents() {
-        for (i, &v) in DISC_PROFILE.iter().enumerate() {
-            let r = if i == 0 { 0.03 } else { (((i * 32 + 16) as f64) / 4096.0).sqrt() };
-            let want = ((1.0f64 - r).max(0.0).powf(1.4) * 60.0).round() as u8;
-            assert_eq!(v, want, "bin {i}");
-        }
-        // Dithered into 4 bits, no level can reach 16.
-        assert!((u32::from(DISC_PROFILE[0]) + DITHER.iter().max().copied().unwrap()) >> 2 <= 15);
-    }
-    /// A style with a shape and no art cells is a style the guest loads (an empty frame list).
-    #[test]
-    fn a_shaped_style_may_have_no_cells() {
-        assert!(SHAPE_DISC != 0 && SHAPE_NEEDLE != 0 && SHAPE_DISC != SHAPE_NEEDLE);
-    }
     #[test]
     fn soft_styles_are_the_faint_ones_and_draw_through_a_free_palette_copy() {
         curve!(
@@ -2691,7 +2496,6 @@ mod tests {
             additive: [false; FX_MAX_STYLES],
             front: [false; FX_MAX_STYLES],
             anim: [false; FX_MAX_STYLES],
-            shape: [0; FX_MAX_STYLES],
             soft_cluts: [(0, 0); SOFT_CLUT_SLOTS.len()],
             soft_clut_count: 0,
             hero_dust: NO_STYLE,

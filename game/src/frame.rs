@@ -501,8 +501,6 @@ pub fn render(
     // spoken for.
     let fx = !game.vitals.dead && !game.door.hidden() && ability_fx::request(&mut needed, &mut needed_len);
     let slashes = hit_fx::request(&mut needed, &mut needed_len);
-    // The break effects' generated art asks last: it is the first thing to go undrawn.
-    crate::world::particles::break_effects::request(r.scene, &mut needed, &mut needed_len);
     unsafe {
         HK_ANIM_MAX_KEYS = HK_ANIM_MAX_KEYS.max(needed_len as u32);
     }
