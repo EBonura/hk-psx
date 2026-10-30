@@ -19,8 +19,9 @@ pub const SECTOR: usize = 2048;
 pub const HALF_BYTES: usize = 8_192;
 pub const RING_BYTES: usize = HALF_BYTES * 2;
 pub const HALF_SECTORS: usize = HALF_BYTES / SECTOR;
-/// 98,304 bytes: 7.8 s at 22,050 Hz mono, longer than any room load measured.
-pub const FIFO_SECTORS: usize = 48;
+/// 90,112 bytes: 7.2 s at 22,050 Hz mono, longer than any room load measured (44 sectors: the
+/// lowest fill seen on the route tapes is 16 sectors, 2.6 s, at the False Knight arena gate).
+pub const FIFO_SECTORS: usize = 44;
 pub const FIFO_BYTES: usize = FIFO_SECTORS * SECTOR;
 /// What one gameplay refill reads: 2.6 s of music for one seek.
 pub const CHUNK_SECTORS: usize = 16;

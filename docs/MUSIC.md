@@ -55,7 +55,7 @@ resampled to whole 2,048-byte sectors (under a cent of pitch for loops past
 168 s) is CD-DA track 3 beside the title's track 2.
 
 Guest: `game/src/audio_stream.rs` is the ring (two 8 KiB halves on voice 6,
-refilled on the SPU IRQ boundary from a 98,304-byte FIFO, 7.8 s); the FIFO took
+refilled on the SPU IRQ boundary from a 90,112-byte FIFO, 7.2 s; 98,304 until 2026-10-30); the FIFO took
 the RAM that used to hold cave_noises, which is an ordinary per-area SPU clip
 now. `game/src/music.rs` applies scene and region states with linear fades on
 VBlanks, switches premix at the same offset when only the layer set changes,
