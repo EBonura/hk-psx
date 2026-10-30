@@ -281,6 +281,7 @@ pub fn npc_tick(scene: usize, in_range: Option<u32>, eligible: bool, bits: u16, 
             geo,
         )
     } else {
+        crate::mapper::idle(bits);
         0
     };
     let in_range = in_range.filter(|&s| !crate::mapper::owns(s));

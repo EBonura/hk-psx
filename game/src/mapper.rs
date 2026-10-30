@@ -91,6 +91,16 @@ impl Convo {
     pub fn consumes_actions(&self) -> bool {
         self.open() || self.release
     }
+    /// A tick the conversation is not stepped: its room's module is not loaded. Keeps `previous` the pad
+    /// of this tick and lets `release` go once the actions are up, as `step` does, so a `cancel` never
+    /// latches from a pad seen rooms ago (the Knight would then neither jump nor swing anywhere the
+    /// module is not loaded).
+    pub fn idle(&mut self, bits: u16) {
+        self.previous = bits;
+        if bits & ACTIONS == 0 {
+            self.release = false;
+        }
+    }
     pub fn cancel(&mut self) {
         self.step = None;
         self.prompt = false;
@@ -238,6 +248,10 @@ mod live {
     pub fn consumes_actions() -> bool {
         unsafe { CONVO.consumes_actions() }
     }
+    /// See `Mapper::idle`.
+    pub fn idle(bits: u16) {
+        unsafe { CONVO.idle(bits) }
+    }
     pub fn cancel() {
         unsafe {
             CONVO.cancel();
@@ -354,6 +368,23 @@ mod tests {
         while let Some(Step::Pages(..)) = c.step {
             press(c, pd, CROSS, geo);
         }
+    }
+    #[test]
+    fn a_cancel_never_latches_from_a_pad_seen_in_another_room() {
+        // Cornifer's room: a button is down at the last tick the conversation is stepped. The Knight leaves
+        // for a room where the module is not loaded (only `idle` runs) with that button let go.
+        let (mut c, mut pd) = (Convo::new(), Pd(0));
+        c.step(&mut pd, CORNIFER_SCENE, true, true, CROSS, 0, 0x100);
+        c.idle(0);
+        c.cancel();
+        assert!(!c.consumes_actions(), "the stale pad was cross; the Knight let go rooms ago");
+        // A button really held at the cancel is still waited out, and goes when it is let go: even with
+        // no module to step the conversation.
+        c.idle(CROSS);
+        c.cancel();
+        assert!(c.consumes_actions());
+        c.idle(0);
+        assert!(!c.consumes_actions());
     }
     #[test]
     fn first_talk_meets_sells_and_mentions_iselda() {
