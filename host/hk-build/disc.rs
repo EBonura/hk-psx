@@ -634,6 +634,17 @@ mod tests {
     }
 
     #[test]
+    fn a_stream_tail_ends_its_scene_group() {
+        let mut p = plan();
+        p.tail_ids = vec![(90, 0)];
+        let order = disc_order(&p).unwrap();
+        // The scene's world metadata, then its tail; the next scene's group (its code chunk) follows.
+        let at = order.iter().position(|&c| c == 90).unwrap();
+        assert_eq!(order[at - 1], 20);
+        assert_eq!(order[at + 1], 53);
+    }
+
+    #[test]
     fn music_then_data_packages_come_last() {
         let mut p = plan();
         p.music_ids = vec![60, 61];
