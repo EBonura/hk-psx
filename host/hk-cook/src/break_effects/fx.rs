@@ -801,7 +801,7 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
             speed: [1.5, 5.0],
             spread: [3.0, 0.2],
             size: [3.6, 3.6],
-            cell: 1.2,
+            cell: 2.2,
             grow: 1.3,
             alpha: 0.3,
             hold: 0.25,
@@ -822,7 +822,7 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
             velocity: [0.5, 0.1],
             spread: [9.0, 0.3],
             size: [7.0, 2.8],
-            cell: 1.8,
+            cell: 2.2,
             grow: 1.3,
             alpha: 0.13,
             hold: 0.5,
@@ -833,8 +833,57 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         [0.0, 0.8, 0.0],
         "False Knight floor mist",
     )?;
-    // The entrance landing's sparks (the original also has orange balls of light along the floor: the
-    // glow cells, cut at 13 texels, drew them as hard blocks and for two frames only, so they are not cooked).
+    // The entrance landing's orange clouds along the floor (hkref: three, the largest around the boss),
+    // each a cluster of overlapping soft discs as the original's are, with a yellow core. Many medium
+    // discs of the one 32 texel glow cell (shared with the dust and the mist) stay soft where one huge
+    // quad drew hard steps; they fly out slowly (a particle that starts in place and never moves did not
+    // last) and rise.
+    for (dx, count) in [(-9.0, 14), (0.0, 20), (9.0, 14)] {
+        push_glow(
+            c,
+            scene_id,
+            FX_FK_FIRE,
+            &Glow {
+                count,
+                life: [36, 52],
+                angle: Some([40.0, 140.0]),
+                speed: [0.5, 4.0],
+                spread: [3.0, 1.0],
+                size: [2.6, 4.6],
+                cell: 2.2,
+                grow: 1.3,
+                alpha: 0.5,
+                hold: 0.5,
+                tint: [255.0, 120.0, 25.0],
+                ..Glow::new("disc")
+            },
+            gravity,
+            [dx, 1.2, 0.0],
+            "False Knight entrance cloud",
+        )?;
+    }
+    push_glow(
+        c,
+        scene_id,
+        FX_FK_FIRE,
+        &Glow {
+            count: 8,
+            life: [26, 36],
+            angle: Some([40.0, 140.0]),
+            speed: [0.5, 2.5],
+            spread: [6.0, 0.4],
+            size: [1.2, 2.0],
+            cell: 2.2,
+            grow: 1.3,
+            alpha: 0.6,
+            hold: 0.5,
+            tint: [255.0, 190.0, 80.0],
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0, 1.0, 0.0],
+        "False Knight entrance cloud cores",
+    )?;
     push_glow(
         c,
         scene_id,
