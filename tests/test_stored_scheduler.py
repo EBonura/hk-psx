@@ -204,10 +204,17 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,2),(2,4)];
-#[derive(Copy,Clone)]struct SceneDesc{scene_id:usize,ram_offset:usize,arena_capacity:usize,stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32}
+#[derive(Copy,Clone)]struct SceneDesc{scene_id:usize,ram_offset:usize,arena_capacity:usize,stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32,head_len:usize,head_fnv:u32,gap_off:usize,gap_len:usize,tail_stored_fnv:u32}
 const SCENE_MANIFEST:&[SceneDesc]=&[
- SceneDesc{scene_id:0,ram_offset:0,arena_capacity:48,stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0},
- SceneDesc{scene_id:1,ram_offset:if SCENE_GATE_LOAD{0}else{24},arena_capacity:if SCENE_GATE_LOAD{48}else{24},stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0}];
+ SceneDesc{scene_id:0,ram_offset:0,arena_capacity:48,stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0,head_len:24,head_fnv:0,gap_off:0,gap_len:0,tail_stored_fnv:0},
+ SceneDesc{scene_id:1,ram_offset:if SCENE_GATE_LOAD{0}else{24},arena_capacity:if SCENE_GATE_LOAD{48}else{24},stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0,head_len:24,head_fnv:0,gap_off:0,gap_len:0,tail_stored_fnv:0}];
+const TAIL_INDEX:usize=0;
+const WORLD_PACK_DEFAULT_LBA:u32=0;
+fn tail_ordinal(_:usize)->usize{0}
+fn tail_arm(_:usize,_:u32){}
+fn tail_disarm(){}
+struct PackEntry{sector_offset:u32}
+mod room_decode{pub struct Gap;impl Gap{pub fn new(_:usize,_:usize,_:usize)->Self{Gap}pub fn step(&mut self,_:&mut[u8],_:usize)->bool{true}}}
 struct AtlasDesc{kind:u8,count:usize}
 const ATLASES:&[AtlasDesc]=&[AtlasDesc{kind:0,count:2},AtlasDesc{kind:1,count:3},AtlasDesc{kind:0,count:1},AtlasDesc{kind:1,count:2}];
 struct Buffer{words:[u32;12]}
@@ -252,6 +259,7 @@ fn prefetch_guard(_:usize){}
 struct Decoder{length:usize}
 impl Decoder{
  fn new_scene(_:usize,_:u32,length:usize,_:u32)->Self{Self{length}}
+ fn new_bytes(_:usize,_:u32,length:usize,_:u32)->Self{Self{length}}
  fn word_stored(self)->Self{self}
  fn at(self,_:usize)->Self{self}
  fn hashed(self,_:bool)->Self{self}
@@ -273,6 +281,7 @@ impl<'a> Scene<'a>{
 struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize}
 impl Cache{
  fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY}}
+ fn entry(&self,_:usize)->Result<PackEntry,LoadError>{Ok(PackEntry{sector_offset:0})}
  // Production rebuilds each directory entry from the manifests instead of
  // keeping the table; the harness only needs a chunk index to stand in for one.
  fn entry(&self,index:usize)->Result<usize,LoadError>{Ok(self.entries[index])}
@@ -557,6 +566,7 @@ const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
 struct SceneDesc{scene_id:usize}
 const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{scene_id:0},SceneDesc{scene_id:46}];
+fn tail_disarm(){}
 fn runner_family(_:usize)->Option<bool>{Some(false)}
 mod runner_audio{pub fn scene_is_mossman(scene:usize)->bool{scene==46}pub fn family_ready(_:bool)->bool{true}}
 const ATLASES:&[u8]=&[0;23];
