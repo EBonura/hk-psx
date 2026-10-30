@@ -1,7 +1,10 @@
 //! A compact art bank for ordinary actors (docs/BOSS-ART.md, generalised past one boss): the sprites of an actor family as
-//! parts of at most 64x64 texels held packbits-coded in one contiguous byte string, decoded into the animation cache's slots
-//! when a frame first needs them. A room carries the bytes outside its scene stream (a pool data package, by whatever loader
-//! the build wires in: `set`), and only the bank's palettes ride in the room as tiny carrier textures.
+//! parts of at most 64x64 texels held packbits-coded in contiguous byte strings, decoded into the animation cache's slots
+//! when a frame first needs them. A scene's bank is a list of up to `MAX_SLICES` slices (each a `hk_format::boss::Bank` blob
+//! with its own palettes): sprites and parts are numbered globally, the first slice's first, so a frame names a sprite
+//! without knowing which slice holds it. A scene opts in by data (`data/actor_banks.rs`, written by host/actor_bank.py from
+//! host/actor_banks.json): its first slice is a data package in the module pool (`modules::bytes`) and the rest are linked
+//! read-only data. Only the slices' palettes ride in the views that draw the actors, as tiny carrier textures.
 //!
 //! A frame of a bank-drawn actor is an ordinary frame record whose texture is the first carrier texture (`marker`) and whose
 //! first two box words carry the sprite's index in their low bytes (`frame_sprite`); every table the region has about clips and
@@ -11,6 +14,15 @@
 //! The bank's animation-cache keys are the boss bank's (`boss_bank::KEY_BASE`): a scene carries one or the other.
 use hk_format::boss::{self as fmt, Bank};
 use hk_format::Room;
+
+/// A scene that draws actors from a bank: its manifest index, the module id of its core slice's data package (a
+/// cook-generated `modules::ART_*` constant) and its late slice, which is linked read-only data.
+pub struct SceneBank {
+    pub scene: usize,
+    pub package: usize,
+    pub late: &'static [u8],
+}
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/actor_banks.rs"));
 
 /// The bank's animation-cache keys: part `i` is key `KEY_BASE + i`.
 pub const KEY_BASE: u16 = crate::dialogue_art::KEY_BASE + crate::dialogue_art::DIALOGUE_TILE_COUNT as u16;
@@ -23,8 +35,10 @@ const _: () = assert!(KEY_BASE as usize + MAX_PARTS <= hk_cache::MAX_KEYS);
 pub const NO_MARKER: u16 = u16::MAX;
 /// A carrier texture's stream starts with this, the bank id and the palette it carries.
 pub const CARRIER_MAGIC: u32 = u32::from_le_bytes(*b"HKBP");
-/// Palettes a bank has (the boss bank's limit).
+/// Palettes a slice has (the boss bank's limit).
 pub const MAX_PALETTES: usize = 16;
+/// Slices a scene's bank has: the core, then the late art (Death and Fall clips) that does not fit the pool package.
+pub const MAX_SLICES: usize = 2;
 
 #[no_mangle]
 pub static mut HK_ACTOR_BANK_UPLOADS: u32 = 0;
@@ -33,42 +47,69 @@ pub static mut HK_ACTOR_BANK_PARTS_DRAWN: u32 = 0;
 /// Sprites asked for that the bank does not have (must stay 0).
 #[no_mangle]
 pub static mut HK_ACTOR_BANK_MISSES: u32 = 0;
+/// Views bound in a scene that has a bank whose package was not resident (must stay 0).
+#[no_mangle]
+pub static mut HK_ACTOR_BANK_UNBOUND: u32 = 0;
 
-/// The bank's bytes while its room is resident; empty otherwise.
-static mut BLOB: &[u8] = &[];
+/// The slices of the bound scene's bank; empty ones are unused.
+static mut SLICES: [&[u8]; MAX_SLICES] = [&[]; MAX_SLICES];
 /// The first carrier texture of the bound room, or `NO_MARKER`.
 static mut MARKER: u16 = NO_MARKER;
-/// The CLUT word of each palette, from the carrier textures of the bound room.
-static mut CLUTS: [u16; MAX_PALETTES] = [0; MAX_PALETTES];
+/// The CLUT word of each slice's palettes, from the carrier textures of the bound room.
+static mut CLUTS: [[u16; MAX_PALETTES]; MAX_SLICES] = [[0; MAX_PALETTES]; MAX_SLICES];
 
-/// Hand the loader's bytes to the reader (the room's data package), or take them away with an empty slice.
-pub fn set(bytes: &'static [u8]) {
+/// Hand the loader's bytes to the reader: the slices in numbering order, or none to take the bank away. A list that
+/// would pass `MAX_PARTS` parts or `MAX_SLICES` slices is refused whole.
+pub fn set(slices: &[&'static [u8]]) {
     unsafe {
-        BLOB = bytes;
+        SLICES = [&[]; MAX_SLICES];
         MARKER = NO_MARKER;
+        if slices.len() > MAX_SLICES {
+            return;
+        }
+        let mut parts = 0;
+        for s in slices {
+            parts += Bank::open(*s).map_or(0, |b| b.parts as usize);
+        }
+        if parts > MAX_PARTS {
+            return;
+        }
+        for (i, s) in slices.iter().enumerate() {
+            SLICES[i] = s;
+        }
     }
 }
 
 /// Whether a bank is loaded.
 #[inline(always)]
 pub fn active() -> bool {
-    unsafe { !BLOB.is_empty() }
+    unsafe { !SLICES[0].is_empty() }
 }
 
-/// The texture id that marks a bank frame in the bound room.
-#[inline(always)]
-pub fn marker() -> u16 {
-    unsafe { MARKER }
+/// The slices' `(sprites, parts)` counts, in numbering order (an empty slice counts as none).
+fn counts() -> impl Iterator<Item = (u32, u32)> {
+    (0..MAX_SLICES).map_while(|i| Bank::open(unsafe { SLICES[i] }).map(|b| (b.sprites, b.parts)))
 }
 
-/// Find the bank's carrier textures among `room`'s, once per room bind (`render::init`).
-pub fn bind(room: &Room) {
+/// Where global sprite `sprite` lives: its slice's bank, the slice, its number in the slice and the global number of
+/// the slice's first part.
+fn locate_sprite(sprite: usize) -> Option<(Bank<&'static [u8]>, usize, usize, usize)> {
+    let (slice, local, parts) = fmt::locate_sprite(counts(), sprite)?;
+    Some((Bank::open(unsafe { SLICES[slice] })?, slice, local, parts))
+}
+
+/// Bind the bank of manifest scene `scene` (or none) to the view `room`: hand its slices to the reader and find the
+/// carrier textures among the room's, once per view bind (`render::init`). A scene without an entry in
+/// `data/actor_banks.rs` costs this one search; a scene with one whose package is not resident leaves the frames that name
+/// the bank drawing nothing (`HK_ACTOR_BANK_UNBOUND`, and `HK_ACTOR_BANK_MISSES` per frame).
+pub fn bind(room: &Room, scene: usize) {
+    set(&[]);
+    let Some(entry) = SCENE_BANKS.iter().find(|e| e.scene == scene) else { return };
+    match crate::modules::bytes(entry.package) {
+        Some(core) => set(&[core, entry.late]),
+        None => unsafe { HK_ACTOR_BANK_UNBOUND = HK_ACTOR_BANK_UNBOUND.wrapping_add(1) },
+    }
     unsafe {
-        MARKER = NO_MARKER;
-        if BLOB.is_empty() {
-            return;
-        }
-        let Some(bank) = Bank::open(BLOB) else { return };
         for t in 0..room.counts[1] {
             let tex = room.texture(t);
             if !tex.is_streamed() {
@@ -78,14 +119,18 @@ pub fn bind(room: &Room) {
             if bytes.len() < 8 || u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) != CARRIER_MAGIC {
                 continue;
             }
-            let id = u16::from_le_bytes([bytes[4], bytes[5]]);
-            let k = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
-            if id != bank.id || k >= MAX_PALETTES {
-                continue;
-            }
-            CLUTS[k] = crate::render::clut_word(tex.palette);
             if MARKER == NO_MARKER {
                 MARKER = t as u16;
+            }
+            let id = u16::from_le_bytes([bytes[4], bytes[5]]);
+            let k = u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
+            if k >= MAX_PALETTES {
+                continue;
+            }
+            for slice in 0..MAX_SLICES {
+                if Bank::open(SLICES[slice]).is_some_and(|bank| bank.id == id) {
+                    CLUTS[slice][k] = crate::render::clut_word(tex.palette);
+                }
             }
         }
     }
@@ -109,19 +154,18 @@ pub struct Piece {
     pub bounds: [i32; 4],
 }
 
-/// The parts of sprite `sprite`, each to `f`. False if the bank has no such sprite.
+/// The parts of global sprite `sprite`, each to `f`. False if the bank has no such sprite.
 pub fn pieces(sprite: usize, mut f: impl FnMut(Piece)) -> bool {
-    let Some(bank) = (unsafe { Bank::open(BLOB) }) else { return false };
-    if sprite >= bank.sprites as usize {
+    let Some((bank, slice, local, first)) = locate_sprite(sprite) else {
         unsafe { HK_ACTOR_BANK_MISSES = HK_ACTOR_BANK_MISSES.wrapping_add(1) };
         return false;
-    }
-    let s = bank.sprite(sprite);
+    };
+    let s = bank.sprite(local);
     for p in s.first_part as usize..(s.first_part + s.parts) as usize {
         let part = bank.part(p);
         f(Piece {
-            key: KEY_BASE + p as u16,
-            clut: unsafe { CLUTS[(s.palette as usize).min(MAX_PALETTES - 1)] },
+            key: KEY_BASE + (first + p) as u16,
+            clut: unsafe { CLUTS[slice][(s.palette as usize).min(MAX_PALETTES - 1)] },
             width: part.width,
             height: part.height,
             bounds: Bank::<&[u8]>::part_bounds(&s, &part),
@@ -137,10 +181,8 @@ struct Buf([u8; 2048]);
 /// Out of line on purpose: inlined into the cache's upload closure it would put the decode in the resident hot path.
 #[inline(never)]
 pub fn upload(index: usize, slot: usize) -> Option<u32> {
-    let bank = Bank::open(unsafe { BLOB })?;
-    if index >= bank.parts as usize {
-        return None;
-    }
+    let (slice, index) = fmt::locate_part(counts(), index)?;
+    let bank = Bank::open(unsafe { SLICES[slice] })?;
     let part = bank.part(index);
     let len = part.texel_bytes();
     if len == 0 || len > 2048 {
@@ -177,7 +219,45 @@ pub fn draw_piece(key: u16, clut: u16, width: u8, height: u8, verts: [(i16, i16)
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
+    use hk_format::boss::{BANK_MAGIC, PART_BYTES, SPRITE_BYTES};
+
+    /// A bank `id` of `sprites` one-part sprites, sprite `i` being 4x2 texels of byte `fill + i`, stored raw.
+    fn bank(id: u16, sprites: u32, fill: u8) -> &'static [u8] {
+        let mut v = std::vec::Vec::new();
+        let put = |v: &mut std::vec::Vec<u8>, n: u32| v.extend(n.to_le_bytes());
+        let sprite_at = 40u32;
+        let part_at = sprite_at + sprites * SPRITE_BYTES as u32;
+        let texels = part_at + sprites * PART_BYTES as u32;
+        put(&mut v, BANK_MAGIC);
+        put(&mut v, id as u32 | 1 << 16);
+        for n in [sprites, sprites, 0, 0, 40, 40, sprite_at, part_at] {
+            put(&mut v, n);
+        }
+        for i in 0..sprites {
+            v.extend(4u16.to_le_bytes());
+            v.extend(2u16.to_le_bytes());
+            for b in [0i32, 0, 65536, 65536] {
+                v.extend(b.to_le_bytes());
+            }
+            v.extend((i as u16).to_le_bytes());
+            v.extend(1u16.to_le_bytes());
+            v.extend([0u8; 4]);
+        }
+        for i in 0..sprites {
+            v.extend(0u16.to_le_bytes());
+            v.extend(0u16.to_le_bytes());
+            v.extend([4u8, 2]);
+            v.extend((4u16 | hk_format::boss::RAW).to_le_bytes());
+            v.extend((i as u16).to_le_bytes());
+            v.extend((texels + i * 4).to_le_bytes());
+        }
+        for i in 0..sprites {
+            v.extend([fill + i as u8; 4]);
+        }
+        std::boxed::Box::leak(v.into_boxed_slice())
+    }
 
     #[test]
     fn a_sprite_index_survives_the_frame_box_it_rides_in() {
@@ -194,6 +274,31 @@ mod tests {
     fn no_marker_matches_no_texture_id() {
         assert_eq!(marker(), NO_MARKER);
         assert!(NO_MARKER as usize >= 2048);
+    }
+
+    #[test]
+    fn two_slices_are_numbered_as_one() {
+        set(&[bank(1, 3, 10), bank(2, 2, 50)]);
+        assert!(active());
+        let mut keys = std::vec::Vec::new();
+        for sprite in 0..5 {
+            assert!(pieces(sprite, |p| keys.push(p.key)));
+        }
+        let want: std::vec::Vec<u16> = (0..5).map(|i| KEY_BASE + i).collect();
+        assert_eq!(keys, want);
+        assert!(!pieces(5, |_| panic!("no such sprite")));
+        // The slice a global part belongs to: parts 3 and 4 are the second slice's.
+        let (b, slice, local, first) = locate_sprite(4).unwrap();
+        assert_eq!((b.id, slice, local, first), (2, 1, 1, 3));
+        set(&[]);
+        assert!(!active());
+    }
+
+    #[test]
+    fn a_list_past_the_limits_is_refused_whole() {
+        set(&[bank(1, 1, 0), bank(2, 1, 0), bank(3, 1, 0)]);
+        assert!(!active());
+        set(&[bank(1, MAX_PARTS as u32 / 2 + 1, 0), bank(2, MAX_PARTS as u32 / 2 + 1, 0)]);
         assert!(!active());
     }
 }
