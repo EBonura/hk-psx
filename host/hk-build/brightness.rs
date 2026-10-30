@@ -12,7 +12,7 @@ use std::path::Path;
 pub const SETTLED_TICKS: usize = 120;
 /// Percent of pixels with a channel above `BLACK_LEVEL` that a settled frame must have. The darkest settled frames
 /// of a healthy build are 19 to 30 percent (the False Knight's rooms); the rooms of the broken one were 8 to 14.
-pub const FLOOR_PERCENT: u64 = 3;
+pub const FLOOR_PERCENT: u64 = 14;
 /// A channel value at or under this is black.
 pub const BLACK_LEVEL: u8 = 24;
 
