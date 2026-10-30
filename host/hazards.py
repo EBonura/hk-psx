@@ -59,9 +59,10 @@ def extract_module(resident,composite,length):
                         capture_output=True,check=True)
     return done.stdout
 
-def _run(tool,exe,map_path,extra=(),module=None,forbid=()):
+def _run(tool,exe,map_path,extra=(),module=None,forbid=(),root=None):
     command=[str(_tools()/tool),str(exe)]
     command+=([str(map_path)] if tool=='stack-guard' else ['--map',str(map_path)])
+    if root is not None:command+=['--root',root[0],'--budget',str(root[1])]
     for lo,hi in extra:command+=['--code',f'{lo:x}..{hi:x}']
     if module is not None:
         lo,hi,at=module
@@ -150,4 +151,24 @@ def stack_guard(exe,map_path,module=None):
     status,log=_run('stack-guard',exe,map_path,module=module,forbid=('__psx_rt_flush_i_cache',))
     print(log,end='',flush=True)
     if status!=0:raise ValueError('Scratchpad stack guard failed:\n'+log)
+    return log.splitlines()
+
+# The wrapper in game/src/cd_stream.rs enters hk_cd_interrupt with this much of HK_CD_IRQ_STACK reserved.
+IRQ_STACK_RESERVED=16
+
+def irq_stack_guard(exe,map_path):
+    """Prove the CD interrupt's call tree fits HK_CD_IRQ_STACK, the stack the exception
+    wrapper switches to (game/src/cd_stream.rs). The same static walk as the scratchpad
+    stacks, rooted at `hk_cd_interrupt`, against the linked size of the stack less the
+    wrapper's reservation; recursion, a call through a register or a BIOS call fails it
+    like any other tree. Resident image only: the handler and everything it calls are resident.
+    Returns the guard's report lines; raises on any failure."""
+    size=None
+    for line in Path(map_path).read_text().splitlines():
+        fields=line.split()
+        if len(fields)==5 and fields[4]=='HK_CD_IRQ_STACK':size=int(fields[2],16);break
+    if size is None:raise ValueError('HK_CD_IRQ_STACK is not in the link map')
+    status,log=_run('stack-guard',exe,map_path,root=('^hk_cd_interrupt$',size-IRQ_STACK_RESERVED))
+    print(log,end='',flush=True)
+    if status!=0:raise ValueError('CD interrupt stack guard failed:\n'+log)
     return log.splitlines()

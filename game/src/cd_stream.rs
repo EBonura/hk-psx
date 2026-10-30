@@ -59,10 +59,15 @@ static TRANSFER: Shared = Shared(UnsafeCell::new(Transfer {
     location: [0; 3],
     recovering: false,
 }));
+/// The CD interrupt's own stack. `hk_cd_interrupt` reaches `service_irq` and nothing deeper: the
+/// SDK's stack-guard measures that tree at 24 bytes, plus the 16 the wrapper reserves, and
+/// `host/hazards.py::irq_stack_guard` fails the build when a link needs more than this holds.
+/// The register context is saved in `HK_CD_IRQ_CONTEXT`, not here.
+const IRQ_STACK_BYTES: usize = 256;
 #[repr(C, align(16))]
-struct Stack([u8; 2048]);
+struct Stack([u8; IRQ_STACK_BYTES]);
 #[no_mangle]
-static mut HK_CD_IRQ_STACK: Stack = Stack([0; 2048]);
+static mut HK_CD_IRQ_STACK: Stack = Stack([0; IRQ_STACK_BYTES]);
 #[no_mangle]
 static mut HK_CD_IRQ_CONTEXT: [u32; 34] = [0; 34];
 #[no_mangle]
@@ -524,7 +529,7 @@ pub fn install() {
     timers::set_mode(timers::Timer::Timer2, 0x0200);
     unsafe {
         let stack = (&raw mut HK_CD_IRQ_STACK.0).cast::<u8>();
-        for i in 0..2048 {
+        for i in 0..IRQ_STACK_BYTES {
             stack.add(i).write_volatile(0xa5);
         }
         let address = hk_cd_exception_wrapper as *const () as usize as u32;
@@ -592,8 +597,8 @@ hk_cd_exception_wrapper:
     sw $27, 116($26)
     mflo $27
     sw $27, 120($26)
-    lui $29, %hi(HK_CD_IRQ_STACK+2048)
-    addiu $29, $29, %lo(HK_CD_IRQ_STACK+2048)
+    lui $29, %hi(HK_CD_IRQ_STACK+{stack_bytes})
+    addiu $29, $29, %lo(HK_CD_IRQ_STACK+{stack_bytes})
     addiu $29, $29, -16
     jal hk_cd_interrupt
     nop
@@ -640,7 +645,8 @@ hk_cd_exception_wrapper:
     nop
     .set at
     .set reorder
-"#
+"#,
+    stack_bytes = const IRQ_STACK_BYTES,
 );
 
 #[cfg(test)]
