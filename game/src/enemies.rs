@@ -7093,10 +7093,10 @@ impl EnemyWorld {
             .filter(|(id, _, _)| *id as usize == region.scene)
         {
             // The False Knight's wave shows every spurt, as the original's dense white spurts are; a Husk
-            // Guard's, in a room with little art, every third.
-            let stride = if *spurt == NO_SPURT { 1 } else { 3 };
-            for (x, age) in wave.spurts(wave_params(*spurt), stride) {
-                if *spurt == NO_SPURT {
+            // Guard's, in a room with little art, every third (each loop has its own constant stride:
+            // a variable one cost 900 bytes of code).
+            if *spurt == NO_SPURT {
+                for (x, age) in wave.spurts(wave_params(*spurt), 1) {
                     let sprite = crate::fk_art::sprite(crate::fk_art::SPURT, age as u32);
                     push_sprite_if_room(
                         &mut draws,
@@ -7107,7 +7107,9 @@ impl EnemyWorld {
                         -(wave.dir as i32),
                         camera,
                     );
-                } else {
+                }
+            } else {
+                for (x, age) in wave.spurts(wave_params(*spurt), 3) {
                     push_frame_if_room(
                         &mut draws,
                         room,
