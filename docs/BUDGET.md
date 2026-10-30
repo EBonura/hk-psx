@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |781,252|
-| Code-to-data alignment |12|
+| Linked code |783,840|
+| Code-to-data alignment |0|
 | Linked data, including menu and HUD |280,872|
-| BSS, including shared scene arena and runtime pools |805,844|
-| Total static span |1,867,988|
+| BSS, including shared scene arena and runtime pools |805,900|
+| Total static span |1,870,620|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |114,220|
+| Unallocated gap before reserved stack |111,588|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |5,676|
+| Free RAM below the module pool |3,044|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -150,7 +150,7 @@ The 2026-10-25 ability effects pass (docs/ABILITY_EFFECTS.md: the Knight's dash 
 The 2026-10-25 opening-movies hand-off (docs/INTRO.md: the movie program is called from the running game and returns into it, instead of chain-loading `PSX.EXE` and booting twice; the poem and its piano play before the movies) took linked code from 785,684 to 785,232 bytes: the mailbox settings copy, `take` and the resume path in `main` are gone, `intro::play` and its 156-byte enter/leave stub replace `launch`; 9,472 bytes are free below the module pool (9,008 on the main it was cut from). The three `#[inline(never)]` marks on `audio::set_volume`, `music::set_volume` and `music::apply` stay: without them the same tree linked 1,004 bytes larger. The program itself is in the boot art chunk and costs no RAM; its movie buffers (412 KB for the Prologue) are the scene arena, idle between the title and the first scene's load.
 The 2026-10-25 first-scene prefetch (docs/INTRO.md: the first scene's sound banks, ambience clips, sound effects, coverage, effect art and atlases load while the opening poem plays, so only the scene, its metadata and its code wait for the movies) took linked code from 785,232 to 785,136 bytes (-96) and left linked data and BSS where they were, so 9,568 bytes are free below the module pool (9,472 before). The shipping disc's new code is `intro::play`'s three calls and the poem's step (`intro::tick`, `call_program`, about 400 bytes), `Cache::preload` and the early branch of `admit_scenes` (about 150), and a call at each of the admission's checkpoints (`disc::checkpoint`, 40); it is paid for by `prepare_ambience` (4,108 bytes, which `main` had inlined in a speed-optimised copy of about 4,540) going out of line under `optimize(size)` for the build that has the poem, and by `prepare_effect_art` under `optimize(size)` there as well. The route-input twin and every other build without the `intro` feature link the same bytes as before (the twin's disc is byte for byte the main's). The hand-off block is the last 192 bytes of RAM above the game's initial stack pointer (the 256 bytes over it are nobody's), no linked data.
 
-Static data ends at `0x801d80d4`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d8b1c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -600,3 +600,5 @@ The 2026-10-30 boss title card (the original's small capitals at the lower right
 The 2026-10-30 reward pickup (a shiny's `INSPECT` prompt marker through the NPCs' marker, and the item message at the lower left for 4.2 s instead of a centred card) took linked code from 780,512 to 780,688 bytes and BSS from 805,820 to 805,836 (the pickups' prompt point), so free RAM below the module pool on the shipping build went from 6,516 to 6,308 (-208).
 
 The 2026-10-30 boss presentation (the False Knight's landing and slam dust, the floor mist and the entrance landing's sparks as glow emitters of Crossroads_10, `fx.rs` owners 0xD040 to 0xD042, raised by `frame.rs` from a three word static the actor loop leaves; and his wave drawn as every spurt instead of every third) took linked code from 780,688 to 781,252 bytes and linked data from 281,000 to 280,872, so free RAM below the module pool on the shipping build went from 6,308 to 5,676 (-632). Measured on dev ships of the same tree (7,252 free before): the dust, mist and sparks -328, the dense wave -304. A first version called `fx::raise` from the actor loop and cost 1,248 for the dust alone: any call there grew `advance_in_view` by 956 bytes; the glow curves are shared with the existing glows (grow 1.3, hold 0.25 and 0.5), which saved 297 bytes of tables. The effects' art in Crossroads_10 takes 3,285 of the 3,776 halfwords the four VRAM rects hold. Not done: the orange balls of light of the entrance (the 13 texel glow cell drew them as hard blocks that lasted two frames), and the wave's white (the only quad flash is the infected orange).
+
+The 2026-10-30 False Knight arena split (the scene's stream after its alpha covers, 219,136 bytes of the boss's streamed frames, is a chunk of its own that the room reads after the gate; docs/SEAMLESS.md) took the free RAM below the module pool on the shipping build from 5,676 to 3,044 (-2,632). Both figures are `ship-final.sh` builds, main 795c877 and this tree: linked code 781,252 to 783,840 (+2,588), linked data unchanged at 280,872, BSS 805,844 to 805,900 (+56). The code is the tail's reader (a state machine in a few words of statics: `tail_arm`, `start_tail`, `land_tail`, `tail_service`, `tail_finish`, and `Gap` in room_decode.rs) and the split's tables, built for size; the retries (three tries per burst or check) stay, a real drive fails reads.

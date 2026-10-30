@@ -48,6 +48,8 @@ A load line may end in `pad N`: the stretch after that load starts after N neutr
 * Open loop (frontend, `replay_cue.py`, unchanged): the tape completed, no fault counter, no stale vignette or camera miss, late art within `art_late`, the scene-gate verifier for `scene_gate` routes, frame pacing against `frame_time`, `long_frames` and `pacing` (see Frame pacing below). For routes without a cut list the pins are judged here.
 * Closed loop (gate): the pins of every route that has a cut list. The open-loop figures of such a route still count, except that its pacing is compared with the ceilings only when the open-loop tape still reaches the same pins on this disc: a tape that drifted did not play the route the ceiling was measured on, and the closed-loop run (which has no frame counter) is what judges the route. The report line says so.
 
+Lit frames (2026-10-30, host/hk-build/brightness.rs): the open-loop journeys keep a screenshot every 400 ticks, and every one taken in gameplay after 120 ticks in the same room must have at least 14 percent of its pixels above black level 24. A build that drew the False Knight's approach rooms almost black at 60 fps (their alpha covers were still in the unread tail of the scene's stream) passed every counter, pin and outcome check; its rooms were 8 to 14 percent lit and a healthy build's darkest settled frames are 19 to 30. The validate report prints the darkest settled frame of each journey.
+
 ## Running it
 
 ```sh
