@@ -101,3 +101,8 @@ host/hk-cook/src/boss_art.rs
 host/hk-cook/src/boss_bank.rs
 shared/hk-format/src/boss.rs
 host/hk-fsm/src/boss.rs
+# Compact actor art banks, appended by postpack_art_bank to the views a scene's entry names (an empty entry list changes no
+# byte): the config, the host side, the cooker that writes the banks and the format they share with the guest.
+host/actor_bank.py
+host/actor_banks.json
+host/hk-cook/src/actor_bank.rs
