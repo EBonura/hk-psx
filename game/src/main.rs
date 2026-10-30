@@ -1038,6 +1038,10 @@ fn main() {
     let mut load_published_pending = false;
     // Timer1 counts HBlanks for frame-pacing telemetry only.
     psx_io::timers::set_mode(psx_io::timers::Timer::Timer1, 0x0100);
+    // The gate the prefetch is reading for (index into the scene's gate list). It outlives a change of
+    // view inside the scene: a Knight pacing across a view boundary kept losing it, and the drive read the
+    // two neighbouring groups in turn without finishing either.
+    let mut predicted: Option<usize> = None;
     'region: loop {
         if initial {
             unsafe {
@@ -1177,8 +1181,10 @@ fn main() {
             title_card::enter_scene(r.scene);
         }
         let mut pending_target: Option<usize> = None;
-        // The gate the prefetch is reading for (index into the scene's gate list).
-        let mut predicted: Option<usize> = None;
+        // A new scene starts with no gate predicted (`predicted` outlives a change of view inside a scene).
+        if scene_ticks_scene_changed {
+            predicted = None;
+        }
         // A new scene: the gate the Knight arrived by is found at the first
         // guess. Only a gate sets the cooldown, so a boot or a respawn at a
         // bench has no arrival gate to hold back: excluding the nearest gate
