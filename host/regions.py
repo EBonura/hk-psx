@@ -738,6 +738,41 @@ def postpack_npc_bank(report, source, scenes):
     return placed
 
 
+def postpack_art_bank(report, source, sc, info, entry, bank_actors, bank_views, scene_rows, atlas, clips, clip_base):
+    """Append a scene's compact actor art bank (host/actor_bank.py) to the views that draw it, after the scene actor bank above.
+
+    Runs on the finished packs, so nothing a view already holds moves: the carrier textures, the frames and the clips of the
+    bank come last. The bank's actors are listed in those views only; in every other view they stay the unsupported records the
+    region cook made, and the guest neither steps nor draws an actor its bound view does not list."""
+    import actor_bank
+    name=info['scene_name']
+    listed={a['source'] for a in bank_actors}
+    views=set(entry['views']) if 'views' in entry else bank_views
+    if not views:raise ValueError(f'{name}: no view lists an actor of the bank')
+    if 1 in views:raise ValueError('an actor bank cannot ride view 1: data/room.hk is a copy of it')
+    unknown=views-{row['chunk_id'] for row in scene_rows}
+    if unknown:raise ValueError(f'{name}: actor bank views {sorted(unknown)} are not views of the scene')
+    slices=actor_bank.cook(source,sc,name,entry,bank_actors)
+    first_clip=len(clips)
+    for actor in bank_actors:actor_bank.bind(source,sc,actor,slices,first_clip)
+    for row in scene_rows:
+        if row['chunk_id'] not in views:continue
+        path=ROOT/row['path'];before=path.read_bytes()
+        pack,carriers,nc=actor_bank.append_to_pack(before,slices,clip_base,f'Actor bank {name}')
+        if nc!=clip_base+len(clips):raise ValueError(f'view {row["chunk_id"]} has {nc} clips, not the scene\'s {clip_base+len(clips)}')
+        path.write_bytes(pack)
+        nt=struct.unpack_from('<6I',pack,8)[1]
+        row.update(bytes=len(pack),sha256=hashlib.sha256(pack).hexdigest(),textures=nt,
+                   stream_bytes=struct.unpack_from('<I',pack,32)[0],
+                   animation_bytes=row['animation_bytes']+carriers*8,
+                   cluts=row.get('cluts',row['textures'])+carriers,
+                   actor_art_bank_bytes=len(pack)-len(before),actor_art_bank_carriers=carriers)
+        if row_over_budget(row):raise ValueError(f'view {row["chunk_id"]} of {name} exceeds its budget with the actor bank')
+        row['actors']=[a for a in row['actors'] if a['source'] not in listed]+[remap_actor_clips(a,clip_base) for a in bank_actors]
+    print(f'Actor art bank {name}: {len(bank_actors)} actors, {len(views)} views, '
+          f'{sum(s["bytes"] for s in slices)} bytes in {len(slices)} slices',flush=True)
+
+
 def postpack_actor_bank(report, source, scenes=None):
     """Append a shared scene actor bank from immutable pre-append base packs.
 
@@ -750,7 +785,18 @@ def postpack_actor_bank(report, source, scenes=None):
     for info in SCENES:
         if info['scene_id'] not in scenes:scenes[info['scene_id']]=Scene(source,info['file'])
         sc=scenes[info['scene_id']]
-        actors=[a for a in actor_sources(sc) if a['movement_supported']]
+        # A scene that opts in by data (host/actor_banks.json) draws some actors from a compact art bank: they are admitted
+        # and cooked apart from the plain actors, and listed only in the views that carry the bank (host/actor_bank.py).
+        import actor_bank
+        bank_entry=actor_bank.entry(info['scene_name'])
+        all_actors=actor_sources(sc)
+        bank_actors=actor_bank.admit(all_actors,bank_entry) if bank_entry else []
+        actors=[a for a in all_actors if a['movement_supported'] and not any(a is b for b in bank_actors)]
+        # Views the region cook found the bank's actors in (it listed them, as records or as supported actors), before the
+        # scene actor bank below rewrites every view's list.
+        bank_sources={a['source'] for a in bank_actors}
+        bank_views={row['chunk_id'] for row in report['regions'] if row['scene_id']==info['scene_id']
+                    and any(a['source'] in bank_sources for a in row['actors'])}
         import pickups
         # Arena gates draw from the same bank (host/battle_gates.py), so a scene
         # with gates and nothing else still takes one.
@@ -758,7 +804,7 @@ def postpack_actor_bank(report, source, scenes=None):
         from battle_gates import append_art as append_gate_art,bind_art as bind_gate_art
         # Water drips too (host/props.py drip_art).
         from props import drip_sources,drip_art,bind_drip_art
-        if not actors and not pickups.present(sc) and not gate_sources(sc) and not drip_sources(sc):continue
+        if not actors and not bank_actors and not pickups.present(sc) and not gate_sources(sc) and not drip_sources(sc):continue
         scene_rows=[row for row in report['regions'] if row['scene_id']==info['scene_id']]
         # The False Knight's art is its own bank (host/false_knight_art.py):
         # the generic path cooks only its barrel and a Blank for every body
@@ -853,6 +899,7 @@ def postpack_actor_bank(report, source, scenes=None):
             for row,saved,pack in before:
                 row.clear();row.update(saved);(ROOT/row['path']).write_bytes(pack)
             if level==pickups.LEVEL_BASIC and not actors:break
+        if bank_actors:postpack_art_bank(report,source,sc,info,bank_entry,bank_actors,bank_views,scene_rows,atlas,clips,clip_base)
         print(f'Scene actor bank {info["scene_name"]}: {len(actors)} actors, {len(atlas.entries)} images, {len(atlas.stream)} texel bytes',flush=True)
     report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
     report['actor_bank_policy']='All supported scene actors available in every region; inactive simulation must be bounded by resident collision coverage'

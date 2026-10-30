@@ -188,7 +188,10 @@ if HORNET:
 ALWAYS_RESIDENT = {m for m in os.environ.get('HK_RESIDENT_MODULES', '').split(',') if m}
 # Room art: the prop art (host/props.py) split by prop kind, carried by the
 # rooms that place that kind. Data packages: no fixups, no import sites.
-DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ())
+# Compact actor art banks (host/actor_banks.json, game/src/actor_bank.rs): the first slice of a scene's bank is a package of its
+# own, carried by that scene, so a scene that opts in adds one data module and one that does not changes nothing here.
+import actor_bank
+DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ()) + tuple(actor_bank.packages())
 # Carried data: packages no room's static table needs, which gameplay asks for
 # at run time with `modules::carry` (the Shade's art follows the scene the
 # Knight died in). Each ships in its own chunk, in the disc's last group, and
@@ -299,6 +302,10 @@ def scene_modules(regions_rs, debris=()):
         out.setdefault(sid, set()).update(mods)
     for sid in debris:
         out.setdefault(sid, set()).add('debris')
+    if actor_bank.packages():
+        from quality import SCENE_TABLE
+        for package, scene in actor_bank.packages().items():
+            out.setdefault(next(s['scene_id'] for s in SCENE_TABLE if s['scene_name'] == scene), set()).add(package)
     scripts = fsm3_modules(FSM3_SCRIPTS)
     for sid in script_scenes():
         out.setdefault(sid, set()).update(scripts)
