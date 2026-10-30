@@ -3247,6 +3247,7 @@ impl Actor {
     /// along the arena's floor (host/hk-cook/src/break_effects/fx.rs `collect_boss`). Only the upper
     /// floor of Crossroads_10 has one: the landings below the broken floor raise none.
     #[cfg(not(test))]
+    #[inline(never)]
     fn fk_dust(&self, mist: bool, fire: bool) {
         /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
         const FLOOR_Y: i32 = 27 * 65536 + 13_000;

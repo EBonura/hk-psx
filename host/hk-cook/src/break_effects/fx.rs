@@ -46,7 +46,7 @@ pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
 /// The False Knight's landing and slam dust, and the mist along his arena's floor.
 pub const FX_FK_DUST: i64 = FX_OWNER | 0x40;
 pub const FX_FK_MIST: i64 = FX_OWNER | 0x41;
-/// The orange burst and sparks of his first landing.
+/// The orange sparks of his first landing.
 pub const FX_FK_FIRE: i64 = FX_OWNER | 0x42;
 /// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
 pub const FK_SCENE_ID: i64 = 11;
@@ -798,18 +798,18 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
             count: 8,
             life: [34, 50],
             angle: Some([10.0, 170.0]),
-            speed: [1.5, 5.5],
+            speed: [1.5, 5.0],
             spread: [3.0, 0.2],
-            size: [2.4, 2.4],
-            cell: 0.9,
-            grow: 2.0,
-            alpha: 0.5,
+            size: [3.0, 3.0],
+            cell: 1.2,
+            grow: 1.8,
+            alpha: 0.3,
             hold: 0.25,
-            tint: [215.0, 222.0, 235.0],
+            tint: [170.0, 180.0, 200.0],
             ..Glow::new("disc")
         },
         gravity,
-        [0.0; 3],
+        [0.0, 0.4, 0.0],
         "False Knight landing dust",
     )?;
     push_glow(
@@ -817,53 +817,35 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         scene_id,
         FX_FK_MIST,
         &Glow {
-            count: 7,
+            count: 6,
             life: [150, 210],
             velocity: [0.5, 0.1],
             spread: [9.0, 0.3],
-            size: [9.0, 3.2],
-            cell: 0.9,
+            size: [8.0, 3.0],
+            cell: 1.8,
             grow: 1.2,
-            alpha: 0.2,
+            alpha: 0.13,
             hold: 0.6,
-            tint: [200.0, 215.0, 240.0],
+            tint: [165.0, 180.0, 205.0],
             ..Glow::new("disc")
         },
         gravity,
-        [0.0; 3],
+        [0.0, 0.8, 0.0],
         "False Knight floor mist",
     )?;
-    // The entrance landing's burst: an orange ball of light and the sparks it throws up.
+    // The entrance landing's sparks (the original also has orange balls of light along the floor: the
+    // glow cells, cut at 13 texels, drew them as hard blocks and for two frames only, so they are not cooked).
     push_glow(
         c,
         scene_id,
         FX_FK_FIRE,
         &Glow {
-            count: 1,
-            life: [14, 14],
-            size: [7.0, 6.0],
-            cell: 0.9,
-            grow: 1.3,
-            alpha: 0.7,
-            hold: 0.3,
-            tint: [255.0, 150.0, 50.0],
-            ..Glow::new("disc")
-        },
-        gravity,
-        [0.0, 1.5, 0.0],
-        "False Knight entrance burst",
-    )?;
-    push_glow(
-        c,
-        scene_id,
-        FX_FK_FIRE,
-        &Glow {
-            count: 22,
+            count: 40,
             life: [40, 60],
             angle: Some([55.0, 125.0]),
-            speed: [6.0, 14.0],
-            spread: [3.0, 0.3],
-            size: [0.35, 0.35],
+            speed: [5.0, 16.0],
+            spread: [8.0, 0.3],
+            size: [0.5, 0.5],
             cell: 0.35,
             alpha: 1.0,
             hold: 0.5,
