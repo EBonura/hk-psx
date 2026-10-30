@@ -63,6 +63,10 @@ pub fn prepare(room: &Room, ids: &[u16]) -> Stats {
                 // RAM. The props (Goams, stalactites, grub jars) were added
                 // last and are the highest.
                 // A boss's parts sit above the props' keys and stream from the boss's bank in the scene (boss_bank.rs).
+                // The effects' generated disc: no texels anywhere, written straight from its profile.
+                if key == crate::world::particles::break_effects::DISC_KEY {
+                    return Some(crate::world::particles::break_effects::upload_disc(dest(slot, 64, 64)));
+                }
                 if key >= crate::boss_hooks::KEY_BASE {
                     return crate::boss_hooks::upload(room, key, slot);
                 }

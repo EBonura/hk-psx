@@ -90,6 +90,10 @@ const LOW_HEALTH: u32 = 4;
 /// Frames the Death clip was due and its pack had not arrived, for the route pins (none expected).
 #[no_mangle]
 pub static mut HK_STREAM_ART_LATE: u32 = 0;
+/// The most animation-cache keys one frame has asked for (the cache serves 24 a frame), for the
+/// effects' slot-pressure measurements.
+#[no_mangle]
+pub static mut HK_ANIM_MAX_KEYS: u32 = 0;
 /// Ticks spent in that fade and hold across the run, for the route pins.
 #[no_mangle]
 pub static mut HK_DEATH_HOLD_TICKS: u32 = 0;
@@ -497,6 +501,11 @@ pub fn render(
     // spoken for.
     let fx = !game.vitals.dead && !game.door.hidden() && ability_fx::request(&mut needed, &mut needed_len);
     let slashes = hit_fx::request(&mut needed, &mut needed_len);
+    // The break effects' generated art asks last: it is the first thing to go undrawn.
+    crate::world::particles::break_effects::request(r.scene, &mut needed, &mut needed_len);
+    unsafe {
+        HK_ANIM_MAX_KEYS = HK_ANIM_MAX_KEYS.max(needed_len as u32);
+    }
     if early {
         render::bind_animation(room, &needed[..needed_len], true);
     } else {

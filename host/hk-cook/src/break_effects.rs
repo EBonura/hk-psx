@@ -38,12 +38,13 @@ mod fx;
 /// The effects' share of VRAM. The first column stops four rows short of the bottom of
 /// (352,176,32,64): rows 236 to 239 from x 368 are the soft styles' palette copies (the guest's
 /// `SOFT_CLUT_SLOTS`), which no upload may reach or a scene loses every soft style (its smoke
-/// falls back to dithered coverage); the sliver left of them is used.
+/// falls back to dithered coverage); the sliver left of them is used, less its last row, which holds
+/// the grey ramp the generated and polygon effects draw through (game/src/break_effects.rs `RAMP_CLUT`).
 const VRAM_RECTS: [(i64, i64, i64, i64); 4] = [
     (352, 176, 32, 60),
     (360, 32, 24, 32),
     (352, 64, 32, 32),
-    (352, 236, 16, 4),
+    (352, 236, 16, 3),
 ];
 const ALPHAS: [u32; 3] = [43, 85, 128];
 /// Slots in the guest particle pool, game/src/particles.rs CAPACITY. An
@@ -2667,6 +2668,15 @@ const MAX_CELL: i64 = 32;
 /// `art_bank`: every style's cells cut from its source sheet (`textures`, in
 /// first-use order) at its projected size, one joint palette per opacity level.
 fn art_bank(styles: &[Style], textures: &[(String, Arc<Image>)]) -> Result<Bank> {
+    if textures.is_empty() {
+        return Ok(Bank {
+            blob: Vec::new(),
+            uploads: Vec::new(),
+            art: Vec::new(),
+            frames: Vec::new(),
+            sheet: Image::new(Mode::Rgba, 1, 1),
+        });
+    }
     let mut cells: Vec<Image> = Vec::new();
     let mut opaque_cells: Vec<bool> = Vec::new();
     let mut families: Vec<(String, usize, usize)> = Vec::new();
@@ -2869,7 +2879,8 @@ fn scene_art(
             }
             let mut textures: Vec<String> = Vec::new();
             for s in &trimmed {
-                if !textures.contains(&s.texture) {
+                // A style drawn without art (fx.rs `SHAPE_*`) has no texture.
+                if !s.texture.is_empty() && !textures.contains(&s.texture) {
                     textures.push(s.texture.clone());
                 }
             }

@@ -1775,6 +1775,39 @@ pub fn resident_quad_tinted(template: &QuadTextured, verts: [(i16, i16); 4], tin
         USED += 1;
     }
 }
+/// A gouraud quad of light, untextured: the corner colours are added (`blend`) to what is behind it.
+/// Vertices are ordered as the GPU draws them, (0, 1, 2) then (1, 2, 3).
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+pub fn light_quad(
+    verts: [(i16, i16); 4],
+    colors: [(u8, u8, u8); 4],
+    blend: gpu::material::BlendMode,
+) {
+    unsafe {
+        if occlusion_scratch::dynamic_hidden(
+            verts,
+            (&*Scratch::occluders(occlusion_scratch::base())).as_slice(),
+        ) {
+            record_dynamic_hidden_quad();
+            return;
+        }
+        assert!(USED < CAP);
+        let q = gpu::prim::QuadGouraudBlended::new(verts, colors, blend);
+        PACKETS[USED].write_plain([
+            q.draw_mode,
+            q.color0_cmd,
+            q.v0,
+            q.color1,
+            q.v1,
+            q.color2,
+            q.v2,
+            q.color3,
+            q.v3,
+        ]);
+        USED += 1;
+    }
+}
 /// The selected texture has baked source/lifetime alpha coverage0,1/2,1.
 /// Keep straight RGB: Average supplies source-over at the half-alpha midpoint.
 /// This is spatial alpha quantization, not arbitrary continuous GPU blending.

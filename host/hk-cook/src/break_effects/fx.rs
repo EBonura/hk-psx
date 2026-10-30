@@ -22,6 +22,10 @@ use super::*;
 use crate::cook::{native_sprite, tk_sprite};
 
 pub const FX_OWNER: i64 = 0xD000;
+/// Shapes the guest draws without art (bits 3 to 5 of a style's additive byte, game/src/break_effects.rs
+/// `Shape`): a soft disc generated into an animation slot, and a needle (a gouraud lozenge).
+pub const SHAPE_DISC: i64 = 1;
+pub const SHAPE_NEEDLE: i64 = 2;
 /// `Dust Hit Med`, where the nail met an object (anchor: the hit).
 pub const FX_HIT_DUST: i64 = FX_OWNER | 0x01;
 /// The Great Door's `Door_dust` (cooked in place) and its `Rubble Fall Short`.
@@ -507,20 +511,6 @@ fn light_frames(frames: &[(hk_pil::Image, [f64; 4])]) -> Vec<(hk_pil::Image, [f6
         .collect()
 }
 
-/// The cocoon's `Splat Effect` (tk2d resources.assets:21014, clip `Splat` at 24 frames a second, tinted
-/// cyan, scale 2 by 3): the aqua leaves it throws.
-fn splat_frames(source: &Source) -> Result<Vec<(hk_pil::Image, [f64; 4])>> {
-    let frames = tk2d_ids(source, "resources.assets", 21014, &[75, 74])?;
-    let scaled = frames
-        .into_iter()
-        .map(|(im, b)| {
-            let (w, h) = (im.width * 2, im.height * 3);
-            (im.resize(w, h, Filter::Lanczos), [b[0] * 2.0, b[1] * 3.0, b[2] * 2.0, b[3] * 3.0])
-        })
-        .collect::<Vec<_>>();
-    Ok(light_frames(&scaled))
-}
-
 /// `push_glow` with the art of a clip or a sprite: `frames` are light cells (`light_frames`) and `size`
 /// is in world units whatever the sheet's own size.
 #[allow(clippy::too_many_arguments)]
@@ -560,6 +550,19 @@ fn push_glow_art(
     style.art_size = q(g.cell.min(g.size[0].max(g.size[1])))?;
     style.collision = g.collision;
     style.additive = 1 | i64::from(g.front) << 1 | i64::from(g.anim) << 2;
+    // The soft disc and the thin bar need no texels: the guest generates the disc into an animation
+    // slot and draws the bar as a gouraud polygon, so such a style has no art cells at all.
+    let shape = match g.art {
+        "disc" => SHAPE_DISC,
+        "bar" => SHAPE_NEEDLE,
+        _ => 0,
+    };
+    if shape != 0 {
+        style.additive |= shape << 3;
+        style.art_size = 0;
+        style.cells = 0;
+        style.texture = String::new();
+    }
     style.stretch = q(g.stretch)?;
     style.colors = soft_colors(g.tint);
     // The opacity is the style's start alpha, so the curves are few: full, held for `hold`, then gone.
@@ -575,7 +578,7 @@ fn push_glow_art(
             [0; 2],
         ];
     }
-    if !c.synthetic.iter().any(|t| t.0 == texture) {
+    if shape == 0 && !c.synthetic.iter().any(|t| t.0 == texture) {
         c.synthetic.push((texture.clone(), Arc::new(sheet_image)));
     }
     let mut m = [[0.0; 4]; 4];
@@ -1218,30 +1221,29 @@ fn collect_cocoon(
         "spatter_blue",
         "Spatter Blue x50",
     )?;
-    // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second): the
-    // aqua leaves that burst out of it.
-    let splat = splat_frames(source)?;
-    push_glow_art(
+    // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second) is a burst
+    // of 12 to 16 separate aqua leaves that fan up and out of it: leaves here, each a tapered polygon
+    // (the guest's needle shape) flown outward along its own length, sharp at any size.
+    push_glow(
         c,
         scene_id,
         FX_COCOON,
         &Glow {
-            count: 1,
-            life: [15, 15],
-            size: [7.0, 7.0],
-            cell: 1.8,
-            alpha: 0.9,
+            count: 14,
+            life: [12, 18],
+            angle: Some([10.0, 170.0]),
+            speed: [7.0, 15.0],
+            size: [1.0, 1.4],
+            alpha: 0.95,
             hold: 0.5,
             tint: [0.0, 228.0, 255.0],
+            stretch: 0.02,
             front: true,
-            anim: true,
-            ..Glow::new("splat")
+            ..Glow::new("bar")
         },
-        &splat,
-        "splat_effect",
         gravity,
         COCOON_BODY,
-        "Splat Effect",
+        "Splat Effect leaves",
     )?;
     // The nail's own strike: `slashEffects` are `Slash Impact R` and `Strike Nail R`.
     push_nail_strike(
