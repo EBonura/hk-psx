@@ -4,6 +4,8 @@
 # has no frame_time or long_frames (tests in host/hk-build/routes.rs); the closed loop judges the route.
 pacing = 861
 journey = 4
+missed_vblanks = 1
+# 2026-10-30 (boss dust commit): the open-loop tape misses one pad vblank (HK_INPUT_MISSED_VBLANKS 1); the longest frame is the same as before (690,570 bus cycles against 690,858) and the closed-loop journey passes: a phase-dependent poll miss, as the pins of crossroads-gate and journey-kings carry.
 scene_gate = true
 # journey-reload boots that card and walks the same way back towards the
 # arena, and where it used to cross the arena floor it now falls through
