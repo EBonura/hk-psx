@@ -9,5 +9,5 @@ leap 35.25 left 12 34.97 3.39 cross 12
 guard 3
 walk 6.3
 leap 6.25 left 84 0.65 5.39 cross 24
-hold left until HK_SCENE_LOADS ge 12 timeout 1500   # out of the left gate
+hold left until HK_SCENE_LOADS ge 14 timeout 1500   # out of the left gate
 wait until HK_GAME_MODE == 1 timeout 1800

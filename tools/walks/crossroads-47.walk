@@ -1,0 +1,11 @@
+# Crossroads_47 (the bench room): in at the right, along to the bench, sit and save, back out at the right.
+at 46.5 6.4
+walk 29.34
+press up                                       # sit on the bench
+wait until HK_BENCH_RESTS ge 2 timeout 600
+wait 120
+press cross                                    # get up
+wait until HK_SAVE_WRITES ge 2 timeout 900     # the bench saves
+wait 90
+hold right until HK_SCENE_LOADS ge 12 timeout 1500   # out of the right-hand gate, back to the hub
+wait until HK_GAME_MODE == 1 timeout 1800
