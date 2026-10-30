@@ -4255,6 +4255,12 @@ fn tail_set(state: u8) {
         HK_TAIL_STATE = state as u32;
     }
 }
+/// Set when the tail has just been checked: frames the animation cache took from the still empty gap are stale.
+static mut TAIL_FLUSH: bool = false;
+/// True once after the tail turns ready (the frame loop empties the animation cache then).
+pub fn tail_flush() -> bool {
+    unsafe { core::mem::replace(&mut TAIL_FLUSH, false) }
+}
 /// The resident scene's stream is in place (true for a scene read whole, and for one whose tail gave up).
 pub fn tail_ready() -> bool {
     matches!(tail().state, TAIL_IDLE | TAIL_READY | TAIL_FAILED)
@@ -4440,6 +4446,9 @@ pub fn tail_service(budget: usize) {
     if t.pos == sp.gap_len {
         if crate::room_decode::word_finish(t.hash, sp.gap_len) == sp.tail_stored_fnv {
             tail_set(TAIL_READY);
+            unsafe {
+                TAIL_FLUSH = true;
+            }
         } else {
             tail_retry();
         }

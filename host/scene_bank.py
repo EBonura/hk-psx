@@ -684,7 +684,7 @@ ATTRIBUTE_STRIDE=12
 STREAM_SPLIT_MIN=150000
 def split_stream(resident,minimum=STREAM_SPLIT_MIN):
     """The resident bank of a scene whose streamed texels dominate it, split in two: the head (everything the gate
-    needs to enter the room) and the tail (the stream section's whole sectors: the False Knight's art, 220,924
+    needs to enter the room) and the tail (the stream section's whole sectors after its alpha covers: the False Knight's art, about 219,000
     of Crossroads_10's 368,288 bytes), a chunk of its own that the room reads after its gate. The tail is stored
     as it is (no LZ4): the guest reads it straight into its place, whole sectors, so there is no decode to
     run in place and the unread rest of the stream, under one sector, stays in the head. The raw layout does not
@@ -697,9 +697,18 @@ def split_stream(resident,minimum=STREAM_SPLIT_MIN):
     if stream<minimum:return None
     if end-start<stream or end-start>stream+3 or end>len(resident):raise ValueError('The stream section does not end at the descriptors')
     if start%4:raise ValueError('The stream does not start on a word')
-    gap=(end-start)//2048*2048
+    # The stream opens with the alpha covers of the first textures (`Room::alpha_cover`), which the renderer reads
+    # once when it binds the scene's first view: they stay in the head, with everything before the first streamed
+    # texture's texels. The gap is the whole sectors from there to the descriptors.
+    textures=struct.unpack_from('<I',resident,20)[0]
+    firsts=[struct.unpack_from('<I',resident,offsets[0]+i*16+12)[0] for i in range(textures) if struct.unpack_from('<H',resident,offsets[0]+i*16)[0]==0xFFFF]
+    if not firsts:raise ValueError('A scene with a split stream has streamed textures')
+    prefix=min(firsts)&~3
+    if prefix>stream:raise ValueError('The first streamed texture lies outside the stream')
+    gap_at=start+prefix
+    gap=(end-gap_at)//2048*2048
     if gap<=0:raise ValueError('Stream shorter than a sector')
-    return dict(head=resident[:start]+resident[start+gap:],tail=resident[start:start+gap],stream_off=start,gap_len=gap)
+    return dict(head=resident[:gap_at]+resident[gap_at+gap:],tail=resident[gap_at:gap_at+gap],stream_off=gap_at,gap_len=gap)
 
 def with_texture_attributes(resident,flags,black,opaque):
     """Append the per-texture attribute section to a compact resident bank.
