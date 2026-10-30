@@ -4210,6 +4210,10 @@ struct Tail {
     scene: usize,
     state: TailState,
     lba: u32,
+    /// Sectors landed so far (the read goes in bursts, so a music refill the FIFO needs can go between them).
+    done: usize,
+    /// Sectors in the burst in flight.
+    burst: usize,
     pos: usize,
     hash: u32,
     tries: u8,
@@ -4218,10 +4222,14 @@ static mut TAIL: Tail = Tail {
     scene: EMPTY,
     state: TailState::Idle,
     lba: 0,
+    done: 0,
+    burst: 0,
     pos: 0,
     hash: 0,
     tries: 0,
 };
+/// Sectors a tail burst reads: about 0.1 s of drive time.
+const TAIL_BURST: usize = 16;
 /// 0 none, 1 waiting for the drive, 2 reading, 3 checking, 4 in place, 5 given up.
 #[no_mangle]
 pub static mut HK_TAIL_STATE: u32 = 0;
@@ -4267,8 +4275,9 @@ fn tail_pause() {
             land_tail();
         }
     }
-    if tail().state == TailState::Reading || tail().state == TailState::Hashing {
-        tail().tries = 0;
+    // The bursts that landed stay; the one cut short is read again. A tail whose sectors are all in keeps
+    // checking.
+    if tail().state == TailState::Reading {
         tail_set(TailState::Want);
     }
 }
@@ -4277,6 +4286,7 @@ fn tail_arm(scene: usize, lba: u32) {
     let t = tail();
     t.scene = scene;
     t.lba = lba;
+    t.done = 0;
     t.pos = 0;
     t.tries = 0;
     tail_set(TailState::Want);
@@ -4289,6 +4299,7 @@ fn tail_retry() {
     let t = tail();
     t.tries += 1;
     t.pos = 0;
+    t.done = 0;
     tail_set(if t.tries >= 3 {
         TailState::Failed
     } else {
@@ -4301,15 +4312,17 @@ fn start_tail() -> bool {
         return false;
     }
     let d = &SCENE_MANIFEST[t.scene];
+    let burst = (d.gap_len / SECTOR_BYTES - t.done).min(TAIL_BURST);
     // Safety: the gap is this read's until it lands (the room draws none of it, `tail_ready`).
     let destination = unsafe {
         (&raw mut BUFFERS.words)
             .cast::<u8>()
-            .add(d.ram_offset + d.gap_off)
+            .add(d.ram_offset + d.gap_off + t.done * SECTOR_BYTES)
             .cast::<u32>()
     };
-    match unsafe { cd_stream::start(destination, d.gap_len / SECTOR_BYTES, t.lba) } {
+    match unsafe { cd_stream::start(destination, burst, t.lba + t.done as u32) } {
         Ok(()) => {
+            t.burst = burst;
             unsafe {
                 DRIVE.tail = true;
                 HK_TAIL_READS = HK_TAIL_READS.saturating_add(1);
@@ -4335,10 +4348,16 @@ fn land_tail() {
     match cd_stream::status() {
         cd_stream::Status::Done => {
             d.tail = false;
-            if t.scene != EMPTY && cd_stream::received() == SCENE_MANIFEST[t.scene].gap_len / SECTOR_BYTES {
-                t.pos = 0;
-                t.hash = crate::room_decode::FNV;
-                tail_set(TailState::Hashing);
+            if t.scene != EMPTY && cd_stream::received() == t.burst {
+                t.done += t.burst;
+                if t.done * SECTOR_BYTES == SCENE_MANIFEST[t.scene].gap_len {
+                    t.pos = 0;
+                    t.hash = crate::room_decode::FNV;
+                    tail_set(TailState::Hashing);
+                } else {
+                    // The next burst starts when the drive is free and the music has had its turn.
+                    tail_set(TailState::Want);
+                }
             } else {
                 tail_retry();
             }
