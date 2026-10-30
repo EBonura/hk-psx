@@ -75,7 +75,7 @@ const EMPTY: Glyph = Glyph {
     wh: 0,
 };
 static mut GLYPHS: [Glyph; CAP] = [const { EMPTY }; CAP];
-static mut BOXES: [RectFlat; 2] = [const { RectFlat::new(0, 0, 0, 0, 0, 0, 0) }; 2];
+static mut BOXES: [RectFlat; 4] = [const { RectFlat::new(0, 0, 0, 0, 0, 0, 0) }; 4];
 /// The ornate panel's backboard: a 3x3 grid of translucent quads, flat in the
 /// middle and fading out at every edge.
 static mut BACKBOARD: [QuadGouraudBlended; BACKBOARDS] = [const {
@@ -594,8 +594,10 @@ pub fn prepare(
         } else if closing() {
         } else if let Some(id) = STATE.prompt {
             prompt_marker(camera, POINTS[id].marker, POINTS[id].label);
+            interact_hint(camera);
         } else if let Some(id) = CONVO.prompt {
             prompt_marker(camera, NPC_LINES[id].marker, NPC_LINES[id].label);
+            interact_hint(camera);
         } else {
             prompt_fade_out(camera);
         }
@@ -1062,6 +1064,25 @@ fn prompt_marker(camera: (i32, i32), p: [i32; 2], label: &'static str) {
         now.wrapping_sub(PROMPT.2)
     };
     draw_prompt(camera, p, label, ramp(age.min(255) as u8, 0, 24), ramp(age.min(255) as u8, 0, 14), age);
+}
+/// Where the Knight is (world, Q16), for the hint under him.
+pub(crate) static mut HERO: [i32; 2] = [0; 2];
+/// The original's `Interact` hint while an NPC or a sign is in reach (hkref frames of Dirtmouth): a white
+/// up arrow and the word, just under the Knight's feet.
+#[inline(never)]
+fn interact_hint(camera: (i32, i32)) {
+    let hero = unsafe { HERO };
+    let x = 160 + psx_math::int32::mul_shr_i32((hero[0] - camera.0) >> 8, crate::KNIGHT_SCALE as i32, 20);
+    let y = 120 - psx_math::int32::mul_shr_i32((hero[1] - camera.1) >> 8, crate::KNIGHT_SCALE as i32, 20);
+    let (x, y) = ((x - 6).clamp(8, 250) as i16, (y + 18).clamp(8, 224) as i16);
+    unsafe {
+        BOXES[0] = RectFlat::new(x + 3, y, 1, 2, 230, 230, 230);
+        BOXES[1] = RectFlat::new(x + 2, y + 2, 3, 2, 230, 230, 230);
+        BOXES[2] = RectFlat::new(x + 1, y + 4, 5, 2, 230, 230, 230);
+        BOXES[3] = RectFlat::new(x + 2, y + 6, 3, 5, 230, 230, 230);
+        BOX_COUNT = 4;
+    }
+    text(x + 11, y - 3, "Interact");
 }
 /// A prompt that was drawn a moment ago and is not any more.
 #[inline(never)]

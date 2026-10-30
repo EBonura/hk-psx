@@ -639,6 +639,7 @@ pub fn render(
     // The Geo coin is a cell of the panel font now (dialogue::prepare draws it
     // with the count); it still counts as the frame's one HUD primitive.
     prims += 1;
+    unsafe { dialogue::HERO = [game.player.x, game.player.y] };
     dialogue::prepare(
         camera,
         game.geo.wallet(),
