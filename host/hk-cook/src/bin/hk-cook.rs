@@ -34,6 +34,7 @@ fn main() {
         Some("hornet-bank") => hk_cook::hornet_scene::bank_report(&root, args.iter().position(|a| a == "--sheet").map(|i| std::path::Path::new(&args[i + 1]))).map_err(|e| e.to_string()),
         Some("boss-survey") => hk_cook::boss_measure::survey(&root, &args[2..]).map_err(|e| e.to_string()),
         Some("boss-measure") => hk_cook::boss_measure::main(&root, &args[2..]).map_err(|e| e.to_string()),
+        Some("actor-bank") => hk_cook::actor_bank::main(&root, &args[2..]).map_err(|e| e.to_string()),
         Some("husk-measure") => hk_cook::husk_measure::main(&root, &args[2..]).map_err(|e| e.to_string()),
         Some("props") => hk_cook::props::main(&root, source.as_deref()),
         Some("break-effects") => hk_cook::break_effects::main(&root, source.as_deref()),
