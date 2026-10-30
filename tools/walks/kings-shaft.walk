@@ -27,7 +27,9 @@ guard 45 89.80
 leap 89.80 right 28 93.68 41.39
 guard 45 93.68
 leap 92.43 left 40 86.76 43.72
-guard 45 86.76
+guard 45 88.0                                  # the ledge is narrow at its left end: a hit on the right recoils him off it
+snipe                                          # a Fly hangs over the next ledge
+guard 45 88.0
 leap 86.76 left 36 81.78 47.39
 guard 45 81.78
 leap 80.67 left 44 74.86 52.39 cross 36

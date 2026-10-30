@@ -396,9 +396,11 @@ fn units(value: f64) -> String {
 /// holds the button (`HK_WALK_STRIKE_*`) as zero once the swing has started or there is no foe.
 fn strike_one(out: &mut String, label: &str, side: &str) {
     let word = if side == "left" { "HK_WALK_STRIKE_LEFT" } else { "HK_WALK_STRIKE_RIGHT" };
-    // A tick of the pad turns him to face the foe; the swing is then the button alone, so the wait for
-    // the nail to start (a Knight in recoil cannot swing for a few ticks) never walks him anywhere.
-    let _ = writeln!(out, "hold {side} for 1 # {label}: face {side}");
+    // A tick of the pad turns him to face the foe, and none at all when he already does (a ledge a unit
+    // wide has no room for a step); the swing is then the button alone, so the wait for the nail to
+    // start (a Knight in recoil cannot swing for a few ticks) never walks him anywhere.
+    let turn = if side == "left" { "HK_WALK_TURN_LEFT" } else { "HK_WALK_TURN_RIGHT" };
+    let _ = writeln!(out, "hold {side} until {turn} == 0 timeout 10 # {label}: face {side}");
     let _ = writeln!(out, "hold square until {word} == 0 timeout 90 # {label}: strike {side}");
     let _ = writeln!(out, "wait until HK_NAIL_BUSY == 0 timeout 90");
 }
@@ -443,7 +445,7 @@ fn heal(out: &mut String, label: &str) {
 ///                            (24, or C, of them with the jump), land at x X, knight height Y
 /// bash  [N]                  N rounds (6) of leaning on whatever is ahead and swinging at it: a breakable wall
 /// strike                     swing at a foe in reach on either side (nothing happens with none)
-/// snipe                      jump at a foe above the swing's reach and swing at the top (`guard` does it)
+/// snipe                      jump at a foe above the swing's reach and swing at the top (a ledge with room under it; not part of `guard`)
 /// heal                       Focus while masks are missing and SOUL allows and no foe is close
 /// guard [N [X]]             N rounds of strike and heal where he stands (a small platform)
 /// fight [N] [noheal]        N rounds of: close on the nearest foe on the right until a swing reaches
@@ -649,7 +651,6 @@ pub fn macros(text: &str) -> Result<String> {
                 // under his feet.
                 for _ in 0..rounds {
                     strike_both(&mut out, label);
-                    snipe(&mut out, label);
                     heal(&mut out, label);
                     // Time to pass: a foe that is not here yet arrives while the rounds run.
                     let _ = writeln!(out, "wait 4");

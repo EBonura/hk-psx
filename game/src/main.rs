@@ -472,6 +472,13 @@ pub static mut HK_NAIL_BUSY: u32 = 0;
 /// is 0 (at the top of the jump, or the foe gone) and swings there.
 #[no_mangle]
 pub static mut HK_WALK_JUMPSTRIKE: u32 = 0;
+/// The walker's sense (read-only route telemetry): 1 while a foe stands in that side's swing box, the Knight
+/// can act, and he faces the other way: the turn a swing needs first. 0 when there is no foe to turn to, so
+/// a script that turns until it is 0 takes no step at all (a ledge a unit wide has no room for one).
+#[no_mangle]
+pub static mut HK_WALK_TURN_LEFT: u32 = 0;
+#[no_mangle]
+pub static mut HK_WALK_TURN_RIGHT: u32 = 0;
 #[no_mangle]
 pub static mut HK_WALK_FOCUS: u32 = 0;
 /// The nearest live foe from the Knight (Q16; x is `i32::MAX` with none within range), for authoring.
@@ -1392,6 +1399,8 @@ fn main() {
                         HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
                         HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
                         HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
+                        HK_WALK_TURN_LEFT = u32::from(foes.strike_left && ready && game.player.facing > 0);
+                        HK_WALK_TURN_RIGHT = u32::from(foes.strike_right && ready && game.player.facing < 0);
                         HK_WALK_JUMPSTRIKE = u32::from(
                             foes.jump_strike && ready && (game.player.grounded || game.player.vy > 0),
                         );
