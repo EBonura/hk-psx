@@ -243,6 +243,15 @@ pub struct World {
 }
 #[no_mangle]
 pub static mut HK_GOAMS_UP: u32 = 0;
+/// The walker's sense (read-only route telemetry): ticks left in the Down window of the nearest Goam
+/// within `GOAM_SENSE_X` of the Knight, the one stretch in which its collider is off; 0 while that Goam
+/// is hot (its collider on); `GOAM_CLEAR` when none is that close. A script waits for a value that
+/// leaves time to cross, and the wait takes no time when no Goam is near.
+#[no_mangle]
+pub static mut HK_WALK_GOAM: u32 = GOAM_CLEAR;
+const GOAM_CLEAR: u32 = 255;
+/// How far from a Goam the Knight is before the sense reports it (Q16 world units).
+const GOAM_SENSE_X: i32 = 8 * ONE;
 #[no_mangle]
 pub static mut HK_STALACTITES_FALLEN: u32 = 0;
 #[no_mangle]
@@ -520,6 +529,23 @@ impl World {
                     .flatten()
                     .any(|s| STALACTITES[s.index as usize].hazard == source_id))
     }
+    /// `HK_WALK_GOAM` for a Knight at `x`: the fewest ticks left in the Down window among the Goams
+    /// within `GOAM_SENSE_X` (0 for one that is hot), `GOAM_CLEAR` with none that near.
+    fn goam_window(&self, x: i32) -> u32 {
+        let mut window = GOAM_CLEAR;
+        for g in self.goams.iter().flatten() {
+            if (GOAMS[g.index as usize].position[0] - x).abs() > GOAM_SENSE_X {
+                continue;
+            }
+            let left = if g.phase == GoamPhase::Down && !g.collider {
+                u32::from(GOAM_DOWN_TICKS).saturating_sub(g.ticks)
+            } else {
+                0
+            };
+            window = window.min(left);
+        }
+        window
+    }
     /// One 60 Hz simulation tick. `body` is the Knight's box, `centre` his
     /// position; terrain is the resident view's edges.
     pub fn tick(
@@ -562,6 +588,9 @@ impl World {
             if g.collider && overlap(spec.hurt, body) {
                 out.hurt = Some(hurt_from(spec.position[0]));
             }
+        }
+        unsafe {
+            HK_WALK_GOAM = self.goam_window(centre[0]);
         }
         for (slot, s) in self.stalactites.iter_mut().enumerate() {
             let Some(s) = s else { continue };
@@ -1086,6 +1115,32 @@ mod tests {
                 assert!(t.hurt.is_some());
             }
         }
+    }
+    #[test]
+    fn the_walker_senses_a_goam_that_is_down_and_nothing_else() {
+        let Some(scene) = scene_of(GOAMS, |g| g.scene) else {
+            return;
+        };
+        let first = GOAMS.iter().position(|g| g.scene as usize == scene).unwrap();
+        let spec = GOAMS[first];
+        let mut w = World::new();
+        w.enter_scene(scene, |_| false);
+        for _ in 0..30 {
+            w.tick(FAR, [0, 0], 0, |_| [0; 4]);
+            assert_eq!(w.goam_window(-500 * ONE), GOAM_CLEAR, "no Goam is near a Knight far away");
+        }
+        let mut down = 0;
+        for _ in 0..600 {
+            w.tick(FAR, [spec.position[0], spec.position[1]], 0, |_| [0; 4]);
+            let sense = w.goam_window(spec.position[0]);
+            let near_hot = w.goams.iter().flatten().any(|g| {
+                g.collider && (GOAMS[g.index as usize].position[0] - spec.position[0]).abs() <= GOAM_SENSE_X
+            });
+            assert_eq!(sense > 0, !near_hot, "positive exactly while no Goam in range is hot");
+            assert!(sense <= u32::from(GOAM_DOWN_TICKS), "it is the window's ticks left");
+            down += u32::from(sense > 0);
+        }
+        assert!(down > 0, "a Goam goes down in ten seconds");
     }
     #[test]
     fn a_stalactite_hangs_harmless_then_falls_hurts_and_embeds() {

@@ -1,0 +1,25 @@
+# Crossroads_13 (the Barger and the Buzzers): in at the left gate, a pit to jump, then a stair of drops and
+# hops down and to the right, out of the right-hand gate. Hop recipes from the journey-crossroads replay.
+at 0.5 12.4
+guard 3
+walk 8.3
+leap 8.3 right 60 16.4 12.39 cross 24                # over the pit
+guard 3
+walk 25.3                                            # off the ledge, onto the step below
+leap 25.26 right 60 33.55 6.39 cross 24
+guard 3
+walk 38.75
+leap 38.75 right 46 44.75 4.39 cross 24
+guard 3
+leap 44.75 right 20 46.55 6.39 cross 24
+guard 3
+leap 48.35 right 60 56.65 6.39 cross 24
+guard 3
+leap 56.75 right 33 61.31 9.39 cross 24
+leap 61.31 right 48 68.0 12.39 cross 24
+guard 3
+walk 70.75
+leap 70.75 right 40 78.36 13.39 cross 24
+guard 3
+hold right until HK_SCENE_LOADS ge 8 timeout 1200    # out of the right-hand gate
+wait until HK_GAME_MODE == 1 timeout 1800
