@@ -46,6 +46,8 @@ pub const FX_JAR_GLASS: i64 = FX_OWNER | 0x30;
 /// The False Knight's landing and slam dust, and the mist along his arena's floor.
 pub const FX_FK_DUST: i64 = FX_OWNER | 0x40;
 pub const FX_FK_MIST: i64 = FX_OWNER | 0x41;
+/// The orange burst and sparks of his first landing.
+pub const FX_FK_FIRE: i64 = FX_OWNER | 0x42;
 /// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
 pub const FK_SCENE_ID: i64 = 11;
 
@@ -830,6 +832,48 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         gravity,
         [0.0; 3],
         "False Knight floor mist",
+    )?;
+    // The entrance landing's burst: an orange ball of light and the sparks it throws up.
+    push_glow(
+        c,
+        scene_id,
+        FX_FK_FIRE,
+        &Glow {
+            count: 1,
+            life: [14, 14],
+            size: [7.0, 6.0],
+            cell: 0.9,
+            grow: 1.3,
+            alpha: 0.7,
+            hold: 0.3,
+            tint: [255.0, 150.0, 50.0],
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0, 1.5, 0.0],
+        "False Knight entrance burst",
+    )?;
+    push_glow(
+        c,
+        scene_id,
+        FX_FK_FIRE,
+        &Glow {
+            count: 22,
+            life: [40, 60],
+            angle: Some([55.0, 125.0]),
+            speed: [6.0, 14.0],
+            spread: [3.0, 0.3],
+            size: [0.35, 0.35],
+            cell: 0.35,
+            alpha: 1.0,
+            hold: 0.5,
+            tint: [255.0, 140.0, 40.0],
+            gravity_scale: 0.7,
+            ..Glow::new("disc")
+        },
+        gravity,
+        [0.0; 3],
+        "False Knight entrance sparks",
     )
 }
 

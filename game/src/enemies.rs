@@ -3247,7 +3247,7 @@ impl Actor {
     /// along the arena's floor (host/hk-cook/src/break_effects/fx.rs `collect_boss`). Only the upper
     /// floor of Crossroads_10 has one: the landings below the broken floor raise none.
     #[cfg(not(test))]
-    fn fk_dust(&self, mist: bool) {
+    fn fk_dust(&self, mist: bool, fire: bool) {
         /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
         const FLOOR_Y: i32 = 27 * 65536 + 13_000;
         if self.y < 30 * 65536 {
@@ -3257,9 +3257,12 @@ impl Actor {
         if mist {
             crate::fx::raise(usize::from(self.scene), crate::fx::FK_MIST, [self.x, FLOOR_Y]);
         }
+        if fire {
+            crate::fx::raise(usize::from(self.scene), crate::fx::FK_FIRE, [self.x, FLOOR_Y]);
+        }
     }
     #[cfg(test)]
-    fn fk_dust(&self, _mist: bool) {}
+    fn fk_dust(&self, _mist: bool, _fire: bool) {}
     /// One `FalseyControl` action list against the guest body.
     fn apply_false_knight(
         &mut self,
@@ -3359,7 +3362,7 @@ impl Actor {
                     Effect::LandingShake => {
                         crate::camera::request(Shake::Average);
                         crate::audio::boss_land();
-                        self.fk_dust(false);
+                        self.fk_dust(false, false);
                     }
                     Effect::Landing => crate::audio::boss_land(),
                     Effect::Swing => crate::audio::boss_swing(),
@@ -3371,7 +3374,7 @@ impl Actor {
                     Effect::Slam => {
                         crate::camera::request(Shake::Big);
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_STRIKE_GROUND);
-                        self.fk_dust(true);
+                        self.fk_dust(true, false);
                     }
                     Effect::StunStart => {
                         crate::camera::request(Shake::Big);
@@ -3393,7 +3396,7 @@ impl Actor {
                     Effect::RageSlam => {
                         crate::camera::request(Shake::Average);
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_STRIKE_GROUND);
-                        self.fk_dust(false);
+                        self.fk_dust(false, false);
                     }
                     Effect::JumpShake => {
                         crate::camera::request(Shake::Kill);
@@ -3413,7 +3416,7 @@ impl Actor {
                         crate::camera::request(Shake::Average);
                         crate::audio::boss_land();
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_LAND_1ST_TIME);
-                        self.fk_dust(true);
+                        self.fk_dust(true, true);
                     }
                     Effect::Roll => crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_ROLL),
                     Effect::RunStart => {
