@@ -244,7 +244,7 @@ pub struct World {
 #[no_mangle]
 pub static mut HK_GOAMS_UP: u32 = 0;
 /// The walker's sense (read-only route telemetry): ticks left in the Down window of the nearest Goam
-/// within `GOAM_SENSE_X` of the Knight, the one stretch in which its collider is off; 0 while that Goam
+/// of the Goam nearest the Knight (see `World::goam_window`), the one stretch in which its collider is off; 0 while that Goam
 /// is hot (its collider on); `GOAM_CLEAR` when none is that close. A script waits for a value that
 /// leaves time to cross, and the wait takes no time when no Goam is near.
 #[no_mangle]
@@ -252,6 +252,8 @@ pub static mut HK_WALK_GOAM: u32 = GOAM_CLEAR;
 const GOAM_CLEAR: u32 = 255;
 /// How far from a Goam the Knight is before the sense reports it (Q16 world units).
 const GOAM_SENSE_X: i32 = 8 * ONE;
+/// And how far above or below him (Q16 world units).
+const GOAM_SENSE_Y: i32 = 6 * ONE;
 #[no_mangle]
 pub static mut HK_STALACTITES_FALLEN: u32 = 0;
 #[no_mangle]
@@ -529,22 +531,34 @@ impl World {
                     .flatten()
                     .any(|s| STALACTITES[s.index as usize].hazard == source_id))
     }
-    /// `HK_WALK_GOAM` for a Knight at `x`: the fewest ticks left in the Down window among the Goams
-    /// within `GOAM_SENSE_X` (0 for one that is hot), `GOAM_CLEAR` with none that near.
-    fn goam_window(&self, x: i32) -> u32 {
-        let mut window = GOAM_CLEAR;
+    /// `HK_WALK_GOAM` for a Knight at (`x`, `y`): the ticks left in the Down window of the Goam whose
+    /// damage box is nearest across, among those within `GOAM_SENSE_Y` up or down (a room has Goams on
+    /// every level of a shaft; only the ones on his own level can reach him) and `GOAM_SENSE_X` across.
+    /// 0 for one that is hot, `GOAM_CLEAR` with none that near. The nearest only, so that a row of
+    /// Goams is waited out one at a time rather than all together.
+    fn goam_window(&self, x: i32, y: i32) -> u32 {
+        let (mut window, mut nearest) = (GOAM_CLEAR, GOAM_SENSE_X + 1);
         for g in self.goams.iter().flatten() {
-            if (GOAMS[g.index as usize].position[0] - x).abs() > GOAM_SENSE_X {
+            let spec = GOAMS[g.index as usize];
+            if (spec.position[1] - y).abs() > GOAM_SENSE_Y {
                 continue;
             }
+            let across = (spec.hurt[0] - x).max(x - spec.hurt[2]).max(0);
             let left = if g.phase == GoamPhase::Down && !g.collider {
                 u32::from(GOAM_DOWN_TICKS).saturating_sub(g.ticks)
             } else {
                 0
             };
-            window = window.min(left);
+            if across < nearest || (across == nearest && left < window) {
+                nearest = across;
+                window = left;
+            }
         }
-        window
+        if nearest > GOAM_SENSE_X {
+            GOAM_CLEAR
+        } else {
+            window
+        }
     }
     /// One 60 Hz simulation tick. `body` is the Knight's box, `centre` his
     /// position; terrain is the resident view's edges.
@@ -590,7 +604,7 @@ impl World {
             }
         }
         unsafe {
-            HK_WALK_GOAM = self.goam_window(centre[0]);
+            HK_WALK_GOAM = self.goam_window(centre[0], centre[1]);
         }
         for (slot, s) in self.stalactites.iter_mut().enumerate() {
             let Some(s) = s else { continue };
@@ -1127,17 +1141,24 @@ mod tests {
         w.enter_scene(scene, |_| false);
         for _ in 0..30 {
             w.tick(FAR, [0, 0], 0, |_| [0; 4]);
-            assert_eq!(w.goam_window(-500 * ONE), GOAM_CLEAR, "no Goam is near a Knight far away");
+            assert_eq!(w.goam_window(-500 * ONE, 0), GOAM_CLEAR, "no Goam is near a Knight far away");
         }
+        // Standing on a Goam's own box, the nearest one is it (or another whose box he also stands in).
         let mut down = 0;
         for _ in 0..600 {
-            w.tick(FAR, [spec.position[0], spec.position[1]], 0, |_| [0; 4]);
-            let sense = w.goam_window(spec.position[0]);
-            let near_hot = w.goams.iter().flatten().any(|g| {
-                g.collider && (GOAMS[g.index as usize].position[0] - spec.position[0]).abs() <= GOAM_SENSE_X
-            });
-            assert_eq!(sense > 0, !near_hot, "positive exactly while no Goam in range is hot");
+            w.tick(FAR, [spec.hurt[0], spec.position[1]], 0, |_| [0; 4]);
+            let sense = w.goam_window(spec.hurt[0], spec.position[1]);
             assert!(sense <= u32::from(GOAM_DOWN_TICKS), "it is the window's ticks left");
+            let hot_here = w.goams.iter().flatten().any(|g| {
+                let s = GOAMS[g.index as usize];
+                g.collider
+                    && (s.position[1] - spec.position[1]).abs() <= GOAM_SENSE_Y
+                    && s.hurt[0] <= spec.hurt[0]
+                    && spec.hurt[0] <= s.hurt[2]
+            });
+            if hot_here {
+                assert_eq!(sense, 0, "0 while a Goam whose box he stands in is hot");
+            }
             down += u32::from(sense > 0);
         }
         assert!(down > 0, "a Goam goes down in ten seconds");
