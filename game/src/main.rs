@@ -27,6 +27,7 @@ mod audio_probe;
 #[cfg(feature = "card-diag")]
 mod card_diag;
 mod bench;
+mod boss_fx;
 mod camera;
 mod enemies;
 mod exit_fade;

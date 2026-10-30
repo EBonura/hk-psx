@@ -243,14 +243,13 @@ pub static mut HK_VIEW_NPC_DRAWS: u32 = 0;
 fn raise_fk_dust() {
     /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
     const FLOOR_Y: i32 = 27 * 65536 + 13_000;
-    let Some((scene, x, kind, y)) = crate::enemies::take_fk_dust() else {
+    if let Some((kind, at, scene)) = crate::boss_fx::take() {
+        let owner = if kind == crate::boss_fx::BLEED { fx::BOSS_BLEED } else { fx::BOSS_BURST };
+        fx::raise(scene, owner, at);
+    }
+    let Some((scene, x, kind)) = crate::enemies::take_fk_dust() else {
         return;
     };
-    // The death tail's bleeding (`Steam`) and its burst (`Blow`), where the armour is.
-    if kind >= 8 {
-        fx::raise(scene, if kind == 8 { fx::FK_STEAM } else { fx::FK_BURST }, [x, y]);
-        return;
-    }
     let at = [x, FLOOR_Y];
     fx::raise(scene, fx::FK_DUST, at);
     if kind & 2 != 0 {

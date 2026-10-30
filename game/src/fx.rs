@@ -21,8 +21,9 @@ pub const SCUTTLER_BLOOD: usize = 0xD023;
 pub const FK_DUST: usize = 0xD040;
 pub const FK_MIST: usize = 0xD041;
 pub const FK_FIRE: usize = 0xD042;
-pub const FK_STEAM: usize = 0xD043;
-pub const FK_BURST: usize = 0xD044;
+/// Every boss's death (game/src/boss_fx.rs): each boss scene cooks its own emitters under these two.
+pub const BOSS_BLEED: usize = 0xD043;
+pub const BOSS_BURST: usize = 0xD044;
 
 /// Raise `owner`'s emitters, moved by `at` (world, Q16).
 #[cfg(not(test))]

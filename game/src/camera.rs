@@ -72,11 +72,12 @@ impl Shaker {
     }
 }
 static mut SHAKER: Shaker = Shaker::new();
-/// The x the False Knight's Death Head slides to and lies at (Q16 world units), 0 when there is none.
-/// The original's wider view shows the whole of the lower room's floor; this one holds the head in
-/// frame (as far as the Knight stays in it too) while the head is out. Cleared on a scene entry.
+/// An x the camera is asked to keep in frame (Q16 world units), 0 when there is none: the False Knight's
+/// Death Head, a later boss's body. The original's wider view shows the whole of the lower room's floor;
+/// this one holds the point in frame (as far as the Knight stays in it too) while it is asked. Cleared
+/// on a scene entry, so a boss that asks every tick holds it only while it lives.
 static mut HEAD_FOCUS: i32 = 0;
-pub fn frame_head(x: i32) {
+pub fn frame_x(x: i32) {
     unsafe { HEAD_FOCUS = x }
 }
 #[no_mangle]

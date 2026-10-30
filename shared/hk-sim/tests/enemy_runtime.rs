@@ -498,6 +498,11 @@ mod boss_effects {
         LOG.with(|l| l.borrow_mut().drain(..).collect())
     }
 }
+mod boss_fx {
+    pub const BLEED: i32 = 1;
+    pub const BURST: i32 = 2;
+    pub fn request(_: i32, _: i32, _: i32, _: usize) {}
+}
 mod camera {
     /// `game/src/camera.rs` declares these; `tests/camera_shake_runtime.rs`
     /// drives the real module over the serialized `CameraShake` table.
@@ -509,7 +514,7 @@ mod camera {
         Average,
         Big,
     }
-    pub fn frame_head(_: i32) {}
+    pub fn frame_x(_: i32) {}
     pub fn request(kind: Shake) {
         crate::boss_effects::record(match kind {
             Shake::Small => "shake small",

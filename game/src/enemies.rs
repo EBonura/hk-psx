@@ -3353,7 +3353,7 @@ impl Actor {
                 Action::Effect(effect) => {
                     // Dust at the landings and slams of the upper floor (see `take_fk_dust`).
                     if self.y >= 30 * 65536 {
-                        unsafe { FK_DUST = [fk_dust_kind(effect), self.x, self.scene as i32, self.y] };
+                        unsafe { FK_DUST = [fk_dust_kind(effect), self.x, self.scene as i32] };
                     }
                     match effect {
                     Effect::LandingShake => {
@@ -4249,24 +4249,19 @@ impl Actor {
                 boss.death_head_travel += step;
             }
         }
-        // The death tail (see `take_fk_dust`): the camera holds the Death Head in frame while it is out;
-        // orange spray leaves the armour every 12 ticks of `Steam`, and the burst as `Blow` opens it.
+        // The death tail (`boss_fx`): the camera holds the Death Head in frame while it is out; the armour
+        // bleeds every 12 ticks of `Steam` and bursts as `Blow` opens it. The head's y is the floor's: the
+        // body's origin is its middle.
         let head = boss.death_head_at(self.x, self.y);
         if boss.death_head != 0 {
-            crate::camera::frame_head(head[0]);
+            crate::camera::frame_x(head[0]);
         }
-        let fx = if boss.death_head == 1 && boss.death_head_tick == 1 {
-            16
+        if boss.death_head == 1 && boss.death_head_tick == 1 {
+            crate::boss_fx::request(crate::boss_fx::BURST, self.x, head[1], self.scene);
         } else if boss.controller.phase() == hk_sim::false_knight::Phase::Dying(1)
             && boss.animation_tick % 12 == 0
         {
-            8
-        } else {
-            0
-        };
-        if fx != 0 {
-            // The head's y is the floor's: the body's origin is its middle.
-            unsafe { FK_DUST = [fx, self.x, self.scene as i32, head[1]] };
+            crate::boss_fx::request(crate::boss_fx::BLEED, self.x, head[1], self.scene);
         }
         let b = self.local_bounds(spec);
         let offset = b[0] + (b[2] - b[0]) / 2;
@@ -7260,8 +7255,8 @@ impl EnemyWorld {
 }
 /// The False Knight's landing or slam of this tick, for the frame to raise the dust of
 /// (host/hk-cook/src/break_effects/fx.rs `collect_boss`): the kind (`fk_dust_kind`; 0 none), his x
-/// his scene and his y. Kept here, as four words, so that the long actor loop makes no call for it.
-static mut FK_DUST: [i32; 4] = [0; 4];
+/// and his scene. Kept here, as three words, so that the long actor loop makes no call for it.
+static mut FK_DUST: [i32; 3] = [0; 3];
 /// 1 dust (a landing, a rage slam), 3 dust and mist (a slam), 7 dust, mist and sparks (the entrance).
 const fn fk_dust_kind(effect: hk_sim::false_knight::Effect) -> i32 {
     use hk_sim::false_knight::Effect;
@@ -7274,9 +7269,9 @@ const fn fk_dust_kind(effect: hk_sim::false_knight::Effect) -> i32 {
 }
 /// The dust to raise this tick, if any: (scene, x, kind).
 #[inline(never)]
-pub fn take_fk_dust() -> Option<(usize, i32, i32, i32)> {
-    let [kind, x, scene, y] = unsafe { core::mem::replace(&mut *(&raw mut FK_DUST), [0; 4]) };
-    (kind != 0).then_some((scene as usize, x, kind, y))
+pub fn take_fk_dust() -> Option<(usize, i32, i32)> {
+    let [kind, x, scene] = unsafe { core::mem::replace(&mut *(&raw mut FK_DUST), [0; 3]) };
+    (kind != 0).then_some((scene as usize, x, kind))
 }
 /// A wave's cooked numbers: the False Knight's, or the Husk Guard's stomp.
 const NO_SPURT: u16 = u16::MAX;

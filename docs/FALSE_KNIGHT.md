@@ -968,7 +968,10 @@ writes one.
   armour does not steam white: `Steam` sprays soft orange blobs and droplets up and
   out of it for its three seconds and `Blow` opens it in one thick burst of the
   same (`fx.rs` owners 0xD043 and 0xD044, cooked from the arena's glow cells, raised
-  every 12 ticks of `Steam` and once at `Blow`). The Death Head is a plain white
+  every 12 ticks of `Steam` and once at `Blow`). It is data, not False Knight code:
+  `BossLook` in `host/hk-cook/src/break_effects/fx.rs` holds the layers and
+  `game/src/boss_fx.rs` is what any boss's death state calls, so Hornet adds a `BossLook`
+  and one call from her death state. The Death Head is a plain white
   ball in the original too, with no glow of its own. While it is out the camera
   holds it in frame (`camera::frame_head`): the original's 29.2 unit view shows the
   whole lower room, this one's 21.6 does not reach the head's side, so the target

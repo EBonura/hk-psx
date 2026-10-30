@@ -50,10 +50,10 @@ pub const FX_FK_DUST: i64 = FX_OWNER | 0x40;
 pub const FX_FK_MIST: i64 = FX_OWNER | 0x41;
 /// The orange sparks of his first landing.
 pub const FX_FK_FIRE: i64 = FX_OWNER | 0x42;
-/// The death tail: the armour's bleeding (`Steam`, raised every 12 ticks for three seconds) and the burst
-/// when `Blow` opens it.
-pub const FX_FK_STEAM: i64 = FX_OWNER | 0x43;
-pub const FX_FK_BURST: i64 = FX_OWNER | 0x44;
+/// Every boss's death, cooked per scene (see `BossLook`): the bleeding through the long death state and the
+/// burst when the body opens.
+pub const FX_BOSS_BLEED: i64 = FX_OWNER | 0x43;
+pub const FX_BOSS_BURST: i64 = FX_OWNER | 0x44;
 /// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
 pub const FK_SCENE_ID: i64 = 11;
 
@@ -903,63 +903,126 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         [0.0; 3],
         "False Knight entrance sparks",
     )?;
-    // The death tail, from the same soft disc cells as the dust. hkref (the 10-30 death frames): the
-    // armour does not steam white, it bleeds orange. `Steam` throws soft orange blobs and a spray of
-    // small droplets up and out of the armour for three seconds; `Blow` opens it in one burst of
-    // the same, far thicker.
-    for (count, size, cell, speed, angle, alpha, life) in [
-        (4, [2.0, 2.6], 2.2, [6.0, 16.0], [45.0, 135.0], 0.8, [40, 70]),
-        (6, [0.4, 0.4], 0.35, [8.0, 22.0], [30.0, 150.0], 1.0, [40, 70]),
+    push_boss_look(c, scene_id, gravity, &FALSE_KNIGHT_LOOK)
+}
+
+/// One layer of a boss effect, cooked as an emitter of the soft disc cells (a `size` of a unit or
+/// more is a blob, a small one a droplet), raised where the boss is by `game/src/boss_fx.rs`.
+struct Layer {
+    count: i64,
+    size: [f64; 2],
+    cell: f64,
+    speed: [f64; 2],
+    angle: [f64; 2],
+    life: [i64; 2],
+    spread: [f64; 2],
+    alpha: f64,
+    tint: [f64; 3],
+    gravity_scale: f64,
+    /// World units above the boss's feet the layer starts at.
+    lift: f64,
+}
+/// What a boss looks like dying, as data: `bleed` is raised every twelve ticks of the death's long
+/// state (`Steam` for the False Knight) and `burst` once when the body opens (`Blow`). A later boss
+/// (Hornet's death, the next scene's) adds one of these and the call in `collect`: the owners are
+/// the same two for every scene (`FX_BOSS_BLEED`, `FX_BOSS_BURST`, `game/src/fx.rs`), cooked per
+/// scene, so the guest side takes no change. A hit flare layer set goes in the same struct.
+struct BossLook {
+    name: &'static str,
+    bleed: &'static [Layer],
+    burst: &'static [Layer],
+}
+/// hkref's death frames (the 10-30 run): the armour does not steam white, it bleeds orange. `Steam`
+/// sprays soft blobs and droplets up out of it, `Blow` opens it in one burst of the same, thicker.
+/// Additive discs go white-hot where they overlap, so the orange is darker than it looks.
+const FALSE_KNIGHT_LOOK: BossLook = BossLook {
+    name: "False Knight",
+    bleed: &[
+        Layer {
+            count: 4,
+            size: [2.0, 2.6],
+            cell: 2.2,
+            speed: [6.0, 16.0],
+            angle: [45.0, 135.0],
+            life: [40, 70],
+            spread: [2.5, 0.4],
+            alpha: 0.8,
+            tint: [195.0, 78.0, 26.0],
+            gravity_scale: 0.4,
+            lift: 2.0,
+        },
+        Layer {
+            count: 6,
+            size: [0.4, 0.4],
+            cell: 0.35,
+            speed: [8.0, 22.0],
+            angle: [30.0, 150.0],
+            life: [40, 70],
+            spread: [2.5, 0.4],
+            alpha: 1.0,
+            tint: [195.0, 78.0, 26.0],
+            gravity_scale: 0.4,
+            lift: 2.0,
+        },
+    ],
+    burst: &[
+        Layer {
+            count: 32,
+            size: [2.0, 3.0],
+            cell: 2.2,
+            speed: [5.0, 18.0],
+            angle: [0.0, 180.0],
+            life: [36, 60],
+            spread: [3.0, 0.8],
+            alpha: 0.8,
+            tint: [195.0, 76.0, 26.0],
+            gravity_scale: 0.6,
+            lift: 2.2,
+        },
+        Layer {
+            count: 28,
+            size: [0.4, 0.4],
+            cell: 0.35,
+            speed: [6.0, 18.0],
+            angle: [0.0, 180.0],
+            life: [36, 60],
+            spread: [3.0, 0.8],
+            alpha: 1.0,
+            tint: [195.0, 76.0, 26.0],
+            gravity_scale: 0.6,
+            lift: 2.2,
+        },
+    ],
+};
+fn push_boss_look(c: &mut Collected, scene_id: i64, gravity: f64, look: &BossLook) -> Result<()> {
+    for (owner, layers, what) in [
+        (FX_BOSS_BLEED, look.bleed, "bleeding"),
+        (FX_BOSS_BURST, look.burst, "death burst"),
     ] {
-        push_glow(
-            c,
-            scene_id,
-            FX_FK_STEAM,
-            &Glow {
-                count,
-                life,
-                angle: Some(angle),
-                speed,
-                spread: [2.5, 0.4],
-                size,
-                cell,
-                alpha,
-                hold: 0.5,
-                tint: [195.0, 78.0, 26.0],
-                gravity_scale: 0.4,
-                ..Glow::new("disc")
-            },
-            gravity,
-            [0.0, 2.0, 0.0],
-            "False Knight bleeding armour",
-        )?;
-    }
-    for (count, size, cell, speed, alpha) in [
-        (32, [2.0, 3.0], 2.2, [5.0, 18.0], 0.8),
-        (28, [0.4, 0.4], 0.35, [6.0, 18.0], 1.0),
-    ] {
-        push_glow(
-            c,
-            scene_id,
-            FX_FK_BURST,
-            &Glow {
-                count,
-                life: [36, 60],
-                angle: Some([0.0, 180.0]),
-                speed,
-                spread: [3.0, 0.8],
-                size,
-                cell,
-                alpha,
-                hold: 0.5,
-                tint: [195.0, 76.0, 26.0],
-                gravity_scale: 0.6,
-                ..Glow::new("disc")
-            },
-            gravity,
-            [0.0, 2.2, 0.0],
-            "False Knight armour burst",
-        )?;
+        for l in layers {
+            push_glow(
+                c,
+                scene_id,
+                owner,
+                &Glow {
+                    count: l.count,
+                    life: l.life,
+                    angle: Some(l.angle),
+                    speed: l.speed,
+                    spread: l.spread,
+                    size: l.size,
+                    cell: l.cell,
+                    alpha: l.alpha,
+                    hold: 0.5,
+                    tint: l.tint,
+                    gravity_scale: l.gravity_scale,
+                    ..Glow::new("disc")
+                },
+                gravity,
+                [0.0, l.lift, 0.0],
+                &format!("{} {what}", look.name),
+            )?;
+        }
     }
     Ok(())
 }
