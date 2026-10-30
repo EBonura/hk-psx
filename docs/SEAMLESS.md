@@ -28,6 +28,7 @@ The tour (`--features gate-tour,tour-walk`, `HK_GATE_LOG`) walks the Knight stra
 | main 30182f5, the base of the next two rows (tour of 10-29) | 72 | 24 / 49 / 119 | 652 |
 | + word hash and one-pass runner bank (landed 9e070c6) | 76 | 23 / 54 / 135 | 631 |
 | word hash, lazy runner family (a gate swaps the bank only into a room with a Runner or Zombie Shield), the old two-pass bank install back | 78 | 23 / 47 / 113 | 501 |
+| the False Knight's stream read after the gate, on main 795c877 (this branch, tour of 10-30) | 74 | 24 / 46 / 107 | 491 |
 
 The word hash halves the stored-chunk hashing at a gate (mean 56 ms against 119) and the one-pass bank install cuts the runner bank wait; the rows after main 30182f5 share one base and are comparable; earlier rows are not. The one-pass bank install measured slower than the two passes (the voices' release has to finish before the read instead of behind the validating pass: Crossroads_21 to 10 went from 585 to 997 ms of bank and ambience validation), so it was dropped; most of the remaining win is the lazy family, which skips the bank at gates into rooms that place no Runner or Zombie Shield. Many gates are CD-bound, so a faster hash alone moves the gate-black sum by about 3%. Run to run the same gate moves by 20 vb or more when anything else in the build changes, so compare sums, not single gates. A real play check: Manny's 10-24 16:16 tape replayed on this build (gate-log, route-input) drifts and crosses two doorways, King's Pass to Dirtmouth at 46 vb (92 on main before this work) and Dirtmouth to Crossroads_01 at 16; on 10-24 the same tape crossed five, four of them 20 to 22 vb.
 
@@ -39,7 +40,7 @@ The word hash halves the stored-chunk hashing at a gate (mean 56 ms against 119)
 | --- | ---: | --- |
 | Tutorial_01 to Town (every new game) | 38 to 46 | Town's group is 172 sectors; King's Pass leaves no slack (341,532 B scene and 73,516 B metadata in the arena), 83 sectors are spilled, the rest is CPU: stored hash 218 ms, LZ4 290, upload 90 |
 | Town to Tutorial_01 | 69 | scene and metadata (window B, 99 sectors) are read at the gate, 0.6 s of CD then 0.3 s of LZ4 |
-| Crossroads_06 or 21 to Crossroads_10 (False Knight arena) | 84 and 146 | window B is the 100-sector scene chunk, which holds the boss's animation frames (220,924 B of its 367,628 B); 0.75 s of CD, 0.3 s of LZ4, and on the second a 0.7 s ambience clip read |
+| Crossroads_06 or 21 to Crossroads_10 (False Knight arena) | 46 and 107 | the boss's streamed frames (219,136 B of the scene's 368,288) are a chunk of their own read after the gate (`tail_service`), so window B is the 38-sector head: the closed-loop journeys' gate into the arena went from 92 to 60 vb. In the tour the second gate stays at 107: its ambience and map phase is 1,016 ms (the 0.7 s ambience clip read, not changed here), the head's LZ4 and CD 0.3 s each, the exit fade 18 vb |
 | Crossroads_06 to Crossroads_ShamanTemple | 73 | window B again (0.56 s of CD) |
 | Fungus1_01 to 01b or Crossroads_11_alt | 70 and 91 | a return through the gate just used: the runner bank read in flight at the trigger is waited for (`bank_settle`, 0.3 s) and the group has not started |
 | Crossroads_08, 19, 50, 4, 27, 9 and a few others | 42 to 72 | slack 0 to 40 sectors of 116 to 167, spill pages and arrival time limit the prefix |
@@ -48,7 +49,7 @@ Measured on the way and not kept: a prefetch radius of 32 (735 against 817 vblan
 
 ## What would move the rest
 
-* False Knight arena: take the boss's art out of the scene bank. A lazy boss bank, like Hornet's, would cut the scene chunk by 40 to 50 percent and the arena's gate decode with it. This is a cook and guest change (`host/false_knight_art.py`, `fk_art.rs`), not a tuning one.
+* False Knight arena, what is left: the ambience clip of Crossroads_10 read at the gate from Crossroads_21 (about 0.7 s, `prepare_scene_ambience`; a prefetch of it while the Knight is in Crossroads_21 would take most of it), then the CPU side of the head (149,152 B of LZ4 output, about 27 vb in a pc-sample of the gate) and the 18 vb exit fade the drive's work already hides behind. The boss's frames are read once the room runs (`disc.rs` `Tail`, 7 bursts of 16 sectors, ready about 2.3 s after arrival in the closed-loop journeys; the fight trigger waits for it, `enemies.rs` `fk_art_ready`). A load that is not a gate (continue, boot) reads the tail before the room starts.
 * King's Pass: its refs (101,860 B) and draws (135,652 B) are the bulk of the resident scene; delta-coded reference lists would free about 45 KB of arena, which is also what the arena as a whole (sized by this room) costs every other room.
 * The stored hash is a byte-serial FNV (11 cycles a byte, 100 to 240 ms a gate that is not preverified); a word-wise hash is a cook-wide change.
 
