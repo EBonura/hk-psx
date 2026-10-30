@@ -4214,6 +4214,8 @@ struct Tail {
     done: usize,
     /// Sectors in the burst in flight.
     burst: usize,
+    /// The burst in flight was cancelled (a gate wants the drive), not failed.
+    cancelled: bool,
     pos: usize,
     hash: u32,
     tries: u8,
@@ -4224,6 +4226,7 @@ static mut TAIL: Tail = Tail {
     lba: 0,
     done: 0,
     burst: 0,
+    cancelled: false,
     pos: 0,
     hash: 0,
     tries: 0,
@@ -4269,6 +4272,7 @@ fn tail_disarm() {
 /// Stop a tail read in flight (a gate needs the drive); it starts over when the drive is free again.
 fn tail_pause() {
     if unsafe { DRIVE.tail } {
+        tail().cancelled = true;
         cd_stream::cancel();
         while unsafe { DRIVE.tail } {
             crate::input::checkpoint();
@@ -4345,6 +4349,13 @@ fn land_tail() {
         return;
     }
     let t = tail();
+    if t.cancelled && !matches!(cd_stream::status(), cd_stream::Status::Busy) {
+        // Cut short by `tail_pause`: not an error, the burst is read again later.
+        d.tail = false;
+        t.cancelled = false;
+        tail_set(TailState::Want);
+        return;
+    }
     match cd_stream::status() {
         cd_stream::Status::Done => {
             d.tail = false;
