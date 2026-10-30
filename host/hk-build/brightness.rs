@@ -132,4 +132,34 @@ mod tests {
         assert_eq!(lit_percent(&ppm(&[[24, 24, 24]])), Some(0));
         assert_eq!(lit_percent(b"P6\n1 1\n255\n"), None);
     }
+
+    #[test]
+    fn a_settled_dark_room_fails_and_a_fresh_one_does_not() {
+        let dir = std::env::temp_dir().join(format!("hk-brightness-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("screenshots")).unwrap();
+        std::fs::write(
+            dir.join("command.json"),
+            r#"{"watches":{"HK_GAME_MODE":"0x80000010","HK_REGION_ID":"0x80000014"}}"#,
+        )
+        .unwrap();
+        // 450 ticks in gameplay; the region changes at tick 300, so the frame at 450 is settled in region 7 and
+        // the one at 350 is not.
+        let mut csv = String::from("route_tick,ram_80000010,ram_80000014\n");
+        for tick in 0..=450 {
+            csv += &format!("{tick},1,{}\n", if tick < 300 { 3 } else { 7 });
+        }
+        std::fs::write(dir.join("route.csv"), csv).unwrap();
+        let black = ppm(&[[0, 0, 0]; 100]);
+        let lit = ppm(&[[200, 200, 200]; 100]);
+        std::fs::write(dir.join("screenshots/tick-000250.ppm"), &lit).unwrap();
+        std::fs::write(dir.join("screenshots/tick-000350.ppm"), &black).unwrap();
+        std::fs::write(dir.join("screenshots/tick-000450.ppm"), &black).unwrap();
+        let dark = failures(&dir).unwrap();
+        assert_eq!(dark.len(), 1, "{dark:?}");
+        assert!(dark[0].contains("tick 450 in region 7"), "{dark:?}");
+        std::fs::write(dir.join("screenshots/tick-000450.ppm"), &lit).unwrap();
+        assert!(failures(&dir).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
