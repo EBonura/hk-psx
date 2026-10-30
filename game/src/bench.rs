@@ -67,6 +67,8 @@ pub struct Events {
     /// `Start Rest` this tick, which plays `bench_rest`.
     pub sat: bool,
 }
+/// A tick count for the hint's every-eighth-tick bench search.
+static mut SCAN: u8 = 0;
 impl State {
     pub const fn new() -> Self {
         Self {
@@ -168,6 +170,15 @@ impl State {
             Phase::Idle => {
                 if !(grounded && can_control) {
                     unsafe { crate::dialogue::HINT_ONLY = false };
+                    return events;
+                }
+                // The hint needs the search only every eighth tick (it walks the room's objects: on
+                // secret-c37's thirteen husks every tick cost 0.04 of a vblank a frame); a press searches.
+                let scan = unsafe {
+                    SCAN = SCAN.wrapping_add(1);
+                    SCAN & 7 == 0
+                };
+                if !up_pressed && !scan {
                     return events;
                 }
                 let bench = crate::world::benches(region).find(|b: &Bench| {
