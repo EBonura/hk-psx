@@ -4,8 +4,8 @@
 # replay.
 at 0.5 12.4
 guard 3
-walk 8.3
-leap 8.3 right 60 16.4 12.39 cross 24                # over the pit
+walk 7.5
+leap 8.15 right 62 16.4 12.39 cross 24               # over the pit, from just short of the edge on the run
 guard 3
 drop 25.3 9.39                                       # off the ledge, onto the step below
 leap 25.26 right 60 33.55 6.39 cross 24              # over the first Goam
@@ -13,10 +13,17 @@ guard 3
 walk 35.9                                            # the ledge before the second Goam
 wait until HK_WALK_GOAM_RIGHT ge 45 timeout 900
 drop 38.75 4.39
-wait until HK_WALK_GOAM_RIGHT ge 50 timeout 900      # a wall stops him here; the third Goam's window opens
-leap 38.75 right 46 44.75 4.39 cross 24              # over it
-guard 3
-leap 44.75 right 20 46.55 6.39 cross 24
+wait until HK_WALK_GOAM_RIGHT ge 58 timeout 900      # the third Goam's window opens: a wall stops him here, so over it
+hold right+cross for 24 # over the third Goam: jump
+hold right until x ge 44.4 timeout 200
+wait until y between 4.24 4.54 timeout 180 # down on the strip beside it
+wait until HK_WALK_READY == 1 timeout 300
+hold right+cross for 14 # straight on up the step before the Goam comes up again
+hold right until x ge 46.2 timeout 100
+wait until y between 6.24 6.54 timeout 180 # on the ledge
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+at 46.55 6.39
 guard 3
 leap 48.35 right 60 56.65 6.39 cross 24
 guard 3
