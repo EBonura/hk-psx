@@ -5018,6 +5018,57 @@ pub struct EnemyWorld {
     arena: Option<ArenaRuntime>,
 }
 const NO_PLACEMENT: u8 = u8::MAX;
+/// What `EnemyWorld::foe_senses` reads.
+pub struct FoeSenses {
+    pub left: i32,
+    pub right: i32,
+    pub live: u32,
+    pub boss_dx: i32,
+    pub boss_phase: u32,
+    /// A foe stands inside the swing's box on that side (whether or not the nail is ready).
+    pub strike_left: bool,
+    pub strike_right: bool,
+    /// A foe is close enough that a Focus would be interrupted.
+    pub near: bool,
+    /// A foe stands inside the upward swing's box (a hit above gives no sideways recoil).
+    pub strike_up: bool,
+    /// Where the nearest live foe within `FOE_RANGE` stands from the Knight (Q16), `FOE_NO_BOSS` for x with none.
+    pub nearest: (i32, i32),
+}
+/// `FoeSenses::boss_dx` when the scene has no live False Knight.
+pub const FOE_NO_BOSS: i32 = i32::MAX;
+/// What the False Knight is doing, for a walker deciding whether to strike or to give ground:
+/// 1 winding up an attack, 2 attacking or in the air, 3 armour rolling or opening, 4 head
+/// exposed, 0 anything else (idle, landing, recovering: the armour can be struck).
+fn fk_phase_code(phase: hk_sim::false_knight::Phase) -> u32 {
+    use hk_sim::false_knight::Phase::*;
+    match phase {
+        JumpAntic | JumpAttackAntic | SlamAntic | SlamStrikeAntic | RunAntic | RageJumpAntic
+        | RageAntic | DeathJumpAntic => 1,
+        Airborne | JumpAttackAir | JumpAttackHit | JumpAttackSlam | SlamAir | SlamStrike | Run
+        | RageAir | RageSlam | DeathAir | DeathHit | DeathFall => 2,
+        StunRoll | StunRollEnd | StunPause | StunOpening => 3,
+        Opened | StunHit | DeathOpening | DeathOpened | DeathHit2 => 4,
+        _ => 0,
+    }
+}
+/// The walker senses (`EnemyWorld::foe_senses`): a nail swing reaches about 3.3 units from the Knight, to which
+/// a body adds a little; a swing covers 1.5 units up and down. Q16.
+const FOE_REACH: i32 = 3 * 65536;
+const FOE_BAND: i32 = 3 * 65536;
+const FOE_RANGE: i32 = 16 * 65536;
+/// The box a nail swing hits, from the Knight's origin, with a margin for a body: the walker's strike
+/// sense is true when a foe's origin is inside it. Q16.
+const STRIKE_REACH: i32 = 3 * 65536 + 13_107;
+const STRIKE_UP: i32 = 65536 + 39_321;
+/// The upward swing's box, from the Knight's origin. Q16.
+const STRIKE_OVERHEAD_X: i32 = 65536 + 26_214;
+const STRIKE_OVERHEAD_LOW: i32 = 19_660;
+const STRIKE_OVERHEAD_HIGH: i32 = 2 * 65536 + 52_428;
+const STRIKE_DOWN: i32 = 2 * 65536 + 26_214;
+/// A foe this close in x and this close in y keeps a walker from starting a Focus. Q16.
+const FOCUS_SAFE_X: i32 = 10 * 65536;
+const FOCUS_SAFE_Y: i32 = 5 * 65536;
 impl EnemyWorld {
     /// Source shots are pooled per Aspid (two each) and per Blocker (two goop
     /// and one roller); the oldest live shot yields when the shared pool is
@@ -5360,6 +5411,68 @@ impl EnemyWorld {
             .flatten()
             .find(|a| a.scene == scene && a.source_id == source_id)
             .map(|a| (a.x, a.y, a.health.hp))
+    }
+    /// The walker's senses, read-only route telemetry (`HK_FOE_GAP_LEFT`, `HK_FOE_GAP_RIGHT`,
+    /// `HK_FOE_LIVE`, `HK_FK_DX`, `HK_FK_PHASE`): of the live actors in `scene` that have a body
+    /// (not a looping prop) and stand within `FOE_BAND` of the height `y` and `FOE_RANGE` of
+    /// `x`, how far beyond `FOE_REACH` the nearest one is on each side of the Knight, and how
+    /// many live actors the scene holds. A gap of zero means that side has none, or one inside
+    /// reach, so a hold that walks towards a foe until its gap is zero also ends at once when
+    /// there is nothing to walk to. The False Knight, when he is live in the scene, also
+    /// reports where he stands from the Knight (`FOE_NO_BOSS` if he does not) and what he is
+    /// doing (`fk_phase_code`). Q16 world units.
+    #[cfg_attr(not(test), optimize(size))]
+    pub fn foe_senses(&self, scene: usize, x: i32, y: i32) -> FoeSenses {
+        let mut senses = FoeSenses {
+            left: 0,
+            right: 0,
+            live: 0,
+            boss_dx: FOE_NO_BOSS,
+            boss_phase: 0,
+            strike_left: false,
+            strike_right: false,
+            near: false,
+            strike_up: false,
+            nearest: (FOE_NO_BOSS, 0),
+        };
+        let (mut left, mut right) = (i32::MAX, i32::MAX);
+        for a in self.actors.iter().flatten() {
+            if a.scene != scene || a.health.dead || matches!(a.runtime, Runtime::Static { .. }) {
+                continue;
+            }
+            senses.live += 1;
+            let dx = a.x - x;
+            let dy = a.y - y;
+            if dx.abs() <= FOCUS_SAFE_X && dy.abs() <= FOCUS_SAFE_Y {
+                senses.near = true;
+            }
+            if dx.abs() <= FOE_RANGE && (senses.nearest.0 == FOE_NO_BOSS || dx.abs() < senses.nearest.0.abs()) {
+                senses.nearest = (dx, dy);
+            }
+            if dx.abs() <= STRIKE_OVERHEAD_X && (STRIKE_OVERHEAD_LOW..=STRIKE_OVERHEAD_HIGH).contains(&dy) {
+                senses.strike_up = true;
+            }
+            if (-STRIKE_DOWN..=STRIKE_UP).contains(&dy) && dx.abs() <= STRIKE_REACH {
+                if dx < 0 {
+                    senses.strike_left = true;
+                } else {
+                    senses.strike_right = true;
+                }
+            }
+            if let Runtime::FalseKnight(boss) = &a.runtime {
+                senses.boss_dx = dx;
+                senses.boss_phase = fk_phase_code(boss.controller.phase());
+            }
+            if (a.y - y).abs() > FOE_BAND || dx.abs() > FOE_RANGE {
+                continue;
+            }
+            let side = if dx < 0 { &mut left } else { &mut right };
+            *side = (*side).min((dx.abs() - FOE_REACH).max(0));
+        }
+        let none = |gap: i32| if gap == i32::MAX { 0 } else { gap };
+        senses.left = none(left);
+        senses.right = none(right);
+        senses
     }
     /// The first `max` live actors for `HK_TRACE`, `trace::ENEMY_WORDS` words
     /// each: source id; scene, controller kind and flags (bit 0 grounded, 1

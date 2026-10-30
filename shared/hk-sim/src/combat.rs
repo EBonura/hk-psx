@@ -54,6 +54,10 @@ impl Default for Nail {
     }
 }
 impl Nail {
+    /// A press now would start a swing: none is in progress and the cooldown has run out.
+    pub fn ready(&self) -> bool {
+        !self.active && self.cooldown == 0
+    }
     pub const fn new() -> Self {
         Self {
             active: false,

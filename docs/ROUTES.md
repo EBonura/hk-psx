@@ -144,3 +144,26 @@ Open-loop tapes that cross a code change move by chance: the same pad poll lands
 `cargo hk-build validate --resume` skips an open-loop route (no cut list, not a journey segment) that already passed under the same disc, judge (the `hk-psx-build` executable, `replay_cue.py`, `validate_scene_gates.py`, the frontend), tape, pin file and card fixture. Verdicts are kept in `.hkpsx/validate-verdicts/` (a validate run does not wipe them), written as each route passes, so a validate that was killed half way resumes where it stopped, a repeat on an identical disc replays nothing, and editing one route's pins replays that route alone. A failed route is never cached. Without `--resume` nothing is read from the store, so a run is as before.
 
 A journey segment boots from the card the one before it wrote, so `validate` and `routes` run every earlier segment when one is named (`HK_VALIDATE_ONLY=journey-reload` runs kings, crossroads and false-knight first and says so). Run alone, a later segment used to boot a new game on an empty card and time out at its first load (region 1, "hold_until timed out").
+
+## Walks: journeys written as goals (2026-10-30)
+
+A walk script (`tools/walks/*.walk`, compiler `host/hk-build/walk.rs`) drives the pad from game state and plays no recorded input: every step holds buttons until a telemetry word crosses a value, waits on one, or taps for a few ticks. `cargo hk-build walk SCRIPT LIBRARY OUT.toml` compiles one to a `psoxide-gate` journey; `routes` and `validate` play every runnable script (on the library named by `HK_WALK_LIBRARY` when the tapes run on the route-input twin, else on `--library`) (a file whose first line is `name NAME`; the others are fragments that `include` into it) on the shipping disc with the same gate, after the closed-loop routes (`HK_VALIDATE_ONLY=walk-new-game-to-well` narrows). No gate change was needed: the gate's `hold_until` and `wait_until` already end at once when their condition holds, so every goal is a dead band and a reaction costs no time when there is nothing to react to.
+
+Macros (the header of `walk.rs` has the grammar): `walk X` goes to x X from either side; `leap TX left|right N X Y` walks to a take-off, jumps with the direction held N ticks, and waits for the landing at (X, Y); `bash N` swings at a wall; `strike`, `guard N` and `fight N` react to foes; `heal` takes a Focus; `check NAME COND ; COND` is the end-state assert. The hop recipes (`leap` lines) were read off the journey tapes' replays with `jumps.sh` and `stations.sh` style tools: where the Knight stood at each jump press and where it landed.
+
+Read-only guest senses (`game/src/main.rs`, `EnemyWorld::foe_senses`), all zero or `i32::MAX` when there is nothing to sense:
+
+| Word | Meaning |
+| --- | --- |
+| `HK_FOE_GAP_LEFT`, `HK_FOE_GAP_RIGHT` | Q16 distance beyond reach to the nearest foe in the height band on that side (0: none, or in reach) |
+| `HK_WALK_STRIKE_LEFT`, `_RIGHT`, `_UP` | 1 while a foe stands in that swing's box and the nail is ready |
+| `HK_NAIL_BUSY` | 1 while a swing is in progress or cooling down |
+| `HK_WALK_FOCUS` | 1 while masks are missing, SOUL pays for a heal, he stands and no foe is close |
+| `HK_FOE_LIVE`, `HK_FOE_DX`, `HK_FOE_DY` | live foes in the scene; the nearest one's offset |
+| `HK_FK_DX`, `HK_FK_PHASE` | the False Knight's offset (`i32::MAX` with none) and what he is doing (1 winding up, 2 attacking, 3 armour rolling, 4 head exposed) |
+
+The idiom is `hold BUTTON until WORD == 0`: the step takes no time when the word is already 0, so a script can carry a reaction at every station without slowing the run down. A tick of the pad turns the Knight toward a foe before a swing; a hit gives a recoil, so on a small platform strike overhead first (`guard` does).
+
+`new-game-to-well.walk` (shipping disc, no cheat, no route-input): the title, Start Game, an empty profile, the skip of the poem and movies, the drop into King's Pass, the corridor with its walls and the first Crawler, the shaft up, the Great Door (13 hits), Dirtmouth, the bench (health back to 5, the save), the street and the well into Crossroads_01: 9,419 ticks, 12 checks.
+
+Known fragility: three Vengeflies in the King's Pass shaft are the only thing that moves the run, and a hit on a small ledge can knock him off it. The script passes with 1 mask at the top and heals at the bench; a change that moves a Fly's first sighting by a few ticks can fail a leap's landing wait, which then names the ledge.

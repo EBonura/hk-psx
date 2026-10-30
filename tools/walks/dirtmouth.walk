@@ -1,0 +1,14 @@
+# Dirtmouth after the Great Door: down from the top-left gate to the street, along it to the bench,
+# sit and save, then to the well at the right-hand end and down it into the Forgotten Crossroads.
+walk 28.6                                      # off the ledge and down to the street (a hard landing)
+wait until y le 11.45 timeout 600
+wait 90                                        # the landing's lock
+walk 132.3
+press up                                       # sit on the bench
+wait until HK_BENCH_RESTS ge 1 timeout 600
+wait 120
+press cross                                    # get up
+wait until HK_SAVE_WRITES ge 1 timeout 900     # the bench saves
+wait 90
+hold right until HK_SCENE_LOADS ge 3 timeout 1500   # along the street and down the well
+wait until HK_GAME_MODE == 1 timeout 1800

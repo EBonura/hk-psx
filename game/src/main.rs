@@ -443,6 +443,39 @@ pub static mut HK_CRAWLER_Y: i32 = 0;
 pub static mut HK_CRAWLER_HP: i32 = 0;
 #[no_mangle]
 pub static mut HK_ENEMY_HITS: u32 = 0;
+/// The walker's senses (`EnemyWorld::foe_senses`), Q16 world units: how far past a nail swing's reach the nearest
+/// foe in the Knight's height band stands on his left and right (0: none, or one in reach), and the live actors
+/// in the scene. Read-only; a walk script holds towards a foe until its gap is 0 (docs/ROUTES.md, Walks).
+#[no_mangle]
+pub static mut HK_FOE_GAP_LEFT: i32 = 0;
+#[no_mangle]
+pub static mut HK_FOE_GAP_RIGHT: i32 = 0;
+#[no_mangle]
+pub static mut HK_FOE_LIVE: u32 = 0;
+/// Where the False Knight stands from the Knight (Q16, `i32::MAX` with no live boss) and what he is doing
+/// (`enemies::fk_phase_code`).
+#[no_mangle]
+pub static mut HK_FK_DX: i32 = i32::MAX;
+/// What a walk script holds a button for until it reads zero, so that a reaction costs no time when there is
+/// nothing to react to: a foe inside the swing's box on that side with the nail ready; the nail mid-swing or
+/// cooling down; Focus wanted (masks missing, SOUL for a heal or Focus under way, standing, no foe close).
+#[no_mangle]
+pub static mut HK_WALK_STRIKE_LEFT: u32 = 0;
+#[no_mangle]
+pub static mut HK_WALK_STRIKE_RIGHT: u32 = 0;
+#[no_mangle]
+pub static mut HK_WALK_STRIKE_UP: u32 = 0;
+#[no_mangle]
+pub static mut HK_NAIL_BUSY: u32 = 0;
+#[no_mangle]
+pub static mut HK_WALK_FOCUS: u32 = 0;
+/// The nearest live foe from the Knight (Q16; x is `i32::MAX` with none within range), for authoring.
+#[no_mangle]
+pub static mut HK_FOE_DX: i32 = i32::MAX;
+#[no_mangle]
+pub static mut HK_FOE_DY: i32 = 0;
+#[no_mangle]
+pub static mut HK_FK_PHASE: u32 = 0;
 #[no_mangle]
 pub static mut HK_ENEMY_KILLS: u32 = 0;
 #[no_mangle]
@@ -1333,6 +1366,26 @@ fn main() {
                     } else {
                         #[cfg(feature = "tick-log")]
                         input::log_tick(false);
+                    }
+                    let foes = game.enemies.foe_senses(r.scene, game.player.x, game.player.y);
+                    unsafe {
+                        HK_FOE_GAP_LEFT = foes.left;
+                        HK_FOE_GAP_RIGHT = foes.right;
+                        HK_FOE_LIVE = foes.live;
+                        HK_FK_DX = foes.boss_dx;
+                        HK_FK_PHASE = foes.boss_phase;
+                        let ready = game.nail.ready();
+                        HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
+                        HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
+                        HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
+                        HK_NAIL_BUSY = u32::from(!ready);
+                        (HK_FOE_DX, HK_FOE_DY) = foes.nearest;
+                        HK_WALK_FOCUS = u32::from(
+                            game.vitals.health < VITAL_PARAMS.max_health
+                                && (game.vitals.soul >= FOCUS_PARAMS.cost || game.focus.locks_control())
+                                && game.player.grounded
+                                && !foes.near,
+                        );
                     }
                     if let Some((x, y, hp)) = game.enemies.actor_state(0, 12546) {
                         unsafe {

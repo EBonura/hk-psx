@@ -1,0 +1,12 @@
+name walk-earned-focus
+title earned Focus: four hits on two Crawlers fill SOUL, Focus heals one mask and refunds nothing
+max_ticks 20000
+# The King's Pass corridor of a new game, played for real. Fight the Crawlers (without healing on the
+# way) until there are 4 hits and SOUL 44, then hold Focus: one mask back, SOUL 11, one heal, no refund.
+include new-game.walk
+include kings-corridor.walk
+fight 3 noheal
+check before HK_ENEMY_HITS >= 4 ; HK_ENEMY_KILLS >= 2 ; HK_SOUL >= 44 ; HK_HEALTH <= 4 ; HK_FOCUS_HEALED == 0
+hold circle until HK_FOCUS_HEALED ge 1 timeout 400   # Focus: held until the mask is back
+wait 30
+check after HK_HEALTH >= 5 ; HK_SOUL == 11 ; HK_FOCUS_HEALED == 1 ; HK_FOCUS_REFUNDED == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0

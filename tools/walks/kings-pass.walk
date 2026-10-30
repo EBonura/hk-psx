@@ -1,0 +1,5 @@
+# King's Pass on the shipping disc, no cheats: from the landing on the ledge, along the corridor
+# (breaking the walls it is shut with, fighting the Crawlers), up the shaft and along the top to the
+# Great Door. Every goal is a position or a count the game publishes; nothing is timed through a fight.
+include kings-corridor.walk
+include kings-shaft.walk

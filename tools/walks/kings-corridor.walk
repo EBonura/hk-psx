@@ -1,0 +1,21 @@
+# King's Pass on the shipping disc, no cheats: from the landing on the ledge, along the corridor
+# (breaking the walls the corridor is shut with), up the shaft and along the top to the Great Door.
+# Every goal is a position or a count the game publishes; nothing is timed through a fight.
+at 34.5 11.39
+walk 58.7
+bash 8                                         # the first wall
+walk 70.8
+bash 8
+walk 82.8
+bash 8
+walk 101.8
+bash 8
+walk 113.7                                     # the pit
+at 113.75 9.39
+hop 120.0 11.39                                # out of the pit onto the far rim
+fight 3                                        # the Crawler on the rim
+walk 126.7
+bash 8                                         # the wall past the Crawler
+walk 131.0
+bash 8
+walk 156.7 tol 0.1

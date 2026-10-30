@@ -21,6 +21,7 @@ mod repin;
 mod routes;
 mod scene_gate;
 mod verdicts;
+mod walk;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -2367,6 +2368,28 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
             measured(root, &out, route)?;
         }
     }
+    // The walk scripts (tools/walks): journeys written as goals, played the same way.
+    if !measure {
+        // The walks play the shipping disc (no route-input feature): HK_WALK_LIBRARY names its library
+        // when `--library` is the route-input twin the tapes need. Without the variable they play `--library`.
+        let walk_library = std::env::var_os("HK_WALK_LIBRARY").map(PathBuf::from).unwrap_or_else(|| library.clone());
+        let map = if walk_library.join("game.map").is_file() {
+            walk_library.join("game.map")
+        } else {
+            let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
+            PathBuf::from(build["link_map"]["path"].as_str().ok_or("build.json has no link map")?)
+        };
+        for (name, script) in walk::scripts(root)? {
+            if !only.as_ref().is_none_or(|o| o.iter().any(|x| *x == name || x == "walks")) {
+                continue;
+            }
+            let (ok, headline) = walk::play(&gate.binary, &walk_library, &map, &out, &name, &script)?;
+            println!("{} {name} (walk): {headline}", if ok { "PASS" } else { "FAIL" });
+            if !ok {
+                failed.push(name);
+            }
+        }
+    }
     if failed.is_empty() {
         println!("{} closed-loop routes pass.", selected.len());
         Ok(())
@@ -2508,6 +2531,27 @@ fn main() {
             usage();
         }
         if let Err(error) = card_check::run(&files) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "walk" {
+        // walk SCRIPT LIBRARY OUT: compile a walk script (docs/ROUTES.md, Walks) to a psoxide-gate journey for the disc in LIBRARY.
+        let (script, library, out) = (args.next(), args.next(), args.next());
+        let (Some(script), Some(library), Some(out)) = (script, library, out) else {
+            usage()
+        };
+        let result = (|| -> Result<()> {
+            let library = std::path::PathBuf::from(library);
+            let cue = disc::disc_cue(&library);
+            let map = library.join("game.map");
+            let text = walk::expand(std::path::Path::new(&script))?;
+            let toml = walk::compile(&text, &walk::Setup { disc: &cue, symbols: &map })?;
+            std::fs::write(&out, toml)?;
+            Ok(())
+        })();
+        if let Err(error) = result {
             eprintln!("error: {error}");
             std::process::exit(1);
         }

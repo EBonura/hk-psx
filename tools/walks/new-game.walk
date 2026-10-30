@@ -1,0 +1,15 @@
+# Cold boot to the first standing tick in King's Pass, on the shipping disc, no cheats and no
+# route-input feature: the title, Start Game, an empty profile (a new game), two presses that skip
+# the poem and the opening movies, the drop from the top gate and the landing on the ledge.
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1, an empty one: a new game
+wait 540                                       # the poem's first lines
+press triangle                                 # any button: the skip prompt
+wait 40
+press triangle                                 # a second press skips the rest
+wait until HK_REGION_ID == 79 timeout 7200     # the Knight drops in (79 = the top view of the shaft)
+wait until y gt 45.8 timeout 600               # he is at the top of the shaft
+wait until y lt 12.2 timeout 1200              # he has landed on the ledge
+wait 120                                       # and stands up
