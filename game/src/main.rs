@@ -68,6 +68,7 @@ mod blocker_roller;
 mod blocker_terrain;
 mod actor_persistence;
 mod boss_art;
+mod actor_bank;
 #[cfg(feature = "hornet")]
 mod boss_bank;
 mod boss_hooks;
