@@ -277,6 +277,7 @@ def decoder_command(report):
               '--example','check_scene_gate_load','--',str(report['arena_bytes'])]
         for e in report['scenes']:
             args.extend(('--scene',str(e['scene_id']),e['resident_stored_path'],e['resident_raw_path']))
+            if e.get('split'):args.extend(('--split',str(e['split_stream_off']),str(e['split_gap_len']),e['split_head_raw_path'],e['split_tail_stored_path']))
             for bank in report.get('world_metadata',[]):
                 if bank['scene_id']==e['scene_id']:args.extend(('--meta',bank['stored_path'],bank['raw_path']))
             for a in report['atlases']:

@@ -7,6 +7,14 @@ struct Blob {
     stored: Vec<u8>,
     raw: Vec<u8>,
 }
+/// A scene read in two parts (host/scene_bank.py `split_stream`): `stored` is then the head's, `raw` the
+/// whole bank, `head` the head's raw bytes and `tail` the stream's whole sectors that land in the gap.
+struct Split {
+    off: usize,
+    len: usize,
+    head: Vec<u8>,
+    tail: Vec<u8>,
+}
 struct Atlas {
     kind: usize,
     first: usize,
@@ -16,6 +24,7 @@ struct Atlas {
 struct Bank {
     id: usize,
     scene: Blob,
+    split: Option<Split>,
     atlases: Vec<Atlas>,
     meta: Option<Blob>,
 }
@@ -73,10 +82,20 @@ fn main() {
                 banks.push(Bank {
                     id: a[i + 1].parse().unwrap(),
                     scene: blob(&a[i + 2], &a[i + 3]),
+                    split: None,
                     atlases: vec![],
                     meta: None,
                 });
                 i += 4;
+            }
+            "--split" => {
+                banks.last_mut().expect("split follows scene").split = Some(Split {
+                    off: a[i + 1].parse().unwrap(),
+                    len: a[i + 2].parse().unwrap(),
+                    head: std::fs::read(&a[i + 3]).expect("head file"),
+                    tail: std::fs::read(&a[i + 4]).expect("tail file"),
+                });
+                i += 5;
             }
             "--meta" => {
                 banks.last_mut().expect("meta follows scene").meta =
@@ -146,7 +165,26 @@ fn main() {
                 assert_eq!(&vram[a.kind][..start], prefix);
                 assert_eq!(&vram[a.kind][end..], suffix);
             }
-            decode(&mut arena, &b.scene, budget, true);
+            if let Some(sp) = &b.split {
+                // The head decodes as bytes, the gap opens, and the tail lands in it as the drive writes it.
+                let head = Blob {
+                    stored: b.scene.stored.clone(),
+                    raw: sp.head.clone(),
+                };
+                decode(&mut arena, &head, budget, false);
+                let mut gap = room_decode::Gap::new(sp.off, sp.len, sp.head.len());
+                assert!(gap.moves() <= sp.len, "the moved part is longer than the gap");
+                while !gap.step(&mut arena[..b.scene.raw.len()], budget) {}
+                assert!(arena[sp.off..sp.off + sp.len].iter().all(|&x| x == 0), "gap not zeroed");
+                arena[sp.off..sp.off + sp.len].copy_from_slice(&sp.tail);
+                assert_eq!(
+                    &arena[..b.scene.raw.len()],
+                    b.scene.raw.as_slice(),
+                    "the opened and filled scene differs"
+                );
+            } else {
+                decode(&mut arena, &b.scene, budget, true);
+            }
             assert_eq!(
                 hk_format::Scene::parse(&arena[..b.scene.raw.len()])
                     .unwrap()
