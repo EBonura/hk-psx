@@ -204,13 +204,17 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,2),(2,4)];
-#[derive(Copy,Clone)]struct SceneDesc{scene_id:usize,ram_offset:usize,arena_capacity:usize,stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32,head_len:usize,head_fnv:u32,gap_off:usize,gap_len:usize,tail_stored_fnv:u32}
+#[derive(Copy,Clone)]struct SceneDesc{scene_id:usize,ram_offset:usize,arena_capacity:usize,stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32}
 const SCENE_MANIFEST:&[SceneDesc]=&[
- SceneDesc{scene_id:0,ram_offset:0,arena_capacity:48,stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0,head_len:24,head_fnv:0,gap_off:0,gap_len:0,tail_stored_fnv:0},
- SceneDesc{scene_id:1,ram_offset:if SCENE_GATE_LOAD{0}else{24},arena_capacity:if SCENE_GATE_LOAD{48}else{24},stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0,head_len:24,head_fnv:0,gap_off:0,gap_len:0,tail_stored_fnv:0}];
+ SceneDesc{scene_id:0,ram_offset:0,arena_capacity:48,stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0},
+ SceneDesc{scene_id:1,ram_offset:if SCENE_GATE_LOAD{0}else{24},arena_capacity:if SCENE_GATE_LOAD{48}else{24},stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0}];
 fn tail_arm(_:usize,_:u32){}
 fn tail_disarm(){}
-mod room_decode{pub struct Gap;impl Gap{pub fn new(_:usize,_:usize,_:usize)->Self{Gap}pub fn step(&mut self,_:&mut[u8],_:usize)->bool{true}}}
+#[derive(Copy,Clone)]struct SplitDesc{head_len:usize,head_fnv:u32}
+const SCENE_SPLITS:&[SplitDesc]=&[];
+fn split_index(_:usize)->Option<usize>{None}
+fn head_len(scene:usize)->usize{SCENE_MANIFEST[scene].raw_len}
+fn open_gap(_:&SceneDesc,_:&SplitDesc){}
 struct AtlasDesc{kind:u8,count:usize}
 const ATLASES:&[AtlasDesc]=&[AtlasDesc{kind:0,count:2},AtlasDesc{kind:1,count:3},AtlasDesc{kind:0,count:1},AtlasDesc{kind:1,count:2}];
 struct Buffer{words:[u32;12]}

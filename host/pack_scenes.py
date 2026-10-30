@@ -212,14 +212,6 @@ def manifest(report,metadata):
     fields=[('scene_id','usize'),('stored_len','usize'),('stored_fnv','u32'),('raw_len','usize'),('raw_fnv','u32'),
             ('ram_offset','usize'),('arena_capacity','usize'),('page_base','usize'),('palette_base','usize')]
     text='// Generated compact HKSCNE02 banks and bootstrap-only atlas chunks.\n'
-    # A scene whose stream is read after its gate (host/scene_bank.py split_stream) decodes `head_len` bytes
-    # (`head_fnv`) at the gate and the tail, `gap_len` bytes (stored as they are, word hash `tail_stored_fnv`) at
-    # `gap_off`, later; `raw_len` stays the whole bank.
-    fields+=[('head_len','usize'),('head_fnv','u32'),('gap_off','usize'),('gap_len','usize'),('tail_stored_fnv','u32')]
-    for e in scenes:
-        e.setdefault('head_len',e.get('split_head_len',e.get('resident_raw_len',e['bytes'])));e.setdefault('head_fnv',e.get('split_head_fnv',e.get('resident_raw_fnv',e['raw_fnv'])))
-        e.setdefault('gap_off',e.get('split_stream_off',0));e.setdefault('gap_len',e.get('split_gap_len',0))
-        e.setdefault('tail_stored_fnv',e.get('split_tail_stored_fnv',0))
     text='// Generated compact HKSCNE02 banks and bootstrap-only atlas chunks.\n'
     text+='#[derive(Clone,Copy,Debug)]\npub struct SceneDesc{'+','.join('pub '+n+':'+t for n,t in fields)+'}\n'
     text+=f'pub const SCENE_ARENA_BYTES:usize={report["arena_bytes"]};\n'
@@ -233,6 +225,13 @@ def manifest(report,metadata):
     text+=f'pub const SCENE_TEXTURE_CAPACITY:usize={(textures+31)//32*32};\n'
     text+=f'pub const SCENE_DRAW_CAPACITY:usize={(draws+31)//32*32};\n'
     text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e.get('resident_'+n,e[n]))for n,t in fields)+'},\n'for e in scenes)+'];\n'
+    # A scene whose stream is read after its gate (host/scene_bank.py split_stream) decodes only `head_len` bytes
+    # (`head_fnv`) at the gate and takes the tail, `gap_len` bytes (stored as they are, word hash `tail_stored_fnv`)
+    # for `gap_off`, later; the manifest row's `raw_len` stays the whole bank and its stored length is the head's.
+    # One row each, in manifest order.
+    split_fields=[('scene','usize'),('head_len','usize'),('head_fnv','u32'),('gap_off','usize'),('gap_len','usize'),('tail_stored_fnv','u32')]
+    text+='#[derive(Clone,Copy,Debug)]\npub struct SplitDesc{'+','.join('pub '+n+':'+t for n,t in split_fields)+'}\n'
+    text+='pub const SCENE_SPLITS:&[SplitDesc]=&[\n'+''.join('SplitDesc{scene:'+str(i)+',head_len:'+str(e['split_head_len'])+',head_fnv:'+str(e['split_head_fnv'])+',gap_off:'+str(e['split_stream_off'])+',gap_len:'+str(e['split_gap_len'])+',tail_stored_fnv:'+str(e['split_tail_stored_fnv'])+'},\n' for i,e in enumerate(scenes) if e.get('split'))+'];\n'
     meta_fields=[('scene_id','u32'),('raw_len','usize'),('raw_fnv','u32'),('bank_fnv','u32'),('stored_len','usize'),('stored_fnv','u32'),('chunk_id','usize')]
     text+='#[derive(Clone,Copy,Debug)]\npub struct WorldMetaDesc{'+','.join('pub '+n+':'+t for n,t in meta_fields)+',pub fingerprint:[u8;32]}\n'
     text+='pub const WORLD_META_ARENA_BYTES:usize='+str(max((aligned(e['raw_len']) for e in report.get('world_metadata',[])),default=0))+';\n'
