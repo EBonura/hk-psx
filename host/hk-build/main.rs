@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod brightness;
 mod budget_doc;
 mod card_check;
 mod cook_store;
@@ -2034,6 +2035,25 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         // time and the frames of four vblanks or more are the primary ceilings, the frames over
         // two vblanks the secondary one. A closed-loop route whose tape drifted on this disc did
         // not play the route that was measured, so its figures are not compared.
+        if name.starts_with("journey-") {
+            match brightness::failures(&output) {
+                Ok(dark) => {
+                    if let Ok(line) = brightness::summary(&output) {
+                        println!("{name}: {line}");
+                    }
+                    for line in &dark {
+                        println!("{name}: {line}");
+                    }
+                    if !dark.is_empty() {
+                        ok = false;
+                    }
+                }
+                Err(e) => {
+                    println!("{name}: brightness unreadable: {e}");
+                    ok = false;
+                }
+            }
+        }
         match pacing::measure(&output) {
             Ok(measured) => {
                 if closed && !open_pins_hold {
