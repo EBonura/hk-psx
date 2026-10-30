@@ -2595,9 +2595,6 @@ impl Cache {
             if split.is_some() {
                 // The stream follows the gate: read into the gap by the drive once it is free (`pump`).
                 tail_arm(index, self.tail_lba(index)?);
-                if !unsafe { TAIL_DEFER } {
-                    tail_finish();
-                }
             }
             unsafe {
                 HK_SCENE_LOADS = HK_SCENE_LOADS.saturating_add(1);
@@ -2621,6 +2618,10 @@ impl Cache {
             unsafe {
                 HK_MODULE_GATE_ART_MISSED = HK_MODULE_GATE_ART_MISSED.saturating_add(1);
             }
+        }
+        // The metadata and the art are in: the gap is free to be read. Not at a gate (the walk goes on first).
+        if !unsafe { TAIL_DEFER } {
+            tail_finish();
         }
         Ok(())
     }
