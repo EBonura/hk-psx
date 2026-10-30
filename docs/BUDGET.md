@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |786,264|
-| Code-to-data alignment |8|
+| Linked code |786,256|
+| Code-to-data alignment |0|
 | Linked data, including menu and HUD |281,304|
-| BSS, including shared scene arena and runtime pools |800,100|
-| Total static span |1,867,684|
+| BSS, including shared scene arena and runtime pools |791,908|
+| Total static span |1,859,476|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |114,524|
+| Unallocated gap before reserved stack |122,732|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |5,980|
+| Free RAM below the module pool |14,188|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -151,7 +151,8 @@ The 2026-10-25 opening-movies hand-off (docs/INTRO.md: the movie program is call
 The 2026-10-25 first-scene prefetch (docs/INTRO.md: the first scene's sound banks, ambience clips, sound effects, coverage, effect art and atlases load while the opening poem plays, so only the scene, its metadata and its code wait for the movies) took linked code from 785,232 to 785,136 bytes (-96) and left linked data and BSS where they were, so 9,568 bytes are free below the module pool (9,472 before). The shipping disc's new code is `intro::play`'s three calls and the poem's step (`intro::tick`, `call_program`, about 400 bytes), `Cache::preload` and the early branch of `admit_scenes` (about 150), and a call at each of the admission's checkpoints (`disc::checkpoint`, 40); it is paid for by `prepare_ambience` (4,108 bytes, which `main` had inlined in a speed-optimised copy of about 4,540) going out of line under `optimize(size)` for the build that has the poem, and by `prepare_effect_art` under `optimize(size)` there as well. The route-input twin and every other build without the `intro` feature link the same bytes as before (the twin's disc is byte for byte the main's). The hand-off block is the last 192 bytes of RAM above the game's initial stack pointer (the 256 bytes over it are nobody's), no linked data.
 
 The 2026-10-30 headroom pass took 5,824 bytes back, so 8,140 are free below the module pool (2,332 before, on 1a0606e): the CD interrupt's stack went from 2,048 to 256 bytes (`hk_cd_interrupt` reaches `service_irq` and nothing deeper, 24 bytes by the SDK's stack-guard plus the wrapper's 16, and 36 bytes at most in a 0xa5 fill scan after 69 route tapes; `host/hazards.py` `irq_stack_guard` now fails a link whose tree needs more than the stack holds), and the ambience clip prefetch lands its two-sector pieces in the music FIFO's free sectors instead of a 4,096-byte stage buffer of its own (code +72, BSS -4,096 with the stack's -1,792). The FIFO itself, 98,304 bytes, is unchanged.
-Static data ends at `0x801d7fa4`; the reserved stack begins at `0x801f3f00`.
+The music FIFO went from 48 to 44 sectors (98,304 to 90,112 bytes, 7.8 to 7.2 s) on Manny's call, which took 8,192 bytes of BSS and leaves 14,188 free below the module pool (5,980 before). Measured with the ambience prefetch in the FIFO's free sectors, on the 69 route tapes and the 7 closed-loop routes in the emulator (silicon room-load timing is unmeasured): the lowest fill moved from 20 to 16 sectors (2.6 s) at the False Knight arena gate and from 24 to 18 on the open-loop tapes, with no underruns; 40 sectors would have left 8 sectors (1.3 s) there. The False Knight arena gate loads took 45/46, 46/46 and 22/24 VBlanks at 48/44 sectors; a smaller FIFO sits under the room prefetch's 32-sector comfort threshold more often (one mid-route gate load went from 60 to 96 VBlanks, another route's gates got faster).
+Static data ends at `0x801d5f94`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
