@@ -908,8 +908,8 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
     // small droplets up and out of the armour for three seconds; `Blow` opens it in one burst of
     // the same, far thicker.
     for (count, size, cell, speed, angle, alpha, life) in [
-        (4, [2.0, 2.6], 2.2, [3.0, 10.0], [15.0, 165.0], 0.8, [40, 64]),
-        (5, [0.4, 0.4], 0.35, [6.0, 16.0], [10.0, 170.0], 1.0, [40, 64]),
+        (4, [2.0, 2.6], 2.2, [6.0, 16.0], [45.0, 135.0], 0.8, [40, 70]),
+        (6, [0.4, 0.4], 0.35, [8.0, 22.0], [30.0, 150.0], 1.0, [40, 70]),
     ] {
         push_glow(
             c,
@@ -926,7 +926,7 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
                 alpha,
                 hold: 0.5,
                 tint: [195.0, 78.0, 26.0],
-                gravity_scale: 0.6,
+                gravity_scale: 0.4,
                 ..Glow::new("disc")
             },
             gravity,
@@ -935,7 +935,7 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         )?;
     }
     for (count, size, cell, speed, alpha) in [
-        (32, [2.0, 3.0], 2.2, [4.0, 14.0], 0.8),
+        (32, [2.0, 3.0], 2.2, [5.0, 18.0], 0.8),
         (28, [0.4, 0.4], 0.35, [6.0, 18.0], 1.0),
     ] {
         push_glow(
