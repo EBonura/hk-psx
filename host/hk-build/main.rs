@@ -1208,9 +1208,16 @@ fn profile_guided_guest(root: &Path, options: &Options, guest_args: &[&str]) -> 
             .and_then(|route| route.card)
         {
             // The replay writes the card back: use a scratch copy so the fixture stays put.
+            let fixture = root.join("tools/cards").join(&card);
             let scratch = work.join(format!("{stem}.mcd"));
-            std::fs::copy(root.join("tools/cards").join(card), &scratch)?;
-            command.arg("--memcard").arg(scratch);
+            match std::fs::copy(&fixture, &scratch) {
+                Ok(_) => {
+                    command.arg("--memcard").arg(scratch);
+                }
+                Err(error) => println!(
+                    "{stem}: warning: card fixture tools/cards/{card} is unreadable ({error}); profiling on a freshly formatted card"
+                ),
+            }
         }
         println!("+ {command:?}");
         if !command.status()?.success() {
@@ -1483,6 +1490,25 @@ fn frontend(root: &Path, options: &Options) -> Result<PathBuf> {
     Ok(frontend)
 }
 
+/// The scratch copy of a route's card fixture for one replay (the replay writes the card back, so the
+/// fixture stays put). A pin file that names a card the repository does not hold is said so and the
+/// replay starts on a freshly formatted card, which is what a route with no `card` gets.
+fn scratch_card(root: &Path, route: &routes::Route, scratch_dir: &Path) -> Option<PathBuf> {
+    let card = route.card.as_ref()?;
+    let fixture = root.join("tools/cards").join(card);
+    let scratch = scratch_dir.join(format!("{}.mcd", route.name));
+    match std::fs::copy(&fixture, &scratch) {
+        Ok(_) => Some(scratch),
+        Err(error) => {
+            println!(
+                "{}: warning: card fixture tools/cards/{card} is unreadable ({error}); the replay starts on a freshly formatted card",
+                route.name
+            );
+            None
+        }
+    }
+}
+
 /// `determinism`: replay each selected open-loop route twice on the same disc and fail if the two
 /// runs differ in any final telemetry word or in the per-poll route log. A route that is not
 /// deterministic cannot be pinned; this finds it without pinning a single number
@@ -1504,12 +1530,7 @@ fn determinism(root: &Path, options: &Options) -> Result<()> {
             continue;
         }
         let spawn = |out: &Path| -> std::io::Result<std::process::Child> {
-            // The replay writes the card back: each run gets its own copy of the fixture.
-            let card = route.card.as_ref().map(|card| {
-                let scratch = out.join(format!("{}.mcd", route.name));
-                let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
-                scratch
-            });
+            let card = scratch_card(root, &route, out);
             replay_command(root, &frontend, out, &library, &route.name, card).spawn()
         };
         let (a, b);
@@ -1827,12 +1848,7 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         None
     };
     let spawn = |route: &routes::Route| {
-        let card = route.card.as_ref().map(|card| {
-            // The replay writes the card back: run against a scratch copy so the fixture stays put.
-            let scratch = out.join(format!("{}.mcd", route.name));
-            let _ = std::fs::copy(root.join("tools/cards").join(card), &scratch);
-            scratch
-        });
+        let card = scratch_card(root, route, &out);
         replay_command(root, &frontend, &out, &library, &route.name, card).spawn()
     };
     // The journey is one save carried through power cycles, so its segments
@@ -1858,8 +1874,9 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             return Ok(None);
         }
         let tapes = root.join("tools/tapes");
+        // A card the repository lacks is a fact about this route, not a reason to stop the run.
         let card = match &route.card {
-            Some(card) => sha256_file(&root.join("tools/cards").join(card))?,
+            Some(card) => sha256_file(&root.join("tools/cards").join(card)).unwrap_or_else(|_| format!("no card file {card}")),
             None => String::new(),
         };
         Ok(Some(verdicts::key(&[
@@ -3086,6 +3103,23 @@ mod tests {
         assert_ne!(changed("host/hk-cook/src/lib.rs", "// other\n"), cold, "a Rust cooker");
         assert_ne!(changed(".hkpsx/menu-provenance.json", "{\"m\": 1}"), cold, "the menu cook");
         assert_eq!(assets_key(&dir).unwrap(), cold, "restoring the inputs restores the key");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_card_fixture_the_repository_lacks_is_a_warning_and_a_blank_card_not_an_abort() {
+        let dir = tree("missing-card");
+        std::fs::create_dir_all(dir.join("tools/cards")).unwrap();
+        std::fs::write(dir.join("tools/cards/there.mcd"), b"card").unwrap();
+        let route = |card: Option<&str>| routes::Route {
+            name: "r".into(),
+            card: card.map(str::to_owned),
+            ..routes::Route::default()
+        };
+        assert_eq!(scratch_card(&dir, &route(None), &dir), None, "no card named");
+        assert_eq!(scratch_card(&dir, &route(Some("missing.mcd")), &dir), None, "named, not in the repository");
+        let copied = scratch_card(&dir, &route(Some("there.mcd")), &dir).unwrap();
+        assert_eq!(std::fs::read(copied).unwrap(), b"card");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
