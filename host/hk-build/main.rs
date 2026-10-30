@@ -2275,14 +2275,44 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
             )
             .into());
         }
-        // The long save journey deliberately grants invincibility. Keep a
-        // separate, ordinary-controls proof that earned SOUL heals a real
-        // lost mask without a cheat or guest-state injection.
-        earned_focus::validate(root, &frontend, &library, &out.join("earned-focus"))?;
-        Ok(())
+        // The long save journey deliberately grants invincibility. The walks play without a cheat or a
+        // recorded input: the whole road from the title, and the earned Focus proof on game state (the
+        // tape proof `earned-focus` went red when new games moved to the top-gate drop).
+        let gate = gate.as_ref().ok_or("the walks need psoxide-gate (--gate, or HK_PSX_GATE and HK_PSX_GATE_SHA256)")?;
+        let failed = play_walks(root, &gate.binary, &library, &out.join("walks"), None)?;
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("walks failed: {}", failed.join(", ")).into())
+        }
     } else {
         Err(format!("routes failed: {}", failed.join(", ")).into())
     }
+}
+
+/// Play the walk scripts of `tools/walks` (docs/ROUTES.md, Walks) and report each. The walks play the
+/// shipping disc (no route-input feature): `HK_WALK_LIBRARY` names its library when `library` is the
+/// route-input twin the tapes need, otherwise they play `library`. Returns the names that failed.
+fn play_walks(root: &Path, gate: &Path, library: &Path, out: &Path, only: Option<&[String]>) -> Result<Vec<String>> {
+    let walk_library = std::env::var_os("HK_WALK_LIBRARY").map(PathBuf::from).unwrap_or_else(|| library.to_path_buf());
+    let map = if walk_library.join("game.map").is_file() {
+        walk_library.join("game.map")
+    } else {
+        let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
+        PathBuf::from(build["link_map"]["path"].as_str().ok_or("build.json has no link map")?)
+    };
+    let mut failed = Vec::new();
+    for (name, script) in walk::scripts(root)? {
+        if !only.is_none_or(|o| o.iter().any(|x| *x == name || x == "walks")) {
+            continue;
+        }
+        let (ok, headline) = walk::play(gate, &walk_library, &map, out, &name, &script)?;
+        println!("{} {name} (walk): {headline}", if ok { "PASS" } else { "FAIL" });
+        if !ok {
+            failed.push(name);
+        }
+    }
+    Ok(failed)
 }
 
 /// The `psoxide-gate` binary for closed-loop routes (`--gate`, or `HK_PSX_GATE` with its SHA-256).
@@ -2370,25 +2400,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
     }
     // The walk scripts (tools/walks): journeys written as goals, played the same way.
     if !measure {
-        // The walks play the shipping disc (no route-input feature): HK_WALK_LIBRARY names its library
-        // when `--library` is the route-input twin the tapes need. Without the variable they play `--library`.
-        let walk_library = std::env::var_os("HK_WALK_LIBRARY").map(PathBuf::from).unwrap_or_else(|| library.clone());
-        let map = if walk_library.join("game.map").is_file() {
-            walk_library.join("game.map")
-        } else {
-            let build: Value = serde_json::from_slice(&std::fs::read(root.join(".hkpsx/build.json"))?)?;
-            PathBuf::from(build["link_map"]["path"].as_str().ok_or("build.json has no link map")?)
-        };
-        for (name, script) in walk::scripts(root)? {
-            if !only.as_ref().is_none_or(|o| o.iter().any(|x| *x == name || x == "walks")) {
-                continue;
-            }
-            let (ok, headline) = walk::play(&gate.binary, &walk_library, &map, &out, &name, &script)?;
-            println!("{} {name} (walk): {headline}", if ok { "PASS" } else { "FAIL" });
-            if !ok {
-                failed.push(name);
-            }
-        }
+        failed.extend(play_walks(root, &gate.binary, &library, &out, only.as_deref())?);
     }
     if failed.is_empty() {
         println!("{} closed-loop routes pass.", selected.len());
