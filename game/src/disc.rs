@@ -2595,6 +2595,9 @@ impl Cache {
             if split.is_some() {
                 // The stream follows the gate: read into the gap by the drive once it is free (`pump`).
                 tail_arm(index, self.tail_lba(index)?);
+                if !unsafe { TAIL_DEFER } {
+                    tail_finish();
+                }
             }
             unsafe {
                 HK_SCENE_LOADS = HK_SCENE_LOADS.saturating_add(1);
@@ -4254,6 +4257,32 @@ fn tail_set(state: u8) {
 /// The resident scene's stream is in place (true for a scene read whole, and for one whose tail gave up).
 pub fn tail_ready() -> bool {
     matches!(tail().state, TAIL_IDLE | TAIL_READY | TAIL_FAILED)
+}
+/// Whether the load in progress may leave its room's stream tail to be read after it (`scene_transition::load`: a gate
+/// the Knight walked into). Any other load (the title's continue, a respawn) reads it before the room starts, so
+/// a route that begins in the arena finds its art there.
+static mut TAIL_DEFER: bool = false;
+pub fn defer_tail(on: bool) {
+    unsafe {
+        TAIL_DEFER = on;
+    }
+}
+/// Read and check the tail now, with the pad polled meanwhile.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn tail_finish() {
+    loop {
+        checkpoint();
+        match tail().state {
+            TAIL_WANT => {
+                room_drive();
+                start_tail();
+            }
+            TAIL_READING => land_tail(),
+            TAIL_HASHING => tail_service(8192),
+            _ => break,
+        }
+    }
 }
 /// Forget the tail: the arena is about to be overwritten.
 #[inline(never)]

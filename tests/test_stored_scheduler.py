@@ -209,6 +209,8 @@ const SCENE_MANIFEST:&[SceneDesc]=&[
  SceneDesc{scene_id:0,ram_offset:0,arena_capacity:48,stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0},
  SceneDesc{scene_id:1,ram_offset:if SCENE_GATE_LOAD{0}else{24},arena_capacity:if SCENE_GATE_LOAD{48}else{24},stored_len:24,stored_fnv:0,raw_len:24,raw_fnv:0}];
 fn tail_arm(_:usize,_:u32){}
+static mut TAIL_DEFER:bool=true;
+fn tail_finish(){}
 fn tail_disarm(){}
 #[derive(Copy,Clone)]struct SplitDesc{head_len:usize,head_fnv:u32}
 const SCENE_SPLITS:&[SplitDesc]=&[];
