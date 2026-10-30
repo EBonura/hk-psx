@@ -1212,14 +1212,14 @@ fn collect_cocoon(
         "Spatter Blue x50",
     )?;
     // The `Splat Effect` the cocoon turns on (cyan, scale 2 by 3, 6 frames at 24 a second) is a burst
-    // of 12 to 16 separate aqua leaves that fan up and out of it: leaves here, each a tapered petal
+    // of 12 to 16 separate aqua leaves (eight here: each is a drawn quad and the route's frame time counts them) that fan up and out of it: leaves here, each a tapered petal
     // (a petal cell cut 32 texels long) flown outward along its own length.
     push_glow(
         c,
         scene_id,
         FX_COCOON,
         &Glow {
-            count: 14,
+            count: 8,
             life: [12, 18],
             angle: Some([10.0, 170.0]),
             speed: [7.0, 15.0],
