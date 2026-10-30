@@ -509,6 +509,7 @@ mod camera {
         Average,
         Big,
     }
+    pub fn frame_head(_: i32) {}
     pub fn request(kind: Shake) {
         crate::boss_effects::record(match kind {
             Shake::Small => "shake small",

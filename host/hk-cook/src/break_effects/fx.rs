@@ -50,6 +50,10 @@ pub const FX_FK_DUST: i64 = FX_OWNER | 0x40;
 pub const FX_FK_MIST: i64 = FX_OWNER | 0x41;
 /// The orange sparks of his first landing.
 pub const FX_FK_FIRE: i64 = FX_OWNER | 0x42;
+/// The death tail: the armour's bleeding (`Steam`, raised every 12 ticks for three seconds) and the burst
+/// when `Blow` opens it.
+pub const FX_FK_STEAM: i64 = FX_OWNER | 0x43;
+pub const FX_FK_BURST: i64 = FX_OWNER | 0x44;
 /// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
 pub const FK_SCENE_ID: i64 = 11;
 
@@ -898,7 +902,66 @@ fn collect_boss(scene_id: i64, gravity: f64, c: &mut Collected) -> Result<()> {
         gravity,
         [0.0; 3],
         "False Knight entrance sparks",
-    )
+    )?;
+    // The death tail, from the same soft disc cells as the dust. hkref (the 10-30 death frames): the
+    // armour does not steam white, it bleeds orange. `Steam` throws soft orange blobs and a spray of
+    // small droplets up and out of the armour for three seconds; `Blow` opens it in one burst of
+    // the same, far thicker.
+    for (count, size, cell, speed, angle, alpha, life) in [
+        (4, [2.0, 2.6], 2.2, [3.0, 10.0], [15.0, 165.0], 0.8, [40, 64]),
+        (5, [0.4, 0.4], 0.35, [6.0, 16.0], [10.0, 170.0], 1.0, [40, 64]),
+    ] {
+        push_glow(
+            c,
+            scene_id,
+            FX_FK_STEAM,
+            &Glow {
+                count,
+                life,
+                angle: Some(angle),
+                speed,
+                spread: [2.5, 0.4],
+                size,
+                cell,
+                alpha,
+                hold: 0.5,
+                tint: [195.0, 78.0, 26.0],
+                gravity_scale: 0.6,
+                ..Glow::new("disc")
+            },
+            gravity,
+            [0.0, 2.0, 0.0],
+            "False Knight bleeding armour",
+        )?;
+    }
+    for (count, size, cell, speed, alpha) in [
+        (32, [2.0, 3.0], 2.2, [4.0, 14.0], 0.8),
+        (28, [0.4, 0.4], 0.35, [6.0, 18.0], 1.0),
+    ] {
+        push_glow(
+            c,
+            scene_id,
+            FX_FK_BURST,
+            &Glow {
+                count,
+                life: [36, 60],
+                angle: Some([0.0, 180.0]),
+                speed,
+                spread: [3.0, 0.8],
+                size,
+                cell,
+                alpha,
+                hold: 0.5,
+                tint: [195.0, 76.0, 26.0],
+                gravity_scale: 0.6,
+                ..Glow::new("disc")
+            },
+            gravity,
+            [0.0, 2.2, 0.0],
+            "False Knight armour burst",
+        )?;
+    }
+    Ok(())
 }
 
 fn named_go(sc: &Scene, name: &str) -> Option<i64> {

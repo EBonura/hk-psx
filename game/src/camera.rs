@@ -72,6 +72,13 @@ impl Shaker {
     }
 }
 static mut SHAKER: Shaker = Shaker::new();
+/// The x the False Knight's Death Head slides to and lies at (Q16 world units), 0 when there is none.
+/// The original's wider view shows the whole of the lower room's floor; this one holds the head in
+/// frame (as far as the Knight stays in it too) while the head is out. Cleared on a scene entry.
+static mut HEAD_FOCUS: i32 = 0;
+pub fn frame_head(x: i32) {
+    unsafe { HEAD_FOCUS = x }
+}
 #[no_mangle]
 pub static mut HK_CAMERA_SHAKES: u32 = 0;
 /// The follow camera's centre (Q16 world units, before shake), published
@@ -573,6 +580,7 @@ impl Camera {
             self.release_lock(first, hero);
         }
         let [w, h] = crate::world::SCENE_CAMERA[region.scene];
+        unsafe { HEAD_FOCUS = 0 };
         self.scene = region.scene as u16;
         self.limit = (w as i32 * ONE - X_MIN, h as i32 * ONE - Y_MIN);
         self.scene_lock_count = 0;
@@ -985,6 +993,13 @@ impl Camera {
                         area.limits[2]
                     };
                 }
+            }
+            let focus = unsafe { HEAD_FOCUS };
+            if focus != 0 {
+                // The head's far side four units inside the right edge, unless that
+                // would push the Knight within two and a half units of the left one.
+                let want = (focus + 4 * ONE - X_MIN).min(hero.x + X_MIN - 5 * ONE / 2);
+                destination.0 = destination.0.max(want);
             }
             let destination = self.keep_within_scene(destination);
             world.0 = smooth_damp(world.0, destination.0, &mut self.velocity.0, CAMERA_DAMP);

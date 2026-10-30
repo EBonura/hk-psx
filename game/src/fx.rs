@@ -21,6 +21,8 @@ pub const SCUTTLER_BLOOD: usize = 0xD023;
 pub const FK_DUST: usize = 0xD040;
 pub const FK_MIST: usize = 0xD041;
 pub const FK_FIRE: usize = 0xD042;
+pub const FK_STEAM: usize = 0xD043;
+pub const FK_BURST: usize = 0xD044;
 
 /// Raise `owner`'s emitters, moved by `at` (world, Q16).
 #[cfg(not(test))]

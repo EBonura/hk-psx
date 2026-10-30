@@ -961,9 +961,19 @@ writes one.
   bytes with the rest listed under "The voices".
 - **The staff.** Refused on rotation, not on bytes, as before: the draw paths
   emit axis-aligned quads, and it needs a bounce model this port does not have.
-- **Most particles and two shakes.** `Floor Break`'s fling, the rubble, the
-  steam and the blood are particle work; `Blow` and `Steam` shake, `Floor Break`
-  shakes, and the Death Head's own Rigidbody2D is a slide along the floor.
+- **Most particles and two shakes.** `Floor Break`'s fling and the rubble are
+  particle work not done; `Blow` and `Steam` shake, `Floor Break` shakes, and the
+  Death Head's own Rigidbody2D is a slide along the floor.
+- **The death tail's look (2026-10-30, hkref frames in the lane's review/).** The
+  armour does not steam white: `Steam` sprays soft orange blobs and droplets up and
+  out of it for its three seconds and `Blow` opens it in one thick burst of the
+  same (`fx.rs` owners 0xD043 and 0xD044, cooked from the arena's glow cells, raised
+  every 12 ticks of `Steam` and once at `Blow`). The Death Head is a plain white
+  ball in the original too, with no glow of its own. While it is out the camera
+  holds it in frame (`camera::frame_head`): the original's 29.2 unit view shows the
+  whole lower room, this one's 21.6 does not reach the head's side, so the target
+  is pushed right until the head's far side is four units inside the edge, but
+  never so far that the Knight is within two and a half units of the left one.
 - **Some of the fight's voices.** The scene bank now carries `false_knight_strike_ground`,
   `false_knight_rage`, `false_knight_jump` and `boss_final_hit` besides land and swing
   (`hk-cook scene-sfx`); "The voices" below describes the older state and has to be checked
