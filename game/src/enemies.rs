@@ -3243,27 +3243,6 @@ impl Actor {
         // cooked terrain nothing can break.
         self.apply_battle_scene(actions);
     }
-    /// The dust of a landing or slam at the boss's feet, and (the entrance and the slams) the mist
-    /// along the arena's floor (host/hk-cook/src/break_effects/fx.rs `collect_boss`). Only the upper
-    /// floor of Crossroads_10 has one: the landings below the broken floor raise none.
-    #[cfg(not(test))]
-    #[inline(never)]
-    fn fk_dust(&self, mist: bool, fire: bool) {
-        /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
-        const FLOOR_Y: i32 = 27 * 65536 + 13_000;
-        if self.y < 30 * 65536 {
-            return;
-        }
-        crate::fx::raise(usize::from(self.scene), crate::fx::FK_DUST, [self.x, FLOOR_Y]);
-        if mist {
-            crate::fx::raise(usize::from(self.scene), crate::fx::FK_MIST, [self.x, FLOOR_Y]);
-        }
-        if fire {
-            crate::fx::raise(usize::from(self.scene), crate::fx::FK_FIRE, [self.x, FLOOR_Y]);
-        }
-    }
-    #[cfg(test)]
-    fn fk_dust(&self, _mist: bool, _fire: bool) {}
     /// One `FalseyControl` action list against the guest body.
     fn apply_false_knight(
         &mut self,
@@ -3359,11 +3338,15 @@ impl Actor {
                 // fight that can reach the one camera is the one the hero is in
                 // the scene of, which is the source's own reach: its
                 // `CameraShake` is a single object under `_GameCameras`.
-                Action::Effect(effect) => match effect {
+                Action::Effect(effect) => {
+                    // Dust at the landings and slams of the upper floor (see `take_fk_dust`).
+                    if self.y >= 30 * 65536 {
+                        unsafe { FK_DUST = [fk_dust_kind(effect), self.x, self.scene as i32] };
+                    }
+                    match effect {
                     Effect::LandingShake => {
                         crate::camera::request(Shake::Average);
                         crate::audio::boss_land();
-                        self.fk_dust(false, false);
                     }
                     Effect::Landing => crate::audio::boss_land(),
                     Effect::Swing => crate::audio::boss_swing(),
@@ -3375,7 +3358,6 @@ impl Actor {
                     Effect::Slam => {
                         crate::camera::request(Shake::Big);
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_STRIKE_GROUND);
-                        self.fk_dust(true, false);
                     }
                     Effect::StunStart => {
                         crate::camera::request(Shake::Big);
@@ -3397,7 +3379,6 @@ impl Actor {
                     Effect::RageSlam => {
                         crate::camera::request(Shake::Average);
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_STRIKE_GROUND);
-                        self.fk_dust(false, false);
                     }
                     Effect::JumpShake => {
                         crate::camera::request(Shake::Kill);
@@ -3417,7 +3398,6 @@ impl Actor {
                         crate::camera::request(Shake::Average);
                         crate::audio::boss_land();
                         crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_LAND_1ST_TIME);
-                        self.fk_dust(true, true);
                     }
                     Effect::Roll => crate::scene_sfx::play(crate::scene_sfx::FALSE_KNIGHT_ROLL),
                     Effect::RunStart => {
@@ -3444,7 +3424,8 @@ impl Actor {
                         crate::scene_sfx::play(crate::scene_sfx::BOSS_FINAL_HIT);
                         crate::persist::set_player(crate::persist::FALSE_KNIGHT_DEFEATED);
                     }
-                },
+                }
+                }
                 // SUMMON, with `Spawns` written. The summoner is a different
                 // object with its own clock, so this is only the send: it is
                 // held here and drained once, in `advance_false_knight`, rather
@@ -7084,7 +7065,7 @@ impl EnemyWorld {
             assert!(draws.can_push(texture), "visible enemy projectile budget exceeded");
             draws.push(texture, verts, 0);
         }
-        // Husk Guard waves: every third spurt, which shows each of the clip's 3-tick frames once
+        // Every third spurt, which shows each of the clip's 3-tick frames once
         // along the trail rather than paying a quad for all eighteen.
         for (_, wave, spurt) in self
             .waves
@@ -7092,11 +7073,8 @@ impl EnemyWorld {
             .flatten()
             .filter(|(id, _, _)| *id as usize == region.scene)
         {
-            // The False Knight's wave shows every spurt, as the original's dense white spurts are; a Husk
-            // Guard's, in a room with little art, every third (each loop has its own constant stride:
-            // a variable one cost 900 bytes of code).
-            if *spurt == NO_SPURT {
-                for (x, age) in wave.spurts(wave_params(*spurt), 1) {
+            for (x, age) in wave.spurts(wave_params(*spurt), 3) {
+                if *spurt == NO_SPURT {
                     let sprite = crate::fk_art::sprite(crate::fk_art::SPURT, age as u32);
                     push_sprite_if_room(
                         &mut draws,
@@ -7107,9 +7085,7 @@ impl EnemyWorld {
                         -(wave.dir as i32),
                         camera,
                     );
-                }
-            } else {
-                for (x, age) in wave.spurts(wave_params(*spurt), 3) {
+                } else {
                     push_frame_if_room(
                         &mut draws,
                         room,
@@ -7123,6 +7099,26 @@ impl EnemyWorld {
         }
         draws
     }
+}
+/// The False Knight's landing or slam of this tick, for the frame to raise the dust of
+/// (host/hk-cook/src/break_effects/fx.rs `collect_boss`): the kind (`fk_dust_kind`; 0 none), his x
+/// and his scene. Kept here, as three words, so that the long actor loop makes no call for it.
+static mut FK_DUST: [i32; 3] = [0; 3];
+/// 1 dust (a landing, a rage slam), 3 dust and mist (a slam), 7 dust, mist and sparks (the entrance).
+const fn fk_dust_kind(effect: hk_sim::false_knight::Effect) -> i32 {
+    use hk_sim::false_knight::Effect;
+    match effect {
+        Effect::LandingShake | Effect::RageSlam => 1,
+        Effect::Slam => 3,
+        Effect::EntranceLanding => 7,
+        _ => 0,
+    }
+}
+/// The dust to raise this tick, if any: (scene, x, kind).
+#[inline(never)]
+pub fn take_fk_dust() -> Option<(usize, i32, i32)> {
+    let [kind, x, scene] = unsafe { core::mem::replace(&mut *(&raw mut FK_DUST), [0; 3]) };
+    (kind != 0).then_some((scene as usize, x, kind))
 }
 /// A wave's cooked numbers: the False Knight's, or the Husk Guard's stomp.
 const NO_SPURT: u16 = u16::MAX;

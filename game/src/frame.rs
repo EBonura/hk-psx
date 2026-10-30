@@ -236,6 +236,27 @@ pub static mut HK_VIEW_NPC_DRAWS: u32 = 0;
 /// so an actor draws wherever the camera shows it. An NPC is cooked into the one
 /// view holding it, with its clips in that view's room, so `other_npc` is one
 /// the camera shows from another view than the Knight's, with that view's room.
+/// The False Knight's landing or slam dust (`enemies::take_fk_dust`): at his feet on the arena's floor,
+/// the mist along it and the entrance's sparks.
+#[cfg(not(test))]
+#[inline(never)]
+fn raise_fk_dust() {
+    /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
+    const FLOOR_Y: i32 = 27 * 65536 + 13_000;
+    let Some((scene, x, kind)) = crate::enemies::take_fk_dust() else {
+        return;
+    };
+    let at = [x, FLOOR_Y];
+    fx::raise(scene, fx::FK_DUST, at);
+    if kind & 2 != 0 {
+        fx::raise(scene, fx::FK_MIST, at);
+    }
+    if kind & 4 != 0 {
+        fx::raise(scene, fx::FK_FIRE, at);
+    }
+}
+#[cfg(test)]
+fn raise_fk_dust() {}
 pub fn render(
     game: &mut Game,
     r: &world::Region,
@@ -1585,6 +1606,7 @@ pub fn simulate(
                 scene_sfx::play(event);
             }
         }
+        raise_fk_dust();
         let mining = strike_geo(game.geo, r.scene, &game.nail, &game.player);
         if mining.hits > 0 {
             geo_audio::hit();
