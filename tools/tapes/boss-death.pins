@@ -1,8 +1,9 @@
-pacing = 4
+pacing = 14
 frame_time = 196
 long_frames = 4
 missed_vblanks = 7
 card = boss-fight.mcd
+# 2026-10-30 (entrance light): the entrance landing's orange clouds cost about ten frames of three vblanks in this route (frames over 2 vblanks 1 before, 12 and 8 after; frame time 148 to 151 of 196); a fight's one-second effect, kept for the look (docs/BUDGET.md, docs/EFFECTS.md).
 art_late = 44
 # Losing to the False Knight, and walking back in for a second go.
 # 
