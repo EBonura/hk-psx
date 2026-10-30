@@ -625,6 +625,20 @@ pub fn want_read(urgent: bool) -> Option<(*mut u32, usize, u32)> {
     a.reading = n;
     Some((stream::fifo_sector(a.fifo.write), n, lba + a.cursor.next))
 }
+/// Free FIFO sectors for the ambience prefetch to land a piece of up to `most` sectors in, as
+/// (destination, sectors). They are free: nothing is buffered there, a music refill is not in
+/// flight, and the ring only uploads from the filled run. None when the FIFO has no free
+/// sector at its write position.
+pub fn stage(most: usize) -> Option<(*mut u32, usize)> {
+    let a = area();
+    if a.reading != 0 {
+        return None;
+    }
+    match a.fifo.writable(most) {
+        0 => None,
+        n => Some((stream::fifo_sector(a.fifo.write), n)),
+    }
+}
 /// Buffered music a room prefetch may borrow the drive against: a prefetch
 /// holds the drive for at most a scene group (about 1.5 s with its seek),
 /// so the stream must have well over that queued before one starts.

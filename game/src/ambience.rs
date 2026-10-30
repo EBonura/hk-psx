@@ -17,12 +17,12 @@ static mut MIXER: state::Mixer = state::Mixer::new();
 
 /// Background loads of the clips the scenes one gate away play, so an
 /// area-change gate finds them resident. `disc::pump` runs one piece at a
-/// time through `STAGE` when the drive is idle; a gate load abandons a clip
-/// half done, and the gate then loads it itself.
+/// time when the drive is idle; a gate load abandons a clip half done, and the
+/// gate then loads it itself. A piece lands in the music FIFO's free sectors
+/// (`music::stage`), which hold nothing until a music refill claims them, and
+/// is uploaded to the SPU before the drive is used again: the clip prefetch
+/// has no buffer of its own.
 const STAGE_SECTORS: usize = 2;
-#[repr(C, align(4))]
-struct Stage([u8; STAGE_SECTORS * 2048]);
-static mut STAGE: Stage = Stage([0; STAGE_SECTORS * 2048]);
 const NO_CLIP: u8 = u8::MAX;
 struct Prefetch {
     want: u8,
@@ -30,6 +30,8 @@ struct Prefetch {
     clip: u8,
     offset: usize,
     reading: usize,
+    /// Where the piece in flight lands (the FIFO's free sectors).
+    stage: *mut u32,
     check: state::ClipCheck,
 }
 static mut PREFETCH: Prefetch = Prefetch {
@@ -38,6 +40,7 @@ static mut PREFETCH: Prefetch = Prefetch {
     clip: NO_CLIP,
     offset: 0,
     reading: 0,
+    stage: core::ptr::null_mut(),
     check: state::ClipCheck::new(),
 };
 /// Where each clip starts on the disc, filled in once the directory is read.
@@ -95,13 +98,13 @@ pub fn want_prefetch() -> Option<(*mut u32, usize, u32)> {
     if lba == 0 {
         return None;
     }
-    let sectors = (clip.byte_len - p.offset).div_ceil(2048).min(STAGE_SECTORS);
+    // No free FIFO sector (a FIFO a refill just filled): the next
+    // pump call tries again.
+    let (stage, room) = crate::music::stage(STAGE_SECTORS)?;
+    let sectors = (clip.byte_len - p.offset).div_ceil(2048).min(room);
     p.reading = sectors;
-    Some((
-        unsafe { (&raw mut STAGE.0).cast::<u32>() },
-        sectors,
-        lba + (p.offset / 2048) as u32,
-    ))
+    p.stage = stage;
+    Some((stage, sectors, lba + (p.offset / 2048) as u32))
 }
 /// The piece `want_prefetch` handed out has landed (or failed).
 pub fn prefetch_done(ok: bool) {
@@ -117,7 +120,10 @@ pub fn prefetch_done(ok: bool) {
     let index = p.clip as usize;
     let clip = CLIPS[index];
     let bytes = (sectors * 2048).min(clip.byte_len - p.offset);
-    let data = unsafe { core::slice::from_raw_parts((&raw const STAGE.0).cast::<u8>(), bytes) };
+    // Safety: `want_prefetch` took these sectors from the FIFO's free run; no music read can
+    // start before this piece lands (the drive pump and a gate wait for it), and a refill
+    // only claims them after this upload.
+    let data = unsafe { core::slice::from_raw_parts(p.stage.cast::<u8>(), bytes) };
     if !ok || !p.check.feed(data, clip.byte_len) {
         abort_prefetch();
         return;
