@@ -1,0 +1,3 @@
+# Crossroads_47, second half: up from the bench (a game continued from its save stands here), out at the right to the hub.
+hold right until HK_SCENE_LOADS ge 12 timeout 1500   # out of the right-hand gate, back to the hub
+wait until HK_GAME_MODE == 1 timeout 1800

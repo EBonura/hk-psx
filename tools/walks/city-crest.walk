@@ -1,0 +1,6 @@
+# The room below the arena (Crossroads_10, the bottom): Key Giver's shiny at x 38 holds the City Crest; up takes it.
+at 32.2 3.39
+walk 37.9
+press up                                       # take the shiny
+wait until HK_PICKUPS_TAKEN ge 1 timeout 300
+wait 60

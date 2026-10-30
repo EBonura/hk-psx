@@ -1,0 +1,9 @@
+# The False Knight, from the arena's right-hand mouth (Crossroads_10, x 64.5 y 27.4) to the end of the fight: along the floor to the
+# trigger at x 13 (he drops from x 26), then rounds of reactions (false-knight-round.walk) until he is dead. A fair fight: three
+# staggers each converted (the Head finished in its window) and none won in a rage, no mask lost to a wave, a Focus when he is
+# far off. The floor breaks on his last jump; the rounds drop after him and finish the Head in the room below, and the fight is
+# over when HK_FK_DEATHS reads 1.
+include false-knight-defs.walk
+walk 12.0                                                    # across the arena floor; the trigger is at x 13
+include false-knight-round.walk times 2000
+wait until HK_FK_DEATHS ge 1 timeout 3600                    # his death sequence plays out

@@ -1,0 +1,40 @@
+# The False Knight as expressions over raw words the guest publishes (HK_FK_X/Y/BODY/FLAGS/PHASE/DX, HK_WAVE, the Knight's
+# own position and nail), evaluated by the gate (psoxide-gate `kind = "expr"`): nothing here is computed in the guest.
+# Boxes are Q16 world units. A swing's reach, from the Knight's origin (enemies.rs STRIKE_*): 3.2 sideways, 1.6 up, 2.4 down;
+# overhead 1.4 either side from 0.3 to 2.8 up; a jump gets a foe up to 5 above.
+def px i32(HK_PLAYER_X)
+def py i32(HK_PLAYER_Y)
+def ready u32(HK_NAIL_BUSY) == 0
+def fk_live u32(HK_FK_ACTIVE) == 1 && u32(HK_FK_DEATHS) == 0
+# What a nail would land on: the Head once the armour is open, the body when it takes one (not while it refuses nails, not in a rage).
+def fk_open u32(HK_FK_EXPOSED) == 1
+def fk_ok $fk_live && ($fk_open || (u32(HK_FK_FLAGS) & 3) == 0)
+def tx0 ($fk_open ? i32(HK_FK_X) - 68157 : i32(HK_FK_X) + i32(HK_FK_BODY[0]))
+def ty0 ($fk_open ? i32(HK_FK_Y) - 91587 : i32(HK_FK_Y) + i32(HK_FK_BODY[1]))
+def tx1 ($fk_open ? i32(HK_FK_X) + 68157 : i32(HK_FK_X) + i32(HK_FK_BODY[2]))
+def ty1 ($fk_open ? i32(HK_FK_Y) + 54100 : i32(HK_FK_Y) + i32(HK_FK_BODY[3]))
+def reach_left $fk_ok && $tx0 <= $px && $tx1 >= $px - 209715 && $ty0 <= $py + 104857 && $ty1 >= $py - 157286
+def reach_right $fk_ok && $tx0 <= $px + 209715 && $tx1 >= $px && $ty0 <= $py + 104857 && $ty1 >= $py - 157286
+def reach_up $fk_ok && $tx0 <= $px + 91750 && $tx1 >= $px - 91750 && $ty0 <= $py + 176947 && $ty1 >= $py + 19660
+def reach_jump $fk_ok && $tx0 <= $px + 196608 && $tx1 >= $px - 196608 && $ty0 <= $py + 327680 && $ty1 >= $py + 104857 && !$reach_left && !$reach_right && !$reach_up
+# He stands still enough to be walked to (idle, landing, recovering) and the box is on the Knight's level but out of reach.
+def fk_idle $fk_ok && u32(HK_FK_PHASE) == 0 && $ty0 <= $py + 104857 && $ty1 >= $py - 157286
+def close_right $fk_idle && $tx0 > $px + 209715
+def close_left $fk_idle && $tx1 < $px - 209715
+# Winding up or in the air within 14 units: give ground.
+def threat_left (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx < 0 && dx > -14 * 65536 && ph >= 1 && ph <= 2)
+def threat_right (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx >= 0 && dx < 14 * 65536 && ph >= 1 && ph <= 2)
+# A slam wave coming at the Knight and nearer than 5 units.
+def wave_near any(i in 0..2: let wx = i32(HK_WAVE[2 * i]), wd = i32(HK_WAVE[2 * i + 1]) in wd != 0 && ($px - wx) * wd >= 0 && ($px - wx) * wd < 5 * 65536)
+# Focus: masks missing, SOUL for it (or one under way), on the ground, and he is far off (17 units or more).
+def want_focus u32(HK_HEALTH) < 5 && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && ((i32(HK_FK_DX) > 17 * 65536 || i32(HK_FK_DX) < -17 * 65536) && !$wave_near)
+
+def raging (u32(HK_FK_FLAGS) & 2) != 0
+# Staggered (armour rolling or open): go and stand under the Head, within a unit of it.
+def stunned $fk_live && (u32(HK_FK_PHASE) == 3 || u32(HK_FK_PHASE) == 4)
+def under_right $stunned && i32(HK_FK_DX) > 65536
+def under_left $stunned && i32(HK_FK_DX) < -65536
+# The floor has broken and he has fallen to the room below: walk to where he is and drop after him.
+def below $fk_live && i32(HK_FK_Y) < $py - 10 * 65536
+def down_right $below && i32(HK_FK_DX) > 65536
+def down_left $below && i32(HK_FK_DX) < -65536

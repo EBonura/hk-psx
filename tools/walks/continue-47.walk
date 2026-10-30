@@ -1,0 +1,10 @@
+# Continue from the card (tools/cards/crossroads-47-bench.mcd: a game that has just saved at the bench in Crossroads_47, taken
+# by a `snapshot` in the walk of the whole run): the title, Start Game, profile 1 (a saved one), the game loads at the bench.
+# That run had made 11 scene loads; this one has made one, so the loads the later fragments wait for are 10 fewer.
+card crossroads-47-bench.mcd loads 10
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1: the save
+wait until HK_GAME_MODE == 1 timeout 1200
+at 29.34 6.39                                  # he stands up from the bench

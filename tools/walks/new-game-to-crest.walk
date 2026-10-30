@@ -1,9 +1,8 @@
-name walk-new-game-to-arena
-title cold boot to the False Knight's arena: new game, King's Pass, Dirtmouth bench, the Crossroads, the bench at the hub, the cave to the arena mouth
+name walk-new-game-to-crest
+title cold boot to the City Crest: new game, King's Pass, Dirtmouth bench, the Crossroads, the bench at the hub, the cave, the False Knight, the room below
 max_ticks 90000
 # The whole of it on the shipping disc: no cheat, no route-input feature, no recorded input. Every step waits on a word the game
-# publishes (position, counts, flags) and drives the pad from it. It stops at the mouth of the arena in Crossroads_10 (docs/ROUTES.md,
-# Walks); the fight and the City Crest are not authored yet.
+# publishes (position, counts, flags) and drives the pad from it (docs/ROUTES.md, Walks). It ends with the City Crest taken.
 include new-game.walk
 include kings-pass.walk
 include dirtmouth.walk
@@ -15,8 +14,11 @@ include crossroads-13.walk
 include crossroads-42.walk
 include crossroads-19.walk
 include crossroads-03a.walk
-include crossroads-47.walk
+include crossroads-47a.walk
+include crossroads-47b.walk
 include crossroads-03b.walk
 include crossroads-21.walk
 include crossroads-10.walk
-check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_BENCH_RESTS >= 2 ; HK_SAVE_WRITES >= 2 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 3 ; HK_SCENE_LOADS >= 14 ; HK_REGION_ID == 241
+include false-knight.walk
+include city-crest.walk
+check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_BENCH_RESTS >= 2 ; HK_SAVE_WRITES >= 2 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 1 ; HK_SCENE_LOADS >= 14 ; HK_FK_DEATHS == 1 ; HK_FK_STAGGERS == 3 ; HK_FK_CONVERSIONS == 3 ; HK_PICKUPS_TAKEN == 1
