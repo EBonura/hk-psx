@@ -857,6 +857,39 @@ fn preload_first_scene() {
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
 }
 
+/// The walker's read-only senses (`HK_FOE_*`, `HK_FK_*`, `HK_WALK_*`, `HK_NAIL_BUSY`), published once a tick. One
+/// out-of-line function under `optimize(size)`: the free RAM below the module pool is a few hundred bytes.
+#[optimize(size)]
+#[inline(never)]
+fn publish_walk_senses(game: &frame::Game, foes: &enemies::FoeSenses) {
+    // A swing starts only on a press the Knight can act on: not in a hit's recoil or freeze, not in a hard
+    // landing. A press held through those is never seen as one.
+    let ready = game.nail.ready() && game.vitals.can_control() && !game.player.hard_landing();
+    let facing = game.player.facing;
+    unsafe {
+        HK_FOE_GAP_LEFT = foes.left;
+        HK_FOE_GAP_RIGHT = foes.right;
+        HK_FOE_LIVE = foes.live;
+        HK_FK_DX = foes.boss_dx;
+        HK_FK_PHASE = foes.boss_phase;
+        HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
+        HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
+        HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
+        HK_WALK_TURN_LEFT = u32::from(foes.strike_left && ready && facing > 0);
+        HK_WALK_TURN_RIGHT = u32::from(foes.strike_right && ready && facing < 0);
+        HK_WALK_JUMPSTRIKE =
+            u32::from(foes.jump_strike && ready && (game.player.grounded || game.player.vy > 0));
+        HK_NAIL_BUSY = u32::from(!ready);
+        (HK_FOE_DX, HK_FOE_DY) = foes.nearest;
+        HK_WALK_FOCUS = u32::from(
+            game.vitals.health < VITAL_PARAMS.max_health
+                && (game.vitals.soul >= FOCUS_PARAMS.cost || game.focus.locks_control())
+                && game.player.grounded
+                && !foes.near,
+        );
+    }
+}
+
 #[no_mangle]
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
@@ -1386,34 +1419,7 @@ fn main() {
                         input::log_tick(false);
                     }
                     let foes = game.enemies.foe_senses(r.scene, game.player.x, game.player.y);
-                    unsafe {
-                        HK_FOE_GAP_LEFT = foes.left;
-                        HK_FOE_GAP_RIGHT = foes.right;
-                        HK_FOE_LIVE = foes.live;
-                        HK_FK_DX = foes.boss_dx;
-                        HK_FK_PHASE = foes.boss_phase;
-                        // A swing starts only on a press the Knight can act on: not in a hit's recoil or
-                        // freeze, not in a hard landing. A press held through those is never seen as one.
-                        let ready = game.nail.ready()
-                            && game.vitals.can_control()
-                            && !game.player.hard_landing();
-                        HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
-                        HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
-                        HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
-                        HK_WALK_TURN_LEFT = u32::from(foes.strike_left && ready && game.player.facing > 0);
-                        HK_WALK_TURN_RIGHT = u32::from(foes.strike_right && ready && game.player.facing < 0);
-                        HK_WALK_JUMPSTRIKE = u32::from(
-                            foes.jump_strike && ready && (game.player.grounded || game.player.vy > 0),
-                        );
-                        HK_NAIL_BUSY = u32::from(!ready);
-                        (HK_FOE_DX, HK_FOE_DY) = foes.nearest;
-                        HK_WALK_FOCUS = u32::from(
-                            game.vitals.health < VITAL_PARAMS.max_health
-                                && (game.vitals.soul >= FOCUS_PARAMS.cost || game.focus.locks_control())
-                                && game.player.grounded
-                                && !foes.near,
-                        );
-                    }
+                    publish_walk_senses(&game, &foes);
                     if let Some((x, y, hp)) = game.enemies.actor_state(0, 12546) {
                         unsafe {
                             HK_CRAWLER_X = x;
