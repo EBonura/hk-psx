@@ -633,6 +633,9 @@ pub fn render(
     if crate::modules::loaded(crate::modules::HORNET_ART) {
         crate::enemies::hornet::convo_prepare();
     }
+    if let (Some(p), false) = (pickups::prompt(), game.paused) {
+        dialogue::panel_prompt(camera, p, "INSPECT");
+    }
     title_card::prepare(game.paused);
     render::submit(
         game.vitals.health,

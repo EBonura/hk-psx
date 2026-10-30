@@ -1042,6 +1042,7 @@ pub(crate) fn prompt_up() -> bool {
         STATE.prompt.is_some()
             || CONVO.prompt.is_some()
             || crate::mapper::prompting()
+            || crate::pickups::prompt().is_some()
             || (!PROMPT.1.is_empty()
                 && psx_rt::interrupts::vblank_count().wrapping_sub(PROMPT.3) <= PROMPT_OUT + 2)
     }

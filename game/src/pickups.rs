@@ -11,9 +11,13 @@
 //! scene, so this module links tables only. A view's first pickup frame is
 //! `REGIONS`' base; the frame indices below are relative to it.
 //!
-//! Not reproduced: the Knight's `Hero Down` kneel and the item message's wait
-//! for a button, the chest's `Open` clip and the chest's solid body, the item
-//! flung out of a chest (it rests against the chest), and pickup sounds.
+//! A shiny in reach shows the `INSPECT` prompt marker over it (`prompt`); its message
+//! (`title_card::show_item`) is the original's timed one, not a wait for a button
+//! (hkref: it stays 4.2 s with or without a press).
+//!
+//! Not reproduced: the message's icon, the white flash at the end of the kneel, the
+//! chest's `Open` clip and the chest's solid body, the item flung out of a chest (it
+//! rests against the chest), and pickup sounds.
 #[cfg(not(test))]
 use hk_format::Room;
 
@@ -119,6 +123,15 @@ struct PickupState {
 pub static mut HK_CHESTS_OPENED: u32 = 0;
 #[no_mangle]
 pub static mut HK_PICKUPS_TAKEN: u32 = 0;
+/// A shiny the Knight stands at and can inspect: the world point of its prompt marker
+/// (`INSPECT`, as the original's `Arrow Prompt` over the `Shiny Item`'s `Prompt Marker`).
+static mut PROMPT: Option<[i32; 2]> = None;
+/// Where the marker sits above the shiny: 3 units.
+const PROMPT_RISE: i32 = 3 * 65536;
+/// The prompt marker's point while a shiny can be inspected (see `collect`).
+pub fn prompt() -> Option<[i32; 2]> {
+    unsafe { PROMPT }
+}
 
 pub struct World {
     scene: usize,
@@ -234,6 +247,7 @@ impl World {
         }
         let chests = self.chests;
         let mut kneel = None;
+        let mut prompt = None;
         for (slot, p) in self
             .pickups
             .iter_mut()
@@ -270,7 +284,10 @@ impl World {
                     unsafe {
                         HK_PICKUPS_TAKEN = HK_PICKUPS_TAKEN.wrapping_add(1);
                     }
-                } else if pressed && kneel.is_none() {
+                } else if self.kneel.is_none() {
+                    prompt = Some([spec.position[0], spec.position[1] + PROMPT_RISE]);
+                }
+                if !spec.touch && pressed && kneel.is_none() {
                     // `START INSPECT`: the Knight kneels; the item is his
                     // at the end of `Hero Down` (kneel_tick).
                     kneel = Some(Kneel {
@@ -282,6 +299,9 @@ impl World {
         }
         if kneel.is_some() {
             self.kneel = kneel;
+        }
+        unsafe {
+            PROMPT = prompt.filter(|_| self.kneel.is_none());
         }
     }
     /// One tick of the kneel. `hurt` is a hit this tick: during `Hero Down`

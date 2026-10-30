@@ -47,7 +47,7 @@ const fn timing(style: Style) -> (u16, u16, u16, u16) {
         Style::Area => (36, 240, 45, 90),
         Style::Seen => (0, 90, 270, 90),
         Style::Boss => (0, 86, 270, 92),
-        Style::Item => (0, FADE, HOLD, FADE),
+        Style::Item => (0, 3, 252, 8),
     }
 }
 /// `showing` while an item's name is up rather than a title.
@@ -218,10 +218,14 @@ fn start_x(width: i16, centre: i16) -> i16 {
 fn rect(x: i16, y: i16, tpage: u16, uv: u32, wh: u32, level: u8) {
     crate::dialogue::raw_rect(x, y, tpage, 0x6600_0000 | u32::from(level) * 0x0001_0101, uv, wh);
 }
-/// A small line, in the dialogue font. A glyph-sized rectangle samples texel for texel: exact.
+/// A small line, in the dialogue font, centred on `centre`.
 fn line(text: &str, y: i16, level: u8, centre: i16) {
     let width: i16 = text.bytes().map(|b| crate::dialogue::advance(b)).sum();
-    let mut x = start_x(width, centre);
+    line_at(text, start_x(width, centre), y, level);
+}
+/// A small line from column `x`. A glyph-sized rectangle samples texel for texel: exact.
+fn line_at(text: &str, x: i16, y: i16, level: u8) {
+    let mut x = x;
     for b in text.bytes() {
         let i = (b - 32) as usize;
         if b != b' ' {
@@ -242,6 +246,10 @@ fn line(text: &str, y: i16, level: u8, centre: i16) {
         x += crate::dialogue::advance(b);
     }
 }
+/// An item's message: the original's, at the lower left (hkref frames of the City Crest: its name
+/// starts 7.5 % of the width across, its middle 77 % down the picture).
+const ITEM_X: i16 = 72;
+const ITEM_Y: i16 = 177;
 /// A space in the card font: a quarter of its em.
 const CARD_SPACE: i16 = 10;
 /// The strip's glyph for a character (a boss's has bit 7 set). The strip's characters are sorted,
@@ -317,7 +325,7 @@ pub fn prepare(paused: bool) {
         return;
     }
     if s.style == Style::Item {
-        line(unsafe { ITEM_NAME }, 104, level, 160);
+        line_at(unsafe { ITEM_NAME }, ITEM_X, ITEM_Y, level);
         return;
     }
     let [sup, main, sub] = TITLES[s.showing as usize];
