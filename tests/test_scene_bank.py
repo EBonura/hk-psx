@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'));sys.path.insert(0,str(ROOT/'tests'));sys.path.insert(0,str(ROOT/'tools'))
-from scene_bank import with_texture_attributes, build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,bootstrap_atlases,texture_flags,ordered_pack,pack_one_page,cut_weight,draw_sequences,transition_weights
+from scene_bank import with_texture_attributes, build_scene,verify,resize_static,manifest,shared_planes,joint_refine,texel_words,compact_resident,split_stream,bootstrap_atlases,texture_flags,ordered_pack,pack_one_page,cut_weight,draw_sequences,transition_weights
 from audit_resident_bank import dense_pack
 from test_region_delta import room
 from region_delta import textures,layout
@@ -140,6 +140,28 @@ class SceneBankTests(unittest.TestCase):
           {'scene_id':1,'stored_bytes':11,'stored_fnv':3,'bytes':24,'raw_fnv':4,'source_rooms':[{'chunk_id':2}]}]}
         source={'regions':[{'chunk_id':1},{'chunk_id':2},{'chunk_id':3}]}
         self.assertIn('(0,0),\n(1,0),\n(0,1),',manifest(result,source))
+
+
+class StreamSplitTests(unittest.TestCase):
+    """The tail of a split scene is only streamed texels: the alpha covers at the stream's start stay in the head
+    (the renderer reads them once, when it binds the scene's first view, before the tail has been read)."""
+    def bank(self,covers,sectors):
+        # header 128, 3 textures (16 B each): two covered, one streamed after the covers; then the stream and the descriptors
+        stream=covers*20+sectors*2048+300
+        textures=struct.pack('<HHHHHHI',1,0,0,8,8,0,0)+struct.pack('<HHHHHHI',1,0,0,8,8,0,20)+struct.pack('<HHHHHHI',65535,0,0,8,8,0,covers*20)
+        head=bytearray(128);head[:8]=b'HKSCNE02';struct.pack_into('<I',head,20,3);struct.pack_into('<I',head,44,stream)
+        start=128+len(textures)
+        struct.pack_into('<10I',head,64,128,0,0,0,0,start,start,start,start+stream,start+stream+40)
+        return bytes(head)+textures+bytes((i*7)&255 for i in range(stream))+b'D'*40
+    def test_covers_stay_in_the_head(self):
+        raw=self.bank(2,3)
+        d=split_stream(raw,minimum=1000)
+        start=struct.unpack_from('<10I',raw,64)[7]
+        self.assertEqual(d['stream_off'],start+40)
+        self.assertEqual(d['gap_len'],3*2048)
+        self.assertEqual(d['head'][:start+40],raw[:start+40])
+        self.assertEqual(d['tail'],raw[start+40:start+40+3*2048])
+        self.assertEqual(d['head'][d['stream_off']:],raw[start+40+3*2048:])
 
 if __name__=='__main__':unittest.main()
 

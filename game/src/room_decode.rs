@@ -62,7 +62,7 @@ pub struct Decoder {
 /// cook proved, at about 440 ms per gate. The stored hash stays: it is the CD
 /// integrity check. HK_VERIFY_COOK=1 at build time restores both.
 pub const TRUST_COOK: bool = option_env!("HK_VERIFY_COOK").is_none();
-const FNV: u32 = 0x811c9dc5;
+pub const FNV: u32 = 0x811c9dc5;
 // 0x01000193 = 2^24 + 13*31. Eight wrapping shifts/adds avoid
 // dependent MULT/MFLO stalls on R3000A without changing either checksum.
 // Keep the MIPS operations opaque to LLVM's constant-multiply refolding.
@@ -166,6 +166,54 @@ pub const fn word_finish(hash: u32, len: usize) -> u32 {
     let hash = hash.wrapping_add(hash << 3);
     let hash = hash ^ (hash >> 11);
     hash.wrapping_add(hash << 15)
+}
+/// Opens the gap a scene read in two parts leaves for its stream (host/scene_bank.py `split_stream`): after the
+/// head has decoded to `head_len` bytes, everything from `off` on moves up by `len`, and the `len` bytes at
+/// `off` are zeroed until the tail lands there (game/src/disc.rs `tail_service`). Whole steps of at most
+/// `budget` bytes, the move from the top down, so an overlapping shift is safe; the part that moves must be
+/// no longer than the gap, so the zeroed bytes are never moved ones.
+pub struct Gap {
+    off: usize,
+    len: usize,
+    end: usize,
+    moved: usize,
+    zeroed: usize,
+}
+impl Gap {
+    pub const fn new(off: usize, len: usize, head_len: usize) -> Self {
+        Self {
+            off,
+            len,
+            end: head_len,
+            moved: 0,
+            zeroed: 0,
+        }
+    }
+    /// The bytes the head leaves past the gap's start, which the move carries up.
+    pub const fn moves(&self) -> usize {
+        self.end - self.off
+    }
+    /// Advance by up to `budget` bytes; true once the gap is open and zeroed.
+    pub fn step(&mut self, arena: &mut [u8], mut budget: usize) -> bool {
+        let total = self.end - self.off;
+        while budget > 0 {
+            if self.moved < total {
+                let n = (total - self.moved).min(budget);
+                let top = self.end - self.moved;
+                arena.copy_within(top - n..top, top - n + self.len);
+                self.moved += n;
+                budget -= n;
+            } else if self.zeroed < self.len {
+                let n = (self.len - self.zeroed).min(budget);
+                arena[self.off + self.zeroed..self.off + self.zeroed + n].fill(0);
+                self.zeroed += n;
+                budget -= n;
+            } else {
+                return true;
+            }
+        }
+        self.moved >= total && self.zeroed >= self.len
+    }
 }
 /// Replicate an LZ4 match in forward order, including overlap. The caller has
 /// checked offset<=output and the complete output span against both the raw

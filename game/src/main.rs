@@ -1434,6 +1434,8 @@ fn main() {
             // Into the scene a gate leads to as soon as the Knight has chosen it, so the gate reads it.
             game.carry_ability_art(target.map_or(r.scene, world::scene_of));
             modules::service();
+            // A room whose stream is read after its gate checks it a slice per frame (disc.rs `tail_service`).
+            disc::tail_service(4096);
             // Guess the next gate every fourth frame and let the drive read
             // that scene ahead; an exit fade has already named its gate.
             if game.exit.is_none() && frame & 3 == 0 && target.is_none() {

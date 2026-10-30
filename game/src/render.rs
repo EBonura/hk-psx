@@ -1314,6 +1314,11 @@ pub fn wait_dma_idle() {
 /// that samples them.
 #[inline(never)]
 pub fn bind_animation(room: &Room, animation_ids: &[u16], early: bool) -> hk_cache::Stats {
+    // A scene's stream tail has just landed: frames cached from its empty gap are blank, so start over.
+    #[cfg(not(test))]
+    if crate::disc::tail_flush() {
+        animation_cache::init();
+    }
     let stats = animation_cache::prepare(room, animation_ids);
     unsafe {
         for &id in animation_ids {

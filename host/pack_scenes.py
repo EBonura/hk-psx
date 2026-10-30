@@ -10,7 +10,7 @@ import subprocess
 import struct
 import sys
 from pathlib import Path
-from scene_bank import BOOT_SCENE, build_scene, compressed, fnv, stored_hash, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes
+from scene_bank import BOOT_SCENE, build_scene, compressed, fnv, stored_hash, aligned, compact_resident, bootstrap_atlases, texture_flags, with_texture_attributes, split_stream
 
 ROOT=Path(__file__).resolve().parents[1]
 def rel(path):
@@ -27,6 +27,8 @@ SCENE_ARENA_BYTES=354032
 # hk_cache::residency::STATIC_PAGES. The largest of the 45 cooked scenes,
 # Tutorial_01, is 18 pages and the next largest is 9.
 MAX_PAGES=19
+# Scene ids whose stream is read after their gate (host/scene_bank.py split_stream).
+SPLIT_SCENES=(11,)
 MAX_PALETTES=832  # Two CLUT banks: the third bank's region holds the font image (hk-cache residency.rs FONT_RECT).
 
 GEO_REPORT=ROOT/'.hkpsx/geo-provenance.json'
@@ -210,6 +212,7 @@ def manifest(report,metadata):
     fields=[('scene_id','usize'),('stored_len','usize'),('stored_fnv','u32'),('raw_len','usize'),('raw_fnv','u32'),
             ('ram_offset','usize'),('arena_capacity','usize'),('page_base','usize'),('palette_base','usize')]
     text='// Generated compact HKSCNE02 banks and bootstrap-only atlas chunks.\n'
+    text='// Generated compact HKSCNE02 banks and bootstrap-only atlas chunks.\n'
     text+='#[derive(Clone,Copy,Debug)]\npub struct SceneDesc{'+','.join('pub '+n+':'+t for n,t in fields)+'}\n'
     text+=f'pub const SCENE_ARENA_BYTES:usize={report["arena_bytes"]};\n'
     text+='pub const SCENE_GATE_LOAD:bool='+str(residency=='scene_gate').lower()+';\n'
@@ -222,6 +225,13 @@ def manifest(report,metadata):
     text+=f'pub const SCENE_TEXTURE_CAPACITY:usize={(textures+31)//32*32};\n'
     text+=f'pub const SCENE_DRAW_CAPACITY:usize={(draws+31)//32*32};\n'
     text+='pub const SCENE_MANIFEST:&[SceneDesc]=&[\n'+''.join('SceneDesc{'+','.join(n+':'+str(e.get('resident_'+n,e[n]))for n,t in fields)+'},\n'for e in scenes)+'];\n'
+    # A scene whose stream is read after its gate (host/scene_bank.py split_stream) decodes only `head_len` bytes
+    # (`head_fnv`) at the gate and takes the tail, `gap_len` bytes (stored as they are, word hash `tail_stored_fnv`)
+    # for `gap_off`, later; the manifest row's `raw_len` stays the whole bank and its stored length is the head's.
+    # One row each, in manifest order.
+    split_fields=[('scene','usize'),('head_len','usize'),('head_fnv','u32'),('gap_off','usize'),('gap_len','usize'),('tail_stored_fnv','u32')]
+    text+='#[derive(Clone,Copy,Debug)]\npub struct SplitDesc{'+','.join('pub '+n+':'+t for n,t in split_fields)+'}\n'
+    text+='pub const SCENE_SPLITS:&[SplitDesc]=&[\n'+''.join('SplitDesc{scene:'+str(i)+',head_len:'+str(e['split_head_len'])+',head_fnv:'+str(e['split_head_fnv'])+',gap_off:'+str(e['split_stream_off'])+',gap_len:'+str(e['split_gap_len'])+',tail_stored_fnv:'+str(e['split_tail_stored_fnv'])+'},\n' for i,e in enumerate(scenes) if e.get('split'))+'];\n'
     meta_fields=[('scene_id','u32'),('raw_len','usize'),('raw_fnv','u32'),('bank_fnv','u32'),('stored_len','usize'),('stored_fnv','u32'),('chunk_id','usize')]
     text+='#[derive(Clone,Copy,Debug)]\npub struct WorldMetaDesc{'+','.join('pub '+n+':'+t for n,t in meta_fields)+',pub fingerprint:[u8;32]}\n'
     text+='pub const WORLD_META_ARENA_BYTES:usize='+str(max((aligned(e['raw_len']) for e in report.get('world_metadata',[])),default=0))+';\n'
@@ -268,6 +278,7 @@ def decoder_command(report):
               '--example','check_scene_gate_load','--',str(report['arena_bytes'])]
         for e in report['scenes']:
             args.extend(('--scene',str(e['scene_id']),e['resident_stored_path'],e['resident_raw_path']))
+            if e.get('split'):args.extend(('--split',str(e['split_stream_off']),str(e['split_gap_len']),e['split_head_raw_path'],e['split_tail_stored_path']))
             for bank in report.get('world_metadata',[]):
                 if bank['scene_id']==e['scene_id']:args.extend(('--meta',bank['stored_path'],bank['raw_path']))
             for a in report['atlases']:
@@ -358,13 +369,27 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             sectors=lambda *parts:sum(-(-len(x)//2048)for x in parts)
             dense=bank(None)
             if sectors(stored,resident_stored)>sectors(dense[2],dense[4]):raw,e,stored,resident,resident_stored=dense
-        bodies[scene]=(raw,stored,resident,resident_stored)
+        # A scene whose streamed texels dominate it (the False Knight's art) is read in two parts: the head the gate
+        # decodes, and the stream, a chunk of its own that the room reads after the gate into the gap the head leaves.
+        # Only the False Knight's arena (Crossroads_10): the other scenes with a big stream (Hornet's rooms) read theirs
+        # when they are entered (game/src/boss_bank.rs attaches the bank at admission), so they cannot wait for a tail.
+        split=split_stream(resident) if scene in SPLIT_SCENES else None
+        if split:
+            head_stored=compressed(split['head']);tail_stored=split['tail']
+            e.update(split_stream_off=split['stream_off'],split_gap_len=split['gap_len'],split_head_len=len(split['head']),split_head_fnv=fnv(split['head']),
+                     split_head_sha256=sha(split['head']),split_tail_len=len(split['tail']),split_tail_fnv=stored_hash(tail_stored),split_tail_sha256=sha(tail_stored),
+                     split_tail_stored_len=len(tail_stored),split_tail_stored_fnv=stored_hash(tail_stored),split_tail_stored_sha256=sha(tail_stored),
+                     split_head_raw_path=rel(output_dir/f'scene_{scene}.head.hk'),split_head_stored_path=rel(output_dir/f'scene_{scene}.head.hlzc'),
+                     split_tail_stored_path=rel(output_dir/f'scene_{scene}.tail.raw'))
+            resident_stored=head_stored;bodies[scene]=(raw,stored,resident,resident_stored,split,tail_stored)
+        else:
+            bodies[scene]=(raw,stored,resident,resident_stored,None,None)
         e.update(stored_bytes=len(stored),stored_fnv=stored_hash(stored),raw_fnv=fnv(raw),stored_sha256=sha(stored),raw_sha256=sha(raw),
                  raw_path=rel(output_dir/f'scene_{scene}.hk'),stored_path=rel(output_dir/f'scene_{scene}.hlzc'),
                  resident_raw_path=rel(output_dir/f'scene_{scene}.resident.hk'),resident_stored_path=rel(output_dir/f'scene_{scene}.resident.hlzc'),
                  resident_raw_len=len(resident),resident_raw_fnv=fnv(resident),resident_raw_sha256=sha(resident),
                  resident_stored_len=len(resident_stored),resident_stored_fnv=stored_hash(resident_stored),resident_stored_sha256=sha(resident_stored),
-                 path=rel(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e))
+                 path=rel(output_dir/f'scene_{scene}.resident.hlzc'),texture_flags=texture_flags(raw,e),split=bool(split))
         entries.append(e)
     if arena_bytes is None:arena_bytes=scene_arena_bytes(entries,meta,bodies,report_path.parent,residency)
     entries=allocate_scenes(entries,arena_bytes,residency=residency)
@@ -419,8 +444,11 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
     # Admission checks precede all output mutations.
     output_dir.mkdir(parents=True,exist_ok=True);report_path.parent.mkdir(parents=True,exist_ok=True);manifest_path.parent.mkdir(parents=True,exist_ok=True)
     for e in entries:
-        raw,stored,resident,resident_stored=bodies[e['scene_id']];(ROOT/e['raw_path']).write_bytes(raw);(ROOT/e['stored_path']).write_bytes(stored)
+        raw,stored,resident,resident_stored,split,tail_stored=bodies[e['scene_id']];(ROOT/e['raw_path']).write_bytes(raw);(ROOT/e['stored_path']).write_bytes(stored)
         (ROOT/e['resident_raw_path']).write_bytes(resident);(ROOT/e['resident_stored_path']).write_bytes(resident_stored)
+        if split:
+            (ROOT/e['split_head_raw_path']).write_bytes(split['head']);(ROOT/e['split_head_stored_path']).write_bytes(resident_stored)
+            (ROOT/e['split_tail_stored_path']).write_bytes(tail_stored)
     for e,(raw,stored)in zip(atlases,atlas_bodies):
         (ROOT/e['raw_path']).write_bytes(raw);(ROOT/e['stored_path']).write_bytes(stored)
     for e,raw,stored in world_bodies:

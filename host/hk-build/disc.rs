@@ -79,6 +79,9 @@ pub struct Plan {
     /// Code and art chunks by id, with the scene index each one heads or ends.
     pub code_ids: Vec<(usize, usize)>,
     pub art_ids: Vec<(usize, usize)>,
+    /// The stream tails of the scenes read in two parts (host/scene_bank.py `split_stream`), by id, with
+    /// the scene index each one ends the group of.
+    pub tail_ids: Vec<(usize, usize)>,
     /// The boot's own code chunks (the title's, modules.rs `BOOT_CODE_CHUNKS`).
     pub boot_ids: Vec<usize>,
     pub data_ids: Vec<usize>,
@@ -152,6 +155,8 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
         }
         order.extend([int(room, "chunk_id")?, int(bank, "chunk_id")?]);
         order.extend(p.art_ids.iter().filter(|c| c.1 == index).map(|c| c.0));
+        // The stream tail follows the group (and its art), so the gate's own reads never reach it.
+        order.extend(p.tail_ids.iter().filter(|c| c.1 == index).map(|c| c.0));
     }
     order.extend(&p.music_ids);
     order.extend(&p.data_ids);
@@ -329,6 +334,18 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
             &chunks.join(format!("chunk_{id}.hkmd")),
         )?;
     }
+    // The stream tails of the scenes read in two parts, after the package chunks.
+    let mut tail_ids = Vec::new();
+    for (index, room) in rooms.iter().enumerate() {
+        if room.get("split_gap_len").and_then(Value::as_u64).unwrap_or(0) > 0 {
+            let id = menu_id + 1 + list(modules, "chunks")?.len() + tail_ids.len();
+            copy(
+                &root.join(path_of(room, "split_tail_stored_path")?),
+                &chunks.join(format!("chunk_{id}.hktail")),
+            )?;
+            tail_ids.push((id, index));
+        }
+    }
     Ok(Plan {
         rooms,
         clips: nc,
@@ -342,6 +359,7 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
         menu_id,
         code_ids,
         art_ids,
+        tail_ids,
         boot_ids,
         data_ids,
     })
@@ -571,6 +589,7 @@ mod tests {
             menu_id: 52,
             code_ids: vec![(53, 1)],
             art_ids: Vec::new(),
+            tail_ids: Vec::new(),
             boot_ids: Vec::new(),
             data_ids: Vec::new(),
         }
@@ -612,6 +631,17 @@ mod tests {
         let order = disc_order(&plan()).unwrap();
         let at = order.iter().position(|&c| c == 50).unwrap();
         assert_eq!(order[at..at + 5], [50, 10, 36, 1, 20]);
+    }
+
+    #[test]
+    fn a_stream_tail_ends_its_scene_group() {
+        let mut p = plan();
+        p.tail_ids = vec![(90, 0)];
+        let order = disc_order(&p).unwrap();
+        // The scene's world metadata, then its tail; the next scene's group (its code chunk) follows.
+        let at = order.iter().position(|&c| c == 90).unwrap();
+        assert_eq!(order[at - 1], 20);
+        assert_eq!(order[at + 1], 53);
     }
 
     #[test]

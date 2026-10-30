@@ -17,6 +17,8 @@ pub static mut HK_ANIM_UPLOAD_BYTES: u32 = 0;
 #[no_mangle]
 pub static mut HK_ANIM_UPLOAD_MAX_FRAME: u32 = 0;
 
+/// Empty the cache. One copy: the struct's initialiser is not small, and three callers would each carry it.
+#[inline(never)]
 pub fn init() {
     unsafe { CACHE = Cache::new() };
 }
