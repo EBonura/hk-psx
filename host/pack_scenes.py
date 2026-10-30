@@ -27,6 +27,8 @@ SCENE_ARENA_BYTES=354032
 # hk_cache::residency::STATIC_PAGES. The largest of the 45 cooked scenes,
 # Tutorial_01, is 18 pages and the next largest is 9.
 MAX_PAGES=19
+# Scene ids whose stream is read after their gate (host/scene_bank.py split_stream).
+SPLIT_SCENES=(11,)
 MAX_PALETTES=832  # Two CLUT banks: the third bank's region holds the font image (hk-cache residency.rs FONT_RECT).
 
 GEO_REPORT=ROOT/'.hkpsx/geo-provenance.json'
@@ -370,7 +372,9 @@ def pack_scenes(metadata=ROOT/'data/regions.json',output_dir=ROOT/'data/scenes',
             if sectors(stored,resident_stored)>sectors(dense[2],dense[4]):raw,e,stored,resident,resident_stored=dense
         # A scene whose streamed texels dominate it (the False Knight's art) is read in two parts: the head the gate
         # decodes, and the stream, a chunk of its own that the room reads after the gate into the gap the head leaves.
-        split=split_stream(resident)
+        # Only the False Knight's arena (Crossroads_10): the other scenes with a big stream (Hornet's rooms) read theirs
+        # when they are entered (game/src/boss_bank.rs attaches the bank at admission), so they cannot wait for a tail.
+        split=split_stream(resident) if scene in SPLIT_SCENES else None
         if split:
             head_stored=compressed(split['head']);tail_stored=split['tail']
             e.update(split_stream_off=split['stream_off'],split_gap_len=split['gap_len'],split_head_len=len(split['head']),split_head_fnv=fnv(split['head']),
