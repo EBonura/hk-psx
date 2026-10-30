@@ -62,7 +62,7 @@ pub struct Decoder {
 /// cook proved, at about 440 ms per gate. The stored hash stays: it is the CD
 /// integrity check. HK_VERIFY_COOK=1 at build time restores both.
 pub const TRUST_COOK: bool = option_env!("HK_VERIFY_COOK").is_none();
-const FNV: u32 = 0x811c9dc5;
+pub const FNV: u32 = 0x811c9dc5;
 // 0x01000193 = 2^24 + 13*31. Eight wrapping shifts/adds avoid
 // dependent MULT/MFLO stalls on R3000A without changing either checksum.
 // Keep the MIPS operations opaque to LLVM's constant-multiply refolding.

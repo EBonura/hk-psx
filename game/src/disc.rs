@@ -90,6 +90,44 @@ const MENU_INDEX: usize = SCENE_SFX_INDEX + SCENE_COUNT;
 /// prefetch of that group brings the room's code first.
 const CODE_INDEX: usize = MENU_INDEX + 1;
 const PACK_CHUNKS: usize = CODE_INDEX + crate::modules::PACKAGE_CHUNKS;
+/// The stream tails of the scenes read in two parts (host/scene_bank.py `split_stream`), one chunk each,
+/// numbered after the package chunks and filed last in their scene's group, where no gate reads them.
+const TAIL_INDEX: usize = PACK_CHUNKS;
+const fn tail_slots(scene: usize) -> usize {
+    (SCENE_MANIFEST[scene].gap_len > 0) as usize
+}
+const TAIL_COUNT: usize = {
+    let (mut n, mut s) = (0, 0);
+    while s < SCENE_COUNT {
+        n += tail_slots(s);
+        s += 1;
+    }
+    n
+};
+/// Position of manifest scene `scene`'s tail among the tail chunks.
+const fn tail_ordinal(scene: usize) -> usize {
+    let (mut n, mut s) = (0, 0);
+    while s < scene {
+        n += tail_slots(s);
+        s += 1;
+    }
+    n
+}
+/// The manifest scene that owns tail chunk `k`.
+const fn tail_scene(k: usize) -> usize {
+    let (mut n, mut s) = (0, 0);
+    while s < SCENE_COUNT {
+        if tail_slots(s) == 1 {
+            if n == k {
+                return s;
+            }
+            n += 1;
+        }
+        s += 1;
+    }
+    0
+}
+const TOTAL_CHUNKS: usize = PACK_CHUNKS + TAIL_COUNT;
 /// The payloads sit on the disc in the order they are read, not by kind.
 /// Group 0 is boot's, in its read order: the world bank, the title's code and the title art
 /// (all before the title), then bootstrap's SFX bank, Focus bank, Geo and Runner banks; then the ambience clips, which a scene gate reads
@@ -132,13 +170,14 @@ const fn group_len(group: usize) -> usize {
     } else if group == DATA_GROUP {
         crate::modules::DATA_CHUNKS
     } else {
-        5 + scene_atlases(group - 1) + code_slots(group - 1) + art_slots(group - 1)
+        5 + scene_atlases(group - 1) + code_slots(group - 1) + art_slots(group - 1) + tail_slots(group - 1)
     }
 }
 /// The members a gate stages: the whole group but its art chunk, which is
-/// read on its own into the pool (modules.rs) and never by a gate.
+/// read on its own into the pool (modules.rs), and its stream tail, which the room
+/// reads after the gate (`tail_service`); a gate reads neither.
 const fn staged_len(group: usize) -> usize {
-    group_len(group) - art_slots(group - 1)
+    group_len(group) - art_slots(group - 1) - tail_slots(group - 1)
 }
 /// Chunk index of the `j`th payload of `group`, in disc order.
 const fn member(group: usize, j: usize) -> usize {
@@ -172,8 +211,11 @@ const fn member(group: usize, j: usize) -> usize {
             return CODE_INDEX + k;
         }
     }
+    if tail_slots(scene) == 1 && j == group_len(group) - 1 {
+        return TAIL_INDEX + tail_ordinal(scene);
+    }
     if let Some(k) = crate::modules::art_chunk(scene) {
-        if j == group_len(group) - 1 {
+        if j == group_len(group) - 1 - tail_slots(scene) {
             return CODE_INDEX + k;
         }
     }
@@ -251,8 +293,11 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         return Some(if k < crate::modules::CODE_CHUNKS {
             (g, 0)
         } else {
-            (g, group_len(g) - 1)
+            (g, group_len(g) - 1 - tail_slots(g - 1))
         });
+    } else if index < TOTAL_CHUNKS {
+        let g = 1 + tail_scene(index - TAIL_INDEX);
+        return Some((g, group_len(g) - 1));
     } else {
         return None;
     };
@@ -278,7 +323,7 @@ fn scene_pages(index: usize) -> usize {
 /// Times the quick map's page was read back after a nineteen-page scene.
 #[no_mangle]
 pub static mut HK_MAP_RELOADS: u32 = 0;
-const PACK_HEADER_SECTORS: usize = (28 + PACK_CHUNKS * 24).div_ceil(SECTOR_BYTES);
+const PACK_HEADER_SECTORS: usize = (28 + TOTAL_CHUNKS * 24).div_ceil(SECTOR_BYTES);
 // The directory is staged in the scene arena, so a catalogue whose directory
 // outgrew the arena must fail the build, not the boot.
 const _: () = assert!(PACK_HEADER_SECTORS * SECTOR_BYTES <= SCENE_ARENA_BYTES);
@@ -440,6 +485,7 @@ const fn word_hashed(index: usize) -> bool {
     index < SCENE_COUNT
         || (index >= ATLAS_INDEX && index < FOCUS_INDEX)
         || (index >= METADATA_INDEX && index < EFFECT_INDEX)
+        || (index >= TAIL_INDEX && index < TOTAL_CHUNKS)
 }
 /// Stored byte length, payload checksum and staging capacity of one pack chunk,
 /// by chunk index. Every field of that chunk's directory entry except its
@@ -494,6 +540,10 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
     } else if index < PACK_CHUNKS {
         let (len, fnv) = crate::modules::disc_spec(index - CODE_INDEX);
         (len, fnv, SCENE_ARENA_BYTES)
+    } else if index < TOTAL_CHUNKS {
+        // The stream tail lands in its scene's gap, whole sectors, as it is stored.
+        let d = &SCENE_MANIFEST[tail_scene(index - TAIL_INDEX)];
+        (d.gap_len, d.tail_stored_fnv, d.gap_len)
     } else {
         return None;
     })
@@ -808,6 +858,17 @@ impl Cache {
                 || d.stored_len.div_ceil(SECTOR_BYTES) > d.arena_capacity / SECTOR_BYTES
                 || SCENE_REGIONS[i] as usize >= REGION_SCENE_LOCAL.len()
                 || scene_index(SCENE_REGIONS[i] as usize) != i
+                || d.head_len == 0
+                || d.head_len > d.raw_len
+                // A scene read in two parts: the gap lies inside the bank, takes the head's whole length
+                // past its start in one move, and is whole sectors the drive writes in place.
+                || (d.gap_len == 0 && d.head_len != d.raw_len)
+                || (d.gap_len != 0
+                    && (d.gap_len % SECTOR_BYTES != 0
+                        || d.gap_off % 4 != 0
+                        || d.head_len + d.gap_len != d.raw_len
+                        || d.gap_off > d.head_len
+                        || d.head_len - d.gap_off > d.gap_len))
             {
                 return Err(LoadError::RoomMismatch);
             }
@@ -931,9 +992,9 @@ impl Cache {
             };
             parse_header(first).ok_or(LoadError::HeaderInvalid)?
         };
-        if h.chunk_count as usize != PACK_CHUNKS
+        if h.chunk_count as usize != TOTAL_CHUNKS
             || h.header_sectors as usize != PACK_HEADER_SECTORS
-            || h.table_bytes as usize != PACK_CHUNKS * 24
+            || h.table_bytes as usize != TOTAL_CHUNKS * 24
         {
             return Err(LoadError::HeaderInvalid);
         }
@@ -984,7 +1045,7 @@ impl Cache {
                 position += 1;
             }
         }
-        if next != h.total_sectors as usize || position != PACK_CHUNKS {
+        if next != h.total_sectors as usize || position != TOTAL_CHUNKS {
             return Err(LoadError::HeaderInvalid);
         }
         // MUSIC.XA by name: the pack's cooked layout does not fix where the XA songs
@@ -1138,7 +1199,7 @@ impl Cache {
             };
             let (raw, lo) = if index < SCENE_COUNT {
                 (
-                    SCENE_MANIFEST[index].raw_len,
+                    SCENE_MANIFEST[index].head_len,
                     SCENE_MANIFEST[index].ram_offset,
                 )
             } else if (ATLAS_INDEX..FOCUS_INDEX).contains(&index) {
@@ -1205,7 +1266,7 @@ impl Cache {
             };
             let (raw, lo) = if index < SCENE_COUNT {
                 (
-                    SCENE_MANIFEST[index].raw_len,
+                    SCENE_MANIFEST[index].head_len,
                     SCENE_MANIFEST[index].ram_offset,
                 )
             } else {
@@ -2338,6 +2399,7 @@ impl Cache {
             }
             crate::modules::pool_landed(false);
         }
+        tail_disarm();
         self.loaded_scenes = 0;
         self.loaded_atlases = 0;
         self.selected = EMPTY;
@@ -2384,6 +2446,8 @@ impl Cache {
             // the arena it is given, so the metadata bank staged in the arena
             // tail cannot survive them: revoke it now and admit it last.
             self.revoke_metadata();
+            // The arena is about to be overwritten, the previous room's stream tail with it.
+            tail_disarm();
         }
         if self.loaded_scenes == 0 {
             // A clip stages at the arena front, under a prefetched tail.
@@ -2460,10 +2524,15 @@ impl Cache {
                     end - d.ram_offset,
                 )
             };
-            let mut decoder = Decoder::new_scene(d.stored_len, d.stored_fnv, d.raw_len, d.raw_fnv)
-                .word_stored()
-                .at(input)
-                .hashed(preverified(index));
+            // A scene read in two parts decodes only its head here; the gap for its stream opens below.
+            let mut decoder = if d.gap_len > 0 {
+                Decoder::new_bytes(d.stored_len, d.stored_fnv, d.head_len, d.head_fnv)
+            } else {
+                Decoder::new_scene(d.stored_len, d.stored_fnv, d.raw_len, d.raw_fnv)
+            }
+            .word_stored()
+            .at(input)
+            .hashed(preverified(index));
             loop {
                 checkpoint();
                 unsafe {
@@ -2472,7 +2541,7 @@ impl Cache {
                 crate::gate_probe::set(crate::gate_probe::decoder(decoder.phase_id()));
                 match decoder.step(arena, DECODE_STEP) {
                     Ok(Some(len)) => {
-                        if len != d.raw_len {
+                        if len != d.head_len {
                             return Err(LoadError::RoomMismatch);
                         }
                         break;
@@ -2484,6 +2553,16 @@ impl Cache {
                             DecodeError::Decompress => LoadError::Decompress,
                             DecodeError::RoomFormat => LoadError::RoomFormat,
                         })
+                    }
+                }
+            }
+            if d.gap_len > 0 {
+                crate::gate_probe::set(crate::gate_probe::RELOCATE);
+                let mut gap = crate::room_decode::Gap::new(d.gap_off, d.gap_len, d.head_len);
+                loop {
+                    checkpoint();
+                    if gap.step(&mut arena[..d.raw_len], DECODE_STEP) {
+                        break;
                     }
                 }
             }
@@ -2518,6 +2597,11 @@ impl Cache {
             }
             self.resident_scene = index;
             self.loaded_scenes += 1;
+            if d.gap_len > 0 {
+                // The stream follows the gate: read into the gap by the drive once it is free (`pump`).
+                let lba = WORLD_PACK_DEFAULT_LBA + self.entry(TAIL_INDEX + tail_ordinal(index))?.sector_offset;
+                tail_arm(index, lba);
+            }
             unsafe {
                 HK_SCENE_LOADS = HK_SCENE_LOADS.saturating_add(1);
                 HK_SCENE_DECODE_ID = 0;
@@ -4054,6 +4138,7 @@ struct Drive {
     prefetch: bool,
     clip: bool,
     pool: bool,
+    tail: bool,
 }
 static mut DRIVE: Drive = Drive {
     installed: false,
@@ -4063,6 +4148,7 @@ static mut DRIVE: Drive = Drive {
     prefetch: false,
     clip: false,
     pool: false,
+    tail: false,
 };
 /// WORLD.PAK-relative LBA of each package chunk (modules.rs), from the checked directory.
 static mut PACKAGE_LBA: [u32; crate::modules::PACKAGE_CHUNKS] = [0; crate::modules::PACKAGE_CHUNKS];
@@ -4094,6 +4180,196 @@ pub fn pool_cancel() {
     while unsafe { DRIVE.pool } {
         crate::input::checkpoint();
         land_pool();
+    }
+}
+/// The stream of a scene read in two parts (host/scene_bank.py `split_stream`) is its own chunk, filed last in the
+/// scene's group: after the gate has decoded the head and opened the gap (`room_decode::Gap`), the drive reads it
+/// straight into the gap, whole sectors, `tail_service` checks its word hash in idle slices, and `tail_ready`
+/// says when the room's streamed art is there. Until then the gap is zero, so a streamed texture drawn too early
+/// is transparent, not noise.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TailState {
+    Idle,
+    /// Armed, waiting for the drive.
+    Want,
+    Reading,
+    Hashing,
+    Ready,
+    /// Three reads or hashes failed: the room plays without its streamed art.
+    Failed,
+}
+struct Tail {
+    scene: usize,
+    state: TailState,
+    lba: u32,
+    pos: usize,
+    hash: u32,
+    tries: u8,
+}
+static mut TAIL: Tail = Tail {
+    scene: EMPTY,
+    state: TailState::Idle,
+    lba: 0,
+    pos: 0,
+    hash: 0,
+    tries: 0,
+};
+/// 0 none, 1 waiting for the drive, 2 reading, 3 checking, 4 in place, 5 given up.
+#[no_mangle]
+pub static mut HK_TAIL_STATE: u32 = 0;
+#[no_mangle]
+pub static mut HK_TAIL_READS: u32 = 0;
+#[no_mangle]
+pub static mut HK_TAIL_ERRORS: u32 = 0;
+fn tail() -> &'static mut Tail {
+    unsafe { &mut *(&raw mut TAIL) }
+}
+fn tail_set(state: TailState) {
+    tail().state = state;
+    unsafe {
+        HK_TAIL_STATE = match state {
+            TailState::Idle => 0,
+            TailState::Want => 1,
+            TailState::Reading => 2,
+            TailState::Hashing => 3,
+            TailState::Ready => 4,
+            TailState::Failed => 5,
+        };
+    }
+}
+/// The resident scene's stream is in place (true for a scene read whole, and for one whose tail gave up).
+pub fn tail_ready() -> bool {
+    matches!(
+        tail().state,
+        TailState::Idle | TailState::Ready | TailState::Failed
+    )
+}
+/// Forget the tail: the arena is about to be overwritten. A read in flight is stopped by `tail_pause` first.
+fn tail_disarm() {
+    tail_pause();
+    tail().scene = EMPTY;
+    tail_set(TailState::Idle);
+}
+/// Stop a tail read in flight (a gate needs the drive); it starts over when the drive is free again.
+fn tail_pause() {
+    if unsafe { DRIVE.tail } {
+        cd_stream::cancel();
+        while unsafe { DRIVE.tail } {
+            crate::input::checkpoint();
+            land_tail();
+        }
+    }
+    if tail().state == TailState::Reading || tail().state == TailState::Hashing {
+        tail().tries = 0;
+        tail_set(TailState::Want);
+    }
+}
+/// A scene read in two parts was just admitted: its tail is to be read.
+fn tail_arm(scene: usize, lba: u32) {
+    let t = tail();
+    t.scene = scene;
+    t.lba = lba;
+    t.pos = 0;
+    t.tries = 0;
+    tail_set(TailState::Want);
+}
+/// A read or a check failed: again, or give up after three.
+fn tail_retry() {
+    unsafe {
+        HK_TAIL_ERRORS = HK_TAIL_ERRORS.saturating_add(1);
+    }
+    let t = tail();
+    t.tries += 1;
+    t.pos = 0;
+    tail_set(if t.tries >= 3 {
+        TailState::Failed
+    } else {
+        TailState::Want
+    });
+}
+fn start_tail() -> bool {
+    let t = tail();
+    if t.state != TailState::Want || t.scene == EMPTY {
+        return false;
+    }
+    let d = &SCENE_MANIFEST[t.scene];
+    // Safety: the gap is this read's until it lands (the room draws none of it, `tail_ready`).
+    let destination = unsafe {
+        (&raw mut BUFFERS.words)
+            .cast::<u8>()
+            .add(d.ram_offset + d.gap_off)
+            .cast::<u32>()
+    };
+    match unsafe { cd_stream::start(destination, d.gap_len / SECTOR_BYTES, t.lba) } {
+        Ok(()) => {
+            unsafe {
+                DRIVE.tail = true;
+                HK_TAIL_READS = HK_TAIL_READS.saturating_add(1);
+            }
+            tail_set(TailState::Reading);
+            true
+        }
+        Err(diag) => {
+            unsafe {
+                HK_CD_DIAG = diag;
+            }
+            tail_retry();
+            false
+        }
+    }
+}
+fn land_tail() {
+    let d = unsafe { &mut *(&raw mut DRIVE) };
+    if !d.tail {
+        return;
+    }
+    let t = tail();
+    match cd_stream::status() {
+        cd_stream::Status::Done => {
+            d.tail = false;
+            if t.scene != EMPTY && cd_stream::received() == SCENE_MANIFEST[t.scene].gap_len / SECTOR_BYTES {
+                t.pos = 0;
+                t.hash = crate::room_decode::FNV;
+                tail_set(TailState::Hashing);
+            } else {
+                tail_retry();
+            }
+        }
+        cd_stream::Status::Failed(diag) => {
+            d.tail = false;
+            unsafe {
+                HK_CD_DIAG = diag;
+            }
+            tail_retry();
+        }
+        cd_stream::Status::Idle | cd_stream::Status::Busy => {}
+    }
+}
+/// Check the tail's word hash `budget` bytes at a time, once per frame from the main loop.
+pub fn tail_service(budget: usize) {
+    let t = tail();
+    if t.state != TailState::Hashing || t.scene == EMPTY {
+        return;
+    }
+    let d = &SCENE_MANIFEST[t.scene];
+    let n = (d.gap_len - t.pos).min(budget & !3);
+    // Safety: the gap is whole and not written while it is checked (`tail_pause` stops a read first).
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            (&raw const BUFFERS.words)
+                .cast::<u8>()
+                .add(d.ram_offset + d.gap_off + t.pos),
+            n,
+        )
+    };
+    t.hash = crate::room_decode::word_hash(t.hash, bytes);
+    t.pos += n;
+    if t.pos == d.gap_len {
+        if crate::room_decode::word_finish(t.hash, d.gap_len) == d.tail_stored_fnv {
+            tail_set(TailState::Ready);
+        } else {
+            tail_retry();
+        }
     }
 }
 fn land_pool() {
@@ -4186,6 +4462,10 @@ pub fn pump() {
         land_pool();
         return;
     }
+    if d.tail {
+        land_tail();
+        return;
+    }
     if d.clip {
         match cd_stream::status() {
             cd_stream::Status::Done => {
@@ -4227,6 +4507,9 @@ pub fn pump() {
         return;
     }
     if start_pool(false) {
+        return;
+    }
+    if start_tail() {
         return;
     }
     if start_spill() {
@@ -4322,10 +4605,11 @@ fn cut_music() {
 /// Wait for any background read to land, starting none.
 fn drive_idle() {
     let d = unsafe { &raw mut DRIVE };
-    while unsafe { (*d).installed && ((*d).music || (*d).prefetch || (*d).clip || (*d).pool) } {
+    while unsafe { (*d).installed && ((*d).music || (*d).prefetch || (*d).clip || (*d).pool || (*d).tail) } {
         crate::input::checkpoint();
         land_prefetch();
         land_pool();
+        land_tail();
     }
 }
 fn room_drive() {
@@ -4334,10 +4618,11 @@ fn room_drive() {
         return;
     }
     let begin = psx_rt::interrupts::vblank_count();
-    while unsafe { (*d).music || (*d).prefetch || (*d).clip || (*d).pool } {
+    while unsafe { (*d).music || (*d).prefetch || (*d).clip || (*d).pool || (*d).tail } {
         crate::input::checkpoint();
         land_prefetch();
         land_pool();
+        land_tail();
     }
     if unsafe { (*d).loading } {
         if let Some((destination, sectors, lba)) = crate::music::want_read(true) {
@@ -4356,6 +4641,8 @@ fn room_drive() {
 pub fn begin_load() {
     crate::music::release_cdda();
     crate::ambience::abort_prefetch();
+    // The room's stream tail is of no use to a gate: stop its read; it starts again if the room stays.
+    tail_pause();
     unsafe {
         DRIVE.loading = true;
     }
@@ -4369,7 +4656,7 @@ pub fn end_load() {
 pub fn cdda_acquire() -> bool {
     let d = unsafe { &mut *(&raw mut DRIVE) };
     // A pool fetch still to start (the Shade's art ahead of a fight) goes first.
-    if d.music || d.loading || d.prefetch || d.clip || d.pool || crate::modules::fetch_pending() {
+    if d.music || d.loading || d.prefetch || d.clip || d.pool || d.tail || crate::modules::fetch_pending() {
         return false;
     }
     if d.installed {
