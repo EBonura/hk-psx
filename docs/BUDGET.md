@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |781,252|
-| Code-to-data alignment |12|
-| Linked data, including menu and HUD |280,872|
-| BSS, including shared scene arena and runtime pools |805,844|
-| Total static span |1,867,988|
+| Linked code |774,284|
+| Code-to-data alignment |4|
+| Linked data, including menu and HUD |276,344|
+| BSS, including shared scene arena and runtime pools |819,896|
+| Total static span |1,870,536|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |114,220|
+| Unallocated gap before reserved stack |111,672|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |5,676|
+| Free RAM below the module pool |3,128|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -600,3 +600,5 @@ The 2026-10-30 boss title card (the original's small capitals at the lower right
 The 2026-10-30 reward pickup (a shiny's `INSPECT` prompt marker through the NPCs' marker, and the item message at the lower left for 4.2 s instead of a centred card) took linked code from 780,512 to 780,688 bytes and BSS from 805,820 to 805,836 (the pickups' prompt point), so free RAM below the module pool on the shipping build went from 6,516 to 6,308 (-208).
 
 The 2026-10-30 boss presentation (the False Knight's landing and slam dust, the floor mist and the entrance landing's sparks as glow emitters of Crossroads_10, `fx.rs` owners 0xD040 to 0xD042, raised by `frame.rs` from a three word static the actor loop leaves; and his wave drawn as every spurt instead of every third) took linked code from 780,688 to 781,252 bytes and linked data from 281,000 to 280,872, so free RAM below the module pool on the shipping build went from 6,308 to 5,676 (-632). Measured on dev ships of the same tree (7,252 free before): the dust, mist and sparks -328, the dense wave -304. A first version called `fx::raise` from the actor loop and cost 1,248 for the dust alone: any call there grew `advance_in_view` by 956 bytes; the glow curves are shared with the existing glows (grow 1.3, hold 0.25 and 0.5), which saved 297 bytes of tables. The effects' art in Crossroads_10 takes 3,285 of the 3,776 halfwords the four VRAM rects hold. Not done: the orange balls of light of the entrance (the 13 texel glow cell drew them as hard blocks that lasted two frames), and the wave's white (the only quad flash is the infected orange).
+
+The 2026-10-30 False Knight arena split (the scene's stream after its alpha covers, 219,136 bytes of the boss's streamed frames, is a chunk of its own that the room reads after the gate; docs/SEAMLESS.md) took the free RAM below the module pool on the shipping build from 5,676 to 3,128 (-2,548). Both figures are `ship-final.sh` builds, main 795c877 and this tree: linked code 781,252 to 774,284, linked data 280,872 to 276,344, BSS 805,844 to 819,896 and the static span 1,867,988 to 1,870,536 (+2,548). The three rows moved in different directions by amounts that were not traced, so the span and the free figure are the ones to read. The tail's reader (a state machine in a few words of statics: `tail_arm`, `start_tail`, `land_tail`, `tail_service`, `tail_finish`, and `Gap` in room_decode.rs) and the split's tables are built for size; the retries (three tries per burst or check) stay, a real drive fails reads.
