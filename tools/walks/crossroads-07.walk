@@ -1,0 +1,8 @@
+# Crossroads_07, the shaft: in at the top, along the ledges to the drop, down to the floor and out of
+# the gate at the bottom right.
+walk 14.3                                      # left along the ledges and off the last one
+wait until y le 4.6 timeout 1200               # the fall to the floor
+wait 90                                        # the hard landing's lock
+guard 4
+hold right until HK_SCENE_LOADS ge 5 timeout 900   # along the floor to the gate at the bottom right
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,0 +1,14 @@
+# Forgotten Crossroads, first room (Crossroads_01), from the well: down to the floor, left along it and
+# down the slope, up the ledge, along the top to the left-hand gate, and out of it.
+wait until y le 11.45 timeout 900              # he comes down the well onto the floor
+wait 90                                        # the landing's lock
+guard 6
+walk 35.25                                     # left along the floor and down the slope
+at 35.25 6.39
+leap 35.25 left 34 30.82 10.39                 # up onto the ledge that runs left
+guard 6
+walk 3.4                                       # along it and down the steps
+at 3.25 4.39
+leap 3.25 left 24 1.0 8.39                     # up to the gate ledge
+hold left until HK_SCENE_LOADS ge 4 timeout 900   # out of the left-hand gate
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,0 +1,8 @@
+# Crossroads_08 (the Aspids): in at the left gate, right along the floor, one jump at the pit, out of the
+# right-hand gate.
+guard 4
+walk 28.7
+leap 28.75 right 40 33.7 10.39
+guard 3
+hold right until HK_SCENE_LOADS ge 7 timeout 1200   # out of the right-hand gate
+wait until HK_GAME_MODE == 1 timeout 1800

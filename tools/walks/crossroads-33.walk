@@ -1,0 +1,9 @@
+# Crossroads_33 (Cornifer's room): down from the top gate onto the small ledge, right to the narrow
+# shaft and down it, along the floor and out of the right-hand gate.
+wait until y le 44.6 timeout 900               # the drop from the top gate
+wait 30
+hold right until x ge 23.05 timeout 300        # to the shaft's edge (a wall holds him at 23.07)
+wait until y le 28.5 timeout 900               # down the shaft
+wait 90                                        # the landing's lock
+hold right until HK_SCENE_LOADS ge 6 timeout 1500   # along the floor to the right-hand gate
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,9 +1,0 @@
-name walk-new-game-to-well
-title cold boot to the Crossroads well: new game, King's Pass, Dirtmouth bench, the well
-max_ticks 60000
-# The whole of it on the shipping disc: no cheat, no route-input feature, no recorded input. Every
-# step waits on a word the game publishes (position, counts, flags) and drives the pad from it.
-include new-game.walk
-include kings-pass.walk
-include dirtmouth.walk
-check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_ENEMY_KILLS >= 2 ; HK_BENCH_RESTS >= 1 ; HK_SAVE_WRITES >= 1 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 3 ; HK_SCENE_LOADS >= 3

@@ -1,0 +1,15 @@
+name walk-new-game-to-crossroads
+title cold boot to the Crossroads: new game, King's Pass, Dirtmouth bench, the well, Crossroads_01, 07, 33 and 08
+max_ticks 60000
+# The whole of it on the shipping disc: no cheat, no route-input feature, no recorded input. Every
+# step waits on a word the game publishes (position, counts, flags) and drives the pad from it.
+# It stops at the arrival in Crossroads_13; the road on to the False Knight is not authored yet
+# (docs/ROUTES.md, Walks).
+include new-game.walk
+include kings-pass.walk
+include dirtmouth.walk
+include crossroads-01.walk
+include crossroads-07.walk
+include crossroads-33.walk
+include crossroads-08.walk
+check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_ENEMY_KILLS >= 2 ; HK_BENCH_RESTS >= 1 ; HK_SAVE_WRITES >= 1 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 3 ; HK_SCENE_LOADS >= 7
