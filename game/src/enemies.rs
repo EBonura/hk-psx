@@ -7084,7 +7084,7 @@ impl EnemyWorld {
             assert!(draws.can_push(texture), "visible enemy projectile budget exceeded");
             draws.push(texture, verts, 0);
         }
-        // Every third spurt, which shows each of the clip's 3-tick frames once
+        // Husk Guard waves: every third spurt, which shows each of the clip's 3-tick frames once
         // along the trail rather than paying a quad for all eighteen.
         for (_, wave, spurt) in self
             .waves
@@ -7092,7 +7092,10 @@ impl EnemyWorld {
             .flatten()
             .filter(|(id, _, _)| *id as usize == region.scene)
         {
-            for (x, age) in wave.spurts(wave_params(*spurt), 3) {
+            // The False Knight's wave shows every spurt, as the original's dense white spurts are; a Husk
+            // Guard's, in a room with little art, every third.
+            let stride = if *spurt == NO_SPURT { 1 } else { 3 };
+            for (x, age) in wave.spurts(wave_params(*spurt), stride) {
                 if *spurt == NO_SPURT {
                     let sprite = crate::fk_art::sprite(crate::fk_art::SPURT, age as u32);
                     push_sprite_if_room(
