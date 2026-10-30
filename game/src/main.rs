@@ -467,6 +467,11 @@ pub static mut HK_WALK_STRIKE_RIGHT: u32 = 0;
 pub static mut HK_WALK_STRIKE_UP: u32 = 0;
 #[no_mangle]
 pub static mut HK_NAIL_BUSY: u32 = 0;
+/// The walker's sense (read-only route telemetry): 1 while a foe hangs above the swing's reach but within a
+/// jump's, the Knight can act, and he stands on the ground or is still rising; a script holds jump until it
+/// is 0 (at the top of the jump, or the foe gone) and swings there.
+#[no_mangle]
+pub static mut HK_WALK_JUMPSTRIKE: u32 = 0;
 #[no_mangle]
 pub static mut HK_WALK_FOCUS: u32 = 0;
 /// The nearest live foe from the Knight (Q16; x is `i32::MAX` with none within range), for authoring.
@@ -1387,6 +1392,9 @@ fn main() {
                         HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
                         HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
                         HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
+                        HK_WALK_JUMPSTRIKE = u32::from(
+                            foes.jump_strike && ready && (game.player.grounded || game.player.vy > 0),
+                        );
                         HK_NAIL_BUSY = u32::from(!ready);
                         (HK_FOE_DX, HK_FOE_DY) = foes.nearest;
                         HK_WALK_FOCUS = u32::from(

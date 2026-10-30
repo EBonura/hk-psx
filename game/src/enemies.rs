@@ -5032,6 +5032,8 @@ pub struct FoeSenses {
     pub near: bool,
     /// A foe stands inside the upward swing's box (a hit above gives no sideways recoil).
     pub strike_up: bool,
+    /// A foe hangs above the swing's reach and below a jump's: the Knight has to leave the ground to hit it.
+    pub jump_strike: bool,
     /// Where the nearest live foe within `FOE_RANGE` stands from the Knight (Q16), `FOE_NO_BOSS` for x with none.
     pub nearest: (i32, i32),
 }
@@ -5066,6 +5068,9 @@ const STRIKE_OVERHEAD_X: i32 = 65536 + 26_214;
 const STRIKE_OVERHEAD_LOW: i32 = 19_660;
 const STRIKE_OVERHEAD_HIGH: i32 = 2 * 65536 + 52_428;
 const STRIKE_DOWN: i32 = 2 * 65536 + 26_214;
+/// A foe above the side swing's reach (`STRIKE_UP`) and within a jump's (about 5 units) is one to jump at. Q16.
+const JUMP_STRIKE_X: i32 = 3 * 65536;
+const JUMP_STRIKE_HIGH: i32 = 5 * 65536;
 /// A foe this close in x and this close in y keeps a walker from starting a Focus. Q16.
 const FOCUS_SAFE_X: i32 = 10 * 65536;
 const FOCUS_SAFE_Y: i32 = 5 * 65536;
@@ -5433,6 +5438,7 @@ impl EnemyWorld {
             strike_right: false,
             near: false,
             strike_up: false,
+            jump_strike: false,
             nearest: (FOE_NO_BOSS, 0),
         };
         let (mut left, mut right) = (i32::MAX, i32::MAX);
@@ -5451,6 +5457,9 @@ impl EnemyWorld {
             }
             if dx.abs() <= STRIKE_OVERHEAD_X && (STRIKE_OVERHEAD_LOW..=STRIKE_OVERHEAD_HIGH).contains(&dy) {
                 senses.strike_up = true;
+            }
+            if dx.abs() <= JUMP_STRIKE_X && dy > STRIKE_UP && dy <= JUMP_STRIKE_HIGH {
+                senses.jump_strike = true;
             }
             if (-STRIKE_DOWN..=STRIKE_UP).contains(&dy) && dx.abs() <= STRIKE_REACH {
                 if dx < 0 {

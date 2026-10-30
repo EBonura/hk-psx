@@ -411,6 +411,15 @@ fn strike_both(out: &mut String, label: &str) {
     strike_one(out, label, "left");
 }
 
+/// Jump at a foe that hangs above the swing's reach (a Vengefly over a ledge): hold jump until the guest's
+/// `HK_WALK_JUMPSTRIKE` is 0 (the top of the rise, or the foe gone; no time at all when no foe is above), swing
+/// there, and wait for the ground.
+fn snipe(out: &mut String, label: &str) {
+    let _ = writeln!(out, "hold cross until HK_WALK_JUMPSTRIKE == 0 timeout 60 # {label}: jump at a foe above");
+    strike_both(out, label);
+    let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: back on the ground");
+}
+
 /// Focus while masks are missing and SOUL pays for a heal and no foe is close: the guest publishes
 /// `HK_WALK_FOCUS` as zero otherwise, so the step takes no time when Focus is not wanted.
 fn heal(out: &mut String, label: &str) {
@@ -434,6 +443,7 @@ fn heal(out: &mut String, label: &str) {
 ///                            (24, or C, of them with the jump), land at x X, knight height Y
 /// bash  [N]                  N rounds (6) of leaning on whatever is ahead and swinging at it: a breakable wall
 /// strike                     swing at a foe in reach on either side (nothing happens with none)
+/// snipe                      jump at a foe above the swing's reach and swing at the top (`guard` does it)
 /// heal                       Focus while masks are missing and SOUL allows and no foe is close
 /// guard [N [X]]             N rounds of strike and heal where he stands (a small platform)
 /// fight [N] [noheal]        N rounds of: close on the nearest foe on the right until a swing reaches
@@ -624,6 +634,7 @@ pub fn macros(text: &str) -> Result<String> {
                 }
             }
             ["strike"] => strike_both(&mut out, label),
+            ["snipe"] => snipe(&mut out, label),
             ["heal"] => heal(&mut out, label),
             ["guard", rest @ ..] => {
                 let rounds = if rest.is_empty() { 2 } else { number(rest.first())? as u64 };
@@ -638,6 +649,7 @@ pub fn macros(text: &str) -> Result<String> {
                 // under his feet.
                 for _ in 0..rounds {
                     strike_both(&mut out, label);
+                    snipe(&mut out, label);
                     heal(&mut out, label);
                     // Time to pass: a foe that is not here yet arrives while the rounds run.
                     let _ = writeln!(out, "wait 4");
