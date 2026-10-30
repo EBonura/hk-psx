@@ -2559,7 +2559,8 @@ fn main() {
             let cue = disc::disc_cue(&library);
             let map = library.join("game.map");
             let text = walk::expand(std::path::Path::new(&script))?;
-            let toml = walk::compile(&text, &walk::Setup { disc: &cue, symbols: &map })?;
+            let cards = root().join("tools/cards");
+            let toml = walk::compile(&text, &walk::Setup { disc: &cue, symbols: &map, cards: &cards })?;
             std::fs::write(&out, toml)?;
             Ok(())
         })();

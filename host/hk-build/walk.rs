@@ -16,21 +16,26 @@
 //! name       NAME                        journey id (required, first)
 //! title      TEXT                        report title
 //! max_ticks  N                           hard stop
-//! sym        ALIAS SYMBOL [signed]       another name for a telemetry word
+//! sym        ALIAS SYMBOL [signed] [units]  another name for a telemetry word (`units`: constants are world units, as for x)
 //! wait       N                           N ticks of rest
 //! wait       until COND [timeout N]      run until the condition holds
 //! press      BUTTONS [for N] [rest N]    tap (3 ticks, no rest unless told)
 //! hold       BUTTONS until COND [timeout N]
+//! include    FILE [times N]              the lines of FILE (N times over, for a round of reactions)
+//! def        NAME EXPRESSION             name an expression; `$NAME` stands for it in later lines
 //! hold       BUTTONS for N               hold for N ticks
 //! repeat     N press BUTTONS [for H] [rest R]
 //! probe      NAME WORD [WORD...]         checkpoint that reports each word (never passes)
 //! check      NAME COND [; COND...]       checkpoint whose conditions must hold
 //! snapshot                               hand the memory card to the next journey
+//! card       FILE [loads N]              boot from tools/cards/FILE (a resume point: a bench save a `snapshot` took);
+//!                                        `loads N` takes N off every HK_SCENE_LOADS constant that follows (the loads the card's run had made)
 //! raw        TOML                        one verbatim line of step TOML (rare)
 //! ```
 //!
 //! `BUTTONS` are the gate's names joined by `+` (`right+cross`). `COND` is `WORD OP VALUE`,
-//! or `WORD between LO HI`; `OP` is `eq ne lt le gt ge` (or `== != < <= > >=`). `WORD` is
+//! `WORD between LO HI`, or `expr EXPRESSION` (an integer expression over guest RAM the gate evaluates, see
+//! the emulator's TESTING.md, "Expression conditions"); `OP` is `eq ne lt le gt ge` (or `== != < <= > >=`). `WORD` is
 //! `x`, `y`, a `sym` alias, or any `HK_` telemetry symbol. A value on `x` or `y` is in world
 //! units and may be fractional; any other value is an integer.
 
@@ -54,6 +59,8 @@ const LEAP_EARLY: f64 = 0.3;
 pub struct Setup<'a> {
     pub disc: &'a Path,
     pub symbols: &'a Path,
+    /// Where `card FILE` finds its card (`tools/cards`).
+    pub cards: &'a Path,
 }
 
 #[derive(Clone)]
@@ -62,6 +69,8 @@ struct Word {
     /// The word is in world units on the script's side (a Q16 position).
     units: bool,
     signed: bool,
+    /// Subtracted from every constant compared with it (`card FILE loads N`: a resumed game counts its scene loads from a later start).
+    offset: i64,
 }
 
 struct Cond {
@@ -69,14 +78,26 @@ struct Cond {
     op: &'static str,
     value: i64,
     high: Option<i64>,
+    /// An integer expression over guest RAM, evaluated by the gate (`kind = "expr"`); the other fields are unused.
+    expr: Option<String>,
 }
 
 fn alias_table() -> BTreeMap<String, Word> {
     let mut table = BTreeMap::new();
-    for (alias, symbol) in [("x", "HK_PLAYER_X"), ("y", "HK_PLAYER_Y")] {
+    // The words the game publishes in world units (Q16): a constant compared with them is in world units too.
+    for (alias, symbol) in [
+        ("x", "HK_PLAYER_X"),
+        ("y", "HK_PLAYER_Y"),
+        ("HK_FK_DX", "HK_FK_DX"),
+        ("HK_FOE_DX", "HK_FOE_DX"),
+        ("HK_FOE_DY", "HK_FOE_DY"),
+        ("HK_FOE_GAP_LEFT", "HK_FOE_GAP_LEFT"),
+        ("HK_FOE_GAP_RIGHT", "HK_FOE_GAP_RIGHT"),
+        ("HK_WALK_WAVE_AHEAD", "HK_WALK_WAVE_AHEAD"),
+    ] {
         table.insert(
             alias.to_string(),
-            Word { symbol: symbol.to_string(), units: true, signed: true },
+            Word { symbol: symbol.to_string(), units: true, signed: true, offset: 0 },
         );
     }
     table
@@ -117,6 +138,13 @@ fn value(text: &str, units: bool) -> Result<i64> {
 }
 
 fn parse_cond(tokens: &[&str], words: &BTreeMap<String, Word>) -> Result<Cond> {
+    if let ["expr", rest @ ..] = tokens {
+        if rest.is_empty() {
+            return Err("expr takes an expression".into());
+        }
+        let word = Word { symbol: String::new(), units: false, signed: false, offset: 0 };
+        return Ok(Cond { word, op: "", value: 0, high: None, expr: Some(rest.join(" ")) });
+    }
     let [name, op, rest @ ..] = tokens else {
         return Err(format!("a condition is WORD OP VALUE, got `{}`", tokens.join(" ")));
     };
@@ -124,6 +152,7 @@ fn parse_cond(tokens: &[&str], words: &BTreeMap<String, Word>) -> Result<Cond> {
         symbol: name.to_string(),
         units: false,
         signed: false,
+        offset: 0,
     });
     let op = operator(op).ok_or(format!("unknown operator `{op}`"))?;
     let (low, high) = match (op, rest) {
@@ -132,11 +161,19 @@ fn parse_cond(tokens: &[&str], words: &BTreeMap<String, Word>) -> Result<Cond> {
         (_, [one]) => (value(one, word.units)?, None),
         _ => return Err(format!("`{}` takes one value", op)),
     };
+    let (low, high) = (low - word.offset, high.map(|h| h - word.offset));
     let signed = word.signed || low < 0 || high.is_some_and(|h| h < 0);
-    Ok(Cond { word: Word { signed, ..word }, op, value: low, high })
+    Ok(Cond { word: Word { signed, ..word }, op, value: low, high, expr: None })
 }
 
 fn write_cond(out: &mut String, table: &str, cond: &Cond, note: Option<&str>) {
+    if let Some(expr) = &cond.expr {
+        let _ = writeln!(out, "[{table}]\nkind = \"expr\"\nexpr = \"{}\"", escape(expr));
+        if let Some(note) = note {
+            let _ = writeln!(out, "note = \"{}\"", escape(note));
+        }
+        return;
+    }
     let _ = writeln!(out, "[{table}]\nkind = \"ram\"\nsym = \"{}\"", cond.word.symbol);
     if cond.word.signed {
         let _ = writeln!(out, "signed = true");
@@ -185,11 +222,13 @@ fn options(tokens: &[&str]) -> Result<BTreeMap<String, u64>> {
 
 /// Compile a walk script into the TOML journey for the disc in `setup`.
 pub fn compile(text: &str, setup: &Setup) -> Result<String> {
-    let text = macros(text)?;
+    let text = definitions(text)?;
+    let text = macros(&text)?;
     let text = text.as_str();
     let mut words = alias_table();
     let mut name = None;
     let mut title = None;
+    let mut card = None;
     let mut max_ticks = 3_000_000u64;
     let mut body = String::new();
     for (index, line) in text.lines().enumerate() {
@@ -209,6 +248,24 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
         match *directive {
             "name" => name = rest.first().map(|s| s.to_string()),
             "title" => title = Some(rest.join(" ")),
+            "card" => {
+                let (file, loads) = match rest {
+                    [file] => (file, 0),
+                    [file, "loads", n] => (file, n.parse::<i64>().map_err(|_| located("card FILE [loads N]".into()))?),
+                    _ => return Err(located("card FILE [loads N]".into())),
+                };
+                if loads != 0 {
+                    // The scene loads the game counted before the card was taken, less the one the resume itself makes.
+                    let word = Word { symbol: "HK_SCENE_LOADS".into(), units: false, signed: false, offset: loads };
+                    words.insert("HK_SCENE_LOADS".into(), word);
+                }
+                // Absolute: the journey runs from another directory.
+                let path = setup.cards.join(file);
+                let path = path.canonicalize().unwrap_or(path);
+                let sha = crate::sha256_file(&path)
+                    .map_err(|e| located(format!("card {}: {e}", path.display())))?;
+                card = Some((path, sha));
+            }
             "max_ticks" => {
                 max_ticks = rest.first().and_then(|n| n.parse().ok()).ok_or(located("max_ticks N".into()))?
             }
@@ -218,8 +275,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 };
                 let word = Word {
                     symbol: symbol.to_string(),
-                    units: false,
-                    signed: flags.contains(&"signed"),
+                    units: flags.contains(&"units"),
+                    signed: flags.contains(&"signed") || flags.contains(&"units"),
+                    offset: 0,
                 };
                 words.insert(alias.to_string(), word);
             }
@@ -330,6 +388,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
     let _ = writeln!(toml, "name = \"{}\"\ntitle = \"{}\"", escape(&name), escape(&title));
     let _ = writeln!(toml, "disc = [\"{}\"]", setup.disc.display());
     let _ = writeln!(toml, "symbols = [\"{}\"]\nmax_ticks = {max_ticks}", setup.symbols.display());
+    if let Some((path, sha)) = card {
+        let _ = writeln!(toml, "card_fixture = {{ path = \"{}\", sha256 = \"{sha}\" }}", path.display());
+    }
     toml.push_str(&body);
     Ok(toml)
 }
@@ -362,7 +423,8 @@ pub fn play(gate: &Path, library: &Path, map: &Path, out: &Path, name: &str, scr
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let cue = crate::disc::disc_cue(library);
-    let toml = compile(&expand(script)?, &Setup { disc: &cue, symbols: map })?;
+    let cards = crate::root().join("tools/cards");
+    let toml = compile(&expand(script)?, &Setup { disc: &cue, symbols: map, cards: &cards })?;
     let file = dir.join(format!("{name}.toml"));
     std::fs::write(&file, toml).map_err(|e| e.to_string())?;
     let output = std::process::Command::new(gate)
@@ -428,6 +490,38 @@ fn heal(out: &mut String, label: &str) {
     let _ = writeln!(out, "hold circle until HK_WALK_FOCUS == 0 timeout 240 # {label}: focus");
     // The heal's release still owns the Knight for a few ticks: a jump pressed in them is lost.
     let _ = writeln!(out, "wait until HK_FOCUS_LOCKED == 0 timeout 120 # {label}: focus over");
+}
+
+/// `def NAME EXPRESSION` names an expression; a later `$NAME` is replaced with it in parentheses (longest names
+/// first, so `$threat_left` is not read as `$threat`). The `def` lines themselves are dropped.
+fn definitions(text: &str) -> Result<String> {
+    let mut defs: Vec<(String, String)> = Vec::new();
+    let mut out = String::new();
+    for (index, line) in text.lines().enumerate() {
+        let code = line.split('#').next().unwrap_or("").trim();
+        if let Some(rest) = code.strip_prefix("def ") {
+            let Some((name, body)) = rest.trim().split_once(char::is_whitespace) else {
+                return Err(format!("line {}: def NAME EXPRESSION", index + 1));
+            };
+            let mut body = body.trim().to_string();
+            for (known, text) in &defs {
+                body = body.replace(&format!("${known}"), &format!("({text})"));
+            }
+            defs.push((name.to_string(), body));
+            defs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
+            out.push('\n');
+            continue;
+        }
+        let mut line = line.to_string();
+        if line.contains('$') {
+            for (name, body) in &defs {
+                line = line.replace(&format!("${name}"), &format!("({body})"));
+            }
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// Rewrite the walk macros into base directives. The compiler keeps the Knight's expected
@@ -705,6 +799,15 @@ fn expand_depth(path: &Path, depth: u32) -> Result<String> {
                 let base = path.parent().unwrap_or(Path::new("."));
                 out.push_str(&expand_depth(&base.join(file), depth + 1)?);
             }
+            // A round of reactions written once and played N times (a fight is as many rounds as it takes).
+            ["include", file, "times", count] => {
+                let count: usize = count.parse().map_err(|_| format!("{}: include FILE times N", path.display()))?;
+                let base = path.parent().unwrap_or(Path::new("."));
+                let round = expand_depth(&base.join(file), depth + 1)?;
+                for _ in 0..count {
+                    out.push_str(&round);
+                }
+            }
             _ => {
                 out.push_str(line);
                 out.push('\n');
@@ -729,7 +832,10 @@ mod tests {
     use super::*;
 
     fn compile_text(text: &str) -> Result<String> {
-        compile(text, &Setup { disc: Path::new("/d.cue"), symbols: Path::new("/g.map") })
+        compile(
+            text,
+            &Setup { disc: Path::new("/d.cue"), symbols: Path::new("/g.map"), cards: Path::new("/cards") },
+        )
     }
 
     #[test]
@@ -796,6 +902,45 @@ mod tests {
         assert!(toml.contains("sym = \"HK_WALK_FOCUS\""));
         assert!(toml.contains("HK_FOE_GAP_RIGHT") && toml.contains("HK_FOE_GAP_LEFT"));
         assert!(compile_text("name t\nhop 3 3\n").unwrap_err().contains("at X Y"));
+    }
+
+    #[test]
+    fn expressions_and_definitions_reach_the_journey_verbatim() {
+        let toml = compile_text(
+            "name t\ndef near i32(HK_FK_DX) < 5 * 65536\ndef both $near && u32(HK_FK_PHASE) == 1\nhold left until expr !$both timeout 90 # give ground\nwait until expr $near\n",
+        )
+        .unwrap();
+        assert!(toml.contains("kind = \"expr\"\nexpr = \"!((i32(HK_FK_DX) < 5 * 65536) && u32(HK_FK_PHASE) == 1)\""), "{toml}");
+        assert!(toml.contains("timeout = 90"));
+        assert!(toml.contains("expr = \"(i32(HK_FK_DX) < 5 * 65536)\""));
+        assert!(compile_text("name t\nwait until expr\n").unwrap_err().contains("expression"));
+    }
+
+    #[test]
+    fn a_world_unit_word_takes_world_unit_constants() {
+        let toml = compile_text("name t\nhold cross until HK_WALK_WAVE_AHEAD gt 4\n").unwrap();
+        assert!(toml.contains("op = \"gt\"\nvalue = 262144"), "{toml}");
+    }
+
+    #[test]
+    fn a_resumed_game_counts_its_scene_loads_from_the_card() {
+        let dir = std::env::temp_dir().join("hk-walk-card-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("c.mcd"), b"card").unwrap();
+        let setup = Setup { disc: Path::new("/d.cue"), symbols: Path::new("/g.map"), cards: &dir };
+        let toml = compile("name t\ncard c.mcd loads 10\nhold right until HK_SCENE_LOADS ge 12\n", &setup).unwrap();
+        assert!(toml.contains("card_fixture = { path = "), "{toml}");
+        assert!(toml.contains("op = \"ge\"\nvalue = 2"), "{toml}");
+    }
+
+    #[test]
+    fn a_round_is_included_as_many_times_as_asked() {
+        let dir = std::env::temp_dir().join("hk-walk-times-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("round.walk"), "wait 3\n").unwrap();
+        std::fs::write(dir.join("main.walk"), "name t\ninclude round.walk times 4\n").unwrap();
+        let text = expand(&dir.join("main.walk")).unwrap();
+        assert_eq!(text.matches("wait 3").count(), 4);
     }
 
     #[test]
