@@ -1125,6 +1125,10 @@ impl Cache {
     /// against the directory the cook wrote, chunk by chunk, before `ready`
     /// was set, so the entry returned here is the checked one; the payload it
     /// points at is still checked again by its own decoder or hash on read.
+    /// Where the stream tail of manifest scene `scene` starts on the disc.
+    fn tail_lba(&self, scene: usize) -> Result<u32, LoadError> {
+        Ok(WORLD_PACK_DEFAULT_LBA + self.entry(TAIL_INDEX + tail_ordinal(scene))?.sector_offset)
+    }
     fn entry(&self, index: usize) -> Result<PackEntry, LoadError> {
         if !self.ready {
             return Err(LoadError::HeaderInvalid);
@@ -2607,8 +2611,7 @@ impl Cache {
             self.loaded_scenes += 1;
             if d.gap_len > 0 {
                 // The stream follows the gate: read into the gap by the drive once it is free (`pump`).
-                let lba = WORLD_PACK_DEFAULT_LBA + self.entry(TAIL_INDEX + tail_ordinal(index))?.sector_offset;
-                tail_arm(index, lba);
+                tail_arm(index, self.tail_lba(index)?);
             }
             unsafe {
                 HK_SCENE_LOADS = HK_SCENE_LOADS.saturating_add(1);
