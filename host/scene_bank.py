@@ -681,6 +681,26 @@ def compact_resident(raw):
 
 ATTRIBUTE_STRIDE=12
 
+STREAM_SPLIT_MIN=150000
+def split_stream(resident,minimum=STREAM_SPLIT_MIN):
+    """The resident bank of a scene whose streamed texels dominate it, split in two: the head (everything the gate
+    needs to enter the room) and the tail (the stream section's whole sectors: the False Knight's art, 220,924
+    of Crossroads_10's 368,288 bytes), a chunk of its own that the room reads after its gate. The tail is stored
+    as it is (no LZ4): the guest reads it straight into its place, whole sectors, so there is no decode to
+    run in place and the unread rest of the stream, under one sector, stays in the head. The raw layout does not
+    change: the guest decodes the head, moves everything past the stream's start up by the tail's length
+    (game/src/room_decode.rs `Gap`), and the tail lands in the gap (game/src/disc.rs `tail_service`).
+    None for a scene with a small stream."""
+    if resident[:8]!=b'HKSCNE02':raise ValueError('Expected a compact resident bank')
+    stream=struct.unpack_from('<I',resident,44)[0];offsets=struct.unpack_from('<10I',resident,64)
+    start,end=offsets[7],offsets[8]
+    if stream<minimum:return None
+    if end-start<stream or end-start>stream+3 or end>len(resident):raise ValueError('The stream section does not end at the descriptors')
+    if start%4:raise ValueError('The stream does not start on a word')
+    gap=(end-start)//2048*2048
+    if gap<=0:raise ValueError('Stream shorter than a sector')
+    return dict(head=resident[:start]+resident[start+gap:],tail=resident[start:start+gap],stream_off=start,gap_len=gap)
+
 def with_texture_attributes(resident,flags,black,opaque):
     """Append the per-texture attribute section to a compact resident bank.
 
