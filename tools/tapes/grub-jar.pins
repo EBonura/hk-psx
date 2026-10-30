@@ -1,4 +1,4 @@
-pacing = 46
+pacing = 50
 frame_time = 251
 long_frames = 6
 card = grub-jar.mcd
@@ -7,6 +7,8 @@ card = grub-jar.mcd
 # the jar, the grub is freed and gone by the end, and the world store
 # holds one Grub item. Seeded, so it proves the jar, not the way to it.
 #   9:start:1,12:cross:1,200:square:2,230:square:2,260:square:2 (450 polls)
+# pacing 46 to 50: frames over 2 vblanks (the title-card commits move the code by a few hundred bytes):
+# 45 on main c2ba280, 50 here; frame time 227 and 229 of a 251 ceiling, no frame of 5+ vblanks in either.
 HK_GRUBS_FREED = 1
 HK_GRUBS = 1
 HK_CHEATS = 0
