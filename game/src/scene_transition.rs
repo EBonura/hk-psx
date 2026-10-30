@@ -60,8 +60,10 @@ pub fn load(
         psx_gpu::draw_sync();
     }
     // A gate the Knight walked into: the room's stream tail may follow the load.
+    #[cfg(not(test))]
     crate::disc::defer_tail(true);
     let result = cache.select(region);
+    #[cfg(not(test))]
     crate::disc::defer_tail(false);
     // Nothing of the new scene is shown before the fade has reached black.
     while crate::exit_fade::active() {
