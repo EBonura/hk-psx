@@ -85,8 +85,6 @@ macro_rules! hand {
 include!("../../intro/src/buffers.rs");
 const MODE_POEM: u32 = 0;
 const MODE_MOVIES: u32 = 1;
-const MODE_SCREEN: u32 = 2;
-const RESULT_SKIPPED: u32 = 1;
 const RESULT_YIELD: u32 = 2;
 const RUNNING: u32 = 0x504F_454D; // "POEM"
 
@@ -155,9 +153,9 @@ hk_intro_leave:
 );
 
 /// Play the opening: the poem with its piano, then, while the poem goes on, `load` (the first scene's
-/// load as far as the movies leave it alone), then the movies. Returns when they have played out or the
-/// player skipped them (the game then goes straight into the new game), and at once when this build carries
-/// no player. `boot` is the boot art chunk the title was drawn from; the player's image rides in it, and the
+/// load as far as the movies leave it alone), then the movies. Each of the three parts can be skipped on its
+/// own (the original's `SkipSingle`); returns when the last has played out or been skipped (the game then goes
+/// straight into the new game), and at once when this build carries no player. `boot` is the boot art chunk the title was drawn from; the player's image rides in it, and the
 /// load and the movies' buffers take the scene arena over, which `boot` is staged in: do not use `boot`
 /// after this.
 ///
@@ -210,14 +208,14 @@ pub fn play(
     unsafe { core::ptr::copy_nonoverlapping(record.add(20), load_at as *mut u8, bytes as usize) };
     psx_rt::cache::flush_instruction_cache();
     let call = |mode: u32| call_program(pc, gp, sp, mode);
-    let mut result = call(MODE_POEM);
-    if result == RESULT_YIELD {
+    if call(MODE_POEM) == RESULT_YIELD {
         begin_ticks(sp);
         load();
-        result = finish_ticks();
+        finish_ticks();
     }
-    // A skip ends the opening; the screen is put back either way.
-    call(if result == RESULT_SKIPPED { MODE_SCREEN } else { MODE_MOVIES });
+    // Each part skips on its own (the poem, then each movie), so the game never needs to know which was:
+    // the movies follow the poem whether it ran out or was skipped.
+    call(MODE_MOVIES);
     // The mailbox is done with: a later session must not find a stale hand-off.
     // SAFETY: as above.
     unsafe { core::ptr::write_volatile(hand!(h, magic), 0) };
@@ -280,10 +278,9 @@ pub fn tick() {
     }
 }
 
-/// The load is over: let the poem run out (or be skipped), a VBlank at a time. 0 if it ran out, 1 if the
-/// player skipped (the values of the mailbox's result).
+/// The load is over: let the poem run out (or be skipped), a VBlank at a time.
 #[optimize(size)]
-fn finish_ticks() -> u32 {
+fn finish_ticks() {
     let h = hand_base();
     // SAFETY: the hand-off block.
     unsafe {
@@ -291,8 +288,6 @@ fn finish_ticks() -> u32 {
             psx_rt::interrupts::wait_vblank();
             tick();
         }
-        let skipped = core::ptr::read_volatile(hand!(h, step_state)) == 2;
         core::ptr::write_volatile(hand!(h, step_state), 0);
-        u32::from(skipped)
     }
 }

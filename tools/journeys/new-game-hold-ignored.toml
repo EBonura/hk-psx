@@ -1,7 +1,7 @@
 # The shoulder hold is test input. On a shipping disc (no `route-input` feature) holding L1 R1 L2 R2 while the
 # profile is chosen changes nothing: the Knight still drops in from the top gate. Same checks as new-game-lands.toml.
-# The shipping disc plays the opening movies first, so the journey skips them with two presses (the first shows the
-# prompt, the second skips).
+# The shipping disc plays the opening first, so the journey skips each of its three parts (the poem, the Prologue and the
+# Intro) with two presses (the first shows the prompt, the second skips).
 #
 #   psoxide-gate run tools/journeys/new-game-hold-ignored.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 name = "new-game-hold-ignored"
@@ -42,7 +42,41 @@ hold = 3
 wait = 40
 
 [[step]]
-label = "a second press skips the movies"
+label = "a second press skips the poem"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Prologue is on"
+wait = 120
+
+[[step]]
+label = "a first press shows the skip prompt"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "a second press skips the Prologue"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Intro is on"
+wait = 120
+
+[[step]]
+label = "a first press shows the skip prompt"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "a second press skips the Intro"
 press = ["triangle"]
 hold = 3
 

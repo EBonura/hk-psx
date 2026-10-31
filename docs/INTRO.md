@@ -16,7 +16,17 @@ video. The Intro's is quiet by design (-35.8 LUFS integrated; the Prologue's is 
 
 The sequence is skippable through `InputHandler`'s `SKIP_PROMPT` mode: the first press of any button shows
 `CinematicSkipPopup` ("Press any button to skip", language sheet `MainMenu` key `TEXT_SKIP_PROMPT`; fade in
-0.15 s, hold 2 s, fade out 1 s), a second press while it shows skips the whole sequence.
+0.15 s, hold 2 s, fade out 1 s), a second press while it shows skips the part that is playing and only that part
+(read from the install's IL, 10-31: `InputHandler.CutsceneInput` in SKIP_PROMPT mode shows the popup on the first press,
+arms for three seconds and, on a second press after 0.3 s, calls `GameManager.SkipCutscene`; its coroutine
+`SkipCutsceneNoMash` hides the popup and runs `Skip` on every registered skippable; `OpeningSequence.Skip` calls
+`ChainSequence.SkipSingle`, which skips only the current sequence (`AnimatorSequence.Skip` runs the animation to its end,
+`CinematicSequence.Skip` stops the video and its audio), and waits until the part has ended; `ChainSequence.Update`
+then calls `Next`, which starts the following part. `ChainSequence.Skip`, which would skip them all, is never called.
+`OpeningSequence` also locks the skip (skip mode LOCKED) while a part is being skipped and until `skipChargeTimer` reaches
+`skipChargeDuration` in each new part; the timer restarts at every part change. A first press during the Prologue after the
+poem was skipped shows the popup again, a second skips the Prologue, and likewise the Intro). The earlier version of
+this note said a second press skipped the whole sequence; that was wrong.
 
 ## The port
 
@@ -33,7 +43,7 @@ frame buffer, black display buffers) and goes on into the new game with the titl
 and the audio it already loaded: there is no reload of `PSX.EXE` and no second boot. The SPU's voices and RAM are
 left alone (the program never resets the SPU), so the sound effects stay loaded.
 
-The program is called three times (the mailbox's mode word), and the first scene loads in between. The first call
+The program is called twice (the mailbox's mode word), and the first scene loads in between. The first call
 plays the poem with its piano and returns when the piano is over (about 19 s in): the piano is an XA stream, which
 holds the drive for its whole length, so nothing else can be read before then. The game then loads the first scene
 as far as the movies allow while the poem goes on (`disc::Cache::preload`, which runs the admission in its early
@@ -45,8 +55,13 @@ shows the frame drawn last time, polls the pad and draws the next one into the b
 poem's state between steps is the first 64 bytes of the hand-off block (`poem.rs Carry`); the program's image stays
 in the pool the whole time, so nothing may be installed there until the movies are over (the early admission leaves
 the scene's code chunk, which installs into the pool, for the real one). The second call plays the movies and puts
-the screen back; a skip at any point goes to a call that only puts the screen back and leaves the admission to
-finish what the early one did not (a skip before the piano is over loads the whole scene then, as before).
+the screen back. Each part skips on its own: a skip in the poem (before or after the piano is over; after it the load
+goes on behind a black screen until it is done) ends the poem and goes on to the second call, whatever the poem's state;
+a skip in the Prologue starts the Intro; a skip in the Intro ends the program. The game never needs to know which part
+was skipped, since the admission after the movies finishes whatever the early one did not (a skip before the piano is
+over has not preloaded anything, so the whole scene loads then, as before). The popup of the part that was skipped is
+dropped, and the pad counts a button still down from the press that skipped as held, so each part wants its own first
+press.
 
 The movies' three display buffers (`intro/src/buffers.rs`, shared by the program and the game) are the game's own
 two frame buffers and a third at x 576, y 256, which lies over static texture pages 13 to 17: the first scene has
@@ -95,7 +110,9 @@ be read, ours is a 14 px font), so a longer text never reaches the prompt. A fra
 flipped at the next blank edge. The piano is `HKPOEM.XA`, a sound-only XA file (mono 37.8 kHz at single speed:
 one sound sector in eight, filler between, a 2 s silent lead-in so that the first note lands at the original's
 3.53 s whatever the drive's start takes), played by the SDK's XA player from 1.0 s on; no fake movie carries it.
-A first press during the poem shows the skip prompt, a second one while it shows skips the poem and both movies.
+A first press during the poem shows the skip prompt, a second one while it shows skips the poem and the Prologue follows;
+the movies take the same two presses each. Difference from the original: the port has no `skipChargeDuration` lock (the value
+is scene data, not read), so a button mashed at once skips a part as soon as the prompt has been up for a VBlank.
 
 The picture (host/hk-intro-cook `prepare_picture`): the MDEC's 15-bit output truncates each channel to 5 bits with
 no dither of its own, so a smooth gradient came out as flat bands with contour rings around the lamps and
@@ -183,10 +200,15 @@ lacks the editor's CD stop fix until HK's SDK repin.
 ## Journeys
 
 `tools/journeys/new-game-poem.toml` (the poem at 5, 12, 20 and 27 s, then the Prologue) and `new-game-poem-skip.toml`
-(two presses during the poem) and `new-game-poem-skip-late.toml` (two presses at 22 s, while the first scene loads behind the poem) and
-`new-game-handoff.toml` (the 1.7 s) run on the shipping disc as well; `new-game-intro.toml` (shipping disc: poem, movies, a first press shows the prompt, a second skips, the
-drop lands) and `new-game-intro-full.toml` (both movies play out) are route-split journeys for `psoxide-gate`;
-the others in that folder run on the route-input disc, except `new-game-hold-ignored.toml` which skips the movies.
+(two presses during the poem, then both movies play out) and `new-game-poem-skip-late.toml` (two presses at 22 s, while the
+first scene loads behind the poem, then two presses each for the Prologue and the Intro) and
+`new-game-skip-parts.toml` (two presses for the poem, two for the Prologue, two for the Intro, with the game not yet arrived
+after the first two skips: the hand-off block's mode word, `[addr] HK_INTRO_MODE = 0x801FFFE8`, is 1 while the movies call
+is the program's) and `new-game-handoff.toml` (the 1.7 s) run on the shipping disc as well; `new-game-intro.toml` (shipping
+disc: poem, movies, a first press shows the prompt, a second skips the Prologue, the Intro takes two more, the drop lands)
+and `new-game-intro-full.toml` (both movies play out) are route-split journeys for `psoxide-gate`; the others in that
+folder run on the route-input disc, except `new-game-hold-ignored.toml` which skips all three parts. The walks start from
+`tools/walks/new-game.walk`, which presses twice for each part.
 
 ## Not done
 
