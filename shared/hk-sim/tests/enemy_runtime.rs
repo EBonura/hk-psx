@@ -714,6 +714,27 @@ mod modules {
         true
     }
 }
+/// `game/src/actor_bank.rs` without a bank: no frame carries the marker, and no draw key is a bank part.
+mod actor_bank {
+    pub const KEY_BASE: u16 = u16::MAX;
+    pub fn marker() -> u16 {
+        u16::MAX
+    }
+    pub fn frame_sprite(b: [i32; 4]) -> (usize, [i32; 4]) {
+        (0, b)
+    }
+    pub struct Piece {
+        pub key: u16,
+        pub clut: u16,
+        pub width: u8,
+        pub height: u8,
+        pub bounds: [i32; 4],
+    }
+    pub fn pieces(_: usize, _: impl FnMut(Piece)) -> bool {
+        false
+    }
+    pub fn draw_piece(_: u16, _: u16, _: u8, _: u8, _: [(i16, i16); 4], _: u8) {}
+}
 mod disc {
     #[derive(Clone, Copy)]
     pub struct Located {
