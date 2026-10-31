@@ -97,7 +97,7 @@ class SimilarityDedupTests(unittest.TestCase):
             data+=struct.pack('<6HI',0,0,0,texture_size,texture_size,0,0)
             for _ in range(draws):data+=struct.pack('<Hh',0,0)+struct.pack('<i',65536)+struct.pack('<8i',0,0,side,0,0,side,side,side)+struct.pack('<I',0)
             return bytes(data)+bytes(32)
-        big=minimal(64,50,1000*256);small=minimal(64,50,100*256)
+        big=minimal(64,100,1000*256);small=minimal(64,100,100*256)
         self.assertGreater(draw_packets(big,{0:(8,8)}),768);self.assertLessEqual(draw_packets(big),768)
         items=[{'id':0,'w':64,'h':64},{'id':1,'w':8,'h':8}]
         rows=[{'chunk_id':1}];local={1:[0]}
