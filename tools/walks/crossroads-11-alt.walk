@@ -1,0 +1,34 @@
+# Crossroads_11_alt, east to west: from the arrival gate (Crossroads_07, x 119.5) over the four ledges to x 85.75, outside the Elder Baldur's
+# shell (his attack box ends at x 81.6). Planned with hk-walkplan, one hop at a time from where the Knight really landed.
+at 119.50 12.39
+walk 117.01
+walk 117.79   # run-up
+walk 117.01   # take-off
+hold left+cross for 8
+hold left for 22
+wait until y between 11.24 11.54 timeout 240   # land at x 112.86
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 111.75
+walk 112.53   # run-up
+walk 111.75   # take-off
+hold left+cross for 34
+hold left for 27
+wait until y between 11.24 11.54 timeout 240   # land at x 103.32
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 104.10   # run-up
+walk 103.32   # take-off
+hold left+cross for 34
+hold left for 24
+wait until y between 12.24 12.54 timeout 240   # land at x 95.29
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 96.07   # run-up
+walk 95.29   # take-off
+hold left+cross for 28
+hold left for 31
+wait until y between 11.24 11.54 timeout 240   # land at x 87.13
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 85.75

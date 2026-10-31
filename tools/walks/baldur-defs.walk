@@ -1,0 +1,10 @@
+# What the Elder Baldur fight reacts to (the Blocker at x 75.1 in Crossroads_11_alt). The Roller he spits is read from its own static by the
+# standing definitions ($roller, $roller_x, $roller_y: host/hk-build/walk-prelude.walk), so the guest carries nothing for this.
+def rx $roller_x
+def ry $roller_y
+# A roller 5 to 25 units to the right at the Knight's height (SOUL for a cast is only to be had by hitting one), and one close enough to matter.
+def rfar $roller && $rx - i32(HK_PLAYER_X) > 5 * 65536 && $rx - i32(HK_PLAYER_X) < 25 * 65536 && abs($ry - i32(HK_PLAYER_Y)) <= 2 * 65536
+def rnear $roller && abs($rx - i32(HK_PLAYER_X)) <= 7 * 65536 && abs($ry - i32(HK_PLAYER_Y)) <= 2 * 65536
+# A cast is wanted: SOUL for it, no roller near (a cast owns the Knight for about 24 ticks), facing him, in control.
+def castable u32(HK_SOUL) >= 33 && !$rnear && i32(HK_PLAYER_FACING) < 0 && u32(HK_WALK_READY) == 1
+def dead u32(HK_ENEMY_KILLS) >= 1

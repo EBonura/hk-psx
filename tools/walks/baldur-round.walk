@@ -1,0 +1,14 @@
+# One round of the Elder Baldur fight, played as many times as it takes (nothing is timed: every step is a reaction that takes no time when
+# there is nothing to do). Rollers are struck the moment they are in reach (a swing from further out only spends the cooldown they arrive in),
+# SOUL comes from roller hits (3 hits = one cast), a cast needs no roller near, Focus when masks are low and nothing is close.
+strike
+hold right until expr !($rfar && u32(HK_SOUL) < 33 && !$dead) timeout 400   # no SOUL: go to the roller
+hold right until expr $dead || $rnear || i32(HK_PLAYER_X) >= 5373952 timeout 300   # keep outside his shell (x 81.9 .. 82.5)
+hold left until expr $dead || $rnear || i32(HK_PLAYER_X) <= 5406720 timeout 300
+strike
+hold circle until expr !($focus && u32(HK_HEALTH) <= 3) timeout 240   # heal when low
+wait until HK_FOCUS_LOCKED == 0 timeout 120
+hold left until expr i32(HK_PLAYER_FACING) < 0 || $rnear timeout 40   # face him unless a roller is near
+hold circle until expr !$castable || (u32(HK_SIM_TICKS) & 7) == 0 timeout 30   # Vengeful Spirit fires on release inside the tap time: a tap of at most 8 ticks, only when wanted
+wait until HK_WALK_READY == 1 timeout 120
+wait 6
