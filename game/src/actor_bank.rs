@@ -55,6 +55,8 @@ pub struct Pieces {
     rest: &'static [u8],
 }
 impl Blob for Pieces {
+    // Out of line: `Bank::open` and `part` read dozens of header bytes, and each inlined copy of this is a dozen instructions.
+    #[inline(never)]
     fn byte(&self, at: usize) -> u8 {
         match self.head.get(at) {
             Some(b) => *b,
@@ -108,6 +110,7 @@ pub fn marker() -> u16 {
 /// carrier textures among the room's, once per view bind (`render::init`). A scene without an entry in
 /// `data/actor_banks.rs` costs this one search; a scene with one whose package is not resident leaves the frames that name
 /// the bank drawing nothing (`HK_ACTOR_BANK_UNBOUND`, and `HK_ACTOR_BANK_MISSES` per frame).
+#[inline(never)]
 pub fn bind(room: &Room, scene: usize) {
     set(&[], &[]);
     let Some(entry) = SCENE_BANKS.iter().find(|e| e.scene == scene) else { return };
