@@ -14,39 +14,44 @@ view's tables.
 
 ## What it is
 
-- A **slice** is one `hk_format::boss::Bank` blob: header, clip/sequence/sprite/part tables and the coded texels. A scene's bank
-  is one or two slices (`MAX_SLICES`). Sprites and parts are numbered globally, the first slice's first, so a frame names a
-  sprite without knowing which slice holds it (`boss::locate_sprite`, `locate_part`).
-- Slice 0 is a **data package** in the module pool (`art_*` in `DATA_MODULES`), carried by the scene like `art_goam`: read at
-  the gate, resident until the next scene admission, read-only (`modules::bytes`). Slice 1 (art that does not fit the pool, such
-  as Death and Fall clips) is read-only data linked into the image (`data/actor_banks.rs`). Both cost RAM from the same
-  pot, the free RAM below the pool.
+- One **bank** per scene: a `hk_format::boss::Bank` blob (header, clip/sequence/sprite/part tables, then the parts' coded
+  texels, live clips first and the corpse clips last) with one set of up to 16 shared palettes. It is cut by byte into two
+  memory pieces that the guest reads as one string (`actor_bank::Pieces`): the **head** is a data package in the module
+  pool (`art_*` in `DATA_MODULES`, carried by the scene like `art_goam`: read at the gate, resident until the next scene
+  admission, read-only, `modules::bytes`), and **the rest** is read-only data linked into the image
+  (`data/actor_banks.rs`). Both cost RAM from the same pot, the free RAM below the pool; how much goes in the pool is
+  `package_bytes`, a number tuned against the room's pool slack (the pool gate prints it).
 - In each **bank view** the actors' frames are ordinary frame records (clips, lengths, completion and every validator work
-  unchanged) whose texture is the first **carrier** texture, a 4x4 streamed texture whose stream is `HKBP`, the slice's bank id
-  and a palette index, and whose palette is that bank palette. The carriers are how the bank's CLUTs reach VRAM with the scene's.
+  unchanged) whose texture is the first **carrier** texture, a 4x4 streamed texture whose stream is `HKBP`, the bank id and
+  a palette index, and whose palette is that bank palette. The carriers are how the bank's CLUTs reach VRAM with the scene's.
   The sprite index rides in the low bytes of the frame box's first two words (`actor_bank::frame_sprite`).
 - **Scoping by data.** A bank actor is listed (`row['actors']`) only in the views that carry the bank. The guest already steps
-  and draws only the actors its bound view lists, so an actor in a bank-less view neither asserts nor costs anything.
+  and draws only the actors its bound view lists, so an actor in a bank-less view neither asserts nor costs anything. The
+  catch is pop-in: a view draws every actor it lists and no other, and the renderer draws the view whose camera range holds
+  the camera, which can be a neighbour of the Knight's. An actor must therefore be listed in every view from which it can be
+  on screen: the default is the views whose interaction bounds hold its placement, `reach` widens that for actors that wander
+  or stand near a view edge, and `views` overrides it (`"all"` for every view of the scene).
 
 ## Turning it on for a scene
 
 Add an entry to `host/actor_banks.json` and run a normal build. Nothing else changes: an empty `scenes` object changes no
 cooked byte (the work is a postpass over the finished view packs, `regions.postpack_art_bank`).
 
-```json
-{"scenes": {"Crossroads_01": {
-  "id": 4,                              // bank id of slice 0; slice k is id + k
-  "package": "art_runners",             // the module pool data package that carries slice 0 (name it art_*)
-  "actors": ["Zombie Runner", "Zombie Runner 1"],   // actor names or `source` ids of the scene
-  "views": [235, 236],                  // optional: chunk ids of the bank views; default: the views whose region cook lists the actors
-  "banks": [
-    {"name": "core", "palettes": 4, "exclude_clips": ["Death Air", "Death Land", "Fall"]},
-    {"name": "late", "palettes": 4, "include_clips": ["Death Air", "Death Land", "Fall"]}]}}}
+```
+{"scenes": {"Crossroads_10": {
+  "id": 6,                      bank id (the carriers name it)
+  "package": "art_husks",       the module pool data package that carries the head of the bank (name it art_*)
+  "package_bytes": 35000,       bytes of the bank in the package (multiple of 4); the rest is linked data
+  "palettes": 8,                shared palettes = carrier textures in every bank view
+  "actors": ["Zombie Barger", "Zombie Runner", "Zombie Hornhead"],   names or `source` ids
+  "reach": 8,                   optional: widen the default views by this many world units
+  "views": [235, 236]}}}       optional: chunk ids, or "all"
 ```
 
-- `palettes` per slice: every palette is a carrier texture in every bank view, so the slices' palettes together must fit the
-  tightest bank view's free texture records (Crossroads_10 view 236 has 9).
-- `include_clips` / `exclude_clips` split the clips (live and corpse) between the slices by name.
+- Budget what the bank costs: the package counts in the room's pool need (`module_publish.rs` fails the build if it does
+  not fit); the linked rest costs image RAM; every bank view pays the carriers' texture records (`row['textures']` against 640),
+  its clip and frame records, and the scene's resident raw grows by what the views do not share (a scene that sizes the
+  arena pays it 1:1 in BSS).
 - Only the Zombie family (`ZombieSwipeWalker`) has its clip bindings in `host/actor_bank.py` (`bindings`, a copy of the chain in
   `cook.append_actor_art`). Another family adds its chain there; the cooker itself (`hk-cook actor-bank`) takes any library.
 - The additive-scene rule of `actors.py` (an actor merged from an additive scene is refused until its controller opts in) is
