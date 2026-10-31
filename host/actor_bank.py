@@ -1,33 +1,37 @@
 """Compact art banks for ordinary actor families (game/src/actor_bank.rs, docs/ACTOR-BANK.md).
 
 A scene opts in by data: an entry in host/actor_banks.json names the actors whose art leaves the room path and rides a bank
-instead, the views that draw them, and how the bank is split. Nothing else in the cook knows about it: with the file's
-`scenes` empty, every function here returns an empty answer and the cooked bytes are what they were before it existed.
+instead, the views that draw them, and how much of the bank lives in the module pool. Nothing else in the cook knows about it:
+with the file's `scenes` empty, every function here returns an empty answer and the cooked bytes are what they were before it
+existed.
 
     {"scenes": {"Crossroads_10": {
-        "id": 4,                        # bank id of the first slice; later slices take id + 1, id + 2, ...
-        "package": "art_husks",         # the module pool data package that carries the first slice
-        "actors": ["Zombie Barger"],    # actor names in the scene (`source` ids also work)
-        "reach": 8,                     # optional: widen the default views by this many world units (see below)
-        "views": [235, 236],            # chunk ids of the views that draw them; "all": every view of the scene; omitted: the views
-                                        # whose region cook lists the actors (those inside the view's interaction bounds)
-        "banks": [{"name": "core", "palettes": 4, "exclude_clips": ["Death Air", "Death Land", "Fall"]},
-                  {"name": "late", "palettes": 4, "include_clips": ["Death Air", "Death Land", "Fall"]}]}}}
+        "id": 6,                         # the bank's id (carriers name it)
+        "package": "art_husks",          # the module pool data package that carries the head of the bank
+        "package_bytes": 35000,          # how many bytes of the bank the package takes (a multiple of 4; the rest is linked data)
+        "palettes": 8,                   # shared palettes: one carrier texture each in every bank view
+        "actors": ["Zombie Barger"],     # actor names in the scene (`source` ids also work)
+        "reach": 8,                      # optional: widen the default views by this many world units (see below)
+        "views": [235, 236]}}}           # optional chunk ids of the views that draw them; "all": every view of the scene;
+                                         # omitted: the views whose region cook lists the actors, grown by `reach`
 
-What the cook writes (data/actor_bank/<scene>/): `slice0.bin`, `slice1.bin`, ... (the guest's `Bank` blobs, each exact) and
-`bank.json` (the merged tables). The first slice is the scene's module pool package (host/code_modules.py DATA_MODULES) and
-the others are linked read-only data (`data/actor_banks.rs`).
+The bank is one logical byte string (a `hk_format::boss::Bank`: tables, then the parts' coded texels, live clips first and the
+corpse clips last). The cook writes data/actor_bank/<scene>/package.bin (its first `package_bytes`), linked.bin (the rest) and
+bank.json. The package is the scene's module pool data package (host/code_modules.py DATA_MODULES) and the rest is linked
+read-only data (`data/actor_banks.rs`); the guest reads the two as one string. Because the bank is cut by byte, what sits in
+the pool and what sits in the image is a number to tune against the room's pool slack and the free RAM below the pool, not a
+property of the art.
 
 In a bank view the actors' frames are ordinary frame records whose texture is the first carrier texture and whose first two
-box words carry the sprite's global index in their low bytes; the clips and frames are appended after every other clip, so a
-view without the bank keeps the clip indices of the rest. A bank actor is listed (`row['actors']`) only in the views that
-carry the bank; the guest does not step or draw an actor its bound view does not list.
+box words carry the sprite's index in their low bytes; the clips and frames are appended after every other clip, so a view
+without the bank keeps the clip indices of the rest. A bank actor is listed (`row['actors']`) only in the views that carry the
+bank; the guest does not step or draw an actor its bound view does not list.
 
 Which views carry the bank matters for pop-in: a view draws every actor it lists and no other, and the renderer draws the view
 whose camera range holds the camera, which can be a neighbour of the Knight's. So an actor must be listed in every view from
 which it can be on screen. The default is the views whose interaction bounds (the camera range and its margin) hold an
 actor's placement; `reach` grows those bounds for actors that wander or stand near a view edge, and `views` overrides the
-rule (`"all"` lists every view of the scene, which costs the carriers in every one).
+rule (`"all"` lists every view of the scene, which costs the carriers and the clip and frame records in every one).
 """
 import json
 import struct
@@ -40,17 +44,18 @@ CONFIG = Path(__file__).with_name('actor_banks.json')
 OUT = ROOT / 'data/actor_bank'
 COOK = ROOT / 'host/target/release/hk-cook'
 CARRIER_MAGIC = b'HKBP'
-MAX_SLICES = 2
 
 
 def scenes():
     """{scene name: entry} of host/actor_banks.json."""
     entries = json.loads(CONFIG.read_text())['scenes']
     for name, e in entries.items():
-        if not 1 <= len(e['banks']) <= MAX_SLICES:
-            raise ValueError(f'{name}: {len(e["banks"])} banks, the guest reads 1 to {MAX_SLICES}')
         if not e['package'].startswith('art_'):
             raise ValueError(f'{name}: package {e["package"]!r} must be named art_*')
+        if e['package_bytes'] % 4 or e['package_bytes'] <= 0:
+            raise ValueError(f'{name}: package_bytes must be a positive multiple of 4')
+        if not 1 <= e.get('palettes', 8) <= 16:
+            raise ValueError(f'{name}: palettes must be 1 to 16')
     return entries
 
 
@@ -61,11 +66,6 @@ def entry(scene_name):
 def packages():
     """{package name: scene name}, in file order: the data packages the cook adds to host/code_modules.py DATA_MODULES."""
     return {e['package']: name for name, e in scenes().items()}
-
-
-def late_slices(scene_name):
-    """Slices after the first, as the paths the guest links (data/actor_banks.rs)."""
-    return [f'actor_bank/{scene_name}/slice{k}.bin' for k in range(1, len(scenes()[scene_name]['banks']))]
 
 
 def is_bank_actor(e, actor):
@@ -105,105 +105,85 @@ def bindings(control, library):
     return b
 
 
-def _wanted(bank, name):
-    if 'include_clips' in bank and name not in bank['include_clips']:
-        return False
-    return name not in bank.get('exclude_clips', [])
-
-
-def _ents(source, scene, actors, bank):
-    """The ents file of one bank: per actor its library, scale and the clips this bank holds, and its corpse's."""
+def _ents(source, scene, actors):
+    """The ents file of the bank: every actor's live clips, then every actor's corpse clips. The cooker numbers sprites in
+    the order it meets them, so the corpse art (seen only after a kill) is the tail of the bank, which is the end of the blob:
+    what spills out of the pool package into the image."""
     from effects import corpse_source
-    ents, owners = [], []
+    live, corpse = [], []
     for actor in actors:
         control = actor['movement_control']
         library_o = source.ref(scene.file, actor['tk2dSpriteAnimator']['library'])
         library = source.read(library_o)
         matrix = scene.world(scene.go_transform[actor['game_object']])
         sprite = actor['tk2dSprite']
-        scale = [abs(matrix[0][0]), abs(matrix[1][1])]
-        names = [n for n in dict.fromkeys(bindings(control, library).values()) if _wanted(bank, n)]
-        if names:
-            ents.append({'library': source.sid(library_o), 'sprite_scale': [sprite['_scale']['x'], sprite['_scale']['y']],
-                         'world_scale': scale, 'alpha': sprite['_color']['a'], 'clips': names})
-            owners.append((actor, 'live'))
+        live.append(({'library': source.sid(library_o), 'sprite_scale': [sprite['_scale']['x'], sprite['_scale']['y']],
+                      'world_scale': [abs(matrix[0][0]), abs(matrix[1][1])], 'alpha': sprite['_color']['a'],
+                      'clips': list(dict.fromkeys(bindings(control, library).values()))}, (actor, 'live')))
         record = corpse_source(source, scene, actor)
         if record is not None:
-            names = [n for n in dict.fromkeys(c['name'] for c in record['clips']) if _wanted(bank, n)]
-            if names:
-                ents.append({'library': record['library'], 'sprite_scale': [1.0, 1.0], 'world_scale': record['scale'],
-                             'alpha': 1.0, 'clips': names})
-                owners.append((actor, 'corpse'))
-    return ents, owners
+            corpse.append(({'library': record['library'], 'sprite_scale': [1.0, 1.0], 'world_scale': record['scale'],
+                            'alpha': 1.0, 'clips': list(dict.fromkeys(c['name'] for c in record['clips']))}, (actor, 'corpse')))
+    both = live + corpse
+    return [e for e, _ in both], [o for _, o in both]
 
 
 def cook(source, scene, scene_name, e, actors):
-    """Cook the entry's banks: write data/actor_bank/<scene>/ and return the merged description (see `describe`)."""
+    """Cook the entry's bank: write data/actor_bank/<scene>/ and return its description."""
     out = OUT / scene_name
     out.mkdir(parents=True, exist_ok=True)
-    slices, sprite_base, clip_base = [], 0, 0
-    for k, bank in enumerate(e['banks']):
-        ents, owners = _ents(source, scene, actors, bank)
-        if not ents:
-            raise ValueError(f'{scene_name}: bank {bank["name"]!r} holds no clip of the entry\'s actors')
-        with tempfile.TemporaryDirectory() as tmp:
-            ents_path, bank_dir = Path(tmp) / 'ents.json', Path(tmp) / 'bank'
-            ents_path.write_text(json.dumps({'ents': ents}))
-            subprocess.run([str(COOK), 'actor-bank', '--ents', str(ents_path), '--out', str(bank_dir),
-                            '--id', str(e['id'] + k), '--palettes', str(bank.get('palettes', 8))], check=True, cwd=ROOT)
-            blob = (bank_dir / 'bank.bin').read_bytes()
-            doc = json.loads((bank_dir / 'bank.json').read_text())
-        (out / f'slice{k}.bin').write_bytes(blob + bytes(-len(blob) % 4))
-        slices.append({'name': bank['name'], 'id': e['id'] + k, 'doc': doc, 'owners': owners,
-                       'sprite_base': sprite_base, 'clip_base': clip_base, 'bytes': len(blob)})
-        sprite_base += len(doc['sprites'])
-        clip_base += len(doc['clips'])
-    if sprite_base > 0xffff:
-        raise ValueError(f'{scene_name}: {sprite_base} bank sprites, a frame names one in 16 bits')
-    summary = {'scene': scene_name, 'package': e['package'], 'sprites': sprite_base, 'clips': clip_base,
-               'slices': [{k: s[k] for k in ('name', 'id', 'bytes', 'sprite_base', 'clip_base')} | {'stats': s['doc']['stats']}
-                          for s in slices]}
-    (out / 'bank.json').write_text(json.dumps(summary, indent=1))
-    return slices
+    ents, owners = _ents(source, scene, actors)
+    with tempfile.TemporaryDirectory() as tmp:
+        ents_path, bank_dir = Path(tmp) / 'ents.json', Path(tmp) / 'bank'
+        ents_path.write_text(json.dumps({'ents': ents}))
+        subprocess.run([str(COOK), 'actor-bank', '--ents', str(ents_path), '--out', str(bank_dir),
+                        '--id', str(e['id']), '--palettes', str(e.get('palettes', 8))], check=True, cwd=ROOT)
+        blob = (bank_dir / 'bank.bin').read_bytes()
+        doc = json.loads((bank_dir / 'bank.json').read_text())
+    blob += bytes(-len(blob) % 4)
+    cut = min(e['package_bytes'], len(blob))
+    (out / 'package.bin').write_bytes(blob[:cut])
+    (out / 'linked.bin').write_bytes(blob[cut:])
+    if len(doc['sprites']) > 0xffff:
+        raise ValueError(f'{scene_name}: {len(doc["sprites"])} bank sprites, a frame names one in 16 bits')
+    (out / 'bank.json').write_text(json.dumps({
+        'scene': scene_name, 'package': e['package'], 'id': e['id'], 'bytes': len(blob), 'package_bytes': cut,
+        'linked_bytes': len(blob) - cut, 'sprites': len(doc['sprites']), 'clips': len(doc['clips']),
+        'palettes': len(doc['palettes']), 'stats': doc['stats']}, indent=1))
+    return {'id': e['id'], 'doc': doc, 'owners': owners, 'bytes': len(blob), 'package_bytes': cut}
 
 
-def room_tables(slices):
+def room_tables(bank):
     """(atlas, frames, clips, carrier count) to append to a bank view, with frame textures and clip starts as
     append_room_bank wants them (the pack offsets them): carriers first, every frame on carrier 0."""
     from cook import Atlas
     atlas = Atlas()
-    carriers = 0
-    for s in slices:
-        for k, palette in enumerate(s['doc']['palettes']):
-            pixels = CARRIER_MAGIC + struct.pack('<2H', s['id'], k)
-            atlas.add_quantized(4, 4, b''.join(struct.pack('<H', w) for w in palette), pixels, streamed=True, unique=True)
-            carriers += 1
+    doc = bank['doc']
+    for k, palette in enumerate(doc['palettes']):
+        pixels = CARRIER_MAGIC + struct.pack('<2H', bank['id'], k)
+        atlas.add_quantized(4, 4, b''.join(struct.pack('<H', w) for w in palette), pixels, streamed=True, unique=True)
     frames, clips = [], []
-    for s in slices:
-        doc = s['doc']
-        for clip in doc['clips']:
-            clips.append({'name': f'{clip["library"]}/{clip["name"]}', 'start': len(frames), 'count': len(clip['frames']),
-                          'fps': clip['fps'], 'wrap': clip['wrap'], 'loopStart': clip['loop_start']})
-            for local in clip['frames']:
-                sprite = s['sprite_base'] + local
-                box = [round(v * 65536) for v in doc['sprites'][local]['box']]
-                # The sprite index rides in the low byte of the first two words (actor_bank::frame_sprite).
-                box[0] = (box[0] & ~0xff) | (sprite & 0xff)
-                box[1] = (box[1] & ~0xff) | (sprite >> 8)
-                frames.append({'texture': 0, 'box': [v / 65536 for v in box], 'sprite': f'bank:{s["id"]}:{local}', 'event': {}})
-    return atlas, frames, clips, carriers
+    for clip in doc['clips']:
+        clips.append({'name': f'{clip["library"]}/{clip["name"]}', 'start': len(frames), 'count': len(clip['frames']),
+                      'fps': clip['fps'], 'wrap': clip['wrap'], 'loopStart': clip['loop_start']})
+        for sprite in clip['frames']:
+            box = [round(v * 65536) for v in doc['sprites'][sprite]['box']]
+            # The sprite index rides in the low byte of the first two words (actor_bank::frame_sprite).
+            box[0] = (box[0] & ~0xff) | (sprite & 0xff)
+            box[1] = (box[1] & ~0xff) | (sprite >> 8)
+            frames.append({'texture': 0, 'box': [v / 65536 for v in box], 'sprite': f'bank:{bank["id"]}:{sprite}', 'event': {}})
+    return atlas, frames, clips, len(doc['palettes'])
 
 
-def _clip_index(slices, actor, which, name):
-    """The scene-wide bank clip (all slices numbered in order) that `actor`'s `which` ('live' or 'corpse') ent holds as `name`."""
-    for s in slices:
-        for i, (owner, kind) in enumerate(s['owners']):
-            if owner is actor and kind == which and name in s['doc']['ent_clips'][i]:
-                return s['clip_base'] + s['doc']['ent_clips'][i][name]
-    raise ValueError(f'actor bank: {actor["name"]} has no {which} clip {name!r} in any slice')
+def _clip_index(bank, actor, which, name):
+    """The bank clip that `actor`'s `which` ('live' or 'corpse') ent holds as `name`."""
+    for i, (owner, kind) in enumerate(bank['owners']):
+        if owner is actor and kind == which and name in bank['doc']['ent_clips'][i]:
+            return bank['doc']['ent_clips'][i][name]
+    raise ValueError(f'actor bank: {actor["name"]} has no {which} clip {name!r}')
 
 
-def bind(source, scene, actor, slices, first_clip):
+def bind(source, scene, actor, bank, first_clip):
     """Point `actor`'s clip bindings (and its corpse's) at its bank clips, `first_clip` being the index of the first bank clip
     in a bank view before the scene's own clip base is added (regions.remap_actor_clips adds that)."""
     from effects import corpse_source
@@ -212,7 +192,7 @@ def bind(source, scene, actor, slices, first_clip):
     matrix = scene.world(scene.go_transform[actor['game_object']])
     sprite = actor['tk2dSprite']
     for kind, name in bindings(actor['movement_control'], library).items():
-        actor[kind + '_clip'] = first_clip + _clip_index(slices, actor, 'live', name)
+        actor[kind + '_clip'] = first_clip + _clip_index(bank, actor, 'live', name)
     actor['visual_scale'] = [abs(matrix[0][0] * sprite['_scale']['x']), abs(matrix[1][1] * sprite['_scale']['y'])]
     record = corpse_source(source, scene, actor)
     if record is not None:
@@ -220,14 +200,14 @@ def bind(source, scene, actor, slices, first_clip):
         selected = record.pop('clips')
         record.pop('tiled', None)
         for kind, clip in zip(('air', 'land'), selected):
-            record[kind + '_clip'] = first_clip + _clip_index(slices, actor, 'corpse', clip['name'])
+            record[kind + '_clip'] = first_clip + _clip_index(bank, actor, 'corpse', clip['name'])
         actor['corpse'] = record
 
 
-def append_to_pack(pack, slices, clip_base, what):
+def append_to_pack(pack, bank, what):
     """The cooked view `pack` with the bank appended: (new pack, carriers added, first bank clip index in the pack)."""
     from regions import append_room_bank
-    atlas, frames, clips, carriers = room_tables(slices)
+    atlas, frames, clips, carriers = room_tables(bank)
     atlas.pack()
     nc = struct.unpack_from('<6I', pack, 8)[4]
     new, _ = append_room_bank(pack, atlas, frames, clips, nc, what)
@@ -236,12 +216,12 @@ def append_to_pack(pack, slices, clip_base, what):
 
 def write_tables(manifest_index):
     """data/actor_banks.rs: the scenes that draw from a bank, as `actor_bank::SceneBank` rows. `manifest_index(scene name)` is
-    the scene's index in the packed manifest; the package id is the generated `modules::ART_*` constant of its name. Written whenever the contents change, empty for an empty config."""
+    the scene's index in the packed manifest; the package id is the generated `modules::ART_*` constant of its name. Written
+    whenever the contents change; empty for an empty config."""
     rows = []
     for name, e in scenes().items():
-        late = late_slices(name)
-        slot = f'include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/{late[0]}"))' if late else '&[]'
-        rows.append(f'SceneBank{{scene:{manifest_index(name)},package:crate::modules::{e["package"].upper()},late:{slot}}}')
+        rest = f'include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/actor_bank/{name}/linked.bin"))'
+        rows.append(f'SceneBank{{scene:{manifest_index(name)},package:crate::modules::{e["package"].upper()},rest:{rest}}}')
     text = ('// Generated by host/actor_bank.py from host/actor_banks.json; do not edit.\n'
             f'pub static SCENE_BANKS:[SceneBank;{len(rows)}]=[{",".join(rows)}];\n')
     path = ROOT / 'data/actor_banks.rs'
