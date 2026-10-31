@@ -6,7 +6,7 @@
 //! and plan the next hop from there. A hop that lands somewhere else stays in the script (the gate is deterministic,
 //! so the prefix replays exactly) and the next plan starts from the real place. The result is an ordinary walk
 //! script, `tools/walks/NAME.walk`, that the walk compiler turns into a journey like any other, and its room alone
-//! (no card, no probes, the exit waited for by the arrival region) as `NAME.frag`, which a chain `include`s after the
+//! (no card, no probes, the exit waited for by the spawn of the next room) as `NAME.frag`, which a chain `include`s after the
 //! previous room's fragment so SOUL and masks carry from room to room (a card does not save SOUL).
 //!
 //! ```text
@@ -421,18 +421,22 @@ pub fn run(args: &[String]) -> Result<(), String> {
             .collect(),
         None => Vec::new(),
     };
-    // The exit is waited for by the region it arrives in, not by a load count, so the fragment chains after any other.
-    let arrival = exit["target_region"]
-        .as_i64()
-        .ok_or("exit gate without a target region")?;
+    // The exit is waited for by where the Knight appears in the next room (the exit gate's spawn), not by a region or a
+    // load count, so the fragment chains after any other: a region id changes as a room streams, and a load count is
+    // absolute.
+    let spawn = numbers(&exit["spawn"]);
+    let q = |v: f64| (v * f64::from(ONE)).round() as i64;
+    let reached = format!(
+        "expr abs(i32(HK_PLAYER_X) - {}) <= {} && abs(i32(HK_PLAYER_Y) - {}) <= {}",
+        q(*spawn.first().ok_or("exit gate without a spawn")?),
+        5 * ONE,
+        q(*spawn.get(1).ok_or("exit gate without a spawn")?),
+        3 * ONE
+    );
     let tail = o.tail.clone().unwrap_or_else(|| match side {
-        1 => vec![format!(
-            "hold left until HK_REGION_ID == {arrival} timeout 900"
-        )],
-        2 => vec![format!(
-            "hold right until HK_REGION_ID == {arrival} timeout 900"
-        )],
-        _ => vec![format!("wait until HK_REGION_ID == {arrival} timeout 600")],
+        1 => vec![format!("hold left until {reached} timeout 900")],
+        2 => vec![format!("hold right until {reached} timeout 900")],
+        _ => vec![format!("wait until {reached} timeout 600")],
     });
     let tail: Vec<String> = tail
         .into_iter()
@@ -491,12 +495,18 @@ pub fn run(args: &[String]) -> Result<(), String> {
         }
         // The fragment: this room from its arrival to its exit (what a chain includes); the walk is a card start plus it.
         let mut frag: Vec<String> = vec![format!("at {sx:.2} {sy:.2}")];
-        frag.extend(pre.iter().cloned());
         frag.extend(body.iter().cloned());
         if finished {
             frag.extend(tail.iter().cloned());
         }
-        let walk_text: Vec<String> = header.iter().cloned().chain(frag.iter().cloned()).collect();
+        // `--pre` is whatever got the Knight to the arrival (another room's fragment, a fight): it is in the walk, not
+        // in the fragment.
+        let walk_text: Vec<String> = header
+            .iter()
+            .chain(pre.iter())
+            .chain(frag.iter())
+            .cloned()
+            .collect();
         std::fs::write(&script_path, walk_text.join("\n") + "\n")
             .map_err(|e| format!("{}: {e}", script_path.display()))?;
         if finished {
@@ -538,11 +548,13 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 (read.x - ex).abs() <= LAND_X && ey.is_none_or(|ey| (read.y - ey).abs() <= LAND_Y)
             });
             eprintln!(
-                "round {round} hop {}: at ({:.2}, {:.2}) health {} expected {:?} {}",
+                "round {round} hop {}: at ({:.2}, {:.2}) health {} (region {}, load {}) expected {:?} {}",
                 j + 1,
                 read.x,
                 read.y,
                 read.health,
+                read.region,
+                read.loads,
                 exp,
                 if ok { "ok" } else { "OFF" }
             );
@@ -561,9 +573,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
             }
             (cx, cy) = (read.x, read.y);
             if j + 1 == expect.len() && finished {
-                done = all.iter().any(|(n, w)| {
-                    n == "end" && probe_of(w).is_some_and(|p| p.loads >= 2 && p.region != region)
-                });
+                done = all
+                    .iter()
+                    .any(|(n, w)| n == "end" && probe_of(w).is_some_and(|p| p.deaths == 0));
                 eprintln!(
                     "{}",
                     all.iter()

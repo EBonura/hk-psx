@@ -794,13 +794,28 @@ pub fn macros(text: &str) -> Result<String> {
                 }
             }
             ["fight", rest @ ..] => {
-                let rounds = if rest.is_empty() { 3 } else { number(rest.first())? as u64 };
-                // `fight N noheal`: leave SOUL alone (a proof that counts it).
+                // `fight [N] [LO HI] [noheal]`: N rounds (3); with LO and HI the Knight never closes on a foe past
+                // those x (the floor under him), so a foe across a gap or on another ledge is left alone;
+                // `noheal` leaves SOUL alone (a proof that counts it).
                 let heals = !rest.contains(&"noheal");
+                let numbers: Vec<f64> = rest.iter().filter_map(|t| t.parse().ok()).collect();
+                let (rounds, bounds) = match numbers.as_slice() {
+                    [] => (3, None),
+                    [n] => (*n as u64, None),
+                    [n, lo, hi] => (*n as u64, Some((*lo, *hi))),
+                    _ => return Err(located("fight [N] [LO HI] [noheal]".into())),
+                };
+                let (stop_right, stop_left) = match bounds {
+                    Some((lo, hi)) => (
+                        format!(" || i32(HK_PLAYER_X) >= {}", (hi * ONE as f64).round() as i64),
+                        format!(" || i32(HK_PLAYER_X) <= {}", (lo * ONE as f64).round() as i64),
+                    ),
+                    None => (String::new(), String::new()),
+                };
                 for round in 1..=rounds {
-                    let _ = writeln!(out, "hold right until expr $gap_right == 0 timeout 300 # {label}: round {round}, close on the right");
+                    let _ = writeln!(out, "hold right until expr $gap_right == 0{stop_right} timeout 300 # {label}: round {round}, close on the right");
                     strike_one(&mut out, label, "right");
-                    let _ = writeln!(out, "hold left until expr $gap_left == 0 timeout 300 # {label}: round {round}, close on the left");
+                    let _ = writeln!(out, "hold left until expr $gap_left == 0{stop_left} timeout 300 # {label}: round {round}, close on the left");
                     strike_one(&mut out, label, "left");
                     if heals {
                         heal(&mut out, label);
@@ -949,6 +964,16 @@ mod tests {
         assert!(toml.contains("i32(HK_PLAYER_X) >= 950272"), "{toml}");
         assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nretreat 1 two\n").unwrap_err().contains("number"));
+    }
+
+    #[test]
+    fn a_bounded_fight_never_closes_past_the_floor() {
+        let toml = compile_text("name t\nat 10 5.39\nfight 2 8.5 14.5\n").unwrap();
+        assert!(toml.contains("i32(HK_PLAYER_X) >= 950272"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) <= 557056"), "{toml}");
+        let plain = compile_text("name t\nat 10 5.39\nfight 2\n").unwrap();
+        assert!(!plain.contains("950272"));
+        assert!(compile_text("name t\nfight 2 8.5\n").unwrap_err().contains("fight"));
     }
 
     #[test]

@@ -14,8 +14,8 @@
 //! Positions are the Knight's origin in world units (a floor at y 2 holds him at 3.39). `--tol` is how near the goal
 //! counts (0.4). `--open` leaves out the edges inside a box: a gate or a breakable wall the walk is meant to find open
 //! (the cooked edges hold every battle gate closed and every breakable standing). `--loose` keeps jumps that only land
-//! from the exact take-off x (the default drops a jump unless a take-off a seventh of a unit either side lands on the same
-//! floor); `--reach` prints how high and far a jump goes at each hold length. The scene's hazards (acid, spikes, from
+//! from the exact take-off x (the default drops a jump unless a take-off 0.3 of a unit either side (`HK_WALKPLAN_MARGIN`) lands on the same
+//! floor, with floor under it); `--reach` prints how high and far a jump goes at each hold length. The scene's hazards (acid, spikes, from
 //! the cooked region list) are never walked or fallen into; `--no-hazards` ignores them.
 //!
 //! Not modelled: enemies, hazards, hard-landing locks (a walk waits for `HK_WALK_READY`), moving platforms, breakables
@@ -59,6 +59,16 @@ thread_local! {
     /// last `clear_touch`. A plan never goes through one: the disc would cost a mask and put him back on a ledge.
     static HAZARDS: std::cell::RefCell<Vec<Edge>> = const { std::cell::RefCell::new(Vec::new()) };
     static TOUCHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// How far (Q16) a take-off may be off its mark and still land on the same floor: `HK_WALKPLAN_MARGIN` in world units
+/// (0.3 of a unit by default; the walk's own positioning is about a tenth to a fifth off on the disc).
+fn margin() -> i32 {
+    static MARGIN: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *MARGIN.get_or_init(|| {
+        let units = std::env::var("HK_WALKPLAN_MARGIN").ok().and_then(|v| v.parse::<f64>().ok());
+        units.map_or(ONE * 3 / 10, |u| (u * f64::from(ONE)).round() as i32)
+    })
 }
 
 fn set_hazards(boxes: Vec<Edge>) {
@@ -257,9 +267,15 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                     if (landed.x - player.x).abs() < ONE / 4 && (landed.y - player.y).abs() < ONE / 8 {
                         continue;
                     }
-                    let steady = !robust || [-ONE / 7, ONE / 7].into_iter().all(|shift| {
+                    let steady = !robust || [-margin(), margin()].into_iter().all(|shift| {
                         let mut early = player;
                         early.x += shift;
+                        // Off the mark there must still be floor under the take-off (a shifted state keeps its
+                        // grounded flag, so settle it one tick first).
+                        step(&mut early, edges, 0, false);
+                        if !early.grounded {
+                            return false;
+                        }
                         simulate_jump(&early, edges, dir, held, steer).is_some_and(|(l, _)| {
                             (l.y - landed.y).abs() < ONE / 3 && (l.x - landed.x).abs() < ONE
                         })
@@ -349,8 +365,10 @@ fn walk_lines(plan: &Plan, edges: &[Edge], start: &Player) -> Vec<String> {
                 // Reversing at the take-off costs a jump its first ticks on the disc: come in moving the way it goes.
                 if dir != 0 {
                     let run = run_up(&plan.nodes[node.parent].player, edges, -dir);
-                    if run > 0.25 {
-                        out.push(format!("walk {:.2}   # run-up", units(from_x) - (run - 0.05) * f64::from(dir)));
+                    // Stop the run-up 0.4 short of the edge or wall: the walk's positioning is a tenth to a fifth
+                    // of a unit off, and a run-up that overshoots the floor walks the Knight off it.
+                    if run > 0.6 {
+                        out.push(format!("walk {:.2}   # run-up", units(from_x) - (run - 0.4) * f64::from(dir)));
                     }
                 }
                 out.push(format!("walk {:.2}   # take-off", units(from_x)));
