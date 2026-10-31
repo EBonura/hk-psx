@@ -648,7 +648,11 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
     let mut report_rooms = Vec::new();
     let carried_in = |shadeless: bool| if shadeless { carried_without_shade } else { carried };
     for (need, index, listed, shadeless) in &table {
-        report_rooms.push(json!({"room":index,"bytes":need,"with_carried":need + carried_in(*shadeless),"modules":listed}));
+        let carried = carried_in(*shadeless);
+        // `spare` is what a room may still take in the pool (a data package, art): the gate's limit
+        // less the room's own modules and the packages it carries (docs/BUDGET.md, "Module pool slack").
+        report_rooms.push(json!({"room":index,"bytes":need,"carried":carried,"with_carried":need + carried,
+            "spare":(limit as i64) - ((need + carried) as i64),"modules":listed}));
     }
     // Largest total first, whatever the room carries.
     table.sort_by_key(|(need, _, _, shadeless)| std::cmp::Reverse(need + carried_in(*shadeless)));

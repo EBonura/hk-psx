@@ -152,6 +152,23 @@ The 2026-10-25 first-scene prefetch (docs/INTRO.md: the first scene's sound bank
 
 The 2026-10-30 headroom pass took 5,824 bytes back, so 8,140 are free below the module pool (2,332 before, on 1a0606e): the CD interrupt's stack went from 2,048 to 256 bytes (`hk_cd_interrupt` reaches `service_irq` and nothing deeper, 24 bytes by the SDK's stack-guard plus the wrapper's 16, and 36 bytes at most in a 0xa5 fill scan after 69 route tapes; `host/hazards.py` `irq_stack_guard` now fails a link whose tree needs more than the stack holds), and the ambience clip prefetch lands its two-sector pieces in the music FIFO's free sectors instead of a 4,096-byte stage buffer of its own (code +72, BSS -4,096 with the stack's -1,792). The FIFO itself, 98,304 bytes, is unchanged.
 The music FIFO went from 48 to 44 sectors (98,304 to 90,112 bytes, 7.8 to 7.2 s) on Manny's call, which took 8,192 bytes of BSS and leaves 14,188 free below the module pool (5,980 before). Measured with the ambience prefetch in the FIFO's free sectors, on the 69 route tapes and the 7 closed-loop routes in the emulator (silicon room-load timing is unmeasured): the lowest fill moved from 20 to 16 sectors (2.6 s) at the False Knight arena gate and from 24 to 18 on the open-loop tapes, with no underruns; 40 sectors would have left 8 sectors (1.3 s) there. The False Knight arena gate loads took 45/46, 46/46 and 22/24 VBlanks at 48/44 sectors; a smaller FIFO sits under the room prefetch's 32-sector comfort threshold more often (one mid-route gate load went from 60 to 96 VBlanks, another route's gates got faster).
+## Module pool slack (2026-10-30)
+
+The module pool (108,544 bytes, the top of the gap below the stack) is sized for the tightest room; every other room leaves most of it idle. A room may put read-only data in that idle part as one of its own packages: an `art_*` package listed in the scene's module list (host/code_modules.py `table`), read with the scene group from the disc and installed by `modules::admit_art`, then read with `modules::data(id)` as a `&'static [u8]`. It stays resident until the next scene admission. The cook counts the package in the room's pool need, and the room gate fails the build when `own + carried` exceeds the pool less its 4 KiB window fence (`host/code_modules.py` and `host/hk-build/module_publish.rs`, which prints a `pool fit:` line for the six tightest rooms).
+
+`build/modules.json` lists every room as `{room, bytes (own), carried, with_carried, spare, modules}`; `spare` is the pool limit (104,448) less `with_carried`, the bytes a room can still take. On 1a0606e plus the headroom pass:
+
+| Room | Own modules | Spare |
+| --- | --- | ---: |
+| 14 Crossroads_10 (False Knight arena) | false_knight, debris | 36,384 |
+| 48 Brooding Mawlek's | mawlek | 45,952 |
+| 10 Gruz Mother's | gruzzer, gruz_mother, fsm3, debris | 26,640 |
+| 21 Husk Guard's | husks, debris | 38,748 |
+| 4 Hornet's | hornet, hornet_art, art_hornet, debris | 6,132 |
+| 9 and 11 Greenpath crawler rooms | enemies, art_grub | 408 and 7,636 |
+
+Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
+
 Static data ends at `0x801d5f94`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
