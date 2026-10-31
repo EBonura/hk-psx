@@ -1,0 +1,39 @@
+name walk-shortcut-save-reload
+title Crossroads_06's Gate Switch survives a bench save, a power cycle and Continue: the pillar and Crossroads_33's sliding wall stay open
+max_ticks 40000
+# Seeded at the right-hand entry of Crossroads_06 (tools/cards/shortcut-06-entry.mcd). The Knight hits the Gate Switch, climbs to the
+# Ancestral Mound (crossroads-06-switch-to-door.walk, planned), sits on its bench and saves, the console is powered off and on,
+# Continue puts him on the bench, and he walks back out of the Mound and down to the pillar. The pillar must be open on the way out
+# of the saved game, and so must the sliding wall on the other side. The item saved is the switch's scene bit (persist::Kind::Breakable).
+card shortcut-06-entry.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include crossroads-06-to-switch.walk
+walk 9.6
+walk 7.8
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
+press square
+wait until HK_BREAK_COUNT ge 1 timeout 120
+wait 30
+include crossroads-06-switch-to-door.walk
+walk 28.4
+press up                                       # into the Ancestral Mound
+hold up until HK_SCENE_LOADS ge 2 timeout 1500
+wait until HK_GAME_MODE == 1 timeout 1800
+include mound-bench.walk
+check saved-with-the-switch HK_SAVE_WRITES >= 1 ; HK_SAVE_ERRORS == 0 ; HK_WORLD_ITEMS >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+include continue-reload.walk
+check reloaded HK_SAVE_LOADED == 1 ; HK_SAVE_ERRORS == 0 ; HK_WORLD_RESTORED >= 1 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+# Out of the Mound at its left (the way he came in) and down the room to the pillar.
+hold left until HK_SCENE_LOADS ge 2 timeout 1800
+wait until HK_GAME_MODE == 1 timeout 1800
+include crossroads-06-door-to-pillar.walk
+hold left until HK_SCENE_LOADS ge 3 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 900
+check arrived-in-33 x between 43.5 45.5 ; HK_REGION_ID == 409
+hold left until x le 40 timeout 600
+check walked-free x le 40 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0

@@ -3,6 +3,7 @@ import json
 import math
 from pathlib import Path
 from source import ROOT
+import world_links
 from actors import scene_actor_bank
 import sys
 sys.path.insert(0, str(ROOT / 'tools'))
@@ -272,7 +273,11 @@ def postpack_remote_art(report, draw_sources=None):
             if off or on or edges:
                 bindings.append({'kind': kind, 'owner_source': source, 'state_index': owner['state_index'],
                                  'off_draws': off, 'on_draws': on, 'edge_indices': edges})
-        region['remote_art_bindings'] = bindings
+        # Switches and the gates they open (host/world_links.py): the lever objects
+        # this view lists and the bindings of every gate or observer it draws or holds.
+        levers, link_bindings = world_links.bindings_for(report, region, sources, edge_sources)
+        region['levers'] = levers
+        region['remote_art_bindings'] = bindings + link_bindings
     report['remote_art_policy'] = {
         'bindings': sum(len(r['remote_art_bindings']) for r in report['regions']),
         'scope': 'Grass and Breakable art and colliders follow the scene-wide state bit into every view that draws or holds them',

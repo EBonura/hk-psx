@@ -26,6 +26,7 @@ REGION_STRIDE, OBJECT_STRIDE, POLYGON_STRIDE, POINT_STRIDE, INDEX_STRIDE = 76, 4
 BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
+LEVER_FLAG = 16  # a switch breakable (host/world_links.py)
 MAX_Q16 = 512 * 65536
 KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21}
 MAX_REVEAL_CONTROLLERS = 16
@@ -236,6 +237,21 @@ def encode_scene(scene, rows):
             for ticks, draws in fades:
                 add_object("mask_fade", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, 0, record["box"],
                            None, (index_list(draws, draw_count, "mask fade draw"), ticks, 0))
+        for record in row.get("levers", []):
+            # A switch (host/world_links.py): a persistent breakable with flag 16, hit by the
+            # nail like any other and drawn by nothing. Its bit lifts the gates it opens, which
+            # are remote-art bindings below.
+            state = bounded(record["state_index"], BREAKABLES_PER_SCENE, "lever state")
+            if stable_breakables.setdefault(state, record["source"]) != record["source"]:
+                raise ValueError("lever state aliases another source object")
+            if not 1 <= len(record["hit_polygons"]) <= 8:
+                raise ValueError("lever hit polygon count outside 1..8")
+            flags = (1 if persistent_object(record) else 0) | LEVER_FLAG
+            add_object("breakable", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, flags,
+                       record["box"], "hit_polygons",
+                       (index_list([], draw_count, "lever off draw"),
+                        index_list([], draw_count, "lever on draw"),
+                        index_list([], edge_count, "lever edge index")))
         for record in secret_rows(row):
             # A hidden wall or cracked floor (host/secret_breaks.py): an ordinary
             # breakable object, so the broken bitmap, the terrain exclusion and
@@ -291,15 +307,19 @@ def encode_scene(scene, rows):
         # art and colliders follow the scene-wide state. One carrier per region
         # spans a u16 stream (header, state, off draws, on draws, edges per
         # entry; see KIND_REMOTE_ART) instead of a 48-byte object per binding.
-        stream = []
+        # One carrier per state base: a binding to a switch of another scene (a wall one
+        # room's lever opens) is a carrier whose state id starts at that scene's range.
+        streams = {}
         for binding in row.get("remote_art_bindings", []):
             grass = binding["kind"] == "grass"
             if not grass and binding["kind"] != "breakable":
                 raise ValueError("remote art binding kind")
             per_scene = GRASS_PER_SCENE if grass else BREAKABLES_PER_SCENE
             state = bounded(binding["state_index"], per_scene, "remote art state")
-            if grass and binding["edge_indices"]:
-                raise ValueError("remote grass binding has no collider")
+            base = binding.get("state_scene", scene["scene_id"])
+            if grass and (binding["edge_indices"] or base != scene["scene_id"]):
+                raise ValueError("remote grass binding has no collider and no other scene")
+            stream = streams.setdefault(base, [])
             lists = [[bounded(v, draw_count, "remote art off draw") for v in binding["off_draws"]],
                      [bounded(v, draw_count, "remote art on draw") for v in binding["on_draws"]],
                      [bounded(v, edge_count, "remote art edge index") for v in binding["edge_indices"]]]
@@ -310,13 +330,13 @@ def encode_scene(scene, rows):
                 stream.append(state)
                 for chunk in part:
                     stream.extend(chunk)
-        if stream:
+        for base, stream in sorted(streams.items()):
             first = len(indices)
             indices.extend(bounded(v, 0x10000, "remote art stream word") for v in stream)
             if first > 0xFFFF or len(stream) > 0xFFFF:
                 raise ValueError("remote art stream exceeds the u16 span")
             add_object("remote_art", {"source": f"remote_art:{row['chunk_id']}"},
-                       scene["scene_id"] * BREAKABLES_PER_SCENE, 0, row["activation_bounds"], None,
+                       base * BREAKABLES_PER_SCENE, 0, row["activation_bounds"], None,
                        (first | len(stream) << 16, 0, 0))
         for record in row.get("grass", []):
             state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")

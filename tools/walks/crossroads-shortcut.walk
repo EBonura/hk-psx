@@ -1,0 +1,32 @@
+name walk-crossroads-shortcut
+title Crossroads_06's Gate Switch opens the pillar from the room side: shut before the hit, open after it, and the sliding wall of Crossroads_33 is gone when the Knight arrives
+max_ticks 12000
+# Boots from a seeded card (tools/cards/shortcut-06-entry.mcd: the arrival from Crossroads_10 at the room's right-hand entry,
+# x 59.5, y 3.4, nothing earned). Proves the room and the switch system (docs/WORLD_LINKS.md), not the journey to it.
+card shortcut-06-entry.mcd
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1: the seeded save
+wait until HK_GAME_MODE == 1 timeout 1200
+include crossroads-06-to-switch.walk           # planned: along the tunnel to the floor east of the switch (x 7.77)
+# The pillar (terrain box x -1.1 to 1.37) holds the left exit shut: he stops at it.
+hold left until x le 1.7 timeout 900
+wait 30
+check pillar-shut x between 1.55 1.8 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+# Back east of the switch, facing left, and the swing.
+walk 9.6
+walk 7.8
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
+press square
+wait until HK_BREAK_COUNT ge 1 timeout 120
+wait 30
+check switch-hit HK_BREAK_COUNT == 1 ; HK_DEATHS == 0
+# The pillar is gone: out through the left exit into Crossroads_33.
+hold left until HK_SCENE_LOADS ge 2 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 900
+check arrived-in-33 x between 43.5 45.5 ; HK_REGION_ID == 409
+# The sliding wall (x 43.4 to 45.4) was solid terrain around his spawn; with the switch's bit set it is not.
+hold left until x le 40 timeout 600
+check walked-free x le 40 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_BREAK_COUNT == 1

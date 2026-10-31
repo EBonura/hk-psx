@@ -47,14 +47,24 @@ def world_banks(output):
         return {'source': f'test:{source}', 'door_state': owner, 'frame': frame, 'origin': [0, 0], 'centroid': [0, 0],
                 'scale': [Q, Q], 'polygon': [[-Q // 2, -Q // 2], [Q // 2, -Q // 2], [Q // 2, Q // 2], [-Q // 2, Q // 2]],
                 'inv_inertia': 6 * Q, 'spin_half': 8, 'random_start': True, 'finishing': False, 'tint': False, 'start_pose': 0}
-    def row(chunk, breakables, pieces=()):
+    # A switch (host/world_links.py): state 2, a square at 400..500, persistent. Its gate is a binding
+    # to the same scene's bit (draw 3, edge 2); a second binding follows scene 3's state 7 (edge 4).
+    lever = {'source': 'test:30', 'name': 'Lever', 'state_index': 2, 'box': [v / Q for v in [400, 0, 500, 100]],
+             'hit_polygons': [[[x / Q, y / Q] for x, y in [[400, 0], [500, 0], [500, 100], [400, 100]]]],
+             'persistence': [{'dont_save': False, 'semi_persistent': False}]}
+    links = [{'kind': 'breakable', 'owner_source': 'test:30', 'state_index': 2, 'state_scene': 0,
+              'off_draws': [3], 'on_draws': [], 'edge_indices': [2]},
+             {'kind': 'breakable', 'owner_source': 'test:31', 'state_index': 7, 'state_scene': 3,
+              'off_draws': [], 'on_draws': [], 'edge_indices': [4]}]
+    def row(chunk, breakables, pieces=(), levers=()):
         bounds = [v / Q for v in [0, 0, 1000, 1000]]
         return {'chunk_id': chunk, 'scene_id': 0, 'activation_bounds': bounds, 'camera_bounds': bounds,
-                'draws': 8, 'edges': 8, 'breakables': breakables, 'door_debris': list(pieces)}
+                'draws': 8, 'edges': 8, 'breakables': breakables, 'door_debris': list(pieces),
+                'levers': list(levers), 'remote_art_bindings': links if levers else []}
     # Pieces 0 (owner 0), 1 and 2 (owner 1); region 1 draws all three, region 2 only piece 1, as another frame.
     pieces = [fragment(7, 0, 3), fragment(8, 1, 4), fragment(9, 1, 5)]
     payload, _ = encode_scene({'scene_id': 0, 'scene_name': 'Fixture', 'file': 'fixture'},
-                              [row(1, [prop(0, triangle, True), prop(1, square, False)], pieces), row(2, [], [dict(pieces[1], frame=9)])])
+                              [row(1, [prop(0, triangle, True), prop(1, square, False)], pieces, [lever]), row(2, [], [dict(pieces[1], frame=9)])])
     (output/'fixture.hkwm').write_bytes(payload)
     return {'HK_TEST_SCENE0_BANK': str(output/'scene0.hkwm'), 'HK_TEST_FIXTURE_BANK': str(output/'fixture.hkwm')}
 

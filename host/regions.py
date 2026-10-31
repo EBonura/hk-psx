@@ -21,6 +21,7 @@ from scene import Scene
 from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks, MAX_REGIONS
+from world_links import postpack_links
 from reveal_masks import postpack_reveal_masks
 from quality import SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from cook import MAX_ROOM_TEXTURES
@@ -940,6 +941,7 @@ def refresh_actors():
     report['total_pack_bytes']=sum(row['bytes'] for row in report['regions'])
     postpack_npc_bank(report,source,scenes)
     postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report,source,scenes)
+    postpack_links(report,source,scenes)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     for row in report['regions']:
@@ -965,7 +967,7 @@ def main():
         write_report(ROOT/'data/regions.json',report);return
     if args.append_actor_bank:
         report=json.loads((ROOT/'data/regions.json').read_text());source=Source()
-        scenes=postpack_actor_bank(report,source);postpack_npc_bank(report,source,scenes);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report,source,scenes);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
+        scenes=postpack_actor_bank(report,source);postpack_npc_bank(report,source,scenes);postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report,source,scenes);postpack_links(report,source,scenes);postpack_masks(report);postpack_reveal_masks(report,source,scenes);write_provenance(report,source)
         write_report(ROOT/'data/regions.json',report);return
     if args.refresh_actors:
         refresh_actors();return
@@ -1031,6 +1033,7 @@ def main():
     postpack_actor_bank(report,source,scenes)
     postpack_npc_bank(report,source,scenes)
     postpack_checkpoints(report,source,scenes);postpack_pogo(report,source,scenes);postpack_camera_locks(report,source,scenes)
+    postpack_links(report,source,scenes)
     postpack_masks(report)
     postpack_reveal_masks(report,source,scenes)
     if report['complete']:

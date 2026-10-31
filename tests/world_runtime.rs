@@ -176,6 +176,36 @@ fn only_owned_edges_disappear() {
     assert_eq!(state.edge(&region(), &room, 1), [0; 4]);
 }
 
+/// A switch (flag 16, host/world_links.py) is struck like a breakable but breaks nothing: it sets
+/// its bit once, flings no debris and plays no break sound, and the edges bound to the bit go,
+/// whether the bit is this scene's or another scene's (FIXTURE_BANK: lever state 2 at 400..500,
+/// bindings to scene 0 state 2 edge 2 and to scene 3 state 7 edge 4).
+#[test]
+fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
+    let bytes = edge_room_bytes(&[[1, 2, 3, 2], [4, 5, 4, 6], [7, 8, 9, 8], [1, 1, 2, 1], [5, 5, 6, 5]]);
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = region();
+    let mut state = State::new();
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 2;
+    let player = Player::spawn(0, 0);
+    let attack = &[[-450, 50], [-445, 50], [-445, 55], [-450, 55]][..];
+    assert_eq!(state.edge(&r, &room, 2), [7, 8, 9, 8]);
+    assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5]);
+    let hit = state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    assert_eq!((hit.broken, hit.door_sounds, hit.last_broken), (1, 0, None));
+    assert!(state.broken(2) && !state.broken(0) && !state.broken(1));
+    assert_eq!(state.edge(&r, &room, 2), [0; 4], "the gate of this scene opens");
+    assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5], "another scene's gate waits for its own bit");
+    assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "once");
+    state.restore_broken(3 * 128 + 7);
+    assert_eq!(state.edge(&r, &room, 4), [0; 4], "a saved bit of scene 3 lifts the binding in scene 0");
+    let mut saved = std::vec::Vec::new();
+    state.for_each_persistent_broken(1, |id| saved.push(id));
+    assert!(saved.contains(&(3 * 128 + 7)));
+}
+
 #[test]
 fn one_pass_edge_fill_matches_per_edge_filter() {
     let mut bytes = vec![0u8; 40 + 16 + 2 * 16 + 32 + 32768];

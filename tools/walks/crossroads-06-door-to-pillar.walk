@@ -1,0 +1,61 @@
+# Crossroads_06 from the Mound's door back down to the floor east of the pillar (x 1.7), planned with hk-walkplan (Crossroads_06 28.4 30.39 1.7 3.39 --tol 0.6).
+at 28.40 30.39
+walk 29.18   # run-up
+walk 28.40   # take-off
+hold left+cross for 20
+hold left for 27
+wait until y between 30.24 30.54 timeout 240   # land at x 21.90
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 22.68   # run-up
+walk 21.90   # take-off
+hold left+cross for 28
+hold left for 29
+wait until y between 30.24 30.54 timeout 240   # land at x 14.01
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 14.79   # run-up
+walk 14.01   # take-off
+hold left+cross for 16
+hold left for 24
+wait until y between 12.24 12.54 timeout 240   # land at x 8.48
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 10.97
+walk 10.19   # run-up
+walk 10.97   # take-off
+hold right+cross for 12
+hold right for 19
+wait until y between 12.24 12.54 timeout 240   # land at x 15.26
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 14.48   # run-up
+walk 15.26   # take-off
+hold right+cross for 12
+hold right for 20
+wait until y between 4.24 4.54 timeout 240   # land at x 19.69
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 19.41
+walk 20.19   # run-up
+walk 19.41   # take-off
+hold left+cross for 12
+hold left for 21
+wait until y between 3.24 3.54 timeout 240   # land at x 14.84
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 15.62   # run-up
+walk 14.84   # take-off
+hold left+cross for 24
+hold left for 26
+wait until y between 3.24 3.54 timeout 240   # land at x 7.93
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 8.71   # run-up
+walk 7.93   # take-off
+hold left+cross for 16
+hold left for 23
+wait until y between 3.24 3.54 timeout 240   # land at x 2.53
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 2.26

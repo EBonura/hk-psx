@@ -1,0 +1,28 @@
+name walk-fungus1-22-gate
+title Fungus1_22's Gate Switch opens the Metal Gate: the Knight stands on it before the hit and falls through it after
+max_ticks 9000
+# Boots from a seeded card (tools/cards/greenpath-22-switch.mcd: on the upper floor east of the gate, x 31.5, y 13.39).
+# The hornet-road tape starts from the lower side of this gate, because the lower hall is sealed until the switch is hit.
+card greenpath-22-switch.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+at 31.5 13.39
+# The Metal Gate (terrain box x 21.3 to 26.3, y 10.5 to 11.1) is shut: he walks out onto it and stands.
+hold left until x le 24.0 timeout 600
+wait 40
+check gate-shut x between 23.5 24.5 ; y between 11.9 12.4 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+# Back to the switch (trigger box x 29.2 to 31.3), facing left, and the swing.
+walk 32.4
+walk 31.4
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
+press square
+wait until HK_BREAK_COUNT ge 1 timeout 120
+wait 30
+check switch-hit HK_BREAK_COUNT == 1 ; HK_DEATHS == 0
+# The gate is gone: the same walk now drops through the opening into the hall below.
+hold left until y le 10.3 timeout 900
+wait 90
+check fell-through y lt 10.3 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_BREAK_COUNT == 1
