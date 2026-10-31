@@ -71,6 +71,26 @@ fn margin() -> i32 {
     })
 }
 
+thread_local! {
+    /// A gate's trigger box (Q16): a state whose body overlaps it has reached the goal, whatever the goal point says.
+    /// A vertical exit is taken by touching the box from below or above, not by standing at its middle.
+    static GOAL_BOX: std::cell::Cell<Option<Edge>> = const { std::cell::Cell::new(None) };
+}
+
+fn set_goal_box(bounds: Option<[f64; 4]>) {
+    let q = |v: f64| (v * f64::from(ONE)).round() as i32;
+    GOAL_BOX.with(|g| g.set(bounds.map(|b| [q(b[0]), q(b[1]), q(b[2]), q(b[3])])));
+}
+
+fn in_goal_box(player: &Player) -> bool {
+    GOAL_BOX.with(|g| {
+        g.get().is_some_and(|b| {
+            let body = [player.x - PARAMS.half_width, player.y + PARAMS.bottom, player.x + PARAMS.half_width, player.y + PARAMS.top];
+            player.grounded && body[0] < b[2] && body[2] > b[0] && body[1] < b[3] && body[3] > b[1]
+        })
+    })
+}
+
 fn set_hazards(boxes: Vec<Edge>) {
     HAZARDS.with(|h| *h.borrow_mut() = boxes);
 }
@@ -222,7 +242,7 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
             continue;
         }
         let player = nodes[index].player;
-        if (units(player.x) - goal.0).abs() <= tolerance && (units(player.y) - goal.1).abs() <= 0.35 {
+        if in_goal_box(&player) || (units(player.x) - goal.0).abs() <= tolerance && (units(player.y) - goal.1).abs() <= 0.35 {
             return Some(Plan { nodes, goal: index, expanded });
         }
         expanded += 1;

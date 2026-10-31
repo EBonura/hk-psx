@@ -1,0 +1,18 @@
+name walk-greenpath-west
+title the Elder Baldur killed from the seeded card east of him (SOUL 0, no cheat), then out west through Crossroads_11_alt, Fungus1_01, 01b and 02 to the arrival in Fungus1_06
+max_ticks 60000
+# Fungus1_06 is where the planner stops (its way on needs hk-world's vine drop). The fight is walk-baldur-spell's; the rooms after it are fragments planned with hk-walkplan room and chain here, so the masks and SOUL the fight left carry on.
+card crossroads-11-alt-east.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include baldur-defs.walk
+include crossroads-11-alt.walk
+include baldur-round.walk times 220
+include crossroads-11-alt-west.walk
+include fungus1-01.walk
+include fungus1-01b.walk
+include fungus1-02.walk
+check in-06 x between 0 3 ; y between 14 19 ; HK_ENEMY_KILLS >= 1 ; HK_ROLLERS_KILLED >= 3 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1

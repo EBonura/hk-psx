@@ -1,0 +1,16 @@
+name walk-greenpath-east
+title from the seeded card at the top of Fungus1_07 (arrival from Fungus1_06) through 07, 19, 10 and 30 to the arrival at the bottom of Fungus1_22 (no cheat)
+max_ticks 40000
+# fungus1-07-top.mcd is a seeded record (docs/ROUTES.md) at the gate Fungus1_06 leads into 07 by (x 36, y 62). The rooms are fragments planned with
+# hk-walkplan room and chain here, so masks and SOUL carry from one to the next.
+card fungus1-07-top.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-07.walk
+include fungus1-19.walk
+include fungus1-10.walk
+include fungus1-30.walk
+check in-22 x between 24 31 ; y between 0 8 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1

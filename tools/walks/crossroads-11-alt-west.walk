@@ -1,0 +1,244 @@
+# Planned and played with hk-walkplan room (tools/walkplan/src/room.rs): one hop at a time over the room's collision, fights between hops, a probe after each.
+at 82.30 11.39
+walk 79.26
+walk 79.69   # run-up
+walk 79.26   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 66.34 94.24
+snipe
+guard 2
+retreat 66.34 94.24
+heal
+walk 74.28
+walk 74.71   # run-up
+walk 74.28   # take-off
+hold left+cross for 12
+hold left for 19
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 66.34 94.25
+snipe
+guard 2
+retreat 66.34 94.25
+heal
+walk 70.42   # run-up
+walk 69.99   # take-off
+hold left+cross for 12
+hold left for 16
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 66.12 94.25
+snipe
+guard 2
+retreat 66.12 94.25
+heal
+walk 65.84
+drop 62.80 8.25
+fight 4 62.61 63.41
+snipe
+guard 2
+retreat 62.61 63.41
+heal
+walk 63.23   # run-up
+walk 62.80   # take-off
+hold left+cross for 20
+hold left for 20
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 55.27 58.42
+snipe
+guard 2
+retreat 55.27 58.42
+heal
+walk 57.69   # run-up
+walk 57.26   # take-off
+hold left+cross for 24
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 51.54 53.31
+snipe
+guard 2
+retreat 51.54 53.31
+heal
+walk 52.44   # run-up
+walk 52.01   # take-off
+hold left+cross for 34
+hold left for 17
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 41.30 46.66
+snipe
+guard 2
+retreat 41.30 46.66
+heal
+walk 45.38   # run-up
+walk 44.95   # take-off
+hold left+cross for 5
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 41.31 46.67
+snipe
+guard 2
+retreat 41.31 46.67
+heal
+walk 41.50
+walk 41.93   # run-up
+walk 41.50   # take-off
+hold left+cross for 34
+hold left for 58
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 27.89 31.04
+snipe
+guard 2
+retreat 27.89 31.04
+heal
+walk 27.94
+walk 28.37   # run-up
+walk 27.94   # take-off
+hold left+cross for 12
+hold left for 24
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 20.28 24.67
+snipe
+guard 2
+retreat 20.28 24.67
+heal
+walk 23.39   # run-up
+walk 22.96   # take-off
+hold left+cross for 28
+hold left for 29
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 3.75 16.65
+snipe
+guard 2
+retreat 3.75 16.65
+heal
+walk 15.51   # run-up
+walk 15.08   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 3.75 16.65
+snipe
+guard 2
+retreat 3.75 16.65
+heal
+walk 10.10
+walk 10.53   # run-up
+walk 10.10   # take-off
+hold left+cross for 8
+hold left for 12
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 3.75 16.65
+snipe
+guard 2
+retreat 3.75 16.65
+heal
+walk 7.05
+walk 7.48   # run-up
+walk 7.05   # take-off
+hold left+cross for 5
+hold left for 13
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 3.75 16.65
+snipe
+guard 2
+retreat 3.75 16.65
+heal
+walk 4.99   # run-up
+walk 4.56   # take-off
+hold left+cross for 5
+hold left for 7
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 1.75 2.90
+snipe
+guard 2
+retreat 1.75 2.90
+heal
+walk 2.47   # run-up
+walk 2.90   # take-off
+hold right+cross for 16
+hold right for 3
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 5.16 8.25
+snipe
+guard 2
+retreat 5.16 8.25
+heal
+walk 5.99
+walk 5.56   # run-up
+walk 5.99   # take-off
+hold right+cross for 16
+hold right for 9
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 9.26 14.25
+snipe
+guard 2
+retreat 9.26 14.25
+heal
+walk 9.16   # run-up
+walk 9.45   # take-off
+hold right+cross for 5
+hold right for 8
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 9.26 14.25
+snipe
+guard 2
+retreat 9.26 14.25
+heal
+walk 10.82   # run-up
+walk 11.25   # take-off
+hold right+cross for 5
+hold right for 8
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 9.26 14.25
+snipe
+guard 2
+retreat 9.26 14.25
+heal
+walk 13.48   # run-up
+walk 13.05   # take-off
+hold left+cross for 16
+hold left for 3
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.31 11.84
+snipe
+guard 2
+retreat 0.31 11.84
+heal
+walk 11.56
+walk 11.56   # take-off
+hold left+cross for 20
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 11.61
+snipe
+guard 2
+retreat 0.30 11.61
+heal
+walk 5.49   # run-up
+walk 5.06   # take-off
+hold left+cross for 12
+hold left for 16
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+hold left until expr abs(i32(HK_PLAYER_X) - 11108352) <= 327680 && abs(i32(HK_PLAYER_Y) - 550543) <= 196608 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -30,7 +30,8 @@ use std::process::Command;
 use hk_sim::ONE;
 
 use crate::{
-    floor_span, load_edges, load_hazards, search, set_hazards, standing, walk_lines, Edge,
+    floor_span, load_edges, load_hazards, search, set_goal_box, set_hazards, standing, walk_lines,
+    Edge,
 };
 
 /// A hop that ends this far (world units) from where its plan said counts as landed as planned.
@@ -411,7 +412,6 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "wait 40".to_string(),
         "press cross".to_string(),
         "wait until HK_GAME_MODE == 1 timeout 1200".to_string(),
-        "wait until HK_WALK_READY == 1 timeout 900".to_string(),
     ];
     let pre: Vec<String> = match &o.pre {
         Some(file) => std::fs::read_to_string(file)
@@ -431,7 +431,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
         q(*spawn.first().ok_or("exit gate without a spawn")?),
         5 * ONE,
         q(*spawn.get(1).ok_or("exit gate without a spawn")?),
-        3 * ONE
+        // A gate above or below drops the Knight to a floor a few units from the spawn point.
+        if side == 3 || side == 4 {
+            6 * ONE
+        } else {
+            3 * ONE
+        }
     );
     let tail = o.tail.clone().unwrap_or_else(|| match side {
         1 => vec![format!("hold left until {reached} timeout 900")],
@@ -446,6 +451,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         ])
         .collect();
 
+    // A vertical exit (up or down) is taken by touching its trigger box.
+    set_goal_box((side == 3 || side == 4).then(|| [bounds[0], bounds[1], bounds[2], bounds[3]]));
     let edges: Vec<Edge> = load_edges(&root, &o.scene, &o.open)?;
     set_hazards(load_hazards(&root, &o.scene)?);
     let script_path = root.join("tools/walks").join(format!("{name}.walk"));
@@ -454,43 +461,49 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut expect: Vec<Option<(f64, Option<f64>)>> = Vec::new();
     let (mut cx, mut cy) = (sx, sy);
     let mut done = false;
+    // Where the room starts, and whether a hop has already taken the exit (a vertical exit is taken by touching its
+    // trigger, which can come before the planned goal).
+    body.push("probe start x y HK_HEALTH HK_REGION_ID HK_SCENE_LOADS HK_DEATHS".to_string());
+    let mut exited = false;
     for round in 1..=o.max_hops {
         // Plan the rest of the room from where the Knight really is, and play all of it: hops that land as planned
         // cost nothing more than their own ticks, the first that does not stops the round and the next plan starts
         // from where it ended.
-        let start = standing(&edges, cx, cy)?;
-        let Some(plan) = search(&edges, start, (gx, gy), o.tolerance, true) else {
-            eprintln!("no plan from ({cx:.2}, {cy:.2})");
-            break;
-        };
-        let mut rest: Vec<String> = walk_lines(&plan, &edges, &start)
-            .into_iter()
-            .filter(|l| !l.starts_with("at "))
-            .collect();
         let first_new = expect.len();
-        let mut finished;
-        loop {
-            let (hop, exp, last, used) = first_hop(&rest);
-            rest.drain(..used);
-            let k = expect.len() + 1;
-            body.extend(hop.iter().map(|l| l.replace("timeout 240", "timeout 400")));
-            body.push(format!(
-                "probe p{k:03} x y HK_HEALTH HK_REGION_ID HK_SCENE_LOADS HK_DEATHS"
-            ));
-            if !last {
-                // `{LO}` and `{HI}`: the floor under the Knight where the hop should land (a retreat stays on it).
-                let (ex, ey) = exp.map_or((cx, cy), |(x, y)| (x, y.unwrap_or(cy)));
-                let (lo, hi) = floor_span(&edges, ex, ey).unwrap_or((ex - 1.0, ex + 1.0));
-                body.extend(o.between.iter().map(|l| {
-                    l.replace("{LO}", &format!("{lo:.2}"))
-                        .replace("{HI}", &format!("{hi:.2}"))
-                }));
-            }
-            expect.push(exp);
-            ends.push(body.len());
-            finished = last;
-            if last || rest.is_empty() {
+        let mut finished = exited;
+        if !exited {
+            let start = standing(&edges, cx, cy)?;
+            let Some(plan) = search(&edges, start, (gx, gy), o.tolerance, true) else {
+                eprintln!("no plan from ({cx:.2}, {cy:.2})");
                 break;
+            };
+            let mut rest: Vec<String> = walk_lines(&plan, &edges, &start)
+                .into_iter()
+                .filter(|l| !l.starts_with("at "))
+                .collect();
+            loop {
+                let (hop, exp, last, used) = first_hop(&rest);
+                rest.drain(..used);
+                let k = expect.len() + 1;
+                body.extend(hop.iter().map(|l| l.replace("timeout 240", "timeout 400")));
+                body.push(format!(
+                    "probe p{k:03} x y HK_HEALTH HK_REGION_ID HK_SCENE_LOADS HK_DEATHS"
+                ));
+                if !last {
+                    // `{LO}` and `{HI}`: the floor under the Knight where the hop should land (a retreat stays on it).
+                    let (ex, ey) = exp.map_or((cx, cy), |(x, y)| (x, y.unwrap_or(cy)));
+                    let (lo, hi) = floor_span(&edges, ex, ey).unwrap_or((ex - 1.0, ex + 1.0));
+                    body.extend(o.between.iter().map(|l| {
+                        l.replace("{LO}", &format!("{lo:.2}"))
+                            .replace("{HI}", &format!("{hi:.2}"))
+                    }));
+                }
+                expect.push(exp);
+                ends.push(body.len());
+                finished = last;
+                if last || rest.is_empty() {
+                    break;
+                }
             }
         }
         // The fragment: this room from its arrival to its exit (what a chain includes); the walk is a card start plus it.
@@ -526,6 +539,23 @@ pub fn run(args: &[String]) -> Result<(), String> {
             .filter(|(n, _)| n.starts_with('p'))
             .filter_map(|(_, w)| probe_of(w))
             .collect();
+        if exited {
+            done = all
+                .iter()
+                .any(|(n, w)| n == "end" && probe_of(w).is_some_and(|p| p.deaths == 0));
+            eprintln!(
+                "{}",
+                all.iter()
+                    .find(|(n, _)| n == "end")
+                    .map_or("no end probe".to_string(), |(_, w)| format!("end {w:?}"))
+            );
+            break;
+        }
+        let base_loads = all
+            .iter()
+            .find(|(n, _)| n == "start")
+            .and_then(|(_, w)| probe_of(w))
+            .map(|p| p.loads);
         let mut stopped = false;
         for j in first_new..expect.len() {
             let Some(read) = reads.get(j) else {
@@ -560,6 +590,16 @@ pub fn run(args: &[String]) -> Result<(), String> {
             );
             if read.health <= 0 || read.deaths > 0 {
                 eprintln!("dead");
+                break;
+            }
+            if base_loads.is_some_and(|b| read.loads > b) {
+                // This hop took the exit (a scene load came with it): the room is done, play the tail once to prove it.
+                eprintln!("hop {} took the exit", j + 1);
+                body.truncate(ends[j]);
+                ends.truncate(j + 1);
+                expect.truncate(j + 1);
+                exited = true;
+                stopped = true;
                 break;
             }
             if !ok {
