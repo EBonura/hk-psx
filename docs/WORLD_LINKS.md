@@ -37,6 +37,14 @@ A `VinePlatform` (Greenpath, 7 in Fungus1_06 alone) hangs from a vine. A nail hi
 
 `BG Control` gates are selected by FSM, not layer. Fungus1_21's `Battle Gate Bone` is on the Soft Terrain layer (25) and now bakes as a gate; because its `Battle Control` is not run by the port nothing would ever open it, so a Soft Terrain gate loads open (`battle_gates.survey`). `tools/arena_gate_census.py` prints every gate in the source and the verdict of the cook: 82 gates, 58 accepted (the family and the Bone variant, which differ only in tk2d clips), 24 refused (Deepnest 9, Archives 6, Ruins 4, Outskirts 2, Hive 2: FSM variants starting in `Init`, each needs its own recognizer; Abyss_19: a gate whose collider is not solid).
 
+## Scenery packet budget (what the second landing hit)
+
+Art for a linked object (the gate, the switch, a vine platform) is new draws in its view, and a view has a fixed packet reservation: `CAP` 1,032 less `ACTOR_RESERVE` 264 leaves 768 for scenery. The tk2d sprite objects were not drawn anywhere before (nothing is baked twice: Fungus1_22's view 947 had no draw of the Metal Gate or the Gate Switch), and the two draws took that view from 767 to 769.
+
+The reservation used to count every cell of every draw's grid. The renderer (`game/src/scenery_geometry.rs`) drops each cell wholly off the 320x240 screen, so `host/scenery_geometry.py` now also bounds the cells a screen window can touch for an axis-aligned quad (`Packets.on_screen`; the 4,000 px background fogs fall from 64 packets to 6, a slanted layer keeps its whole grid). `mandatory_packets` sums the on-screen bound; `grid=True` gives the old figure. View 947 totals 653. A view that only fits by that bound keeps the limit in the budget table (`SCENERY_PACKET_BUDGETS`), so the renderer's optional-scissor allowance is 0 there and every other view's table value, and rendering, is unchanged. `tests/test_scenery_geometry.py` checks the bound against a port of the renderer's cell loop at random camera offsets.
+
+The cook totals each view as it cooks (`regions.py`, workers included), prints `PACKETS region ...` for views within 64 packets of the limit and fails on the first one over; `generate()` prints the twelve tightest views in every build log.
+
 ## Adding a room
 
 Nothing to author. Add the scene to the cooked catalogue, recook, and read `report['link_policy']` in `data/regions.json`:
