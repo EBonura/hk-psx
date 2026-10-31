@@ -54,6 +54,7 @@ pub const FX_FK_FIRE: i64 = FX_OWNER | 0x42;
 /// burst when the body opens.
 pub const FX_BOSS_BLEED: i64 = FX_OWNER | 0x43;
 pub const FX_BOSS_BURST: i64 = FX_OWNER | 0x44;
+pub const FX_BOSS_HIT: i64 = FX_OWNER | 0x45;
 /// Crossroads_10, the False Knight's arena (host/quality.py `scene_id`).
 pub const FK_SCENE_ID: i64 = 11;
 
@@ -921,6 +922,9 @@ struct Layer {
     gravity_scale: f64,
     /// World units above the boss's feet the layer starts at.
     lift: f64,
+    /// World units of length each side per unit of speed (0: a square quad), and whether it draws over the Knight.
+    stretch: f64,
+    front: bool,
 }
 /// What a boss looks like dying, as data: `bleed` is raised every twelve ticks of the death's long
 /// state (`Steam` for the False Knight) and `burst` once when the body opens (`Blow`). A later boss
@@ -931,6 +935,8 @@ struct BossLook {
     name: &'static str,
     bleed: &'static [Layer],
     burst: &'static [Layer],
+    /// The nail landing on the boss: raised at the contact point, so `lift` is 0.
+    hit: &'static [Layer],
 }
 /// hkref's death frames (the 10-30 run): the armour does not steam white, it bleeds orange. `Steam`
 /// sprays soft blobs and droplets up out of it, `Blow` opens it in one burst of the same, thicker.
@@ -950,6 +956,8 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
             tint: [195.0, 78.0, 26.0],
             gravity_scale: 0.4,
             lift: 2.0,
+            stretch: 0.0,
+            front: false,
         },
         Layer {
             count: 6,
@@ -963,6 +971,8 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
             tint: [195.0, 78.0, 26.0],
             gravity_scale: 0.4,
             lift: 2.0,
+            stretch: 0.0,
+            front: false,
         },
     ],
     burst: &[
@@ -978,6 +988,8 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
             tint: [195.0, 76.0, 26.0],
             gravity_scale: 0.6,
             lift: 2.2,
+            stretch: 0.0,
+            front: false,
         },
         Layer {
             count: 28,
@@ -991,6 +1003,41 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
             tint: [195.0, 76.0, 26.0],
             gravity_scale: 0.6,
             lift: 2.2,
+            stretch: 0.0,
+            front: false,
+        },
+    ],
+    // hkref: a white core and a spray of long thin white streaks from the nail's centre, for about ten ticks.
+    hit: &[
+        Layer {
+            count: 1,
+            size: [1.6, 1.6],
+            cell: 2.2,
+            speed: [0.0, 0.0],
+            angle: [0.0, 360.0],
+            life: [4, 4],
+            spread: [0.0, 0.0],
+            alpha: 0.9,
+            tint: [235.0, 240.0, 255.0],
+            gravity_scale: 0.0,
+            lift: 0.0,
+            stretch: 0.0,
+            front: true,
+        },
+        Layer {
+            count: 8,
+            size: [0.22, 0.3],
+            cell: 2.2,
+            speed: [14.0, 26.0],
+            angle: [0.0, 360.0],
+            life: [8, 12],
+            spread: [0.3, 0.3],
+            alpha: 1.0,
+            tint: [250.0, 245.0, 255.0],
+            gravity_scale: 0.0,
+            lift: 0.0,
+            stretch: 0.12,
+            front: true,
         },
     ],
 };
@@ -998,6 +1045,7 @@ fn push_boss_look(c: &mut Collected, scene_id: i64, gravity: f64, look: &BossLoo
     for (owner, layers, what) in [
         (FX_BOSS_BLEED, look.bleed, "bleeding"),
         (FX_BOSS_BURST, look.burst, "death burst"),
+        (FX_BOSS_HIT, look.hit, "hit flare"),
     ] {
         for l in layers {
             push_glow(
@@ -1016,6 +1064,8 @@ fn push_boss_look(c: &mut Collected, scene_id: i64, gravity: f64, look: &BossLoo
                     hold: 0.5,
                     tint: l.tint,
                     gravity_scale: l.gravity_scale,
+                    stretch: l.stretch,
+                    front: l.front,
                     ..Glow::new("disc")
                 },
                 gravity,

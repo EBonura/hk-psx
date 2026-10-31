@@ -24,6 +24,7 @@ pub const FK_FIRE: usize = 0xD042;
 /// Every boss's death (game/src/boss_fx.rs): each boss scene cooks its own emitters under these two.
 pub const BOSS_BLEED: usize = 0xD043;
 pub const BOSS_BURST: usize = 0xD044;
+pub const BOSS_HIT: usize = 0xD045;
 
 /// Raise `owner`'s emitters, moved by `at` (world, Q16).
 #[cfg(not(test))]

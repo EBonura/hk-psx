@@ -717,9 +717,22 @@ const FLASH_TICKS: u8 = hk_sim::components::FLASH_TICKS;
 /// The flash colour times its amount, as a GPU modulation of a white texel
 /// (128 is 1.0): 0.9 * (1, 0.31, 0).
 const FLASH_TINT: (u32, u32, u32) = (115, 36, 0);
+/// The flash `left` ticks from its end, marked white (`FLASH_WHITE`) for the False Knight's draws.
+const fn white(left: u8) -> u8 {
+    if left == 0 {
+        0
+    } else {
+        left | FLASH_WHITE
+    }
+}
+/// Set on a flash that is white, not the infected orange: hkref's False Knight whites out when the nail lands.
+const FLASH_WHITE: u8 = 0x80;
 pub(crate) fn flash_tint(left: u8) -> (u8, u8, u8) {
-    let k = (left as u32).min(FLASH_TICKS as u32);
+    let k = ((left & !FLASH_WHITE) as u32).min(FLASH_TICKS as u32);
     let s = |c: u32| (c * k / FLASH_TICKS as u32) as u8;
+    if left & FLASH_WHITE != 0 {
+        return (s(120), s(120), s(120));
+    }
     (s(FLASH_TINT.0), s(FLASH_TINT.1), s(FLASH_TINT.2))
 }
 /// Quads the enemy pass may submit. Larger than `MAX_VISIBLE` because a part
@@ -6313,6 +6326,10 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                        // The nail's centre is where hkref's streaks start (`boss_fx::HIT`).
+                        let n = polygon.len() as i32;
+                        let at = polygon.iter().fold([0, 0], |a, p| [a[0] + p[0] / n, a[1] + p[1] / n]);
+                        crate::boss_fx::request(crate::boss_fx::HIT, at[0], at[1], actor.scene);
                     }
                 }
                 if reached {
@@ -7470,7 +7487,7 @@ fn draw_false_knight(
         position,
         facing,
         camera,
-        actor.health.flash,
+        white(actor.health.flash),
         0,
     );
     if let Some(sprite) = boss.head_sprite() {
@@ -7482,7 +7499,7 @@ fn draw_false_knight(
             position,
             facing,
             camera,
-            actor.health.flash,
+            white(actor.health.flash),
             0,
         );
     }

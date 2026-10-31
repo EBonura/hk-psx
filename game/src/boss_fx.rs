@@ -11,6 +11,8 @@
 pub const BLEED: i32 = 1;
 /// The body opening: raised once.
 pub const BURST: i32 = 2;
+/// The nail landing on the boss: a white core and thin streaks at the contact point.
+pub const HIT: i32 = 3;
 
 /// (kind, x, y, scene) of this tick's request, 0 for none. Four words the actor loop writes without a call.
 static mut REQUEST: [i32; 4] = [0; 4];

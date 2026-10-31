@@ -244,7 +244,11 @@ fn raise_fk_dust() {
     /// The arena floor's y, world units (the Knight stands at 27.45 and is a unit tall).
     const FLOOR_Y: i32 = 27 * 65536 + 13_000;
     if let Some((kind, at, scene)) = crate::boss_fx::take() {
-        let owner = if kind == crate::boss_fx::BLEED { fx::BOSS_BLEED } else { fx::BOSS_BURST };
+        let owner = match kind {
+            crate::boss_fx::BLEED => fx::BOSS_BLEED,
+            crate::boss_fx::BURST => fx::BOSS_BURST,
+            _ => fx::BOSS_HIT,
+        };
         fx::raise(scene, owner, at);
     }
     let Some((scene, x, kind)) = crate::enemies::take_fk_dust() else {

@@ -501,6 +501,7 @@ mod boss_effects {
 mod boss_fx {
     pub const BLEED: i32 = 1;
     pub const BURST: i32 = 2;
+    pub const HIT: i32 = 3;
     pub fn request(_: i32, _: i32, _: i32, _: usize) {}
 }
 mod camera {
