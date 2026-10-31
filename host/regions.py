@@ -752,13 +752,13 @@ def postpack_art_bank(report, source, sc, info, entry, bank_actors, bank_views, 
     if 1 in views:raise ValueError('an actor bank cannot ride view 1: data/room.hk is a copy of it')
     unknown=views-{row['chunk_id'] for row in scene_rows}
     if unknown:raise ValueError(f'{name}: actor bank views {sorted(unknown)} are not views of the scene')
-    slices=actor_bank.cook(source,sc,name,entry,bank_actors)
+    bank=actor_bank.cook(source,sc,name,entry,bank_actors)
     first_clip=len(clips)
-    for actor in bank_actors:actor_bank.bind(source,sc,actor,slices,first_clip)
+    for actor in bank_actors:actor_bank.bind(source,sc,actor,bank,first_clip)
     for row in scene_rows:
         if row['chunk_id'] not in views:continue
         path=ROOT/row['path'];before=path.read_bytes()
-        pack,carriers,nc=actor_bank.append_to_pack(before,slices,clip_base,f'Actor bank {name}')
+        pack,carriers,nc=actor_bank.append_to_pack(before,bank,f'Actor bank {name}')
         if nc!=clip_base+len(clips):raise ValueError(f'view {row["chunk_id"]} has {nc} clips, not the scene\'s {clip_base+len(clips)}')
         path.write_bytes(pack)
         nt=struct.unpack_from('<6I',pack,8)[1]
@@ -770,7 +770,7 @@ def postpack_art_bank(report, source, sc, info, entry, bank_actors, bank_views, 
         if row_over_budget(row):raise ValueError(f'view {row["chunk_id"]} of {name} exceeds its budget with the actor bank')
         row['actors']=[a for a in row['actors'] if a['source'] not in listed]+[remap_actor_clips(a,clip_base) for a in bank_actors]
     print(f'Actor art bank {name}: {len(bank_actors)} actors, {len(views)} views, '
-          f'{sum(s["bytes"] for s in slices)} bytes in {len(slices)} slices',flush=True)
+          f'{bank["bytes"]} bytes ({bank["package_bytes"]} in the package)',flush=True)
 
 
 def postpack_actor_bank(report, source, scenes=None):

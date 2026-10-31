@@ -102,13 +102,13 @@ def module_tables():
         for tree in ('hornet3','hornet_corpse3'):
             data=(ROOT/'data'/f'{tree}.hkf3').read_bytes();blob+=data+bytes(-len(data)%4)
         art['art_hornet']=bytes(blob)
-    # Compact actor art banks: the first slice of each is its scene's data package, the rest is linked (data/actor_banks.rs).
+    # Compact actor art banks: the head of each bank is its scene's data package, the rest is linked (data/actor_banks.rs).
     import actor_bank
     from quality import SCENE_TABLE
     scene_ids={s['scene_name']:s['scene_id'] for s in SCENE_TABLE}
     manifest={r['scene_id']:i for i,r in enumerate(packed['scenes'])}
     for package,scene in actor_bank.packages().items():
-        art[package]=(ROOT/'data/actor_bank'/scene/'slice0.bin').read_bytes()
+        art[package]=(ROOT/'data/actor_bank'/scene/'package.bin').read_bytes()
     actor_bank.write_tables(lambda scene:manifest[scene_ids[scene]])
     for name,text in (('modules.rs',code_modules.manifest_rust(packed,regions_rs,props_rs)),('props_art.rs',art_rs)):
         if not (ROOT/'data'/name).is_file() or (ROOT/'data'/name).read_text()!=text:(ROOT/'data'/name).write_text(text)
