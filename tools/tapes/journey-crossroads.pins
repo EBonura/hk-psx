@@ -1,6 +1,6 @@
 pacing = 1816
 frame_time = 257
-long_frames = 40
+long_frames = 43
 journey = 2
 # Re-pinned 2026-10-30 (reward prompt commit): the open-loop count moved by one with a 176 byte code change (secret-c04 28 over 2 vblanks, 27 before; journey-crossroads 38 frames of 5+ vblanks, 37 before); frame time and the closed-loop journeys are unchanged.
 # Re-pinned 2026-10-31 (boss death effects, +256 bytes of code): frames of 5+ vblanks 36 on main bada89f, 39 here (the open-loop count moves with layout, as before); frame time 207 to 208 of 4,300 frames and 468 frames over 2 vblanks on both. The route does not reach a boss death.
