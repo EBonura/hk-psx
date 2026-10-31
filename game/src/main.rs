@@ -444,51 +444,16 @@ pub static mut HK_CRAWLER_Y: i32 = 0;
 pub static mut HK_CRAWLER_HP: i32 = 0;
 #[no_mangle]
 pub static mut HK_ENEMY_HITS: u32 = 0;
-/// The walker's senses (`EnemyWorld::foe_senses`), Q16 world units: how far past a nail swing's reach the nearest
-/// foe in the Knight's height band stands on his left and right (0: none, or one in reach), and the live actors
-/// in the scene. Read-only; a walk script holds towards a foe until its gap is 0 (docs/ROUTES.md, Walks).
-#[no_mangle]
-pub static mut HK_FOE_GAP_LEFT: i32 = 0;
-#[no_mangle]
-pub static mut HK_FOE_GAP_RIGHT: i32 = 0;
-#[no_mangle]
-pub static mut HK_FOE_LIVE: u32 = 0;
-/// Where the False Knight stands from the Knight (Q16, `i32::MAX` with no live boss) and what he is doing
-/// (`enemies::fk_phase_code`).
-#[no_mangle]
-pub static mut HK_FK_DX: i32 = i32::MAX;
-/// What a walk script holds a button for until it reads zero, so that a reaction costs no time when there is
-/// nothing to react to: a foe inside the swing's box on that side with the nail ready; the nail mid-swing or
-/// cooling down; Focus wanted (masks missing, SOUL for a heal or Focus under way, standing, no foe close).
-#[no_mangle]
-pub static mut HK_WALK_STRIKE_LEFT: u32 = 0;
-#[no_mangle]
-pub static mut HK_WALK_STRIKE_RIGHT: u32 = 0;
-#[no_mangle]
-pub static mut HK_WALK_STRIKE_UP: u32 = 0;
+/// 1 while the nail cannot start a swing (mid-swing or cooling down, the Knight in a hit's recoil or freeze or a hard
+/// landing: a press held through those is never seen as a new one). The walk expressions derive the rest.
 #[no_mangle]
 pub static mut HK_NAIL_BUSY: u32 = 0;
-/// The walker's sense (read-only route telemetry): 1 while a foe hangs above the swing's reach but within a
-/// jump's, the Knight can act, and he stands on the ground or is still rising; a script holds jump until it
-/// is 0 (at the top of the jump, or the foe gone) and swings there.
+/// The Knight's vertical speed (Q16, up positive) and the most masks he can have, for the walk expressions
+/// (a jump swing waits for the top of the jump, a Focus for masks missing).
 #[no_mangle]
-pub static mut HK_WALK_JUMPSTRIKE: u32 = 0;
-/// The walker's sense (read-only route telemetry): 1 while a foe stands in that side's swing box, the Knight
-/// can act, and he faces the other way: the turn a swing needs first. 0 when there is no foe to turn to, so
-/// a script that turns until it is 0 takes no step at all (a ledge a unit wide has no room for one).
+pub static mut HK_PLAYER_VY: i32 = 0;
 #[no_mangle]
-pub static mut HK_WALK_TURN_LEFT: u32 = 0;
-#[no_mangle]
-pub static mut HK_WALK_TURN_RIGHT: u32 = 0;
-#[no_mangle]
-pub static mut HK_WALK_FOCUS: u32 = 0;
-/// The nearest live foe from the Knight (Q16; x is `i32::MAX` with none within range), for authoring.
-#[no_mangle]
-pub static mut HK_FOE_DX: i32 = i32::MAX;
-#[no_mangle]
-pub static mut HK_FOE_DY: i32 = 0;
-#[no_mangle]
-pub static mut HK_FK_PHASE: u32 = 0;
+pub static mut HK_HEALTH_MAX: u32 = 5;
 #[no_mangle]
 pub static mut HK_ENEMY_KILLS: u32 = 0;
 #[no_mangle]
@@ -858,36 +823,17 @@ fn preload_first_scene() {
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
 }
 
-/// The walker's read-only senses (`HK_FOE_*`, `HK_FK_*`, `HK_WALK_*`, `HK_NAIL_BUSY`), published once a tick. One
-/// out-of-line function under `optimize(size)`: the free RAM below the module pool is a few hundred bytes.
+/// The walker's read-only words, published once a tick (`HK_NAIL_BUSY` here, the actor table and the False Knight's in
+/// `EnemyWorld::publish_walk_words`): raw values only, the walk expressions in the gate derive what to react to.
 #[optimize(size)]
 #[inline(never)]
-fn publish_walk_senses(game: &frame::Game, foes: &enemies::FoeSenses) {
-    // A swing starts only on a press the Knight can act on: not in a hit's recoil or freeze, not in a hard
-    // landing. A press held through those is never seen as one.
-    let ready = game.nail.ready() && game.vitals.can_control() && !game.player.hard_landing();
-    let facing = game.player.facing;
+fn publish_walk_senses(game: &frame::Game) {
     unsafe {
-        HK_FOE_GAP_LEFT = foes.left;
-        HK_FOE_GAP_RIGHT = foes.right;
-        HK_FOE_LIVE = foes.live;
-        HK_FK_DX = foes.boss_dx;
-        HK_FK_PHASE = foes.boss_phase;
-        HK_WALK_STRIKE_LEFT = u32::from(foes.strike_left && ready);
-        HK_WALK_STRIKE_RIGHT = u32::from(foes.strike_right && ready);
-        HK_WALK_STRIKE_UP = u32::from(foes.strike_up && ready);
-        HK_WALK_TURN_LEFT = u32::from(foes.strike_left && ready && facing > 0);
-        HK_WALK_TURN_RIGHT = u32::from(foes.strike_right && ready && facing < 0);
-        HK_WALK_JUMPSTRIKE =
-            u32::from(foes.jump_strike && ready && (game.player.grounded || game.player.vy > 0));
-        HK_NAIL_BUSY = u32::from(!ready);
-        (HK_FOE_DX, HK_FOE_DY) = foes.nearest;
-        HK_WALK_FOCUS = u32::from(
-            game.vitals.health < VITAL_PARAMS.max_health
-                && (game.vitals.soul >= FOCUS_PARAMS.cost || game.focus.locks_control())
-                && game.player.grounded
-                && !foes.near,
+        HK_NAIL_BUSY = u32::from(
+            !(game.nail.ready() && game.vitals.can_control() && !game.player.hard_landing()),
         );
+        HK_PLAYER_VY = game.player.vy;
+        HK_HEALTH_MAX = VITAL_PARAMS.max_health as u32;
     }
 }
 
@@ -1419,8 +1365,8 @@ fn main() {
                         #[cfg(feature = "tick-log")]
                         input::log_tick(false);
                     }
-                    let foes = game.enemies.foe_senses(r.scene, game.player.x, game.player.y);
-                    publish_walk_senses(&game, &foes);
+                    game.enemies.publish_walk_words(r.scene, game.player.x);
+                    publish_walk_senses(&game);
                     if let Some((x, y, hp)) = game.enemies.actor_state(0, 12546) {
                         unsafe {
                             HK_CRAWLER_X = x;

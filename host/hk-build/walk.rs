@@ -89,11 +89,6 @@ fn alias_table() -> BTreeMap<String, Word> {
         ("x", "HK_PLAYER_X"),
         ("y", "HK_PLAYER_Y"),
         ("HK_FK_DX", "HK_FK_DX"),
-        ("HK_FOE_DX", "HK_FOE_DX"),
-        ("HK_FOE_DY", "HK_FOE_DY"),
-        ("HK_FOE_GAP_LEFT", "HK_FOE_GAP_LEFT"),
-        ("HK_FOE_GAP_RIGHT", "HK_FOE_GAP_RIGHT"),
-        ("HK_WALK_WAVE_AHEAD", "HK_WALK_WAVE_AHEAD"),
     ] {
         table.insert(
             alias.to_string(),
@@ -222,8 +217,8 @@ fn options(tokens: &[&str]) -> Result<BTreeMap<String, u64>> {
 
 /// Compile a walk script into the TOML journey for the disc in `setup`.
 pub fn compile(text: &str, setup: &Setup) -> Result<String> {
-    let text = definitions(text)?;
-    let text = macros(&text)?;
+    let text = macros(text)?;
+    let text = definitions(&text)?;
     let text = text.as_str();
     let mut words = alias_table();
     let mut name = None;
@@ -454,48 +449,60 @@ fn units(value: f64) -> String {
 }
 
 /// Swing at a foe on `side` if one is inside the swing's box and the nail is ready, then wait for the
-/// nail. Both steps take no time when there is nothing to strike: the guest publishes the word that
-/// holds the button (`HK_WALK_STRIKE_*`) as zero once the swing has started or there is no foe.
+/// nail. Both steps take no time when there is nothing to strike: the `strike_*` expression (walk-prelude.walk)
+/// is false once the swing has started or there is no foe.
 fn strike_one(out: &mut String, label: &str, side: &str) {
-    let word = if side == "left" { "HK_WALK_STRIKE_LEFT" } else { "HK_WALK_STRIKE_RIGHT" };
     // A tick of the pad turns him to face the foe, and none at all when he already does (a ledge a unit
     // wide has no room for a step); the swing is then the button alone, so the wait for the nail to
     // start (a Knight in recoil cannot swing for a few ticks) never walks him anywhere.
-    let turn = if side == "left" { "HK_WALK_TURN_LEFT" } else { "HK_WALK_TURN_RIGHT" };
-    let _ = writeln!(out, "hold {side} until {turn} == 0 timeout 10 # {label}: face {side}");
-    let _ = writeln!(out, "hold square until {word} == 0 timeout 90 # {label}: strike {side}");
+    let _ = writeln!(out, "hold {side} until expr !$turn_{side} timeout 10 # {label}: face {side}");
+    let _ = writeln!(out, "hold square until expr !$strike_{side} timeout 90 # {label}: strike {side}");
     let _ = writeln!(out, "wait until HK_NAIL_BUSY == 0 timeout 90");
 }
 
 fn strike_both(out: &mut String, label: &str) {
     // Overhead first: a hit above gives no sideways recoil, which on a small platform is the difference.
-    let _ = writeln!(out, "hold up+square until HK_WALK_STRIKE_UP == 0 timeout 90 # {label}: strike up");
+    let _ = writeln!(out, "hold up+square until expr !$strike_up timeout 90 # {label}: strike up");
     let _ = writeln!(out, "wait until HK_NAIL_BUSY == 0 timeout 90");
     strike_one(out, label, "right");
     strike_one(out, label, "left");
 }
 
-/// Jump at a foe that hangs above the swing's reach (a Vengefly over a ledge): hold jump until the guest's
-/// `HK_WALK_JUMPSTRIKE` is 0 (the top of the rise, or the foe gone; no time at all when no foe is above), swing
-/// there, and wait for the ground.
+/// Jump at a foe that hangs above the swing's reach (a Vengefly over a ledge): hold jump until the `jumpstrike`
+/// expression is false (the top of the rise, or the foe gone; no time at all when no foe is above), swing there,
+/// and wait for the ground.
 fn snipe(out: &mut String, label: &str) {
-    let _ = writeln!(out, "hold cross until HK_WALK_JUMPSTRIKE == 0 timeout 60 # {label}: jump at a foe above");
+    let _ = writeln!(out, "hold cross until expr !$jumpstrike timeout 60 # {label}: jump at a foe above");
     strike_both(out, label);
     let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: back on the ground");
 }
 
-/// Focus while masks are missing and SOUL pays for a heal and no foe is close: the guest publishes
-/// `HK_WALK_FOCUS` as zero otherwise, so the step takes no time when Focus is not wanted.
+/// Focus while masks are missing and SOUL pays for a heal and no foe is close: the `focus` expression is false
+/// otherwise, so the step takes no time when Focus is not wanted.
 fn heal(out: &mut String, label: &str) {
-    let _ = writeln!(out, "hold circle until HK_WALK_FOCUS == 0 timeout 240 # {label}: focus");
+    let _ = writeln!(out, "hold circle until expr !$focus timeout 240 # {label}: focus");
     // The heal's release still owns the Knight for a few ticks: a jump pressed in them is lost.
     let _ = writeln!(out, "wait until HK_FOCUS_LOCKED == 0 timeout 120 # {label}: focus over");
 }
+
+/// The standing expressions of `walk-prelude.walk`, defined before every script.
+const PRELUDE: &str = include_str!("walk-prelude.walk");
 
 /// `def NAME EXPRESSION` names an expression; a later `$NAME` is replaced with it in parentheses (longest names
 /// first, so `$threat_left` is not read as `$threat`). The `def` lines themselves are dropped.
 fn definitions(text: &str) -> Result<String> {
     let mut defs: Vec<(String, String)> = Vec::new();
+    // The standing expressions every script may use (`strike_left`, `focus`, `gap_right`...).
+    for line in PRELUDE.lines() {
+        if let Some((name, body)) = line.strip_prefix("def ").and_then(|r| r.split_once(char::is_whitespace)) {
+            let mut body = body.trim().to_string();
+            for (known, text) in &defs {
+                body = body.replace(&format!("${known}"), &format!("({text})"));
+            }
+            defs.push((name.to_string(), body));
+            defs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
+        }
+    }
     let mut out = String::new();
     for (index, line) in text.lines().enumerate() {
         let code = line.split('#').next().unwrap_or("").trim();
@@ -763,9 +770,9 @@ pub fn macros(text: &str) -> Result<String> {
                 // `fight N noheal`: leave SOUL alone (a proof that counts it).
                 let heals = !rest.contains(&"noheal");
                 for round in 1..=rounds {
-                    let _ = writeln!(out, "hold right until HK_FOE_GAP_RIGHT == 0 timeout 300 # {label}: round {round}, close on the right");
+                    let _ = writeln!(out, "hold right until expr $gap_right == 0 timeout 300 # {label}: round {round}, close on the right");
                     strike_one(&mut out, label, "right");
-                    let _ = writeln!(out, "hold left until HK_FOE_GAP_LEFT == 0 timeout 300 # {label}: round {round}, close on the left");
+                    let _ = writeln!(out, "hold left until expr $gap_left == 0 timeout 300 # {label}: round {round}, close on the left");
                     strike_one(&mut out, label, "left");
                     if heals {
                         heal(&mut out, label);
@@ -897,10 +904,11 @@ mod tests {
         assert!(toml.contains("press = [\"left\", \"cross\"]"));
         assert!(toml.contains("hold = 2\nwait = 22"));
         assert!(toml.contains("press = [\"square\"]"));
-        assert!(toml.contains("sym = \"HK_WALK_STRIKE_RIGHT\""));
+        // The reactions are expressions over the raw actor table, with the standing definitions filled in.
+        assert!(toml.contains("kind = \"expr\""));
         assert!(toml.contains("sym = \"HK_NAIL_BUSY\""));
-        assert!(toml.contains("sym = \"HK_WALK_FOCUS\""));
-        assert!(toml.contains("HK_FOE_GAP_RIGHT") && toml.contains("HK_FOE_GAP_LEFT"));
+        assert!(toml.contains("HK_ACT") && toml.contains("HK_PLAYER_FACING") && toml.contains("HK_SOUL"));
+        assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nhop 3 3\n").unwrap_err().contains("at X Y"));
     }
 
@@ -918,7 +926,7 @@ mod tests {
 
     #[test]
     fn a_world_unit_word_takes_world_unit_constants() {
-        let toml = compile_text("name t\nhold cross until HK_WALK_WAVE_AHEAD gt 4\n").unwrap();
+        let toml = compile_text("name t\nhold cross until HK_FK_DX gt 4\n").unwrap();
         assert!(toml.contains("op = \"gt\"\nvalue = 262144"), "{toml}");
     }
 

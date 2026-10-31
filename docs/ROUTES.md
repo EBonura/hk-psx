@@ -151,18 +151,19 @@ A walk script (`tools/walks/*.walk`, compiler `host/hk-build/walk.rs`) drives th
 
 Macros (the header of `walk.rs` has the grammar): `walk X` goes to x X from either side; `leap TX left|right N X Y` walks to a take-off, jumps with the direction held N ticks, and waits for the landing at (X, Y); `bash N` swings at a wall; `strike`, `guard N` and `fight N` react to foes; `heal` takes a Focus; `check NAME COND ; COND` is the end-state assert. The hop recipes (`leap` lines) were read off the journey tapes' replays with `jumps.sh` and `stations.sh` style tools: where the Knight stood at each jump press and where it landed.
 
-Read-only guest senses (`game/src/main.rs`, `EnemyWorld::foe_senses`), all zero or `i32::MAX` when there is nothing to sense:
+Reactions are expressions the gate evaluates (psoxide-gate `kind = "expr"`) over raw words the guest publishes in `EnemyWorld::publish_walk_words` and `publish_walk_senses` (`game/src/main.rs`); none of the logic is code on the disc. The standing definitions are `host/hk-build/walk-prelude.walk` (`$strike_left`, `$strike_right`, `$strike_up`, `$turn_left`, `$turn_right`, `$jumpstrike`, `$focus`, `$gap_left`, `$gap_right`, with `$foe_*` under them), which every script has; the macros use them.
 
 | Word | Meaning |
 | --- | --- |
-| `HK_FOE_GAP_LEFT`, `HK_FOE_GAP_RIGHT` | Q16 distance beyond reach to the nearest foe in the height band on that side (0: none, or in reach) |
-| `HK_WALK_STRIKE_LEFT`, `_RIGHT`, `_UP` | 1 while a foe stands in that swing's box and the nail is ready |
-| `HK_NAIL_BUSY` | 1 while a swing is in progress or cooling down |
-| `HK_WALK_FOCUS` | 1 while masks are missing, SOUL pays for a heal, he stands and no foe is close |
-| `HK_FOE_LIVE`, `HK_FOE_DX`, `HK_FOE_DY` | live foes in the scene; the nearest one's offset |
+| `HK_ACT[32]` | `{x, y}` (Q16) of each live bodied actor of the loaded scene by slot; x is `i32::MAX` for a slot with none |
+| `HK_PLAYER_X/Y/VY`, `HK_PLAYER_FACING` | the Knight's place, vertical speed, and facing (1 right, -1 left) |
+| `HK_NAIL_BUSY` | 1 while the nail cannot start a swing (mid-swing, cooling down, a hit's recoil, a hard landing) |
+| `HK_WALK_READY` | 1 on the ground with no landing lock and no gate entry running |
+| `HK_HEALTH`, `HK_HEALTH_MAX`, `HK_SOUL`, `HK_FOCUS_LOCKED` | for the Focus expression |
 | `HK_FK_DX`, `HK_FK_PHASE` | the False Knight's offset (`i32::MAX` with none) and what he is doing (1 winding up, 2 attacking, 3 armour rolling, 4 head exposed) |
+| `HK_FK_X/Y/BODY/FLAGS`, `HK_WAVE` | his place, body box, flags (bit 0 armour refuses a nail, bit 1 rage) and the slam waves |
 
-The idiom is `hold BUTTON until WORD == 0`: the step takes no time when the word is already 0, so a script can carry a reaction at every station without slowing the run down. A tick of the pad turns the Knight toward a foe before a swing; a hit gives a recoil, so on a small platform strike overhead first (`guard` does).
+The idiom is `hold BUTTON until expr !$REACTION`: the step takes no time when the reaction is already false, so a script can carry a reaction at every station without slowing the run down. A tick of the pad turns the Knight toward a foe before a swing; a hit gives a recoil, so on a small platform strike overhead first (`guard` does).
 
 `new-game-to-arena.walk` (now the first part of `new-game-to-crest.walk`, see "The False Knight and the City Crest" below; shipping disc, no cheat, no route-input; 21,596 ticks, 12 checks, the same ticks and verdict twice): the title, Start Game, an empty profile, the skip of the poem and movies, the drop into King's Pass, the corridor with its walls and Crawlers, the shaft up (twenty `leap`s with a `guard` after each, a `snipe` at the Fly over the narrow ledge), the Great Door (13 hits), Dirtmouth, the bench (save), the well, Crossroads_01, 07, 33, 08, then 13 (the pit, three Goams waited out with `HK_WALK_GOAM_LEFT/_RIGHT`), 42 (the stair of hops over the Goam pits), 19 (two hops and up out through the gap), 03 (floor, step, out at the left into 47), 47 (the bench: health back to 5, the save), 03 again (the left-hand shaft by its ledges, a Fly let come), 21 (down the slope, along the floor, out at the left) and 10 (up the ledges to the arena's right-hand mouth at x 64, y 27.4). It stops there. The fragments are `new-game`, `kings-corridor`, `kings-shaft`, `kings-pass`, `dirtmouth`, `crossroads-01`, `-07`, `-33`, `-08`, `-13`, `-42`, `-19`, `-03a`, `-47`, `-03b`, `-21`, `-10`. Not authored yet: the fight (the trigger is at x 13 on the arena floor; he drops, runs and slams; `HK_FK_DX`, `HK_FK_PHASE`, `HK_FK_EXPOSED`, `HK_FK_HEAD_HP` are published), the room below the broken floor, the Crest.
 

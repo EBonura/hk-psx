@@ -5032,27 +5032,19 @@ pub struct EnemyWorld {
     arena: Option<ArenaRuntime>,
 }
 const NO_PLACEMENT: u8 = u8::MAX;
-/// What `EnemyWorld::foe_senses` reads.
-pub struct FoeSenses {
-    pub left: i32,
-    pub right: i32,
-    pub live: u32,
-    pub boss_dx: i32,
-    pub boss_phase: u32,
-    /// A foe stands inside the swing's box on that side (whether or not the nail is ready).
-    pub strike_left: bool,
-    pub strike_right: bool,
-    /// A foe is close enough that a Focus would be interrupted.
-    pub near: bool,
-    /// A foe stands inside the upward swing's box (a hit above gives no sideways recoil).
-    pub strike_up: bool,
-    /// A foe hangs above the swing's reach and below a jump's: the Knight has to leave the ground to hit it.
-    pub jump_strike: bool,
-    /// Where the nearest live foe within `FOE_RANGE` stands from the Knight (Q16), `FOE_NO_BOSS` for x with none.
-    pub nearest: (i32, i32),
-}
-/// `FoeSenses::boss_dx` when the scene has no live False Knight.
+/// `HK_FK_DX` when the scene has no live False Knight.
 pub const FOE_NO_BOSS: i32 = i32::MAX;
+/// Where the False Knight stands from the Knight (Q16, `i32::MAX` with no live boss) and what he is doing
+/// (`fk_phase_code`: 1 winding up, 2 in the air, 3 armour rolling, 4 Head open, 0 otherwise).
+#[no_mangle]
+pub static mut HK_FK_DX: i32 = i32::MAX;
+#[no_mangle]
+pub static mut HK_FK_PHASE: u32 = 0;
+/// The live bodied actors of the loaded scene, `{x, y}` a slot in `EnemyWorld::actors` order, Q16 world units; x is
+/// `ACT_NONE` for a slot with none. Read-only, for walk expressions (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS] = [[ACT_NONE, 0]; MAX_ACTORS];
+pub const ACT_NONE: i32 = i32::MAX;
 /// Where the False Knight stands (Q16 world units), his body box from there, his Head box being `hk_sim::false_knight::HEAD_BOX`,
 /// and bit 0: the armour refuses a nail, bit 1: he rages (a stagger won in a rage never ends it). Read-only, for walk expressions.
 #[no_mangle]
@@ -5088,26 +5080,6 @@ fn fk_phase_code(phase: hk_sim::false_knight::Phase) -> u32 {
         _ => 0,
     }
 }
-/// The walker senses (`EnemyWorld::foe_senses`): a nail swing reaches about 3.3 units from the Knight, to which
-/// a body adds a little; a swing covers 1.5 units up and down. Q16.
-const FOE_REACH: i32 = 3 * 65536;
-const FOE_BAND: i32 = 3 * 65536;
-const FOE_RANGE: i32 = 16 * 65536;
-/// The box a nail swing hits, from the Knight's origin, with a margin for a body: the walker's strike
-/// sense is true when a foe's origin is inside it. Q16.
-const STRIKE_REACH: i32 = 3 * 65536 + 13_107;
-const STRIKE_UP: i32 = 65536 + 39_321;
-/// The upward swing's box, from the Knight's origin. Q16.
-const STRIKE_OVERHEAD_X: i32 = 65536 + 26_214;
-const STRIKE_OVERHEAD_LOW: i32 = 19_660;
-const STRIKE_OVERHEAD_HIGH: i32 = 2 * 65536 + 52_428;
-const STRIKE_DOWN: i32 = 2 * 65536 + 26_214;
-/// A foe above the side swing's reach (`STRIKE_UP`) and within a jump's (about 5 units) is one to jump at. Q16.
-const JUMP_STRIKE_X: i32 = 3 * 65536;
-const JUMP_STRIKE_HIGH: i32 = 5 * 65536;
-/// A foe this close in x and this close in y keeps a walker from starting a Focus. Q16.
-const FOCUS_SAFE_X: i32 = 10 * 65536;
-const FOCUS_SAFE_Y: i32 = 5 * 65536;
 impl EnemyWorld {
     /// Source shots are pooled per Aspid (two each) and per Blocker (two goop
     /// and one roller); the oldest live shot yields when the shared pool is
@@ -5451,77 +5423,42 @@ impl EnemyWorld {
             .find(|a| a.scene == scene && a.source_id == source_id)
             .map(|a| (a.x, a.y, a.health.hp))
     }
-    /// The walker's senses, read-only route telemetry (`HK_FOE_GAP_LEFT`, `HK_FOE_GAP_RIGHT`,
-    /// `HK_FOE_LIVE`, `HK_FK_DX`, `HK_FK_PHASE`): of the live actors in `scene` that have a body
-    /// (not a looping prop) and stand within `FOE_BAND` of the height `y` and `FOE_RANGE` of
-    /// `x`, how far beyond `FOE_REACH` the nearest one is on each side of the Knight, and how
-    /// many live actors the scene holds. A gap of zero means that side has none, or one inside
-    /// reach, so a hold that walks towards a foe until its gap is zero also ends at once when
-    /// there is nothing to walk to. The False Knight, when he is live in the scene, also
-    /// reports where he stands from the Knight (`FOE_NO_BOSS` if he does not) and what he is
-    /// doing (`fk_phase_code`). Q16 world units.
+    /// The walker's raw words, read-only route telemetry, published once a tick: `HK_ACT`, the live bodied
+    /// actors of `scene` as `{x, y}` (Q16 world units; x is `ACT_NONE` for a slot that holds none: empty, dead,
+    /// or a looping prop), and the False Knight's own (`HK_FK_*`, `HK_WAVE`). A walk script derives what it
+    /// reacts to (a foe in the swing's box, a gap to close, a Focus safe to start) as expressions the gate
+    /// evaluates over these (docs/ROUTES.md, Walks), so none of that logic is code on the disc.
     #[cfg_attr(not(test), optimize(size))]
-    pub fn foe_senses(&self, scene: usize, x: i32, y: i32) -> FoeSenses {
-        let mut senses = FoeSenses {
-            left: 0,
-            right: 0,
-            live: 0,
-            boss_dx: FOE_NO_BOSS,
-            boss_phase: 0,
-            strike_left: false,
-            strike_right: false,
-            near: false,
-            strike_up: false,
-            jump_strike: false,
-            nearest: (FOE_NO_BOSS, 0),
-        };
-        let (mut left, mut right) = (i32::MAX, i32::MAX);
-        for (slot, a) in self.actors.iter().enumerate() {
-            let Some(a) = a else { continue };
-            if a.scene != scene || a.health.dead || matches!(a.runtime, Runtime::Static { .. }) {
-                continue;
-            }
-            senses.live += 1;
-            let dx = a.x - x;
-            let dy = a.y - y;
-            if dx.abs() <= FOCUS_SAFE_X && dy.abs() <= FOCUS_SAFE_Y {
-                senses.near = true;
-            }
-            if dx.abs() <= FOE_RANGE && (senses.nearest.0 == FOE_NO_BOSS || dx.abs() < senses.nearest.0.abs()) {
-                senses.nearest = (dx, dy);
-            }
-            if dx.abs() <= STRIKE_OVERHEAD_X && (STRIKE_OVERHEAD_LOW..=STRIKE_OVERHEAD_HIGH).contains(&dy) {
-                senses.strike_up = true;
-            }
-            if dx.abs() <= JUMP_STRIKE_X && dy > STRIKE_UP && dy <= JUMP_STRIKE_HIGH {
-                senses.jump_strike = true;
-            }
-            if (-STRIKE_DOWN..=STRIKE_UP).contains(&dy) && dx.abs() <= STRIKE_REACH {
-                if dx < 0 {
-                    senses.strike_left = true;
-                } else {
-                    senses.strike_right = true;
-                }
-            }
-            if let Runtime::FalseKnight(boss) = &a.runtime {
-                senses.boss_dx = dx;
-                senses.boss_phase = fk_phase_code(boss.controller.phase());
-                // The raw values a walk's expressions derive the rest from (swing reach against his body or Head,
-                // when a nail is refused, when he rages): where he is, his body box from there, and two flags.
-                unsafe {
-                    HK_FK_X = a.x;
-                    HK_FK_Y = a.y;
-                    if let Some(spec) = self.placed_spec[slot] {
-                        HK_FK_BODY = a.local_bounds(spec);
+    pub fn publish_walk_words(&self, scene: usize, x: i32) {
+        let (mut boss_dx, mut boss_phase) = (FOE_NO_BOSS, 0);
+        for (slot, entry) in self.actors.iter().enumerate() {
+            let mut row = [ACT_NONE, 0];
+            let live = entry.as_ref().filter(|a| {
+                a.scene == scene && !a.health.dead && !matches!(a.runtime, Runtime::Static { .. })
+            });
+            if let Some(a) = live {
+                row = [a.x, a.y];
+                if let Runtime::FalseKnight(boss) = &a.runtime {
+                    boss_dx = a.x - x;
+                    boss_phase = fk_phase_code(boss.controller.phase());
+                    // The raw values a walk's expressions derive the rest from (swing reach against his body or Head,
+                    // when a nail is refused, when he rages): where he is, his body box from there, and two flags.
+                    unsafe {
+                        HK_FK_X = a.x;
+                        HK_FK_Y = a.y;
+                        if let Some(spec) = self.placed_spec[slot] {
+                            HK_FK_BODY = a.local_bounds(spec);
+                        }
+                        HK_FK_FLAGS = u32::from(boss.controller.invincible())
+                            | u32::from(fk_raging(boss.controller.phase())) << 1;
                     }
-                    HK_FK_FLAGS = u32::from(boss.controller.invincible()) | u32::from(fk_raging(boss.controller.phase())) << 1;
                 }
             }
-            if (a.y - y).abs() > FOE_BAND || dx.abs() > FOE_RANGE {
-                continue;
-            }
-            let side = if dx < 0 { &mut left } else { &mut right };
-            *side = (*side).min((dx.abs() - FOE_REACH).max(0));
+            unsafe { HK_ACT[slot] = row };
+        }
+        unsafe {
+            HK_FK_DX = boss_dx;
+            HK_FK_PHASE = boss_phase;
         }
         // The slam waves: x and direction (0 when the slot is empty or the wave has stopped).
         for (i, wave) in self.waves.iter().enumerate() {
@@ -5531,10 +5468,6 @@ impl EnemyWorld {
                 HK_WAVE[2 * i + 1] = live.map_or(0, |(_, wave, _)| i32::from(wave.dir));
             }
         }
-        let none = |gap: i32| if gap == i32::MAX { 0 } else { gap };
-        senses.left = none(left);
-        senses.right = none(right);
-        senses
     }
     /// The first `max` live actors for `HK_TRACE`, `trace::ENEMY_WORDS` words
     /// each: source id; scene, controller kind and flags (bit 0 grounded, 1

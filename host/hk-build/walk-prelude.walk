@@ -1,0 +1,26 @@
+# The walker's standing expressions (host/hk-build/walk.rs adds these before every script): what a macro such as
+# `strike`, `guard`, `snipe`, `heal` or `fight` reacts to, derived by the gate from the raw words the guest publishes
+# (the actor table HK_ACT, the Knight's position, facing and vertical speed, HK_NAIL_BUSY, HK_WALK_READY, HK_HEALTH,
+# HK_HEALTH_MAX, HK_SOUL, HK_FOCUS_LOCKED). Q16 world units. A swing reaches 3.2 units sideways from the Knight's origin
+# (a body adds a little), 1.6 up and 2.4 down; the overhead swing 1.4 either side from 0.3 to 2.8 up; a jump gets a foe up
+# to 5 above. They were guest code (EnemyWorld::foe_senses) until the gate learned expressions.
+def px i32(HK_PLAYER_X)
+def py i32(HK_PLAYER_Y)
+def ready u32(HK_NAIL_BUSY) == 0
+# A live bodied foe in that side's swing box, the overhead box, a jump's reach, or close enough to keep a Focus from starting.
+def foe_left any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx < 0))
+def foe_right any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx >= 0))
+def foe_up any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 65536 + 26214 && dy >= 19660 && dy <= 2 * 65536 + 52428))
+def foe_jump any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 3 * 65536 && dy > 65536 + 39321 && dy <= 5 * 65536))
+def foe_near any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 10 * 65536 && abs(dy) <= 5 * 65536))
+# How far past a swing's reach the nearest foe in the Knight's height band stands on that side (0: none, or one in reach).
+def gap_left let g = min(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx < 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
+def gap_right let g = min(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx >= 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
+# What a hold waits for: reads true while there is something to do.
+def strike_left $ready && $foe_left
+def strike_right $ready && $foe_right
+def strike_up $ready && $foe_up
+def turn_left $strike_left && i32(HK_PLAYER_FACING) > 0
+def turn_right $strike_right && i32(HK_PLAYER_FACING) < 0
+def jumpstrike $ready && $foe_jump && (u32(HK_WALK_READY) == 1 || i32(HK_PLAYER_VY) > 0)
+def focus u32(HK_HEALTH) < u32(HK_HEALTH_MAX) && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && !$foe_near

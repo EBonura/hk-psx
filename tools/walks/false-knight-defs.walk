@@ -1,10 +1,7 @@
 # The False Knight as expressions over raw words the guest publishes (HK_FK_X/Y/BODY/FLAGS/PHASE/DX, HK_WAVE, the Knight's
-# own position and nail), evaluated by the gate (psoxide-gate `kind = "expr"`): nothing here is computed in the guest.
-# Boxes are Q16 world units. A swing's reach, from the Knight's origin (enemies.rs STRIKE_*): 3.2 sideways, 1.6 up, 2.4 down;
+# own position and nail; px, py and ready come from the standing definitions in host/hk-build/walk-prelude.walk), evaluated by the gate (psoxide-gate `kind = "expr"`): nothing here is computed in the guest.
+# Boxes are Q16 world units. A swing's reach, from the Knight's origin (the constants of walk-prelude.walk): 3.2 sideways, 1.6 up, 2.4 down;
 # overhead 1.4 either side from 0.3 to 2.8 up; a jump gets a foe up to 5 above.
-def px i32(HK_PLAYER_X)
-def py i32(HK_PLAYER_Y)
-def ready u32(HK_NAIL_BUSY) == 0
 def fk_live u32(HK_FK_ACTIVE) == 1 && u32(HK_FK_DEATHS) == 0
 # What a nail would land on: the Head once the armour is open, the body when it takes one (not while it refuses nails, not in a rage).
 def fk_open u32(HK_FK_EXPOSED) == 1
