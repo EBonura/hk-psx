@@ -1,0 +1,165 @@
+# Crossroads_06 (the room left of the False Knight's cave): in at the right on the floor, left along the tunnel and up the
+# shaft's ledges, over the upper passages and back along the top platform to the Ancestral Mound's door (x 28.4, y 29.7).
+# Written by a route planner over the room's own collision edges and the guest's own Player::step (a search over walk, drop
+# and jump actions; every jump is kept only when a take-off a sixth of a unit either side still lands on the same floor),
+# then proved on the disc: nothing in this room needs a fight or a pickup.
+at 59.5 3.4
+walk 57.01
+walk 57.79   # run-up
+walk 57.01   # take-off
+hold left+cross for 24
+hold left for 28
+wait until y between 3.24 3.54 timeout 240 # land at x 49.82
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 49.26
+walk 50.04   # run-up
+walk 49.26   # take-off
+hold left+cross for 20
+hold left for 32
+wait until y between 3.24 3.54 timeout 240 # land at x 42.76
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 43.54   # run-up
+walk 42.76   # take-off
+hold left+cross for 20
+hold left for 32
+wait until y between 3.24 3.54 timeout 240 # land at x 36.26
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 37.04   # run-up
+walk 36.26   # take-off
+hold left+cross for 24
+hold left for 28
+wait until y between 4.24 4.54 timeout 240 # land at x 29.48
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.26   # run-up
+walk 29.48   # take-off
+hold left+cross for 20
+hold left for 20
+wait until y between 7.24 7.54 timeout 240 # land at x 24.50
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 25.15   # run-up
+walk 24.50   # take-off
+hold left+cross for 34
+hold left for 18
+wait until y between 12.24 12.54 timeout 240 # land at x 18.70
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 19.20   # run-up
+walk 18.70   # take-off
+hold left+cross for 12
+hold left for 20
+wait until y between 12.24 12.54 timeout 240 # land at x 14.41
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 15.19   # run-up
+walk 14.41   # take-off
+hold left+cross for 12
+hold left for 20
+wait until y between 12.24 12.54 timeout 240 # land at x 10.12
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 10.90   # run-up
+walk 10.12   # take-off
+hold left+cross for 20
+hold left for 12
+wait until y between 16.52 16.82 timeout 240 # land at x 6.11
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 5.33   # run-up
+walk 6.11   # take-off
+hold right+cross for 24
+hold right for 28
+wait until y between 18.24 18.54 timeout 240 # land at x 12.61
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 11.83   # run-up
+walk 12.61   # take-off
+hold right+cross for 28
+hold right for 24
+wait until y between 20.24 20.54 timeout 240 # land at x 19.66
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 18.88   # run-up
+walk 19.66   # take-off
+hold right+cross for 12
+hold right for 20
+wait until y between 20.24 20.54 timeout 240 # land at x 23.95
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.17   # run-up
+walk 23.95   # take-off
+hold right+cross for 16
+hold right for 24
+wait until y between 20.24 20.54 timeout 240 # land at x 29.35
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 28.57   # run-up
+walk 29.35   # take-off
+hold right+cross for 12
+hold right for 28
+wait until y between 20.24 20.54 timeout 240 # land at x 33.63
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 34.74
+walk 33.96   # run-up
+walk 34.74   # take-off
+hold right+cross for 8
+hold right for 16
+wait until y between 20.24 20.54 timeout 240 # land at x 37.92
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 38.48
+walk 37.70   # run-up
+walk 38.48   # take-off
+hold right+cross for 12
+hold right for 20
+wait until y between 20.24 20.54 timeout 240 # land at x 42.76
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 41.98   # run-up
+walk 42.76   # take-off
+hold right+cross for 16
+hold right for 24
+wait until y between 20.24 20.54 timeout 240 # land at x 48.16
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 48.71
+walk 47.93   # run-up
+walk 48.71   # take-off
+hold right+cross for 24
+hold right for 8
+wait until y between 25.37 25.67 timeout 240 # land at x 52.58
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 53.36   # run-up
+walk 52.58   # take-off
+hold left+cross for 34
+hold left for 18
+wait until y between 30.24 30.54 timeout 240 # land at x 46.77
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 46.50
+walk 47.14   # run-up
+walk 46.50   # take-off
+hold left+cross for 34
+hold left for 36
+wait until y between 30.24 30.54 timeout 240 # land at x 38.06
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 37.51
+walk 38.29   # run-up
+walk 37.51   # take-off
+hold left+cross for 34
+hold left for 36
+wait until y between 30.24 30.54 timeout 240 # land at x 29.07
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 28.79
+walk 28.4                                      # under the door
+press up                                       # into the Ancestral Mound
+hold up until HK_SCENE_LOADS ge 16 timeout 1500
+wait until HK_GAME_MODE == 1 timeout 1800

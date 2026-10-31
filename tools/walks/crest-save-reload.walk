@@ -1,0 +1,24 @@
+name walk-crest-save-reload
+title from the bench save in Crossroads_47: the False Knight, the City Crest and the chest, out through Crossroads_06 and up to the Ancestral Mound's bench, save, power off and on, Continue: the Crest and the world survive
+max_ticks 90000
+# The save and reload coverage the retired journey-reload pins used to give (docs/REPIN-LOG.md), as a closed-loop walk on the shipping disc:
+# no cheat, no recorded input. The run to the Crest is the one of fk-from-bench-47.walk; then out of the room below at the left, up
+# Crossroads_06 (crossroads-06.walk, planned), through the Mound's door to its bench (the first bench on the way on), a save, a
+# power cycle (`reboot`) and Continue. Session counters (HK_PICKUPS_TAKEN, HK_CHESTS_OPENED, the Focus and kill counts) start again at
+# zero on the reload by design; what must survive is the card's content: the PlayerData bit for the Crest (bit 8, hasCityKey), the
+# 12 SceneData items the run had made (the King's Pass walls, the arena, the Crest, the chest) and the bench the Knight sat on.
+include continue-47.walk
+include crossroads-47b.walk
+include crossroads-03b.walk
+include crossroads-21.walk
+include crossroads-10.walk
+include false-knight.walk
+include city-crest.walk
+include chest.walk
+check crest-taken HK_PICKUPS_TAKEN == 1 ; HK_CHESTS_OPENED == 1 ; HK_FK_DEATHS == 1 ; expr (u32(HK_WORLD_PLAYER) & 256) != 0
+include crest-exit.walk
+include crossroads-06.walk
+include mound-bench.walk
+check saved-at-the-bench HK_REGION_ID == 652 ; HK_BENCH_RESTS >= 1 ; HK_SAVE_WRITES >= 1 ; HK_SAVE_ERRORS == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_WORLD_ITEMS == 12 ; expr (u32(HK_WORLD_PLAYER) & 256) != 0
+include continue-reload.walk
+check reloaded HK_SAVE_LOADED == 1 ; HK_SAVE_ERRORS == 0 ; HK_REGION_ID == 652 ; HK_WORLD_RESTORED == 12 ; HK_WORLD_ITEMS == 12 ; expr (u32(HK_WORLD_PLAYER) & 256) != 0 ; HK_PICKUPS_TAKEN == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 5

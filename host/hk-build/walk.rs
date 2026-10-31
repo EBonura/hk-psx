@@ -28,6 +28,8 @@
 //! probe      NAME WORD [WORD...]         checkpoint that reports each word (never passes)
 //! check      NAME COND [; COND...]       checkpoint whose conditions must hold
 //! snapshot                               hand the memory card to the next journey
+//! reboot                                 power the console off and on again with the memory card as it stands (a save made earlier
+//!                                        in the walk is reloaded from Continue); `HK_SCENE_LOADS` constants after it count from the reload
 //! card       FILE [loads N]              boot from tools/cards/FILE (a resume point: a bench save a `snapshot` took);
 //!                                        `loads N` takes N off every HK_SCENE_LOADS constant that follows (the loads the card's run had made)
 //! raw        TOML                        one verbatim line of step TOML (rare)
@@ -369,6 +371,12 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
             "snapshot" => {
                 step(&mut body);
                 let _ = writeln!(body, "[step.card]\naction = \"snapshot\"");
+            }
+            "reboot" => {
+                step(&mut body);
+                let _ = writeln!(body, "[step.card]\naction = \"reboot\"");
+                // The console starts over: the loads counted so far are gone.
+                words.remove("HK_SCENE_LOADS");
             }
             "raw" => {
                 let _ = writeln!(body, "{}", rest.join(" "));
@@ -939,6 +947,23 @@ mod tests {
         let toml = compile("name t\ncard c.mcd loads 10\nhold right until HK_SCENE_LOADS ge 12\n", &setup).unwrap();
         assert!(toml.contains("card_fixture = { path = "), "{toml}");
         assert!(toml.contains("op = \"ge\"\nvalue = 2"), "{toml}");
+    }
+
+    #[test]
+    fn a_reboot_hands_the_card_over_and_restarts_the_load_count() {
+        let dir = std::env::temp_dir().join("hk-walk-reboot-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("c.mcd"), b"card").unwrap();
+        let setup = Setup { disc: Path::new("/d.cue"), symbols: Path::new("/g.map"), cards: &dir };
+        let toml = compile(
+            "name t\ncard c.mcd loads 10\nhold right until HK_SCENE_LOADS ge 12\nreboot\nwait until HK_SCENE_LOADS ge 1\n",
+            &setup,
+        )
+        .unwrap();
+        assert!(toml.contains("[step.card]\naction = \"reboot\""), "{toml}");
+        // Before the reboot the card's offset applies (12 - 10); after it the count is the new boot's own.
+        assert!(toml.contains("op = \"ge\"\nvalue = 2"), "{toml}");
+        assert!(toml.contains("op = \"ge\"\nvalue = 1"), "{toml}");
     }
 
     #[test]

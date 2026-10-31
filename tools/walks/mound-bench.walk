@@ -1,0 +1,9 @@
+# The Ancestral Mound (Crossroads_ShamanTemple): in at the left on the floor (x 0.5, y 7), along to the bench at x 15.09, sit and save.
+at 0.5 8.4
+walk 15.09
+press up                                       # sit on the bench
+wait until HK_BENCH_RESTS ge 1 timeout 600
+wait 120
+press cross                                    # get up
+wait until HK_SAVE_WRITES ge 1 timeout 900     # the bench saves
+wait 90

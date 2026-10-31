@@ -1,0 +1,8 @@
+# Power off and on, Continue: the title, Start Game, profile 1 (the save the bench wrote), the game loads where it saved.
+reboot
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1: the save
+wait until HK_GAME_MODE == 1 timeout 1500
+wait until HK_WALK_READY == 1 timeout 900

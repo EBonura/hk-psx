@@ -1,0 +1,5 @@
+# The room below the arena, after the chest: off the ledge to the right, back along the floor and out at the left-hand end into Crossroads_06.
+hold right until x ge 15.0 timeout 300
+wait until HK_WALK_READY == 1 timeout 600      # the fall to the floor
+hold left until HK_SCENE_LOADS ge 15 timeout 1500
+wait until HK_GAME_MODE == 1 timeout 1800
