@@ -1,0 +1,20 @@
+name walk-husk-hits
+title the three husks of the False Knight's arena hit and killed with the nail, from a game continued at the Crossroads_47 bench
+max_ticks 60000
+# Regression for the actor bank (docs/ACTOR-BANK.md): the husks draw from a compact art bank, and the first nail hit on one used to
+# freeze the game (the hit flash called a function that lived in a code module that was not loaded). The Knight walks the
+# arena floor from its right-hand mouth to the trigger at x 13 with a `fight` at three stations, so each husk is struck, flashes,
+# recoils and dies with its corpse and Geo; the check is that the simulation kept running (HK_SIM_TICKS grew through the fights),
+# that all three died to the nail, and that the boss's landing had none left to remove.
+include continue-47.walk
+include crossroads-47b.walk
+include crossroads-03b.walk
+include crossroads-21.walk
+include crossroads-10.walk
+walk 52.0
+fight 6
+walk 34.0
+fight 6
+walk 21.0
+fight 6
+check husks HK_ENEMY_HITS ge 6 ; HK_ENEMY_KILLS ge 3 ; HK_MINIONS_KILLED == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_ACTOR_BANK_MISSES == 0 ; HK_ACTOR_BANK_UNBOUND == 0 ; HK_ACTOR_BANK_PARTS_DRAWN gt 0 ; HK_HEALTH >= 1
