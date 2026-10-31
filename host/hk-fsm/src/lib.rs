@@ -3,5 +3,6 @@
 pub mod boss;
 pub mod census;
 pub mod cook3;
+pub mod enemy_family;
 pub mod families;
 pub mod v3;

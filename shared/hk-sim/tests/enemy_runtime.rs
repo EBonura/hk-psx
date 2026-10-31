@@ -697,6 +697,8 @@ mod modules {
     pub const FSM3_CRAWLER3: psx_math::Mask64 = psx_math::Mask64::EMPTY;
     pub const FSM3_GRUZZER3: psx_math::Mask64 = psx_math::Mask64::EMPTY;
     pub const FSM3_VENGEFLY3: psx_math::Mask64 = psx_math::Mask64::EMPTY;
+    pub const ACTOR_FSM: usize = 15;
+    pub const FSM_FAMILY_TREES: [psx_math::Mask64; 1] = [psx_math::Mask64::EMPTY];
     pub const CRAWLER: usize = 17;
     pub const BALDUR: usize = 5;
     pub const ASPID: usize = 6;

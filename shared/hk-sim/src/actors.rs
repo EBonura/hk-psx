@@ -170,6 +170,15 @@ pub enum ActorController {
     Pigeon {
         clips: [u16; crate::pigeon::Clip::COUNT],
     },
+    /// An enemy family on the compact actor tier (host/enemy_families.json, `crate::fsm_actor`): its original
+    /// PlayMaker trees on the HKFSM03 kernel, with no body of its own. `family` is the manifest id, `clips` its bound
+    /// clips in manifest order, and `trigger` the box (in the actor's own frame, turned by the placement's rotation)
+    /// the hero must enter to start the tree's `Trigger2dEvent`.
+    FsmActor {
+        family: u8,
+        clips: [u16; 8],
+        trigger: [i32; 4],
+    },
     /// Source object with no FSM and no Rigidbody2D: `playAutomatically` loops
     /// the default clip where it stands, so the nail is the only interaction.
     Static {

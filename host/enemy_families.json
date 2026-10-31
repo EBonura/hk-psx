@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "families": [
+    {
+      "name": "plant_trap",
+      "id": 0,
+      "name_prefixes": [
+        "Plant Trap"
+      ],
+      "components": [
+        "HealthManager",
+        "DamageHero",
+        "EnemyDeathEffects",
+        "PersistentBoolItem",
+        "tk2dSprite",
+        "tk2dSpriteAnimator"
+      ],
+      "fsms": [
+        {
+          "on": "",
+          "name": "Plant Trap Control",
+          "digest": "77db3f68b414e86cc96bd4e9371dd22fd37c63f71e75bc03ae4d11b9394c9aed"
+        },
+        {
+          "on": "",
+          "name": "damages_enemy",
+          "digest": "0cf78d2ffc598d284f59bae5312e1f62499034dd4c612daef02e063a6e150b4b",
+          "inert": "an enemy-versus-enemy damage relay: it forwards a hit by another enemy as TakeDamage. No Greenpath situation has an enemy strike a Plant Trap, so the port runs no tree for it (29 of the 43 actions of the original)."
+        },
+        {
+          "on": "Detector",
+          "name": "Detect Hero",
+          "digest": "8859c138276a536fae08c9e4e325872a2977dae34b83e48377743eb0bb7fc120"
+        }
+      ],
+      "trigger_child": "Detector",
+      "rest": "Retract",
+      "clips": [
+        "Retract",
+        "Snap Ready",
+        "Snap",
+        "Death"
+      ],
+      "limitations": [
+        "Dropped as inert plumbing: damages_enemy (see host/enemy_families.json).",
+        "The Ready Grass particles and the ready growl are not presented."
+      ]
+    }
+  ]
+}

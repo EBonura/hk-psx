@@ -99,6 +99,9 @@ MODULES = {
     'husks': _sim('husk_guard', 'zombie_shield') + _actor('advance_husk_guard', 'advance_zombie_shield', 'shield_senses'),
     'vengefly': _sim('vengefly') + _actor('advance_vengefly', 'vengefly_senses'),
     'gruzzer': _sim('gruzzer') + _actor('advance_gruzzer'),
+    # The enemy-family pipeline's adapter (host/enemy_families.json): one module for every family that runs its original
+    # PlayMaker trees on the compact tier. The families' banks are data inside it; their action code is the fsm3 modules.
+    'actor_fsm': _sim('fsm_actor') + _actor('advance_fsm_actor', 'advance_fsm_dead'),
     # Gruz Mother: its controller, its arena handling and its corpse and
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',
@@ -129,7 +132,7 @@ MODULES = {
     # `logic` is flow, variables, events, timers and PlayerData; `world` is objects, audio and animation;
     # `body` is movement and the senses.
     'fsm3_logic': _sim('fsm3_flow', 'fsm3_math', 'fsm3_events', 'fsm3_timers', 'fsm3_playerdata'),
-    'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation'),
+    'fsm3_world': _sim('fsm3_object', 'fsm3_audio', 'fsm3_animation', 'fsm3_fx'),
     'fsm3_body': _sim('fsm3_transform', 'fsm3_ai'),
     # The title and its front-end pages (game/src/menu.rs): run once at boot, then dead. The boot reads this
     # package right before the title art (BOOT_MODULES), installs it into the pool for the title, and evicts
@@ -201,6 +204,7 @@ ALWAYS_RESIDENT = {m for m in os.environ.get('HK_RESIDENT_MODULES', '').split(',
 # Compact actor art banks (host/actor_banks.json, game/src/actor_bank.rs): the head of a scene's bank is a package of its
 # own, carried by that scene, so a scene that opts in adds one data module and one that does not changes nothing here.
 import actor_bank
+import enemy_family
 DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ()) + tuple(actor_bank.packages())
 # Carried data: packages no room's static table needs, which gameplay asks for
 # at run time with `modules::carry` (the Shade's art follows the scene the
@@ -228,7 +232,7 @@ KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': 'false_knight', 'Mawlek': 'm
                'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'mosquito', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
                # (blocker_roller.rs); both live in the `baldur` module.
-               'Blocker': 'baldur'}
+               'Blocker': 'baldur', 'FsmActor': 'actor_fsm'}
 # Controller kinds that run an HKFSM03 bank -> the cooked tree label (data/<label>_families.txt, written by
 # host/hk-fsm cook3 with the action families the bank uses), and the module each family's code lives in
 # (hk_format::fsm3 family numbers: 0 flow, 1 math, 2 events, 3 timers, 4 transform, 5 ai, 6 raycast,
@@ -237,7 +241,9 @@ FSM3_TREE = {'Crawler': 'crawler3', 'Gruzzer': 'gruzzer3', 'GruzMother': 'gruzze
              'Vengefly': 'vengefly3'}
 FSM3_SCRIPTS = 'scripts3'
 FAMILY_MODULE = {0: 'fsm3_logic', 1: 'fsm3_logic', 2: 'fsm3_logic', 3: 'fsm3_logic', 13: 'fsm3_logic',
-                 4: 'fsm3_body', 5: 'fsm3_body', 7: 'fsm3_world', 8: 'fsm3_world', 9: 'fsm3_world'}
+                 4: 'fsm3_body', 5: 'fsm3_body', 7: 'fsm3_world', 8: 'fsm3_world', 9: 'fsm3_world', 10: 'fsm3_world'}
+# The cooked tree of each enemy family (host/enemy_families.json), by family id: data/<name>3_families.txt.
+FAMILY_TREE = {row['id']: row['name'] + '3' for row in enemy_family.MANIFEST}
 # Resident functions allowed to hold import sites (mangled fragments): the
 # per-actor dispatch in enemies.rs, and the Elder Baldur's Rollers
 # (blocker_roller.rs, inlined into frame::simulate), which exist only while a
@@ -323,6 +329,9 @@ def scene_modules(regions_rs, debris=()):
         body = regions_rs[m.end():regions_rs.find('];', m.end())]
         kinds = set(re.findall(r'ActorController::(\w+)', body))
         mods = set()
+        # A family actor needs its own family's action modules, not every family's.
+        for family in set(re.findall(r'ActorController::FsmActor\s*\{\s*family:(\d+)', body)):
+            mods |= fsm3_modules(FAMILY_TREE[int(family)])
         for k in kinds & KIND_MODULE.keys():
             need = KIND_MODULE[k]
             mods |= {need} if isinstance(need, str) else set(need)
@@ -513,6 +522,9 @@ def manifest_rust(packed, regions_rs, props_rs=None):
     # The family modules each HKFSM03 tree needs, as module bitmasks: an actor runs only when all are resident.
     lines += [f'pub const FSM3_{label.upper()}:psx_math::Mask64={_mask(fsm3_modules(label))};'
               for label in (*sorted(set(FSM3_TREE.values())), FSM3_SCRIPTS)]
+    # The action modules each enemy family's bank needs, by family id (hk_sim::ActorController::FsmActor `family`).
+    lines += [f'pub const FSM_FAMILY_TREES:[psx_math::Mask64;{len(FAMILY_TREE)}]=['
+              + ','.join(_mask(fsm3_modules(FAMILY_TREE[i])) for i in sorted(FAMILY_TREE)) + '];']
     lines += [f'pub const LINK_BASE:u32={LINK_BASE:#x};', f'pub const LINK_STRIDE:u32={LINK_STRIDE:#x};',
               f'pub const POOL_BYTES:usize={POOL_BYTES:#x};',
               f'pub const MAX_IMPORTS:usize={MAX_IMPORTS};',

@@ -392,6 +392,12 @@ fn scan_with(
                 control = Some(("Pigeon".to_string(), found));
             }
         }
+        // The enemy-family pipeline (host/enemy_families.json): a manifest row names the placement.
+        if control.is_none() && crate::enemy_family::named(&name)? {
+            if let Ok(found) = crate::enemy_family::recognize(sc, source, gid, &name) {
+                control = Some(("FsmActor".to_string(), found));
+            }
+        }
         // The Runner gate comes after the named gates in actor_sources; the
         // recognizers ported so far are disjoint from it by name and component.
         if control.is_none() {
