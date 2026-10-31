@@ -86,6 +86,12 @@ pub fn active() -> bool {
     unsafe { !SLICES[0].is_empty() }
 }
 
+/// The texture id that marks a bank frame in the bound room.
+#[inline(always)]
+pub fn marker() -> u16 {
+    unsafe { MARKER }
+}
+
 /// The slices' `(sprites, parts)` counts, in numbering order (an empty slice counts as none).
 fn counts() -> impl Iterator<Item = (u32, u32)> {
     (0..MAX_SLICES).map_while(|i| Bank::open(unsafe { SLICES[i] }).map(|b| (b.sprites, b.parts)))

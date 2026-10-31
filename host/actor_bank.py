@@ -8,7 +8,9 @@ instead, the views that draw them, and how the bank is split. Nothing else in th
         "id": 4,                        # bank id of the first slice; later slices take id + 1, id + 2, ...
         "package": "art_husks",         # the module pool data package that carries the first slice
         "actors": ["Zombie Barger"],    # actor names in the scene (`source` ids also work)
-        "views": [235, 236],            # chunk ids of the views that draw them; omitted: the views that list the actors
+        "reach": 8,                     # optional: widen the default views by this many world units (see below)
+        "views": [235, 236],            # chunk ids of the views that draw them; "all": every view of the scene; omitted: the views
+                                        # whose region cook lists the actors (those inside the view's interaction bounds)
         "banks": [{"name": "core", "palettes": 4, "exclude_clips": ["Death Air", "Death Land", "Fall"]},
                   {"name": "late", "palettes": 4, "include_clips": ["Death Air", "Death Land", "Fall"]}]}}}
 
@@ -20,6 +22,12 @@ In a bank view the actors' frames are ordinary frame records whose texture is th
 box words carry the sprite's global index in their low bytes; the clips and frames are appended after every other clip, so a
 view without the bank keeps the clip indices of the rest. A bank actor is listed (`row['actors']`) only in the views that
 carry the bank; the guest does not step or draw an actor its bound view does not list.
+
+Which views carry the bank matters for pop-in: a view draws every actor it lists and no other, and the renderer draws the view
+whose camera range holds the camera, which can be a neighbour of the Knight's. So an actor must be listed in every view from
+which it can be on screen. The default is the views whose interaction bounds (the camera range and its margin) hold an
+actor's placement; `reach` grows those bounds for actors that wander or stand near a view edge, and `views` overrides the
+rule (`"all"` lists every view of the scene, which costs the carriers in every one).
 """
 import json
 import struct

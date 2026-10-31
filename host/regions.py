@@ -747,7 +747,7 @@ def postpack_art_bank(report, source, sc, info, entry, bank_actors, bank_views, 
     import actor_bank
     name=info['scene_name']
     listed={a['source'] for a in bank_actors}
-    views=set(entry['views']) if 'views' in entry else bank_views
+    views=bank_views if entry.get('views') is None else {row['chunk_id'] for row in scene_rows} if entry['views']=='all' else set(entry['views'])
     if not views:raise ValueError(f'{name}: no view lists an actor of the bank')
     if 1 in views:raise ValueError('an actor bank cannot ride view 1: data/room.hk is a copy of it')
     unknown=views-{row['chunk_id'] for row in scene_rows}
@@ -795,8 +795,14 @@ def postpack_actor_bank(report, source, scenes=None):
         # Views the region cook found the bank's actors in (it listed them, as records or as supported actors), before the
         # scene actor bank below rewrites every view's list.
         bank_sources={a['source'] for a in bank_actors}
+        # `reach` widens that to the views whose interaction bounds, grown by it, hold an actor's placement: a view draws every
+        # actor it lists and no other, so an actor must be listed in every view from which it can be on screen.
+        reach=bank_entry['reach'] if bank_entry and 'reach' in bank_entry else 0
+        def sees(row,a):
+            x0,y0,x1,y1=row['interaction_bounds']
+            return x0-reach<=a['position'][0]<=x1+reach and y0-reach<=a['position'][1]<=y1+reach
         bank_views={row['chunk_id'] for row in report['regions'] if row['scene_id']==info['scene_id']
-                    and any(a['source'] in bank_sources for a in row['actors'])}
+                    and (any(r['source'] in bank_sources for r in row['actors']) or any(sees(row,a) for a in bank_actors))}
         import pickups
         # Arena gates draw from the same bank (host/battle_gates.py), so a scene
         # with gates and nothing else still takes one.
