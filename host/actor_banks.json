@@ -1,5 +1,5 @@
 {"scenes": {
  "Crossroads_01": {"id": 4, "package": "art_runners", "package_bytes": 65536, "palettes": 8,
   "actors": ["Zombie Runner", "Zombie Runner 1"], "views": "all"},
- "Crossroads_10": {"id": 6, "package": "art_husks", "package_bytes": 35000, "palettes": 8, "reach": 8,
+ "Crossroads_10": {"id": 6, "package": "art_husks", "package_bytes": 36000, "palettes": 6, "reach": 8,
   "actors": ["Zombie Barger", "Zombie Runner", "Zombie Hornhead"]}}}
