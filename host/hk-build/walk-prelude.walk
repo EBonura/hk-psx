@@ -7,15 +7,24 @@
 def px i32(HK_PLAYER_X)
 def py i32(HK_PLAYER_Y)
 def ready u32(HK_NAIL_BUSY) == 0
+# The foe table: the 32 actor rows (HK_ACT, {x, y} Q16 a slot, x 2147483647 for none) and, as a 33rd row, Elder Baldur's spat
+# Roller, which the guest keeps in its own static (blocker_roller::ROLLER, an Option<Roller>: x at +4, y at +8, so +4 is a
+# {x, y} row; rustc puts None's niche in the bool at +64, value 2). The offsets are the layout of that struct on the toolchain
+# in the lock: if the struct changes, walk-baldur (HK_ROLLER_HITS pins) fails first.
+def roller u8(blocker_roller::ROLLER + 64) != 2
+def roller_x i32(blocker_roller::ROLLER + 4)
+def roller_y i32(blocker_roller::ROLLER + 8)
+def row (i < 32 ? HK_ACT + 8 * i : blocker_roller::ROLLER + 4)
+def live (i < 32 || $roller)
 # A live bodied foe in that side's swing box, the overhead box, a jump's reach, or close enough to keep a Focus from starting.
-def foe_left any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx < 0))
-def foe_right any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx >= 0))
-def foe_up any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 65536 + 26214 && dy >= 19660 && dy <= 2 * 65536 + 52428))
-def foe_jump any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 3 * 65536 && dy > 65536 + 39321 && dy <= 5 * 65536))
-def foe_near any(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && (abs(dx) <= 10 * 65536 && abs(dy) <= 5 * 65536))
+def foe_left any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx < 0))
+def foe_right any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && (dy >= -(2 * 65536 + 26214) && dy <= 65536 + 39321 && abs(dx) <= 3 * 65536 + 13107 && dx >= 0))
+def foe_up any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && (abs(dx) <= 65536 + 26214 && dy >= 19660 && dy <= 2 * 65536 + 52428))
+def foe_jump any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && (abs(dx) <= 3 * 65536 && dy > 65536 + 39321 && dy <= 5 * 65536))
+def foe_near any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && (abs(dx) <= 10 * 65536 && abs(dy) <= 5 * 65536))
 # How far past a swing's reach the nearest foe in the Knight's height band stands on that side (0: none, or one in reach).
-def gap_left let g = min(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx < 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
-def gap_right let g = min(i in 0..32: let ax = i32(HK_ACT + 8 * i), dx = ax - i32(HK_PLAYER_X), dy = i32(HK_ACT + 8 * i + 4) - i32(HK_PLAYER_Y) in ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx >= 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
+def gap_left let g = min(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx < 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
+def gap_right let g = min(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && abs(dy) <= 3 * 65536 && abs(dx) <= 16 * 65536 && dx >= 0 ? max(abs(dx) - 3 * 65536, 0) : 2147483647) in g == 2147483647 ? 0 : g
 # What a hold waits for: reads true while there is something to do.
 def strike_left $ready && $foe_left
 def strike_right $ready && $foe_right
@@ -24,3 +33,7 @@ def turn_left $strike_left && i32(HK_PLAYER_FACING) > 0
 def turn_right $strike_right && i32(HK_PLAYER_FACING) < 0
 def jumpstrike $ready && $foe_jump && (u32(HK_WALK_READY) == 1 || i32(HK_PLAYER_VY) > 0)
 def focus u32(HK_HEALTH) < u32(HK_HEALTH_MAX) && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && !$foe_near
+# A live foe ahead on that side within 5 units at the Knight's height (something to get away from), and few masks left.
+def chaser_left any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && dx < 0 && dx >= -(5 * 65536) && abs(dy) <= 3 * 65536)
+def chaser_right any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && dx >= 0 && dx <= 5 * 65536 && abs(dy) <= 3 * 65536)
+def low u32(HK_HEALTH) <= 2

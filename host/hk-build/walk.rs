@@ -497,7 +497,7 @@ fn heal(out: &mut String, label: &str) {
 const PRELUDE: &str = include_str!("walk-prelude.walk");
 
 /// `def NAME EXPRESSION` names an expression; a later `$NAME` is replaced with it in parentheses (longest names
-/// first, so `$threat_left` is not read as `$threat`). The `def` lines themselves are dropped.
+/// first, so `$roller_x` is not read as `$roller`). The `def` lines themselves are dropped.
 fn definitions(text: &str) -> Result<String> {
     let mut defs: Vec<(String, String)> = Vec::new();
     // The standing expressions every script may use (`strike_left`, `focus`, `gap_right`...).
@@ -511,6 +511,7 @@ fn definitions(text: &str) -> Result<String> {
             defs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
         }
     }
+    let standing: Vec<String> = defs.iter().map(|(name, _)| name.clone()).collect();
     let mut out = String::new();
     for (index, line) in text.lines().enumerate() {
         let code = line.split('#').next().unwrap_or("").trim();
@@ -518,6 +519,10 @@ fn definitions(text: &str) -> Result<String> {
             let Some((name, body)) = rest.trim().split_once(char::is_whitespace) else {
                 return Err(format!("line {}: def NAME EXPRESSION", index + 1));
             };
+            // A script's own name over a standing one would change what every macro means in it: refuse.
+            if standing.iter().any(|s| s == name) {
+                return Err(format!("line {}: `{name}` is a standing definition of walk-prelude.walk; pick another name", index + 1));
+            }
             let mut body = body.trim().to_string();
             for (known, text) in &defs {
                 body = body.replace(&format!("${known}"), &format!("({text})"));
@@ -749,6 +754,21 @@ pub fn macros(text: &str) -> Result<String> {
                     let _ = writeln!(out, "press square for 2 rest 22");
                 }
             }
+            // `retreat LO HI [at N]`: with N masks or fewer (2), walk away from a foe within 5 units on either side, to
+            // the platform's end (LO on the left, HI on the right) at most; no time at all when healthy or alone. The
+            // limits are the floor under the Knight, so the walk never leaves it.
+            ["retreat", lo, hi, rest @ ..] => {
+                let (lo, hi) = (number(Some(lo))?, number(Some(hi))?);
+                let masks = match rest {
+                    [] => 2,
+                    ["at", n] => number(Some(n))? as u64,
+                    _ => return Err(located("retreat LO HI [at N]".into())),
+                };
+                let timeout = 80 + ((hi - lo).abs() / WALK_PER_TICK) as u64;
+                let low = format!("u32(HK_HEALTH) <= {masks}");
+                let _ = writeln!(out, "hold left until expr !({low} && $chaser_right) || i32(HK_PLAYER_X) <= {} timeout {timeout} # {label}: away from the right", (lo * ONE as f64).round() as i64);
+                let _ = writeln!(out, "hold right until expr !({low} && $chaser_left) || i32(HK_PLAYER_X) >= {} timeout {timeout} # {label}: away from the left", (hi * ONE as f64).round() as i64);
+            }
             ["strike"] => strike_both(&mut out, label),
             ["snipe"] => snipe(&mut out, label),
             ["heal"] => heal(&mut out, label),
@@ -918,6 +938,23 @@ mod tests {
         assert!(toml.contains("HK_ACT") && toml.contains("HK_PLAYER_FACING") && toml.contains("HK_SOUL"));
         assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nhop 3 3\n").unwrap_err().contains("at X Y"));
+    }
+
+    #[test]
+    fn a_retreat_walks_away_from_a_close_foe_only_when_masks_are_few_and_stays_on_the_floor() {
+        let toml = compile_text("name t\nat 10 5.39\nretreat 8.5 14.5\n").unwrap();
+        // Left from a foe on the right until the floor's end (8.5 units = 557056), right from one on the left.
+        assert!(toml.contains("u32(HK_HEALTH) <= 2"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) <= 557056"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) >= 950272"), "{toml}");
+        assert!(!toml.contains('$'), "{toml}");
+        assert!(compile_text("name t\nretreat 1 two\n").unwrap_err().contains("number"));
+    }
+
+    #[test]
+    fn a_script_cannot_redefine_a_standing_definition() {
+        let err = compile_text("name t\ndef chaser_left u32(HK_FK_PHASE) == 1\n").unwrap_err();
+        assert!(err.contains("standing definition"), "{err}");
     }
 
     #[test]

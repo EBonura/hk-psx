@@ -8,12 +8,15 @@
 //! sixth of a unit to either side still lands on the same floor, because the walk's own positioning is only that exact.
 //!
 //! ```text
-//! hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]...
+//! hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards]
 //! ```
 //!
 //! Positions are the Knight's origin in world units (a floor at y 2 holds him at 3.39). `--tol` is how near the goal
 //! counts (0.4). `--open` leaves out the edges inside a box: a gate or a breakable wall the walk is meant to find open
-//! (the cooked edges hold every battle gate closed and every breakable standing).
+//! (the cooked edges hold every battle gate closed and every breakable standing). `--loose` keeps jumps that only land
+//! from the exact take-off x (the default drops a jump unless a take-off a seventh of a unit either side lands on the same
+//! floor); `--reach` prints how high and far a jump goes at each hold length. The scene's hazards (acid, spikes, from
+//! the cooked region list) are never walked or fallen into; `--no-hazards` ignores them.
 //!
 //! Not modelled: enemies, hazards, hard-landing locks (a walk waits for `HK_WALK_READY`), moving platforms, breakables
 //! that the walk has not been told are open. The output is a start; the disc is the judge.
@@ -21,6 +24,8 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
+
+mod room;
 
 use hk_sim::{Player, ONE};
 
@@ -49,8 +54,52 @@ fn units(q16: i32) -> f64 {
     f64::from(q16) / f64::from(ONE)
 }
 
+thread_local! {
+    /// The room's damaging boxes (acid, spikes; Q16, x0 y0 x1 y1) and whether the Knight's body touched one since the
+    /// last `clear_touch`. A plan never goes through one: the disc would cost a mask and put him back on a ledge.
+    static HAZARDS: std::cell::RefCell<Vec<Edge>> = const { std::cell::RefCell::new(Vec::new()) };
+    static TOUCHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn set_hazards(boxes: Vec<Edge>) {
+    HAZARDS.with(|h| *h.borrow_mut() = boxes);
+}
+
+fn clear_touch() {
+    TOUCHED.with(|t| t.set(false));
+}
+
+fn touched() -> bool {
+    TOUCHED.with(|t| t.get())
+}
+
+/// The scene's hazard boxes, from the cooked region list (each box once).
+fn load_hazards(root: &Path, scene: &str) -> Result<Vec<Edge>, String> {
+    let path = root.join("data/regions.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let q = |v: &serde_json::Value| (v.as_f64().unwrap_or(0.0) * f64::from(ONE)).round() as i32;
+    let mut boxes: Vec<Edge> = Vec::new();
+    for region in json["regions"].as_array().into_iter().flatten().filter(|r| r["scene_name"] == scene) {
+        for hazard in region["hazards"].as_array().into_iter().flatten() {
+            let b = &hazard["bounds"];
+            let boxed = [q(&b[0]), q(&b[1]), q(&b[2]), q(&b[3])];
+            if !boxes.contains(&boxed) {
+                boxes.push(boxed);
+            }
+        }
+    }
+    Ok(boxes)
+}
+
 fn step(player: &mut Player, edges: &[Edge], dir: i32, jump: bool) {
     player.step(PARAMS, dir, jump, edges.len(), |i| edges[i]);
+    HAZARDS.with(|h| {
+        let body = [player.x - PARAMS.half_width, player.y + PARAMS.bottom, player.x + PARAMS.half_width, player.y + PARAMS.top];
+        if h.borrow().iter().any(|b| body[0] < b[2] && body[2] > b[0] && body[1] < b[3] && body[3] > b[1]) {
+            TOUCHED.with(|t| t.set(true));
+        }
+    });
 }
 
 /// A state's cell: a quarter unit each way.
@@ -113,9 +162,13 @@ fn room_edges(bytes: &[u8]) -> Option<Vec<Edge>> {
 fn simulate_jump(from: &Player, edges: &[Edge], dir: i32, held: u32, steer: u32) -> Option<(Player, u32)> {
     let mut player = *from;
     let mut airborne = false;
+    clear_touch();
     for tick in 0..260u32 {
         let pad = if tick < steer { dir } else { 0 };
         step(&mut player, edges, pad, tick < held);
+        if touched() {
+            return None;
+        }
         airborne |= !player.grounded;
         if airborne && player.grounded {
             return Some((player, tick + 1));
@@ -147,7 +200,7 @@ struct Plan {
     expanded: usize,
 }
 
-fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Option<Plan> {
+fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robust: bool) -> Option<Plan> {
     const HELD: [u32; 9] = [5, 8, 12, 16, 20, 24, 28, 34, 42];
     const STEER: [u32; 11] = [0, 8, 16, 24, 32, 40, 52, 70, 100, 140, 260];
     let mut nodes = vec![Node { player: start, cost: 0, parent: 0, act: Act::Start }];
@@ -164,14 +217,16 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
         }
         expanded += 1;
         if expanded > 400_000 {
+            report_nearest(&nodes, goal);
             return None;
         }
         let mut found: Vec<(Player, u32, Act)> = Vec::new();
         for dir in [-1, 1] {
             let mut next = player;
+            clear_touch();
             step(&mut next, edges, dir, false);
             step(&mut next, edges, dir, false);
-            if (next.x - player.x).abs() < ONE / 20 {
+            if (next.x - player.x).abs() < ONE / 20 || touched() {
                 continue;
             }
             if next.grounded {
@@ -181,11 +236,12 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
             // Walked off a ledge: keep the direction down, or let go at once.
             for hold in [true, false] {
                 let (mut fall, mut ticks) = (next, 2);
+                clear_touch();
                 while !fall.grounded && ticks < 200 {
                     step(&mut fall, edges, if hold { dir } else { 0 }, false);
                     ticks += 1;
                 }
-                if fall.grounded && units(fall.y) > -30.0 {
+                if fall.grounded && units(fall.y) > -30.0 && !touched() {
                     found.push((fall, cost + ticks, Act::Fall { dir, hold, ledge_x: next.x }));
                 }
             }
@@ -201,7 +257,7 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
                     if (landed.x - player.x).abs() < ONE / 4 && (landed.y - player.y).abs() < ONE / 8 {
                         continue;
                     }
-                    let steady = [-ONE / 7, ONE / 7].into_iter().all(|shift| {
+                    let steady = !robust || [-ONE / 7, ONE / 7].into_iter().all(|shift| {
                         let mut early = player;
                         early.x += shift;
                         simulate_jump(&early, edges, dir, held, steer).is_some_and(|(l, _)| {
@@ -223,7 +279,30 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
             }
         }
     }
+    report_nearest(&nodes, goal);
     None
+}
+
+/// Where the search got closest to the goal when it found no path: the nearest reachable standing place (the next
+/// obstacle to open, or the ledge to look at).
+fn report_nearest(nodes: &[Node], goal: (f64, f64)) {
+    let distance = |n: &Node| {
+        let (dx, dy) = (units(n.player.x) - goal.0, units(n.player.y) - goal.1);
+        dx * dx + dy * dy
+    };
+    if std::env::var_os("HK_WALKPLAN_DUMP").is_some() {
+        for n in nodes {
+            eprintln!("reached {:.2} {:.2}", units(n.player.x), units(n.player.y));
+        }
+    }
+    if let Some(best) = nodes.iter().min_by(|a, b| distance(a).total_cmp(&distance(b))) {
+        eprintln!(
+            "hk-walkplan: nearest reachable place to the goal: x {:.2} y {:.2} ({} places reached)",
+            units(best.player.x),
+            units(best.player.y),
+            nodes.len()
+        );
+    }
 }
 
 fn side(dir: i32) -> &'static str {
@@ -234,8 +313,8 @@ fn side(dir: i32) -> &'static str {
     }
 }
 
-/// The walk fragment for a plan (see the header of `host/hk-build/walk.rs` for the directives).
-fn print_walk(plan: &Plan, edges: &[Edge], start: &Player) {
+/// The walk fragment for a plan (see the header of `host/hk-build/walk.rs` for the directives), one line each.
+fn walk_lines(plan: &Plan, edges: &[Edge], start: &Player) -> Vec<String> {
     let mut path = Vec::new();
     let mut at = plan.goal;
     while at != 0 {
@@ -243,11 +322,11 @@ fn print_walk(plan: &Plan, edges: &[Edge], start: &Player) {
         at = plan.nodes[at].parent;
     }
     path.reverse();
-    println!("at {:.2} {:.2}", units(start.x), units(start.y));
+    let mut out = vec![format!("at {:.2} {:.2}", units(start.x), units(start.y))];
     let mut walking: Option<(i32, f64)> = None;
-    let flush = |walking: &mut Option<(i32, f64)>| {
+    let flush = |walking: &mut Option<(i32, f64)>, out: &mut Vec<String>| {
         if let Some((_, x)) = walking.take() {
-            println!("walk {x:.2}");
+            out.push(format!("walk {x:.2}"));
         }
     };
     for &index in &path {
@@ -256,45 +335,112 @@ fn print_walk(plan: &Plan, edges: &[Edge], start: &Player) {
             Act::Start => {}
             Act::Walk { dir } => {
                 if walking.is_some_and(|(d, _)| d != dir) {
-                    flush(&mut walking);
+                    flush(&mut walking, &mut out);
                 }
                 walking = Some((dir, units(node.player.x)));
             }
             Act::Fall { dir, hold, ledge_x } => {
-                flush(&mut walking);
+                flush(&mut walking, &mut out);
                 let x = if hold { units(node.player.x) } else { units(ledge_x) + 0.35 * f64::from(dir) };
-                println!("drop {x:.2} {:.2}", units(node.player.y));
+                out.push(format!("drop {x:.2} {:.2}", units(node.player.y)));
             }
             Act::Jump { dir, held, steer, from_x } => {
-                flush(&mut walking);
+                flush(&mut walking, &mut out);
                 // Reversing at the take-off costs a jump its first ticks on the disc: come in moving the way it goes.
                 if dir != 0 {
                     let run = run_up(&plan.nodes[node.parent].player, edges, -dir);
                     if run > 0.25 {
-                        println!("walk {:.2}   # run-up", units(from_x) - (run - 0.05) * f64::from(dir));
+                        out.push(format!("walk {:.2}   # run-up", units(from_x) - (run - 0.05) * f64::from(dir)));
                     }
                 }
-                println!("walk {:.2}   # take-off", units(from_x));
+                out.push(format!("walk {:.2}   # take-off", units(from_x)));
                 if dir == 0 {
-                    println!("hold cross for {held}");
+                    out.push(format!("hold cross for {held}"));
                 } else {
-                    println!("hold {}+cross for {held}", side(dir));
+                    out.push(format!("hold {}+cross for {held}", side(dir)));
                     if steer > held {
-                        println!("hold {} for {}", side(dir), steer - held);
+                        out.push(format!("hold {} for {}", side(dir), steer - held));
                     }
                 }
                 let y = units(node.player.y);
-                println!("wait until y between {:.2} {:.2} timeout 240   # land at x {:.2}", y - 0.15, y + 0.15, units(node.player.x));
-                println!("wait 6");
-                println!("wait until HK_WALK_READY == 1 timeout 300");
+                out.push(format!(
+                    "wait until y between {:.2} {:.2} timeout 240   # land at x {:.2}",
+                    y - 0.15,
+                    y + 0.15,
+                    units(node.player.x)
+                ));
+                out.push("wait 6".to_string());
+                out.push("wait until HK_WALK_READY == 1 timeout 300".to_string());
             }
         }
     }
-    flush(&mut walking);
+    flush(&mut walking, &mut out);
+    out
+}
+
+/// What a jump from the start reaches in open air (no walls): for each number of ticks the button is held, the apex
+/// above the take-off and the horizontal distance by the time it is back at the take-off height with the direction held
+/// throughout. The ceiling of the planner's reach, whatever the room.
+fn print_reach(_edges: &[Edge], _start: &Player) {
+    // A flat floor at y 0 under open air, so only the jump itself is measured.
+    let floor = [[100 * ONE, 0, -100 * ONE, 0]];
+    for held in [4, 8, 12, 16, 20, 24, 28, 34, 42, 60] {
+        let mut player = Player::spawn(0, 2 * ONE);
+        for _ in 0..60 {
+            step(&mut player, &floor, 0, false);
+        }
+        let (ground, mut apex, mut ticks) = (player.y, 0, 0);
+        loop {
+            step(&mut player, &floor, 1, ticks < held);
+            apex = apex.max(player.y - ground);
+            ticks += 1;
+            if (player.grounded && ticks > 3) || ticks > 400 {
+                break;
+            }
+        }
+        eprintln!(
+            "reach: jump held {held:2} ticks: apex {:.2} above the take-off, {ticks} ticks in the air, {:.2} across (direction held)",
+            units(apex),
+            units(player.x)
+        );
+    }
 }
 
 fn usage() -> String {
-    "usage: hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]...".to_string()
+    "usage: hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards]".to_string()
+}
+
+/// The Knight settled on the floor under (x, y), world units.
+fn standing(edges: &[Edge], x: f64, y: f64) -> Result<Player, String> {
+    let q = |v: f64| (v * f64::from(ONE)).round() as i32;
+    let mut start = Player::spawn(q(x), q(y + 0.3));
+    for _ in 0..200 {
+        step(&mut start, edges, 0, false);
+        if start.grounded {
+            return Ok(start);
+        }
+    }
+    Err(format!("the start ({x}, {y}) is not over a floor"))
+}
+
+/// How far the Knight can walk either way from (x, y) and stay on the same floor, world units: (left, right), with half
+/// a unit kept back from each end. A retreat that stays inside it never walks off the platform or into a wall.
+fn floor_span(edges: &[Edge], x: f64, y: f64) -> Result<(f64, f64), String> {
+    let start = standing(edges, x, y)?;
+    let reach = |dir: i32| {
+        let mut now = start;
+        for _ in 0..4000 {
+            let mut next = now;
+            step(&mut next, edges, dir, false);
+            if !next.grounded || (next.y - now.y).abs() > ONE / 8 || (next.x - now.x).abs() < ONE / 50 {
+                break;
+            }
+            now = next;
+        }
+        units(now.x)
+    };
+    let (left, right) = (reach(-1), reach(1));
+    Ok(((left + 0.5).min(units(start.x)), (right - 0.5).max(units(start.x))))
 }
 
 fn run() -> Result<(), String> {
@@ -304,9 +450,24 @@ fn run() -> Result<(), String> {
     }
     let number = |i: usize| args[i].parse::<f64>().map_err(|_| usage());
     let (start_xy, goal) = ((number(1)?, number(2)?), (number(3)?, number(4)?));
-    let (mut tolerance, mut open) = (0.4, Vec::new());
+    let (mut tolerance, mut open, mut robust, mut reach, mut hazards) = (0.4, Vec::new(), true, false, true);
     let mut rest = args[5..].iter();
     while let Some(flag) = rest.next() {
+        match flag.as_str() {
+            "--loose" => {
+                robust = false;
+                continue;
+            }
+            "--reach" => {
+                reach = true;
+                continue;
+            }
+            "--no-hazards" => {
+                hazards = false;
+                continue;
+            }
+            _ => {}
+        }
         let value = rest.next().ok_or_else(usage)?;
         match flag.as_str() {
             "--tol" => tolerance = value.parse().map_err(|_| usage())?,
@@ -319,25 +480,25 @@ fn run() -> Result<(), String> {
     }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let edges = load_edges(&root, &args[0], &open)?;
-    let q = |v: f64| (v * f64::from(ONE)).round() as i32;
-    let mut start = Player::spawn(q(start_xy.0), q(start_xy.1 + 0.3));
-    for _ in 0..200 {
-        step(&mut start, &edges, 0, false);
-        if start.grounded {
-            break;
-        }
+    if hazards {
+        set_hazards(load_hazards(&root, &args[0])?);
     }
-    if !start.grounded {
-        return Err(format!("the start ({}, {}) is not over a floor", start_xy.0, start_xy.1));
+    let start = standing(&edges, start_xy.0, start_xy.1)?;
+    if reach {
+        print_reach(&edges, &start);
     }
-    let plan = search(&edges, start, goal, tolerance).ok_or("no path from the start to the goal (enemies, gates and breakables are not modelled; try --open)")?;
+    let plan = search(&edges, start, goal, tolerance, robust).ok_or("no path from the start to the goal (enemies, gates and breakables are not modelled; try --open)")?;
     eprintln!("{} states reached, {} ticks, {} expanded", plan.nodes.len(), plan.nodes[plan.goal].cost, plan.expanded);
-    print_walk(&plan, &edges, &start);
+    for line in walk_lines(&plan, &edges, &start) {
+        println!("{line}");
+    }
     Ok(())
 }
 
 fn main() {
-    if let Err(message) = run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let result = if args.first().is_some_and(|a| a == "room") { room::run(&args[1..]) } else { run() };
+    if let Err(message) = result {
         eprintln!("hk-walkplan: {message}");
         std::process::exit(1);
     }
@@ -384,7 +545,7 @@ mod tests {
     fn a_step_block_is_climbed_and_the_walk_says_how() {
         let edges = room();
         let start = standing(0.0, &edges);
-        let plan = search(&edges, start, (6.5, 5.39), 0.5).expect("a path onto the block");
+        let plan = search(&edges, start, (6.5, 5.39), 0.5, true).expect("a path onto the block");
         let landed = plan.nodes[plan.goal].player;
         assert!(landed.grounded && (units(landed.y) - 5.39).abs() < 0.1);
         assert!(plan.nodes.iter().any(|n| matches!(n.act, Act::Jump { .. })));
@@ -397,7 +558,15 @@ mod tests {
         edges[1] = [q(8.0), q(40.0), q(8.0), q(2.0)];
         edges[3] = [q(5.0), q(2.0), q(5.0), q(40.0)];
         let start = standing(0.0, &edges);
-        assert!(search(&edges, start, (15.0, 3.39), 0.5).is_none());
+        assert!(search(&edges, start, (15.0, 3.39), 0.5, true).is_none());
+    }
+
+    #[test]
+    fn the_floor_span_stops_at_a_wall_and_at_the_edge() {
+        let edges = room();
+        // Left of the step block the floor runs from x -10 to the wall at 5.
+        let (lo, hi) = floor_span(&edges, 0.0, 3.39).expect("a floor");
+        assert!((lo - -9.5).abs() < 0.4 && hi > 3.5 && hi < 5.0, "{lo} {hi}");
     }
 
     #[test]
