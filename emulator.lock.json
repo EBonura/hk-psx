@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/EBonura/PSoXide-emulator.git",
-  "revision": "0e87b3a64fa598ef8ef2bd8f84f7cc9316b2e3d9",
+  "revision": "1d4f6d4e191cbe54bd1ea86fc7b9ee576a7bf1e1",
   "purpose": "The emulator `pgo` profiles and `validate` replays the route tapes on. Its SDK component is the one its own components.lock.json names.",
   "license": "GPL-2.0-or-later"
 }
