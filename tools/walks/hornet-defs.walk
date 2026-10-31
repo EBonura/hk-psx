@@ -29,4 +29,4 @@ def dash_end ($hdx < 0 ? $hx + 373555 : $hx - 373555)
 def throw_near $hlive && $hs == 35 && $adx < 622592
 # Focus: masks missing, SOUL for it (or one under way), on the ground, and no hit box can reach him for the next stretch: the Knight is
 # still invulnerable from a hit and she is not near, or she is throwing from beyond the needle's reach (the throw is 100 ticks in which she stays put).
-def hheal $focus && !$g_dash && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504)
+def hheal $focus && !$g_dash && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504)

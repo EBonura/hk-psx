@@ -24,7 +24,8 @@ def threat_right (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx >= 0 && dx
 # A slam wave coming at the Knight and nearer than 5 units.
 def wave_near any(i in 0..2: let wx = i32(HK_WAVE[2 * i]), wd = i32(HK_WAVE[2 * i + 1]) in wd != 0 && ($px - wx) * wd >= 0 && ($px - wx) * wd < 5 * 65536)
 # Focus: masks missing, SOUL for it (or one under way), on the ground, and he is far off (17 units or more).
-def want_focus u32(HK_HEALTH) < 5 && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && ((i32(HK_FK_DX) > 17 * 65536 || i32(HK_FK_DX) < -17 * 65536) && !$wave_near)
+# (Two masks or fewer: also while he is staggered, armour rolling or open, which holds him still for seconds.)
+def want_focus u32(HK_HEALTH) < 5 && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && (((i32(HK_FK_DX) > 17 * 65536 || i32(HK_FK_DX) < -17 * 65536) && !$wave_near) || (u32(HK_HEALTH) <= 2 && $fk_live && (u32(HK_FK_PHASE) == 3 || u32(HK_FK_PHASE) == 4)))
 
 def raging (u32(HK_FK_FLAGS) & 2) != 0
 # Staggered (armour rolling or open): go and stand under the Head, within a unit of it.

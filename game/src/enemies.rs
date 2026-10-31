@@ -58,6 +58,10 @@ pub static mut HK_HORNET_STATE: u16 = 0;
 #[cfg(feature = "hornet")]
 #[no_mangle]
 pub static mut HK_HORNET_AGE: u16 = 0;
+/// The Knight's invulnerability ticks left after a hit (a walk heals inside it), read in her tick so that the frame loop carries nothing of it.
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_INVULN: u16 = 0;
 /// The thrown Needle's position (Q16.16 world units; x `i32::MAX` while it is not out).
 #[cfg(feature = "hornet")]
 #[no_mangle]

@@ -178,6 +178,29 @@ snipe
 guard 2
 retreat 5.16 8.25
 heal
+walk 4.47
+walk 4.90   # run-up
+walk 4.47   # take-off
+hold left+cross for 5
+hold left for 7
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 1.75 2.81
+snipe
+guard 2
+retreat 1.75 2.81
+heal
+walk 2.38   # run-up
+walk 2.81   # take-off
+hold right+cross for 16
+hold right for 3
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 5.16 8.25
+snipe
+guard 2
+retreat 5.16 8.25
+heal
 walk 5.99
 walk 5.56   # run-up
 walk 5.99   # take-off

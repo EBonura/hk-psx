@@ -1,4 +1,4 @@
-# Planned and played with hk-walkplan room (tools/walkplan/src/room.rs): one hop at a time over the room's collision, fights between hops, a probe after each. Its exit is the gate to Fungus1_06.
+# Planned and played with hk-walkplan room (tools/walkplan/src/room.rs): one hop at a time over the room's collision, fights between hops, a probe after each.
 at 45.50 61.40
 walk 43.01
 walk 43.44   # run-up

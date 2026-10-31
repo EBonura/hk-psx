@@ -154,6 +154,7 @@ pub fn tick(
         let state = s.fight.boss.tree().state(0) as u16;
         super::HK_HORNET_AGE = if state == super::HK_HORNET_STATE { super::HK_HORNET_AGE.saturating_add(1) } else { 0 };
         super::HK_HORNET_STATE = state;
+        super::HK_HORNET_INVULN = vitals.invulnerable_ticks;
         let w = &s.fight.boss.world;
         // Object 7 is the Needle: out while it and every ancestor are active.
         super::HK_HORNET_NEEDLE = if w.active_in_hierarchy(7) {
