@@ -1,0 +1,20 @@
+# The Snail Shaman in the Ancestral Mound (Crossroads_ShamanTemple), closed loop on HK_SHAMAN_PHASE / HK_SHAMAN_STATE: stand in his listening
+# box, UP to talk, close the talk (the Meet talk ends in the summon whichever way it is closed), wait out the summon, walk under the orb that
+# appears and jump into it, wait for the black and the get-item message, confirm it and rise. Nothing here is timed: every wait is on a phase.
+# Phases (game/src/shaman.rs): 0 idle, 1 talk, 2 summon, 3 appear, 4 absorb, 5 black, 6 message, 7 fade, 8 prostrate.
+# Starts anywhere on the Mound's floor left of the Shaman's trapped half (x 0..38); ends where the cutscene wakes the Knight (x ~46).
+at 15.09 8.39
+walk 24 tol 0.5                                # the listening box is x 20.9 .. 26.9
+press up                                       # talk to him
+wait until HK_SHAMAN_PHASE == 1 timeout 120
+press circle                                  # close the talk: it ends in the summon either way
+wait until HK_SHAMAN_PHASE == 2 timeout 120
+wait until HK_SHAMAN_STATE == 1 timeout 600    # the summon is over and the orb is out
+wait until HK_SHAMAN_PHASE == 0 timeout 600
+walk 19.5 tol 0.3                              # under the orb (box x 19.1 .. 19.9, y 10.5 .. 11.3)
+hold cross until HK_SHAMAN_PHASE == 4 timeout 60   # jump into it: the pickup takes the Knight
+wait until HK_SHAMAN_PHASE == 6 timeout 900    # absorb, black, the get-item message
+press cross
+wait until HK_SHAMAN_PHASE == 8 timeout 900    # the fade back
+press right                                    # he rises
+wait until HK_SHAMAN_PHASE == 0 timeout 300

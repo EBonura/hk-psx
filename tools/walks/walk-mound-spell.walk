@@ -1,0 +1,14 @@
+name walk-mound-spell
+title from the seeded card in the Ancestral Mound (mound-spell.mcd, Vengeful Spirit not yet earned): the Snail Shaman talks, summons the spell, the Knight jumps into it
+max_ticks 12000
+# The closed-loop earn of Vengeful Spirit (mound-spell.walk). The card is a seeded record (docs/ROUTES.md), the walk is the same fragment
+# the long route plays after the bench in the Mound.
+card mound-spell.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+at 28 8.39
+include mound-spell.walk
+check spell-earned HK_SPELL_EARNED == 1 ; HK_SHAMAN_STATE == 2 ; HK_SHAMAN_TALKS == 1 ; HK_SOUL >= 99 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 5
