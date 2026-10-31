@@ -159,7 +159,7 @@ Reactions are expressions the gate evaluates (psoxide-gate `kind = "expr"`) over
 
 | Word | Meaning |
 | --- | --- |
-| `HK_ACT[32]` | `{x, y}` (Q16) of each live bodied actor of the loaded scene by slot; x is `i32::MAX` for a slot with none |
+| `HK_ACT[33]` | `{x, y}` (Q16) of each live bodied actor of the loaded scene by slot (the 33rd is the Elder Baldur's spat Roller); x is `i32::MAX` for a slot with none |
 | `HK_PLAYER_X/Y/VY`, `HK_PLAYER_FACING` | the Knight's place, vertical speed, and facing (1 right, -1 left) |
 | `HK_NAIL_BUSY` | 1 while the nail cannot start a swing (mid-swing, cooling down, a hit's recoil, a hard landing) |
 | `HK_WALK_READY` | 1 on the ground with no landing lock and no gate entry running |

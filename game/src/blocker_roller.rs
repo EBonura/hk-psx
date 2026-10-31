@@ -87,6 +87,7 @@ pub fn spawn(scene: usize, at: [i32; 2], velocity: [i32; 2], moving_right: bool)
         recoil_left: 0,
         recoil_dir: 0,
     });
+    publish();
     unsafe {
         HK_ROLLERS_SPAWNED = HK_ROLLERS_SPAWNED.wrapping_add(1);
     }
@@ -94,6 +95,14 @@ pub fn spawn(scene: usize, at: [i32; 2], velocity: [i32; 2], moving_right: bool)
 /// A scene left, a death or a reset: it does not outlive the room.
 pub fn reset() {
     *me() = None;
+    publish();
+}
+/// Where it stands, in the walker's actor table (`enemies::HK_ACT`, the slot after the last actor): read-only route
+/// telemetry, so a walk strikes it like any other foe.
+fn publish() {
+    let row = me().as_ref().map_or([crate::enemies::ACT_NONE, 0], |r| [r.x, r.y]);
+    // SAFETY: single-threaded guest; written here only, read by the route gate.
+    unsafe { (*(&raw mut crate::enemies::HK_ACT))[hk_sim::MAX_ACTORS] = row };
 }
 fn body(r: &Roller) -> [i32; 4] {
     [
@@ -126,7 +135,7 @@ pub fn tick(
         return events;
     };
     if r.scene != scene {
-        *me() = None;
+        reset();
         return events;
     }
     r.age = r.age.wrapping_add(1);
@@ -186,6 +195,7 @@ pub fn tick(
     r.grounded = player.grounded;
     r.x = player.x - CENTRE_X;
     r.y = player.y;
+    publish();
     let b = body(r);
     if let Some(polygon) = polygon {
         if r.cooldown == 0 && hk_sim::polygon_hits_box(polygon, b) {
@@ -204,7 +214,7 @@ pub fn tick(
             }
             if r.hp == 0 {
                 events.killed = true;
-                *me() = None;
+                reset();
                 unsafe {
                     HK_ROLLERS_KILLED = HK_ROLLERS_KILLED.wrapping_add(1);
                 }

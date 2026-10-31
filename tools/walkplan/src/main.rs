@@ -164,6 +164,7 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
         }
         expanded += 1;
         if expanded > 400_000 {
+            report_nearest(&nodes, goal);
             return None;
         }
         let mut found: Vec<(Player, u32, Act)> = Vec::new();
@@ -223,7 +224,30 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
             }
         }
     }
+    report_nearest(&nodes, goal);
     None
+}
+
+/// Where the search got closest to the goal when it found no path: the nearest reachable standing place (the next
+/// obstacle to open, or the ledge to look at).
+fn report_nearest(nodes: &[Node], goal: (f64, f64)) {
+    let distance = |n: &Node| {
+        let (dx, dy) = (units(n.player.x) - goal.0, units(n.player.y) - goal.1);
+        dx * dx + dy * dy
+    };
+    if std::env::var_os("HK_WALKPLAN_DUMP").is_some() {
+        for n in nodes {
+            eprintln!("reached {:.2} {:.2}", units(n.player.x), units(n.player.y));
+        }
+    }
+    if let Some(best) = nodes.iter().min_by(|a, b| distance(a).total_cmp(&distance(b))) {
+        eprintln!(
+            "hk-walkplan: nearest reachable place to the goal: x {:.2} y {:.2} ({} places reached)",
+            units(best.player.x),
+            units(best.player.y),
+            nodes.len()
+        );
+    }
 }
 
 fn side(dir: i32) -> &'static str {

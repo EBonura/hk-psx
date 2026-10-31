@@ -5063,9 +5063,9 @@ pub static mut HK_FK_DX: i32 = i32::MAX;
 #[no_mangle]
 pub static mut HK_FK_PHASE: u32 = 0;
 /// The live bodied actors of the loaded scene, `{x, y}` a slot in `EnemyWorld::actors` order, Q16 world units; x is
-/// `ACT_NONE` for a slot with none. Read-only, for walk expressions (`publish_walk_words`).
+/// `ACT_NONE` for a slot with none. The slot after the last actor is the Elder Baldur's spat Roller (`blocker_roller`). Read-only, for walk expressions (`publish_walk_words`).
 #[no_mangle]
-pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS] = [[ACT_NONE, 0]; MAX_ACTORS];
+pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS + 1] = [[ACT_NONE, 0]; MAX_ACTORS + 1];
 pub const ACT_NONE: i32 = i32::MAX;
 /// Where the False Knight stands (Q16 world units), his body box from there, his Head box being `hk_sim::false_knight::HEAD_BOX`,
 /// and bit 0: the armour refuses a nail, bit 1: he rages (a stagger won in a rage never ends it). Read-only, for walk expressions.
