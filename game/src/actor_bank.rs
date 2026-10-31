@@ -1,7 +1,7 @@
 //! A compact art bank for ordinary actors (docs/BOSS-ART.md, generalised past one boss): the sprites of an actor family as
 //! parts of at most 64x64 texels held packbits-coded in one logical byte string (a `hk_format::boss::Bank` blob), decoded into
 //! the animation cache's slots when a frame first needs them. A scene opts in by data (`data/actor_banks.rs`, written by
-//! host/actor_bank.py from host/actor_banks.json). The blob is stored in up to two pieces of memory read as one (`Pieces`): its
+//! host/actor_bank.py from host/actor_banks.json). The blob is stored in two pieces of memory read as one (`read`): its
 //! head is a data package in the module pool (`modules::bytes`), whatever does not fit the room's pool slack follows as linked
 //! read-only data. The bank's palettes ride in the views that draw the actors, as tiny carrier textures.
 //!
@@ -11,7 +11,7 @@
 //! no marker (`NO_MARKER`) and no frame can match it.
 //!
 //! The bank's animation-cache keys are the boss bank's (`boss_bank::KEY_BASE`): a scene carries one or the other.
-use hk_format::boss::{Bank, Blob};
+use hk_format::boss::{Bank, Part, Sprite, BANK_MAGIC, PART_BYTES, RAW, SPRITE_BYTES};
 use hk_format::Room;
 
 /// A scene that draws actors from a bank: its manifest index, the module id of the data package that holds the head of the
@@ -48,62 +48,102 @@ pub static mut HK_ACTOR_BANK_MISSES: u32 = 0;
 #[no_mangle]
 pub static mut HK_ACTOR_BANK_UNBOUND: u32 = 0;
 
-/// One byte string stored in two pieces of memory: `head`, then `rest`. Reads past the end give 0 like any `Blob`.
-#[derive(Clone, Copy)]
-pub struct Pieces {
-    head: &'static [u8],
-    rest: &'static [u8],
-}
-impl Blob for Pieces {
-    // Out of line: `Bank::open` and `part` read dozens of header bytes, and each inlined copy of this is a dozen instructions.
-    #[inline(never)]
-    fn byte(&self, at: usize) -> u8 {
-        match self.head.get(at) {
-            Some(b) => *b,
-            None => self.rest.get(at - self.head.len()).copied().unwrap_or(0),
-        }
-    }
-    fn read(&self, at: usize, out: &mut [u8]) {
-        let in_head = self.head.get(at..).unwrap_or(&[]);
-        let n = in_head.len().min(out.len());
-        out[..n].copy_from_slice(&in_head[..n]);
-        let from = at.saturating_sub(self.head.len());
-        let in_rest = self.rest.get(from..).unwrap_or(&[]);
-        let m = in_rest.len().min(out.len() - n);
-        out[n..n + m].copy_from_slice(&in_rest[..m]);
-        out[n + m..].fill(0);
-    }
-}
-
-/// The bank of the bound scene; empty pieces when there is none.
-static mut BLOB: Pieces = Pieces { head: &[], rest: &[] };
+/// The bank's blob, stored in two pieces of memory read as one byte string: `HEAD`, then `REST`. Reads past the end give 0.
+static mut HEAD: &[u8] = &[];
+static mut REST: &[u8] = &[];
+/// The bank's counts and table offsets, read once by `set` (0 sprites: no bank).
+static mut ID: u16 = 0;
+static mut SPRITES: u32 = 0;
+static mut PARTS: u32 = 0;
+static mut SPRITE_AT: u32 = 0;
+static mut PART_AT: u32 = 0;
 /// The first carrier texture of the bound room, or `NO_MARKER`.
 static mut MARKER: u16 = NO_MARKER;
 /// The CLUT word of each palette, from the carrier textures of the bound room.
 static mut CLUTS: [u16; MAX_PALETTES] = [0; MAX_PALETTES];
 
+/// `out.len()` bytes of the blob from `at`, zero past its end. One concrete reader instead of a generic `Bank<B>`: the
+/// resident image pays for every instance of the generic code.
+fn read(at: usize, out: &mut [u8]) {
+    let (head, rest) = unsafe { (HEAD, REST) };
+    let in_head = head.get(at..).unwrap_or(&[]);
+    let n = in_head.len().min(out.len());
+    out[..n].copy_from_slice(&in_head[..n]);
+    let in_rest = rest.get(at.saturating_sub(head.len())..).unwrap_or(&[]);
+    let m = in_rest.len().min(out.len() - n);
+    out[n..n + m].copy_from_slice(&in_rest[..m]);
+    out[n + m..].fill(0);
+}
+fn u32_at(at: usize) -> u32 {
+    let mut b = [0; 4];
+    read(at, &mut b);
+    u32::from_le_bytes(b)
+}
+
 /// Hand the loader's bytes to the reader: the blob's head and the rest, or two empty slices to take the bank away. A bank
-/// with more than `MAX_PARTS` parts is refused.
+/// with more than `MAX_PARTS` parts, or whose header is not one, is refused.
 pub fn set(head: &'static [u8], rest: &'static [u8]) {
     unsafe {
-        BLOB = Pieces { head, rest };
+        HEAD = head;
+        REST = rest;
         MARKER = NO_MARKER;
-        if Bank::open(BLOB).is_some_and(|b| b.parts as usize > MAX_PARTS) {
-            BLOB = Pieces { head: &[], rest: &[] };
+        SPRITES = 0;
+        if u32_at(0) != BANK_MAGIC {
+            return;
         }
+        let mut h = [0; 40];
+        read(0, &mut h);
+        let word = |i: usize| u32::from_le_bytes([h[i], h[i + 1], h[i + 2], h[i + 3]]);
+        if word(12) as usize > MAX_PARTS {
+            return;
+        }
+        ID = u16::from_le_bytes([h[4], h[5]]);
+        PARTS = word(12);
+        SPRITE_AT = word(32);
+        PART_AT = word(36);
+        SPRITES = word(8);
     }
 }
 
 /// Whether a bank is loaded.
 #[inline(always)]
 pub fn active() -> bool {
-    unsafe { !BLOB.head.is_empty() }
+    unsafe { SPRITES != 0 }
 }
 
 /// The texture id that marks a bank frame in the bound room.
 #[inline(always)]
 pub fn marker() -> u16 {
     unsafe { MARKER }
+}
+
+fn sprite_at(i: usize) -> Sprite {
+    let mut b = [0; SPRITE_BYTES];
+    read(unsafe { SPRITE_AT } as usize + i * SPRITE_BYTES, &mut b);
+    let u16_at = |p: usize| u16::from_le_bytes([b[p], b[p + 1]]);
+    let i32_at = |p: usize| i32::from_le_bytes([b[p], b[p + 1], b[p + 2], b[p + 3]]);
+    Sprite {
+        width: u16_at(0),
+        height: u16_at(2),
+        bounds: [i32_at(4), i32_at(8), i32_at(12), i32_at(16)],
+        first_part: u16_at(20),
+        parts: u16_at(22),
+        palette: b[24],
+    }
+}
+fn part_at(i: usize) -> Part {
+    let mut b = [0; PART_BYTES];
+    read(unsafe { PART_AT } as usize + i * PART_BYTES, &mut b);
+    let u16_at = |p: usize| u16::from_le_bytes([b[p], b[p + 1]]);
+    Part {
+        x: u16_at(0),
+        y: u16_at(2),
+        width: b[4],
+        height: b[5],
+        coded: u16_at(6),
+        sprite: u16_at(8),
+        offset: u32::from_le_bytes([b[10], b[11], b[12], b[13]]),
+    }
 }
 
 /// Bind the bank of manifest scene `scene` (or none) to the view `room`: hand its bytes to the reader and find the
@@ -120,7 +160,7 @@ pub fn bind(room: &Room, scene: usize) {
         None => unsafe { HK_ACTOR_BANK_UNBOUND = HK_ACTOR_BANK_UNBOUND.wrapping_add(1) },
     }
     unsafe {
-        let id = Bank::open(BLOB).map(|b| b.id);
+        let id = active().then_some(ID);
         for t in 0..room.counts[1] {
             let tex = room.texture(t);
             if !tex.is_streamed() {
@@ -162,19 +202,19 @@ pub struct Piece {
 /// The parts of sprite `sprite`, each to `f`. False if the bank has no such sprite.
 #[cfg_attr(not(test), optimize(size))]
 pub fn pieces(sprite: usize, mut f: impl FnMut(Piece)) -> bool {
-    let Some(bank) = Bank::open(unsafe { BLOB }).filter(|b| sprite < b.sprites as usize) else {
+    if sprite >= unsafe { SPRITES } as usize {
         unsafe { HK_ACTOR_BANK_MISSES = HK_ACTOR_BANK_MISSES.wrapping_add(1) };
         return false;
-    };
-    let s = bank.sprite(sprite);
+    }
+    let s = sprite_at(sprite);
     for p in s.first_part as usize..(s.first_part + s.parts) as usize {
-        let part = bank.part(p);
+        let part = part_at(p);
         f(Piece {
             key: KEY_BASE + p as u16,
             clut: unsafe { CLUTS[(s.palette as usize).min(MAX_PALETTES - 1)] },
             width: part.width,
             height: part.height,
-            bounds: Bank::<Pieces>::part_bounds(&s, &part),
+            bounds: Bank::<&[u8]>::part_bounds(&s, &part),
         });
     }
     true
@@ -188,14 +228,39 @@ struct Buf([u8; 2048]);
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 pub fn upload(index: usize, slot: usize) -> Option<u32> {
-    let bank = Bank::open(unsafe { BLOB }).filter(|b| index < b.parts as usize)?;
-    let part = bank.part(index);
+    if index >= unsafe { PARTS } as usize {
+        return None;
+    }
+    let part = part_at(index);
     let len = part.texel_bytes();
     if len == 0 || len > 2048 {
         return None;
     }
     let mut buf = Buf([0; 2048]);
-    bank.decode_into(&part, &mut buf.0)?;
+    let out = &mut buf.0[..len];
+    let mut at = part.offset as usize;
+    if part.coded & RAW != 0 {
+        read(at, out);
+    } else {
+        // Packbits: a token below 0x80 is a literal of token + 1 bytes, from 0x80 a run of (token & 0x7f) + 2 copies of the next.
+        let mut done = 0;
+        while done < len {
+            let mut token = [0u8; 2];
+            read(at, &mut token);
+            at += 1;
+            if token[0] < 0x80 {
+                let n = (token[0] as usize + 1).min(len - done);
+                read(at, &mut out[done..done + n]);
+                at += token[0] as usize + 1;
+                done += n;
+            } else {
+                let n = ((token[0] & 0x7f) as usize + 2).min(len - done);
+                out[done..done + n].fill(token[1]);
+                at += 1;
+                done += n;
+            }
+        }
+    }
     crate::texture_upload::upload(crate::animation_cache::dest(slot, part.width as u16, part.height as u16), &buf.0[..len]);
     unsafe { HK_ACTOR_BANK_UPLOADS = HK_ACTOR_BANK_UPLOADS.wrapping_add(1) };
     crate::input::poll_only();
@@ -290,17 +355,13 @@ mod tests {
         let whole = bank(5, 10);
         for cut in 0..=whole.len() {
             set(leak(&whole[..cut]), leak(&whole[cut..]));
-            // An empty head means no bank, as an unloaded package does.
-            assert_eq!(active(), cut != 0, "cut {cut}");
-            if cut == 0 {
-                continue;
-            }
-            let b = Bank::open(unsafe { BLOB }).expect("a bank whose header may straddle the cut");
-            assert_eq!((b.sprites, b.parts), (5, 5));
+            assert!(active(), "cut {cut}");
+            assert_eq!(unsafe { (SPRITES, PARTS, ID) }, (5, 5, 7), "cut {cut}");
             for i in 0..5 {
-                let part = b.part(i);
+                let (sprite, part) = (sprite_at(i), part_at(i));
+                assert_eq!((sprite.width, sprite.first_part, sprite.parts, part.sprite), (4, i as u16, 1, i as u16));
                 let mut got = [0u8; 4];
-                b.decode_into(&part, &mut got[..part.texel_bytes().min(4)]).unwrap();
+                read(part.offset as usize, &mut got);
                 assert_eq!(got, [10 + i as u8; 4], "cut {cut} part {i}");
             }
             let mut keys = std::vec::Vec::new();
@@ -309,6 +370,7 @@ mod tests {
             assert!(!pieces(5, |_| panic!("no such sprite")));
         }
         set(&[], &[]);
+        assert!(!active());
     }
 
     #[test]

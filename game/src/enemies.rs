@@ -6772,38 +6772,33 @@ impl EnemyWorld {
         for (scene, position, dir, spurt) in waved.into_iter().flatten() {
             self.spawn_wave(scene, position, dir, spurt);
         }
-        // `Kill Zombies`: every Zombie of the arena's scene still standing goes at once, with no corpse and no Geo, as
-        // the original's burst leaves nothing of it (one killed by the nail before has died its own death already).
+        // `Kill Zombies`: the Zombies of the arena's scene still standing go, one a tick, with no corpse and no Geo; each
+        // leaves in the boss's own burst (boss_fx::BURST, the orange of its `BossLook`) where it stood, as the original's
+        // orange burst leaves nothing of it. One the nail killed before has died its own death already.
         let ordered = unsafe { MINIONS_KILLED };
         if ordered != 0 {
-            let scene = ordered - 1;
-            unsafe { MINIONS_KILLED = 0 };
+            let scene = (ordered - 1) as usize;
+            let mut standing = 0u8;
+            let mut taken = false;
             for actor in self.actors.iter_mut().flatten() {
-                if actor.scene == scene as usize && actor.runner().is_some() && !actor.health.dead {
-                    actor.health.hp = 0;
-                    actor.health.dead = true;
-                    actor.geo_paid = true;
-                    actor.corpse = None;
-                    unsafe { HK_MINIONS_KILLED = HK_MINIONS_KILLED.wrapping_add(1) };
+                if actor.scene != scene || actor.runner().is_none() || actor.health.dead {
+                    continue;
                 }
+                if taken {
+                    standing += 1;
+                    continue;
+                }
+                taken = true;
+                actor.health.hp = 0;
+                actor.health.dead = true;
+                actor.geo_paid = true;
+                actor.corpse = None;
+                crate::boss_fx::request(crate::boss_fx::BURST, actor.x, actor.y, scene);
+                unsafe { HK_MINIONS_KILLED = HK_MINIONS_KILLED.wrapping_add(1) };
             }
-        }
-        // A pooled one-shot sprite rides the shot pool as a spent shot: it
-        // plays its clip in place and hurts nothing. The sign of its vx is
-        // only the draw's mirror (the Slam Effect art faces right).
-        for (scene, position, facing, clip) in effects.into_iter().flatten() {
-            self.spawn_projectile(Shot {
-                scene: scene as u8,
-                x: position[0],
-                y: position[1],
-                vx: -facing,
-                vy: 0,
-                animation_tick: 0,
-                impact: true,
-                kind: ShotKind::Spit,
-                shot_clip: clip,
-                impact_clip: clip,
-            });
+            if standing == 0 {
+                unsafe { MINIONS_KILLED = 0 };
+            }
         }
         if let Some((scene, spawns, spawn_y, barrel_clip)) = summoned {
             self.summon_site = Some((scene as u8, spawn_y, barrel_clip));
