@@ -24,7 +24,7 @@ walk 31.4
 hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
 press square
 wait until HK_BREAK_COUNT ge 1 timeout 120
-wait 30
+wait 120                                       # the Hit state (0.75 s) and the gate's opening (0.5 s) before the bit
 check switch-hit HK_BREAK_COUNT == 1 ; HK_DEATHS == 0
 # The gate is gone: the same walk now drops through the opening into the hall below.
 hold left until y le 10.3 timeout 900

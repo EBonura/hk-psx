@@ -1,0 +1,19 @@
+name walk-vine-platform
+title Fungus1_06's first Vine Platform: the Knight stands on the hanging platform, cuts its vine, and the platform is gone and the Activated Plat is under him
+max_ticks 6000
+# Boots from tools/cards/vine-06-platform.mcd (Fungus1_06, on the hanging platform at x 33.0, y 15.13, facing right; nothing earned).
+# The vine (VinePlatformCut, a trigger x 34.01 to 34.37, y 13.7 to 19.68) is one swing to his right. The cook binds the platform's
+# collider and art off and the inactive Activated Plat (collider x 32.11 to 36.03, top 2.54) on, as an inverted edge carrier.
+card vine-06-platform.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+at 33.0 15.13
+wait 30
+check hanging y between 14.9 15.4 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+press square
+wait until HK_BREAK_COUNT ge 1 timeout 120
+wait 120
+check cut-and-fallen y between 3.7 4.2 ; HK_BREAK_COUNT == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
