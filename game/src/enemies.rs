@@ -6791,8 +6791,9 @@ impl EnemyWorld {
         }
         // `Kill Zombies`: every Zombie of the arena's scene still standing goes at once, with no corpse and no Geo, as
         // the original's burst leaves nothing of it (one killed by the nail before has died its own death already).
-        if unsafe { MINIONS_KILLED } != 0 {
-            let scene = unsafe { MINIONS_KILLED } - 1;
+        let ordered = unsafe { MINIONS_KILLED };
+        if ordered != 0 {
+            let scene = ordered - 1;
             unsafe { MINIONS_KILLED = 0 };
             for actor in self.actors.iter_mut().flatten() {
                 if actor.scene == scene as usize && actor.runner().is_some() && !actor.health.dead {
