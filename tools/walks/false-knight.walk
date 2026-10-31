@@ -4,6 +4,15 @@
 # far off. The floor breaks on his last jump; the rounds drop after him and finish the Head in the room below, and the fight is
 # over when HK_FK_DEATHS reads 1.
 include false-knight-defs.walk
-walk 12.0                                                    # across the arena floor; the trigger is at x 13
+# Across the arena floor to the trigger at x 13. With the three husks that stand in it (Runner at x 40.7 and Hornhead at 27.1
+# wake as he comes, Barger at 16.5 swipes him at the trigger) a station every few units strikes whatever is in reach and closes
+# on what is not; with none there it costs no time. The boss's landing removes any left standing (HK_MINIONS_KILLED).
+walk 52.0
+fight 3
+walk 34.0
+fight 3
+walk 21.0
+fight 3
+walk 12.0
 include false-knight-round.walk times 2000
 wait until HK_FK_DEATHS ge 1 timeout 3600                    # his death sequence plays out
