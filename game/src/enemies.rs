@@ -731,7 +731,7 @@ pub(crate) fn flash_tint(left: u8) -> (u8, u8, u8) {
     let k = ((left & !FLASH_WHITE) as u32).min(FLASH_TICKS as u32);
     let s = |c: u32| (c * k / FLASH_TICKS as u32) as u8;
     if left & FLASH_WHITE != 0 {
-        return (s(220), s(220), s(220));
+        return (s(255), s(255), s(255));
     }
     (s(FLASH_TINT.0), s(FLASH_TINT.1), s(FLASH_TINT.2))
 }
