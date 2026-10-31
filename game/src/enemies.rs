@@ -594,6 +594,13 @@ pub static mut HK_MW_HITS: u32 = 0;
 pub static mut HK_MW_SHOT_HITS: u32 = 0;
 /// `Roar Lock`: the Knight takes no input while a boss roars at it.
 static mut ROAR_LOCK: bool = false;
+/// `Battle Control`'s `Kill Zombies` (the arena's `KillMinions`) was sent for scene `n - 1`: the next tick removes the
+/// scene's Zombies that are still standing. The arena belongs to a boss and the Zombies to the actor pool, so the boss
+/// leaves the order here and `EnemyWorld::tick` carries it out. 0 for none.
+static mut MINIONS_KILLED: u8 = 0;
+/// Zombies the boss's `Kill Zombies` removed (the original burst them in orange; none leaves a corpse).
+#[no_mangle]
+pub static mut HK_MINIONS_KILLED: u32 = 0;
 /// Between BATTLE END and `End Wait` the arena is won but its Heart Piece is
 /// not out yet.
 static mut MW_PIECE_WAIT: bool = false;
@@ -3483,10 +3490,12 @@ impl Actor {
                 // lock is the authored `CameraLockArea`s; neither arena has a
                 // floor to break, and KILL ALL ENEMIES only reaches Gruz
                 // Mother's counting `Start`.
+                hk_sim::boss::Action::KillMinions => unsafe {
+                    MINIONS_KILLED = (self.scene as u8).wrapping_add(1);
+                },
                 hk_sim::boss::Action::StartBattle
                 | hk_sim::boss::Action::ActivateFloor
-                | hk_sim::boss::Action::CameraLock(_)
-                | hk_sim::boss::Action::KillMinions => {}
+                | hk_sim::boss::Action::CameraLock(_) => {}
             }
         }
     }
@@ -6762,6 +6771,21 @@ impl EnemyWorld {
         }
         for (scene, position, dir, spurt) in waved.into_iter().flatten() {
             self.spawn_wave(scene, position, dir, spurt);
+        }
+        // `Kill Zombies`: every Zombie of the arena's scene still standing goes at once, with no corpse and no Geo, as
+        // the original's burst leaves nothing of it (one killed by the nail before has died its own death already).
+        if unsafe { MINIONS_KILLED } != 0 {
+            let scene = unsafe { MINIONS_KILLED } - 1;
+            unsafe { MINIONS_KILLED = 0 };
+            for actor in self.actors.iter_mut().flatten() {
+                if actor.scene == scene as usize && actor.runner().is_some() && !actor.health.dead {
+                    actor.health.hp = 0;
+                    actor.health.dead = true;
+                    actor.geo_paid = true;
+                    actor.corpse = None;
+                    unsafe { HK_MINIONS_KILLED = HK_MINIONS_KILLED.wrapping_add(1) };
+                }
+            }
         }
         // A pooled one-shot sprite rides the shot pool as a spent shot: it
         // plays its clip in place and hurts nothing. The sign of its vx is
