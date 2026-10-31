@@ -62,6 +62,10 @@ cargo hk-build measure --library DIR       # on a disc where the route passes; w
 
 The gate must be built from an emulator revision that has `tape_rebase` (`287b51d1` and later, the `codex/gate-tape-rebase-2026-10-11` line). `routes` looks for `DIR/game.map` (the link map of the disc under test) before `.hkpsx/build.json`, so a disc built in another checkout can be tried without rebuilding.
 
+Walks and the expression conditions need a gate from PSoXide-emulator 1d4f6d4e or later (`kind = "expr"`), which is the revision `emulator.lock.json` pins. `HK_PSX_GATE` is always an external binary, so the pin does not choose it.
+
+The pin is also not what builds the frontend today. `pinned_frontend` (`host/hk-build/main.rs`, used by `validate` and `pgo` when `HK_PSX_FRONTEND` is not set) is broken at the old pin 0e87b3a as well as at 1d4f6d4e: hydrating the exported emulator tree fails with "Refusing to replace an owned file: crates/psx-hw/Cargo.toml", because the emulator now commits the SDK crates it links, and `-p frontend` names a package that was renamed `psoxide-emulator` in the emulator. Every lane therefore sets `HK_PSX_FRONTEND` and `HK_PSX_FRONTEND_SHA256` (the retained frontend) and `HK_PSX_GATE` with its SHA-256. What the pin still does is name the emulator in a disc's `provenance.json` (`pins.emulator`). Fixing `pinned_frontend` is a separate tooling item.
+
 ## Phase
 
 A stretch is bit-exact tape, so it replays like the baseline only if the simulation starts it in the same state, and that includes how many ticks the simulation has run since the load resumed. Without any help that number belongs to the disc: the region setup after a load takes 1 or 2 VBlanks depending on the layout, and the gate starts the stretch at a frame boundary, so the Knight stood still for 1 to 4 ticks (the neutral ticks below) and the King's Pass climb, which is 9,000 polls, needs the right parity of them. An EXE a sector longer or a larger prefetch arena changed the number and every closed-loop journey got stuck at its second load.
