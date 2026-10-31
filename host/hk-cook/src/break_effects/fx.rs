@@ -1026,8 +1026,8 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
         },
         Layer {
             count: 8,
-            size: [0.22, 0.3],
-            cell: 2.2,
+            size: [0.35, 0.4],
+            cell: 0.35,
             speed: [14.0, 26.0],
             angle: [0.0, 360.0],
             life: [8, 12],
