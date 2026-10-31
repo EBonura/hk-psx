@@ -522,6 +522,16 @@ def cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry):
     return cooked
 
 
+def check_packet_budget(chunk_id,region,destination,cooked):
+    """Total the view's scenery packets now, while the cook can still stop: a view
+    over CAP-ACTOR_RESERVE fails here, minutes into the cook, instead of in the
+    similarity pass after every other region has cooked. Views near the limit
+    are printed (host/scenery_geometry.py has the bound)."""
+    from scenery_geometry import check_view_budget
+    check_view_budget(chunk_id,region['scene_name'],(destination/'room.hk').read_bytes(),
+                      [g['draws']for g in cooked.get('decor',[])])
+
+
 def precook_scene(scene_id,out):
     """Worker: cook every cache miss of one scene; the parent then finds them cached."""
     source=Source();fingerprints=cook_fingerprints(source);pixels={};geometry={};sc=None
@@ -532,7 +542,8 @@ def precook_scene(scene_id,out):
         if cached_cook(destination,key) is not None:continue
         if sc is None:sc=Scene(source,region['scene_file'])
         print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (worker)',flush=True)
-        cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry)
+        cooked=cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry)
+        check_packet_budget(chunk_id,region,destination,cooked)
 
 
 def precook_parallel(pending,fingerprints,out):
@@ -1002,6 +1013,7 @@ def main():
         else:
             print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]}',flush=True)
             cooked=cook_region(source,scenes[scene_id],region,chunk_id,destination,key,pixels,geometry)
+        check_packet_budget(chunk_id,region,destination,cooked)
         path=out/f'chunk_{chunk_id}.hk';shutil.copy2(destination/'room.hk',path)
         if chunk_id==1:
             shutil.copy2(path,ROOT/'data/room.hk')

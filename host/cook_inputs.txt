@@ -106,3 +106,7 @@ host/hk-fsm/src/boss.rs
 host/actor_bank.py
 host/actor_banks.json
 host/hk-cook/src/actor_bank.rs
+# The packet bound a draw's grid is admitted by (cook.py imports it, but the
+# bound's grid count is unchanged by the on-screen bound), the per-view total
+# the cook checks as it goes, and the budget table generate() writes.
+host/scenery_geometry.py

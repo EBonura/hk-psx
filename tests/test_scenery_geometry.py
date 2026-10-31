@@ -1,8 +1,27 @@
 """Asset-free checks for mandatory scenery repair packet admission."""
 from fractions import Fraction
+import random
 import unittest
-from host.scenery_geometry import (packet_bound,axis_offsets,check_camera_arithmetic,
+from host.scenery_geometry import (packet_bound,axis_offsets,check_camera_arithmetic,mandatory_packets,
                                    SAFE_WIDTH,SAFE_HEIGHT)
+
+
+def runtime_children(v,w,h,divisions):
+    """Children `subdivide_in` (game/src/scenery_geometry.rs) keeps at one grid:
+    every cell not wholly left of 0, right of 320, above 0 or below 240."""
+    us,vs=axis_offsets(w-1,divisions),axis_offsets(h-1,divisions)
+    def point(u,t):
+        weights=[(w-1-u)*(h-1-t),u*(h-1-t),(w-1-u)*t,u*t]
+        return tuple(round(Fraction(sum(p[k]*a for p,a in zip(v,weights)),(w-1)*(h-1)))for k in range(2))
+    grid=[[point(u,t)for u in us]for t in vs]
+    count=0
+    for j in range(len(vs)-1):
+        for i in range(len(us)-1):
+            c=[grid[j][i],grid[j][i+1],grid[j+1][i],grid[j+1][i+1]]
+            outside=(all(p[0]<=0 for p in c)or all(p[0]>=320 for p in c)
+                     or all(p[1]<=0 for p in c)or all(p[1]>=240 for p in c))
+            count+=not outside
+    return count
 
 
 class SceneryGeometryBudgets(unittest.TestCase):
@@ -49,6 +68,46 @@ class SceneryGeometryBudgets(unittest.TestCase):
         coord,product=check_camera_arithmetic([(0,0)]*4,92868,[72,0,96,20])
         self.assertEqual(product,2282323968)
         self.assertLess(coord,1<<20)
+
+    def test_on_screen_packets_bound_the_children_the_renderer_keeps(self):
+        # Axis-aligned quads of any size, either orientation, flipped or not, at
+        # random camera offsets and texture sizes: no coarser grid the renderer
+        # may stop at (it starts at 2 divisions and doubles) keeps more
+        # children than `on_screen`, and the bound is not the whole grid for a
+        # long background layer.
+        rng=random.Random(7);tightened=0
+        for _ in range(400):
+            w,h=rng.choice([(128,41),(28,216),(64,64),(7,5),(256,256),(33,200)])
+            x0=rng.randint(-3000,1000)*256+rng.randint(0,255);x1=x0+rng.choice([-1,1])*rng.randint(700,4400)*256
+            y0=rng.randint(-1500,800)*256+rng.randint(0,255);y1=y0+rng.choice([-1,1])*rng.randint(1,1500)*256
+            quad=[(x0,y0),(x1,y0),(x0,y1),(x1,y1)]
+            if rng.random()<.5:quad=[(x,y)for y,x in quad]
+            try:bound=packet_bound(quad,w,h)
+            except ValueError:continue
+            on_screen=bound['packets'].on_screen
+            self.assertLessEqual(on_screen,bound['packets'])
+            tightened+=on_screen<bound['packets']
+            for _ in range(6):
+                cx,cy=rng.randint(-3000,3000)*256+rng.randint(0,255),rng.randint(-1500,1500)*256+rng.randint(0,255)
+                v=[(160+((x-cx)>>8),120-((y-cy)>>8))for x,y in quad]
+                n=2
+                while n<=bound['divisions']:
+                    self.assertLessEqual(runtime_children(v,w,h,n),on_screen,(quad,w,h,n,cx,cy))
+                    n*=2
+        self.assertGreater(tightened,50)
+
+    def test_a_slanted_quad_keeps_its_whole_grid(self):
+        quad=[(0,0),(4000*256,300*256),(-200*256,900*256),(3800*256,1200*256)]
+        bound=packet_bound(quad,128,41)
+        self.assertGreater(bound['packets'],1)
+        self.assertEqual(bound['packets'].on_screen,bound['packets'])
+
+    def test_mandatory_totals_use_on_screen_bounds_unless_asked_for_the_grid(self):
+        wide=packet_bound([(-1400*256,700*256),(1700*256,700*256),(-1400*256,-300*256),(1700*256,-300*256)],128,41)['packets']
+        self.assertEqual(int(wide),64)
+        self.assertLess(mandatory_packets([wide,1],[]),mandatory_packets([wide,1],[],grid=True))
+        self.assertEqual(mandatory_packets([wide,1],[],grid=True),65)
+        self.assertEqual(mandatory_packets([5,1],[[0,1]]),5)
 
     def test_small_draw_needs_no_expansion(self):
         self.assertEqual(packet_bound([(0,0),(100*256,0),(0,100*256),(100*256,100*256)],1,1)['packets'],1)
