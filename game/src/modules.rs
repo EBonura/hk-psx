@@ -19,8 +19,8 @@
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/modules.rs"));
 
 /// A set of modules, one bit each: 64 of them in two words (a `u64` mask is not allowed in guest code).
-/// A room's own modules (`SCENE_MODULES`, `CODE_MASK`, `ALWAYS`) are the first 32 ids and stay one word;
-/// what gameplay carries into a room (`carry`) may use the rest.
+/// A room's own modules (`SCENE_MODULES` for ids 0 to 31, `SCENE_MODULES_HI` above, `CODE_MASK`) may name any id below 56;
+/// what gameplay carries into a room (`carry`) takes the top.
 type Mods = psx_math::Mask64;
 
 const J26: u32 = 1;
@@ -145,10 +145,6 @@ fn resident() -> Mods {
 fn is_resident(m: usize) -> bool {
     resident().test(m)
 }
-/// The first 32 modules that are resident (every room module).
-fn resident_low() -> u32 {
-    resident().low()
-}
 fn slots() -> &'static mut [Slot; MODULE_COUNT] {
     unsafe { &mut *(&raw mut SLOTS) }
 }
@@ -159,11 +155,11 @@ fn hblanks() -> u16 {
 /// Room logic module `m` is resident: guard its entry points with this
 /// where nothing should happen outside its room anyway.
 pub fn loaded(m: usize) -> bool {
-    (resident().low() | ALWAYS) & (1 << m) != 0
+    resident().test(m) || (m < 32 && ALWAYS & (1 << m) != 0)
 }
 /// The code for actors of module `m` may run now.
 pub fn require(m: usize) -> bool {
-    if (resident().low() | ALWAYS) & (1 << m) != 0 {
+    if loaded(m) {
         return true;
     }
     unsafe {
@@ -172,8 +168,8 @@ pub fn require(m: usize) -> bool {
     false
 }
 /// Every module of the bitmask `m` is resident (an HKFSM03 tree's family modules); counts a miss otherwise.
-pub fn require_all(m: u32) -> bool {
-    if (resident().low() | ALWAYS) & m == m {
+pub fn require_all(m: Mods) -> bool {
+    if loaded_all(m) {
         return true;
     }
     unsafe {
@@ -182,11 +178,18 @@ pub fn require_all(m: u32) -> bool {
     false
 }
 /// Every module of the bitmask `m` is resident, without counting a miss (a tick that simply waits for its room).
-pub fn loaded_all(m: u32) -> bool {
-    (resident().low() | ALWAYS) & m == m
+pub fn loaded_all(m: Mods) -> bool {
+    m.and_not(resident().or(Mods::from_words(ALWAYS, 0))).is_empty()
 }
-pub const fn scene_modules(scene: usize) -> u32 {
-    SCENE_MODULES[scene]
+/// The modules `scene`'s rooms name: the low word is a table, the ids above 31 a short list of (scene, bits) rows.
+pub fn scene_modules(scene: usize) -> Mods {
+    let mut hi = 0;
+    for &row in SCENE_MODULES_HI.iter() {
+        if row >> 24 == scene as u32 {
+            hi = row & 0x00ff_ffff;
+        }
+    }
+    Mods::from_words(SCENE_MODULES[scene], hi)
 }
 /// Carried data: (module, manifest scene) pairs gameplay asked for, which the
 /// scene's gate loads like its own art (`carry`).
@@ -224,7 +227,7 @@ pub fn carry(m: usize, scene: Option<usize>) {
 /// Every module `scene` needs: its rooms' own and what is carried into it.
 #[inline(never)]
 fn wanted(scene: usize) -> Mods {
-    let mut w = Mods::from_words(scene_modules(scene), 0);
+    let mut w = scene_modules(scene);
     for &(m, s) in unsafe { &*(&raw const CARRIED) } {
         if m != u8::MAX && s as usize == scene {
             w.set(m as usize);
@@ -234,7 +237,7 @@ fn wanted(scene: usize) -> Mods {
 }
 /// The data modules of `m`: everything but code.
 fn data_of(m: Mods) -> Mods {
-    m.and_not(Mods::from_words(CODE_MASK, 0))
+    m.and_not(CODE_MASK)
 }
 /// The chunk that brings `scene` a missing data module: its own art chunk
 /// first, then a carried module's.
@@ -243,7 +246,7 @@ fn missing_art_chunk(scene: usize) -> Option<usize> {
     if missing.is_empty() {
         return None;
     }
-    if missing.low() & scene_modules(scene) != 0 {
+    if !missing.and(scene_modules(scene)).is_empty() {
         if let Some(c) = art_chunk(scene) {
             return Some(c);
         }
@@ -331,11 +334,15 @@ pub fn evict_boot(m: usize) {
 }
 /// Every module `scene`'s actors need is resident.
 pub fn all_resident(scene: usize) -> bool {
-    SCENE_MODULES[scene] & !resident_low() == 0
+    scene_modules(scene).and_not(resident()).is_empty()
 }
 /// Every code module `scene`'s actors need is resident.
 pub fn all_code_resident(scene: usize) -> bool {
-    SCENE_MODULES[scene] & CODE_MASK & !resident_low() == 0
+    code_missing(scene).is_empty()
+}
+/// The code modules `scene` names that are not resident.
+fn code_missing(scene: usize) -> Mods {
+    scene_modules(scene).and(CODE_MASK).and_not(resident())
 }
 pub const fn code_chunk(scene: usize) -> Option<usize> {
     let c = SCENE_CODE[scene];
@@ -855,8 +862,8 @@ pub fn service() {
     let Some(c) = code_chunk(scene) else { return };
     let len = chunk_len(c);
     if matches!(bg(), Bg::Idle) {
-        let missing = scene_modules(scene) & CODE_MASK & !resident_low();
-        if missing == 0 || unsafe { BG_DONE } == (scene, gen) || landed < len {
+        let missing = code_missing(scene);
+        if missing.is_empty() || unsafe { BG_DONE } == (scene, gen) || landed < len {
             return;
         }
         *bg() = Bg::Verify {
@@ -926,9 +933,9 @@ pub fn service() {
     }
 }
 fn next_background(scene: usize, gen: u32, chunk: &[u32]) {
-    let want = scene_modules(scene) & CODE_MASK;
-    let missing = want & !resident_low();
-    let Some(m) = (0..CODE_MODULES).find(|&m| missing & (1 << m) != 0) else {
+    let want = scene_modules(scene).and(CODE_MASK);
+    let missing = code_missing(scene);
+    let Some(m) = (0..CODE_MODULES).find(|&m| missing.test(m)) else {
         *bg() = Bg::Idle;
         unsafe {
             BG_DONE = (scene, gen);
@@ -936,7 +943,7 @@ fn next_background(scene: usize, gen: u32, chunk: &[u32]) {
         return;
     };
     // Never evict the room the Knight is in, nor what this room needs.
-    match find(chunk, m).and_then(|p| begin(p, unsafe { PINNED }.or(Mods::from_words(want, 0)))) {
+    match find(chunk, m).and_then(|p| begin(p, unsafe { PINNED }.or(want))) {
         Some(job) => *bg() = Bg::Install { scene, gen, job },
         None => {
             unsafe {
@@ -985,7 +992,7 @@ fn gate_begin_run(scene: usize) {
 /// the scene's code chunk when something is missing (the gate-time path).
 pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> bool {
     // Code only: the room's art is read at the end of the gate (admit_art).
-    let want = scene_modules(scene) & CODE_MASK;
+    let want = scene_modules(scene).and(CODE_MASK);
     unsafe {
         PINNED = wanted(scene);
         CURRENT = scene;
@@ -997,10 +1004,10 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
             slots()[m].used = unsafe { CLOCK };
         }
     }
-    if want == 0 {
+    if want.is_empty() {
         return true;
     }
-    if want & !resident_low() == 0 {
+    if want.and_not(resident()).is_empty() {
         unsafe {
             HK_MODULE_GATE_HITS = HK_MODULE_GATE_HITS.saturating_add(1);
         }
@@ -1039,26 +1046,26 @@ pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> boo
         if !install_missing(want, words) {
             return false;
         }
-        if want & !resident_low() == 0 {
+        if want.and_not(resident()).is_empty() {
             break;
         }
     }
     unsafe {
         HK_MODULE_GATE_HBLANKS = hblanks().wrapping_sub(t1) as u32;
     }
-    want & !resident_low() == 0
+    want.and_not(resident()).is_empty()
 }
 /// Words of install work (copy or fix-up) or hash between two pad services on the gate path: about 20,000 cycles of each.
 const INSTALL_STEP: usize = 4096;
-fn install_missing(want: u32, words: &[u32]) -> bool {
+fn install_missing(want: Mods, words: &[u32]) -> bool {
     for m in 0..CODE_MODULES {
-        if want & !resident_low() & (1 << m) == 0 {
+        if !want.and_not(resident()).test(m) {
             continue;
         }
         let Some(pkg) = find(words, m) else {
             return false;
         };
-        let mut job = match begin(pkg, Mods::from_words(want, 0)) {
+        let mut job = match begin(pkg, want) {
             Some(job) => job,
             None => {
                 // Fragmented: start over with only this room's code.
@@ -1067,7 +1074,7 @@ fn install_missing(want: u32, words: &[u32]) -> bool {
                         evict(r);
                     }
                 }
-                let Some(job) = find(words, m).and_then(|p| begin(p, Mods::from_words(want, 0))) else {
+                let Some(job) = find(words, m).and_then(|p| begin(p, want)) else {
                     return false;
                 };
                 job
@@ -1156,7 +1163,7 @@ pub fn code_coming(scene: usize) -> bool {
 /// Plan a fetch of `scene`'s code if it is not resident (called with the
 /// prefetch's predicted room, before the prefetch is planned).
 pub fn plan_code(scene: usize) {
-    if pf().state != Pf::Idle || scene_modules(scene) & CODE_MASK & !resident_low() == 0 {
+    if pf().state != Pf::Idle || code_missing(scene).is_empty() {
         return;
     }
     if let Some(c) = code_chunk(scene) {
@@ -1245,7 +1252,7 @@ fn pool_service(budget: usize) {
             }
         } else if let Some(next) = crate::disc::predicted_scene().filter(|&n| n != current) {
             if art_missing(next)
-                && (scene_modules(next) & CODE_MASK & !resident_low() == 0
+                && (code_missing(next).is_empty()
                     || code_chunk(next).is_none())
             {
                 if let Some(c) = missing_art_chunk(next) {

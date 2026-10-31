@@ -1555,7 +1555,7 @@ struct Actor {
 }
 /// The module of an FSM-driven family is resident together with the shared action code its graph runs
 /// (`tree`: the family modules of that bank, data/modules.rs).
-fn fsm3_ready(family: usize, tree: u32) -> bool {
+fn fsm3_ready(family: usize, tree: psx_math::Mask64) -> bool {
     crate::modules::require(family) && crate::modules::require_all(tree)
 }
 /// One controller runtime per actor; Crawler retains its original graph state.
