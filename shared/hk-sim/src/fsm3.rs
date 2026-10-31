@@ -158,6 +158,8 @@ pub struct Env {
     /// One-shot sounds asked for this step (bit set), and the audio pitch last set.
     pub sound: u8,
     pub pitch: i32,
+    /// Particle emitters asked for or stopped this step (`FX_*`); the adapter presents what it has.
+    pub fx: u8,
     /// What the actions touched this step: bit 0 the velocity, bit 1 the facing.
     pub dirty: u8,
     /// The save record's PlayerData reserve (null when the tree has no business with it) and the writes made.
@@ -184,6 +186,10 @@ pub struct Env {
 }
 pub const NO_PLAY: u32 = u32::MAX;
 pub const SOUND_STARTLE: u8 = 1;
+/// `AudioPlaySimple`: a one-shot on the actor's own audio source.
+pub const SOUND_SIMPLE: u8 = 2;
+pub const FX_PARTICLES_PLAY: u8 = 1;
+pub const FX_PARTICLES_STOP: u8 = 2;
 pub const DIRTY_VEL: u8 = 1;
 pub const DIRTY_FACING: u8 = 2;
 
@@ -213,6 +219,7 @@ impl Env {
             clips: [(NO_PLAY, 0xffff); 4],
             sound: 0,
             pitch: 0,
+            fx: 0,
             dirty: 0,
             pd: core::ptr::null_mut(),
             pd_writes: 0,
@@ -744,7 +751,7 @@ pub fn refuse(_c: &mut Ctx<'_, '_>, _op: u8) -> u16 {
 fn dispatch(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
     use crate::{
         fsm3_ai, fsm3_animation, fsm3_audio, fsm3_events, fsm3_flow, fsm3_math, fsm3_object, fsm3_playerdata,
-        fsm3_timers, fsm3_transform,
+        fsm3_fx, fsm3_timers, fsm3_transform,
     };
     // A boss tree runs the boss tier's handlers, which act on its scene objects (fsm3_world.rs).
     #[cfg(feature = "boss")]
@@ -761,6 +768,7 @@ fn dispatch(c: &mut Ctx<'_, '_>, family: u8, op: u8) -> u16 {
         7 => fsm3_animation::entry(c, op),
         8 => fsm3_object::entry(c, op),
         9 => fsm3_audio::entry(c, op),
+        10 => fsm3_fx::entry(c, op),
         13 => fsm3_playerdata::entry(c, op),
         _ => refuse(c, op),
     }

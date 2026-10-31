@@ -16,8 +16,9 @@ use std::fmt::Write;
 
 pub const TREES: [(&str, &str); 4] =
     [("Crossroads_05", "Crawler"), ("Crossroads_04", "Fly"), ("Fungus1_20_v02", "Buzzer"), ("Fungus1_04_boss", "Hornet Boss 1")];
-/// Single FSMs measured on their own (`file:path id`): Hornet's encounter and the corpse prefab it leaves.
-pub const EXTRA: [&str; 2] = ["level133:239", "sharedassets105.assets:62"];
+/// Single FSMs measured on their own (`file:path id`): Hornet's encounter and the corpse prefab it leaves, and the
+/// Plant Trap's control FSM (the enemy-family pipeline's first tree; it measures StopParticleEmitter).
+pub const EXTRA: [&str; 3] = ["level133:239", "sharedassets105.assets:62", "level150:10095"];
 /// The scene scripts HKSCR01 carried (.hkpsx/script-bank.json), now cooked as HKFSM03.
 pub const SCRIPTS: [&str; 11] = [
     "level6:709", "level7:94", "level7:189", "level37:425", "level39:630", "level42:234", "level56:393", "level65:710", "level81:1205",

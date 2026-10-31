@@ -520,6 +520,18 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The enemy-family pipeline: a manifest row (host/enemy_families.json) names the placement,
+        # its pinned trees and its clips; no per-family recognizer (host/enemy_family.py).
+        if not actor['movement_supported']:
+            from enemy_family import row_for as family_row, recognize as recognize_family
+            if family_row(sc.gos[gid]['m_Name']) is not None:
+                try:
+                    control = recognize_family(sc, actor)
+                    actor['movement_control'] = control
+                    actor['movement_supported'] = True
+                    actor['limitations'] = list(control['limitations'])
+                except (ValueError, KeyError, StopIteration) as error:
+                    actor['movement_error'] = str(error)
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Egg Sac') and not fsms:
             try:
                 control = egg_sac_control(sc, actor)
@@ -716,6 +728,12 @@ def generated_actor_records(region):
         wanted = bool(control.get('trigger_body'))
         colliders = [collider for collider in actor['colliders']
                      if 'bounds' in collider and bool(collider.get('trigger')) == wanted]
+        if control['kind'] == 'FsmActor':
+            # A family with no serialized collider: tk2d builds its box from the frame that plays, and the guest
+            # reads that table (hk_sim::fsm_actor). The spec's own box is the empty one at the origin.
+            if colliders:
+                raise ValueError('FsmActor with a serialized body collider: ' + actor['source'])
+            colliders = [{'bounds': list(actor['position'][:2]) * 2}]
         if not colliders or any(collider['bounds'] != colliders[0]['bounds'] for collider in colliders):
             raise ValueError('actor requires unsupported distinct body colliders')
         # A controller may answer the nail differently from its HealthManager,
@@ -940,6 +958,21 @@ def generated_actor_records(region):
             controller = 'hk_sim::ActorController::Mawlek {' + f'wake:{wake}' + '}'
             speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
             initial_direction, random_start_direction = control['initial_direction'], False
+        elif control['kind'] == 'FsmActor':
+            from enemy_family import MANIFEST as FAMILIES
+            row = next(r for r in FAMILIES if r['name'] == control['family'])
+            family_clips = tuple(f'f{i}_clip' for i in range(len(row['clips'])))
+            if any(key not in actor for key in family_clips):
+                raise ValueError(f'{control["family"]} is missing cooked clips: {actor["source"]}')
+            if len(family_clips) > 8:
+                raise ValueError('an FsmActor family binds at most eight clips')
+            clips = '[' + ','.join([str(actor[key]) for key in family_clips] + ['0'] * (8 - len(family_clips))) + ']'
+            trigger = '[' + ','.join(map(str, control['trigger_q16'])) + ']'
+            controller = ('hk_sim::ActorController::FsmActor {' + f'family:{control["family_id"]},clips:{clips},trigger:{trigger}' + '}')
+            # The tree owns the clip and the box; nothing walks.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            initial_direction, random_start_direction = -1, False
+            rotation_q16 = control['rotation_q16']
         elif control['kind'] == 'WalkLeftRight':
             controller = 'hk_sim::ActorController::Crawler'
             speed, turn_ticks, turn_cooldown_ticks = control['speed'], control['turn_ticks'], control['turn_cooldown_ticks']
@@ -956,7 +989,8 @@ def generated_actor_records(region):
             + (moss_clips if control['kind'] == 'MossWalker' else ()) \
             + (mosquito_clips if control['kind'] == 'Mosquito' else ()) \
             + (guard_clips if control['kind'] == 'HuskGuard' else ()) \
-            + (false_knight_clips if control['kind'] == 'FalseKnight' else ())
+            + (false_knight_clips if control['kind'] == 'FalseKnight' else ()) \
+            + (family_clips if control['kind'] == 'FsmActor' else ())
         if any(type(actor[key]) is not int or not 0 <= actor[key] <= 65535 for key in clip_fields):
             raise ValueError('actor clip binding exceeds u16')
         recoil = actor.get('Recoil', {})

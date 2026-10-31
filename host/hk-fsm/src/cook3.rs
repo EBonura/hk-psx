@@ -128,6 +128,11 @@ fn write_names(root: &std::path::Path, label: &str, c: &Cooked) -> Result<()> {
 /// The action families a set of cooked trees uses, one line of space-separated family numbers to
 /// `data/<label>_families.txt`. `host/code_modules.py` turns it into the family modules a room carries, so a
 /// room loads only the action code its enemies' and scripts' banks can reach.
+/// `write_families` for the enemy-family cooker (enemy_family.rs).
+pub fn write_families_pub(root: &std::path::Path, label: &str, banks: &[&Cooked]) -> Result<()> {
+    write_families(root, label, banks)
+}
+
 fn write_families(root: &std::path::Path, label: &str, banks: &[&Cooked]) -> Result<()> {
     let mut used = std::collections::BTreeSet::new();
     for c in banks {
@@ -567,6 +572,7 @@ pub fn cook_all(root: &std::path::Path) -> Result<()> {
     cook_crawlers3(root)?;
     cook_gruzzer3(root)?;
     cook_vengeflies3(root)?;
+    crate::enemy_family::cook_families(root)?;
     cook_hornet3(root)?;
     cook_scripts3(root)
 }

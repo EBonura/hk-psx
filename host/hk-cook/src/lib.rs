@@ -38,6 +38,7 @@ pub mod title_particles;
 pub mod title_style;
 pub mod dream_nail;
 pub mod effects_art;
+pub mod enemy_family;
 pub mod false_knight;
 pub mod false_knight_art;
 pub mod fk_bank;

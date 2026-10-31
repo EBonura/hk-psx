@@ -21,11 +21,13 @@ pub mod fsm3_ai;
 pub mod fsm3_animation;
 pub mod fsm3_audio;
 pub mod fsm3_events;
+pub mod fsm3_fx;
 #[cfg(feature = "boss")]
 pub mod fsm3_world;
 pub mod fsm3_flow;
 #[cfg(feature = "boss")]
 pub mod fsm3b;
+pub mod fsm_actor;
 pub mod fsm3_math;
 pub mod fsm3_object;
 pub mod fsm3_playerdata;
