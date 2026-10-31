@@ -111,6 +111,7 @@ pub fn marker() -> u16 {
 /// `data/actor_banks.rs` costs this one search; a scene with one whose package is not resident leaves the frames that name
 /// the bank drawing nothing (`HK_ACTOR_BANK_UNBOUND`, and `HK_ACTOR_BANK_MISSES` per frame).
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn bind(room: &Room, scene: usize) {
     set(&[], &[]);
     let Some(entry) = SCENE_BANKS.iter().find(|e| e.scene == scene) else { return };
@@ -159,6 +160,7 @@ pub struct Piece {
 }
 
 /// The parts of sprite `sprite`, each to `f`. False if the bank has no such sprite.
+#[cfg_attr(not(test), optimize(size))]
 pub fn pieces(sprite: usize, mut f: impl FnMut(Piece)) -> bool {
     let Some(bank) = Bank::open(unsafe { BLOB }).filter(|b| sprite < b.sprites as usize) else {
         unsafe { HK_ACTOR_BANK_MISSES = HK_ACTOR_BANK_MISSES.wrapping_add(1) };
@@ -184,6 +186,7 @@ struct Buf([u8; 2048]);
 /// The decoded part `index`, uploaded into cache slot `slot` (its rectangle sized to the part). The bytes uploaded.
 /// Out of line on purpose: inlined into the cache's upload closure it would put the decode in the resident hot path.
 #[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
 pub fn upload(index: usize, slot: usize) -> Option<u32> {
     let bank = Bank::open(unsafe { BLOB }).filter(|b| index < b.parts as usize)?;
     let part = bank.part(index);
