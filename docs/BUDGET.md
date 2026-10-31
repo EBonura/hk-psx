@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |786,256|
-| Code-to-data alignment |0|
+| Linked code |786,488|
+| Code-to-data alignment |8|
 | Linked data, including menu and HUD |281,304|
-| BSS, including shared scene arena and runtime pools |791,908|
-| Total static span |1,859,476|
+| BSS, including shared scene arena and runtime pools |791,924|
+| Total static span |1,859,732|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |122,732|
+| Unallocated gap before reserved stack |122,476|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |14,188|
+| Free RAM below the module pool |13,932|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d5f94`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d6094`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -627,3 +627,5 @@ The 2026-10-30 NPC interact hint (the original's white up arrow and the word `In
 The 2026-10-30 light cells (docs/EFFECTS.md round 6: the soft disc, the bar and the petal cut at 32 texels, bars and petals as long cells of the rows they light, the cocoon's splat as eight petals) are cook only: the guest is main's, so linked code, BSS and the pool are unchanged, and the effects' VRAM rectangles hold the same 7,680 bytes (the largest scene's effect art, Crossroads_05, is 7,032). Only linked data moved, by 224 bytes (280,904 to 281,128: the cooked art tables are sized by the widest scene), so free RAM below the module pool on the shipping build went from 2,556 to 2,332. A first version that generated the disc into an animation slot and drew needles as gouraud polygons cost 3.6 KB of resident code and was dropped. The animation cache's per-frame key count (24 allowed) peaked at 18 in Hornet's fight and 14 in the False Knight's on a probe build.
 
 The 2026-10-30 bench interact hint (the original's `Interact` hint at a bench the Knight can sit on, as at an NPC; `bench::State::tick` raises `dialogue::HINT_ONLY` from the bench search it already runs, and does that search every eighth tick unless UP is pressed, because every tick cost secret-c37 0.04 of a vblank a frame) took linked code from 784,368 to 784,504 bytes and BSS from 800,020 to 800,036, so free RAM below the module pool on the shipping build went from 8,140 to 7,980 (-160).
+
+The 2026-10-31 boss death effects (the False Knight's armour bleeding orange through `Steam` and bursting at `Blow`, as hkref shows: `boss_fx` requests from the death state, two emitters per boss scene cooked from `BossLook` data at `fx.rs` owners 0xD043 and 0xD044, and `camera::frame_x` holding the Death Head in frame) took linked code from 786,256 to 786,488 bytes and BSS from 791,908 to 791,924, so free RAM below the module pool on the shipping build went from 14,188 to 13,932 (-256). The cost is the request static and its drain in the frame, the camera's pull and the boss tick's block; a later boss's death adds data and one call and no new code.
