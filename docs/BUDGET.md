@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |785,832|
-| Code-to-data alignment |8|
+| Linked code |786,412|
+| Code-to-data alignment |4|
 | Linked data, including menu and HUD |281,656|
 | BSS, including shared scene arena and runtime pools |791,924|
-| Total static span |1,859,428|
+| Total static span |1,860,004|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |122,780|
+| Unallocated gap before reserved stack |122,204|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |14,236|
+| Free RAM below the module pool |13,660|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d5f64`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d61a4`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -633,3 +633,5 @@ The 2026-10-31 boss death effects (the False Knight's armour bleeding orange thr
 The 2026-10-31 False Knight walk (docs/ROUTES.md, "The False Knight and the City Crest") publishes raw words and lets the gate derive the rest: `HK_FK_X`, `HK_FK_Y`, `HK_FK_BODY` (four words), `HK_FK_FLAGS` and `HK_WAVE` (two slots of x and direction), written by `EnemyWorld::foe_senses` where it already finds the boss. It took linked code from 786,488 to 786,664 bytes (+176), linked data from 281,304 to 281,400 (+96) and BSS from 791,924 to 791,964 (+40), so free RAM below the module pool on the shipping build went from 13,932 to 13,620 (-312). The derived senses the walker published before (`HK_WALK_STRIKE_*`, `TURN_*`, `JUMPSTRIKE`, `FOCUS`, `HK_FOE_GAP_*`) can now be expressions over raw words in the gate and come out of the guest in a follow-up.
 
 The 2026-10-31 move of the walker's derived senses out of the guest (`HK_WALK_STRIKE_*`, `TURN_*`, `JUMPSTRIKE`, `FOCUS`, `HK_FOE_GAP_*`, `HK_FOE_LIVE`, `HK_FOE_DX/DY` and the `FoeSenses` code that computed them; they are expressions in `host/hk-build/walk-prelude.walk` now, evaluated by the gate over a raw `HK_ACT` table of the live bodied actors, `HK_PLAYER_VY` and `HK_HEALTH_MAX`) took linked code from 786,664 to 785,832 bytes (-832), linked data from 281,400 to 281,656 (+256, the table) and BSS from 791,964 to 791,924 (-40), so free RAM below the module pool on the shipping build went from 13,620 to 14,236 (+616). The False Knight words stay (they are raw), and the Goam sense (`HK_WALK_GOAM_*`, a window of a Goam's own state) stays in `props.rs`.
+
+The 2026-10-31 boss hit flare (the nail's centre throws a white core and fans of thin streaks, `boss_fx::HIT` and owner 0xD045 cooked from `BossLook`'s `hit` layers; the False Knight's draws white out instead of flashing the infected orange, `FLASH_WHITE`) and the thicker death burst (data only) took linked code from 785,832 to 786,412 bytes, so free RAM below the module pool on the shipping build went from 14,236 to 13,660 (-576). The cost is the contact point's centroid and request at the hit, the white flash mapping in the draw path and the third owner in the frame's drain.
