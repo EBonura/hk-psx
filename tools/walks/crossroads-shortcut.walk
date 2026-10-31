@@ -20,7 +20,7 @@ walk 7.8
 hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
 press square
 wait until HK_BREAK_COUNT ge 1 timeout 120
-wait 30
+wait 30                                        # the pillar opens 1.5 s after the hit; he is walked into it below
 check switch-hit HK_BREAK_COUNT == 1 ; HK_DEATHS == 0
 # The pillar is gone: out through the left exit into Crossroads_33.
 hold left until HK_SCENE_LOADS ge 2 timeout 900

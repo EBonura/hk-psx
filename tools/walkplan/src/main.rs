@@ -8,7 +8,7 @@
 //! sixth of a unit to either side still lands on the same floor, because the walk's own positioning is only that exact.
 //!
 //! ```text
-//! hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards]
+//! hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards] [--switched]
 //! ```
 //!
 //! Positions are the Knight's origin in world units (a floor at y 2 holds him at 3.39). `--tol` is how near the goal
@@ -149,8 +149,9 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
         found = true;
         let file = region["path"].as_str().ok_or("region without a path")?;
         let bytes = std::fs::read(root.join(file)).map_err(|e| format!("{file}: {e}"))?;
-        for edge in room_edges(&bytes).ok_or_else(|| format!("{file}: not an HKROOM02 pack"))? {
-            if !edges.contains(&edge) {
+        let blank = linked_edges(region);
+        for (index, edge) in room_edges(&bytes).ok_or_else(|| format!("{file}: not an HKROOM02 pack"))?.into_iter().enumerate() {
+            if !blank.contains(&index) && !edges.contains(&edge) {
                 edges.push(edge);
             }
         }
@@ -160,6 +161,24 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
     }
     edges.retain(|e| !inside_any(e, open));
     Ok(edges)
+}
+
+/// The edge indices of one region that the switches (host/world_links.py, docs/WORLD_LINKS.md) take out of the
+/// room as the report leaves it: the `Activated Plat` of a vine platform is absent until its vine is cut. With
+/// `--switched` (or HK_WALKPLAN_SWITCHED=1, which the room planner reads too) every switch is taken as hit: the
+/// gates it opens are out and the platforms are in.
+fn linked_edges(region: &serde_json::Value) -> Vec<usize> {
+    let switched = std::env::var("HK_WALKPLAN_SWITCHED").is_ok_and(|v| v == "1");
+    let mut blank = Vec::new();
+    for binding in region["remote_art_bindings"].as_array().into_iter().flatten() {
+        if binding.get("state_scene").is_none() {
+            continue;
+        }
+        if binding["inverted"].as_bool().unwrap_or(false) != switched {
+            blank.extend(binding["edge_indices"].as_array().into_iter().flatten().filter_map(|v| v.as_u64()).map(|v| v as usize));
+        }
+    }
+    blank
 }
 
 /// Whether an edge lies inside one of the boxes (x0, y0, x1, y1 in world units), with a third of a unit to spare.
@@ -445,7 +464,7 @@ fn print_reach(_edges: &[Edge], _start: &Player) {
 }
 
 fn usage() -> String {
-    "usage: hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards]".to_string()
+    "usage: hk-walkplan SCENE_NAME START_X START_Y GOAL_X GOAL_Y [--tol T] [--open X0,Y0,X1,Y1]... [--loose] [--reach] [--no-hazards] [--switched]".to_string()
 }
 
 /// The Knight settled on the floor under (x, y), world units.
@@ -502,6 +521,10 @@ fn run() -> Result<(), String> {
             }
             "--no-hazards" => {
                 hazards = false;
+                continue;
+            }
+            "--switched" => {
+                std::env::set_var("HK_WALKPLAN_SWITCHED", "1");
                 continue;
             }
             _ => {}
