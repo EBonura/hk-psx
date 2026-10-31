@@ -22,11 +22,12 @@ from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks, MAX_REGIONS
 from world_links import postpack_links
+import region_units
 from reveal_masks import postpack_reveal_masks
 from quality import SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from cook import MAX_ROOM_TEXTURES
 
-SCENES = [dict(scene) for scene in SCENE_TABLE]
+from region_plan import SCENES, intersects, region_spec, initial_regions, fixed_regions, split_region  # noqa: F401
 
 
 def over_budget(pages, textures, cluts, packed_bytes):
@@ -52,80 +53,6 @@ def row_over_budget(row):
     """`over_budget` for a cooked report row, which may predate the `cluts` field."""
     return over_budget(row['pages'], row['textures'],
                        row.get('cluts', row['textures']), row['bytes'])
-
-
-def intersects(a, b):
-    return a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]
-
-
-def region_spec(scene, bounds):
-    x0,y0,x1,y1 = bounds
-    global_camera = scene['camera_global_bounds']
-    cx = [max(global_camera[0],min(global_camera[2],x)) for x in (x0,x1)]
-    cy = [max(global_camera[1],min(global_camera[3],y+2)) for y in (y0,y1)]
-    return {'scene_id': scene['scene_id'], 'scene_name': scene['scene_name'],
-            'scene_file': scene['file'], 'activation_bounds': list(bounds),
-            'camera_bounds': [cx[0],cy[0],cx[1],cy[1]], 'camera_x': cx, 'camera_y': cy,
-            'collision_bounds': [x0-3,y0-5,x1+3,y1+5],
-            'interaction_bounds': [x0-2,y0-2,x1+2,y1+2],
-            'grass_bounds': [x0-2,y0-2,x1+2,y1+2], 'allow_slopes': True}
-
-
-def initial_regions():
-    initial = region_spec(SCENES[0], [15,-5,62,25])
-    # Preserve the existing opening view and initial interaction test route.
-    initial.update(camera_x=list(CAM_X), camera_y=list(CAM_Y),
-                   camera_bounds=[CAM_X[0],CAM_Y[0],CAM_X[1],CAM_Y[1]],
-                   collision_bounds=[15,-5,78,35], grass_bounds=[20,0,70,25])
-    pending=[]
-    for scene in SCENES:
-        left,bottom,right,top=scene['runtime_bounds']
-        for y in range(bottom,top,16):
-            for x in range(left,right,24):
-                bounds=[x,y,min(x+24,right),min(y+16,top)]
-                base=initial['activation_bounds']
-                if scene['scene_id']==0 and base[0]<=bounds[0] and base[1]<=bounds[1] and base[2]>=bounds[2] and base[3]>=bounds[3]:
-                    continue
-                pending.append(region_spec(scene,bounds))
-    # Expose the immediate first-door continuation first for incremental smoke
-    # testing. Remaining IDs stay deterministic for this region plan revision.
-    pending.sort(key=lambda r:(r['scene_id'],
-                 0 if r['activation_bounds'][:2]==[48,11] else 1,
-                 r['activation_bounds'][1],r['activation_bounds'][0]))
-    return [initial]+pending
-
-
-def fixed_regions():
-    """Keep the measured layout stable across texture quality changes."""
-    # Keep every existing chunk ID and Tutorial view. Town's old x40 clamp was
-    # the development coverage edge; extending it allows continuous traversal
-    # into the new views without changing screen scale or the gate's x12 clamp.
-    result=[region_spec(SCENES[scene],bounds) for scene,bounds in REGION_LAYOUT]
-    for bounds,camera in TOWN_EXTENSION_LAYOUT:
-        region=region_spec(SCENES[1],bounds)
-        region.update(camera_bounds=list(camera),camera_x=[camera[0],camera[2]],
-                      camera_y=[camera[1],camera[3]])
-        result.append(region)
-    for scene_id,boxes in sorted(GRID_SCENE_LAYOUTS.items()):
-        for bounds in boxes:
-            result.append(region_spec(SCENES[scene_id],bounds))
-    initial=initial_regions()[0]
-    if result[0]['activation_bounds'] != initial['activation_bounds']:
-        raise ValueError('fixed layout opening differs from initial room')
-    result[0]=initial
-    return result
-
-
-def split_region(region):
-    x0,y0,x1,y1=region['activation_bounds']
-    if max(x1-x0,y1-y0)<=3:
-        raise ValueError(f'One camera view exceeds residency budgets at {region["activation_bounds"]}')
-    if x1-x0 >= y1-y0:
-        mid=(x0+x1)/2;pieces=([x0,y0,mid,y1],[mid,y0,x1,y1])
-    else:
-        mid=(y0+y1)/2;pieces=([x0,y0,x1,mid],[x0,mid,x1,y1])
-    scene=SCENES[region['scene_id']]
-    return [region_spec(scene,piece) for piece in pieces]
 
 
 # CameraController's scene bounds for the camera centre: 14.6 and 8.3 in from
@@ -413,140 +340,17 @@ def scene_metadata(sc, info):
     return result
 
 
-def cook_fingerprints(source):
-    """Inputs and code identity for per-region cook reuse.
+def precook_parallel(pending, out):
+    """Bring every region unit up to date with one worker process per scene that has a miss.
 
-    Code excludes quality.py (the scene catalog) so growing the catalog keeps
-    earlier regions; the budget constants it contributes are hashed by value.
+    Each worker loads its own source and scene once; a unit is a pure function of its spec, the
+    source and the code it ran, so the parent loop that follows finds every worker result fresh.
     """
-    from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, TEXTURE_BUDGET, ROOM_BYTE_BUDGET, SCENERY_TEXEL_CAP, SCENERY_SCENE_CAPS
-    def sha(path):
-        with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
-    code=hashlib.sha256()
-    # host/cook_inputs.txt is the shared list. Its postpass section is the whole
-    # difference between the two caches this feeds: the build hashes the file
-    # entire, so a postpass change re-runs the cook, while a base region's key
-    # stops at the divider so that same change reuses all 693 cooked packs.
-    for line in (ROOT/'host/cook_inputs.txt').read_text().splitlines():
-        if line.strip()=='# --- postpass only ---':break
-        line=line.strip()
-        if not line or line.startswith('#'):continue
-        code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
-    code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET,SCENERY_TEXEL_CAP,sorted(SCENERY_SCENE_CAPS.items())]).encode())
-    inputs={};interim=ROOT/'.hkpsx/regions-source-inputs.json'
-    provenance=ROOT/'.hkpsx/regions-provenance.json'
-    raw=interim.read_bytes() if interim.exists() else None
-    checked=raw is not None and hashlib.sha256(raw).hexdigest()==os.environ.get('HK_SOURCE_FINGERPRINT_CHECKED')
-    if checked:
-        manifest=json.loads(raw)
-        if manifest['source']!=str(source.directory.resolve()):raise ValueError('region source fingerprint has a different retail root')
-        names=manifest['inputs']
-    elif provenance.exists():
-        manifest=json.loads(provenance.read_text());names=manifest['inputs']
-    elif interim.exists():raise ValueError('interrupted-cook source fingerprint requires a checked build driver')
-    else:return None
-    for name in sorted(names):
-        path=source.directory/name
-        if not path.is_file():return None
-        inputs[name]=names[name] if checked else sha(path)
-    return {'code':code.hexdigest(),'inputs':inputs,'source':str(source.directory.resolve()),
-            'interim':checked,'established':provenance.exists()}
-
-
-def inputs_digest(shas, names):
-    digest=hashlib.sha256()
-    for name in names:digest.update(f'{name}:{shas[name]}\n'.encode())
-    return digest.hexdigest()
-
-
-def cook_cache_key(region, fingerprints):
-    """Reuse identity for one cooked region; None disables reuse.
-
-    The source files are checked rather than keyed: a cook records the files
-    the provenance listed when it ran, and stays fresh while each of those is
-    unchanged. The list only grows (write_provenance keeps every file any run
-    loaded), so keying on the whole list made one more asset file read by a
-    postpass (the False Knight's bank) recook every region.
-    """
-    if not fingerprints:return None
-    shas=fingerprints['inputs'];names=sorted(shas)
-    key=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
-    return {'key':key({'region':region,'code':fingerprints['code'],'source':fingerprints.get('source')}),
-            'names':names,'shas':shas,'source':fingerprints.get('source'),
-            'interim':fingerprints.get('interim',False),
-            'established':fingerprints.get('established',True),
-            'inputs':inputs_digest(shas,names),
-            # What a cook written before this keyed on, so those packs are kept.
-            'legacy':key({'region':region,'fingerprints':{'code':fingerprints['code'],'inputs':inputs_digest(shas,names)}})}
-
-
-def cached_cook(destination, key):
-    """Return the earlier cook report when its key and cooked files are intact."""
-    if key is not None and key.get('interim'):
-        result=subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-check',destination.name],
-                              input=json.dumps({'key':key}),text=True,capture_output=True,check=True)
-        return json.loads(result.stdout)
-    cache=destination/'cook-cache.json'
-    if key is None or not cache.is_file():return None
-    try:old=json.loads(cache.read_text())
-    except ValueError:return None
-    room=destination/'room.hk'
-    names=old.get('input_names')
-    if names is None:fresh=old.get('key')==key['legacy']
-    else:fresh=old.get('key')==key['key'] and all(name in key['shas'] for name in names) and inputs_digest(key['shas'],names)==old.get('inputs')
-    if not fresh or not room.is_file() or not (destination/'scene.json').is_file() or not (destination/'unsupported.json').is_file():return None
-    with room.open('rb') as stream:
-        if hashlib.file_digest(stream,'sha256').hexdigest()!=old['cooked'].get('pack_sha256'):return None
-    if names is None:record_cook(destination,key,old['cooked'])
-    return old['cooked']
-
-
-def record_cook(destination, key, cooked):
-    if key.get('interim'):
-        subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-record',destination.name],
-                       input=json.dumps({'key':key,'cooked':cooked}),text=True,check=True)
-    else:
-        try:(destination/'cook-cache.json').write_text(json.dumps({'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked}))
-        except TypeError:pass  # a report that is not JSON simply is not reused
-
-
-def cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry):
-    """Cook one region into its destination and record its cache key."""
-    try:
-        cooked=cook(source,sc,region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
-    except ValueError as error:
-        if chunk_id==1 or not any(text in str(error) for text in ('budget exceeded','pool exceeds','cache dimensions','bank exceeds')):
-            raise
-        raise ValueError(f'Fixed layout region {chunk_id} exceeds measured residency budget: {error}') from error
-    if key is not None:record_cook(destination,key,cooked)
-    return cooked
-
-
-def precook_scene(scene_id,out):
-    """Worker: cook every cache miss of one scene; the parent then finds them cached."""
-    source=Source();fingerprints=cook_fingerprints(source);pixels={};geometry={};sc=None
-    for index,region in enumerate(fixed_regions()):
-        if region['scene_id']!=scene_id:continue
-        chunk_id=index+1;destination=out/f'region-{chunk_id:03}'
-        key=cook_cache_key(region,fingerprints)
-        if cached_cook(destination,key) is not None:continue
-        if sc is None:sc=Scene(source,region['scene_file'])
-        print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (worker)',flush=True)
-        cook_region(source,sc,region,chunk_id,destination,key,pixels,geometry)
-
-
-def precook_parallel(pending,fingerprints,out):
-    """Cook cache misses with one worker process per scene, most regions first.
-
-    Each worker loads its own source and scene once; the cook of a region is a
-    pure function of its spec, the source and the cooker code, so the parent
-    loop that follows reuses every worker result through the per-region cache.
-    """
-    import subprocess,os
+    import subprocess,os,time
+    base=region_units.source_base()
     misses={}
     for index,region in enumerate(pending):
-        destination=out/f'region-{index+1:03}'
-        if cached_cook(destination,cook_cache_key(region,fingerprints)) is None:
+        if not region_units.region_is_fresh(region,index+1,out/f'region-{index+1:03}',base):
             misses[region['scene_id']]=misses.get(region['scene_id'],0)+1
     if not misses:return
     # Region 1 writes the shared knight/gameplay files: cook its scene first
@@ -558,7 +362,7 @@ def precook_parallel(pending,fingerprints,out):
     logs=ROOT/'.hkpsx'/'precook-logs';logs.mkdir(parents=True,exist_ok=True)
     def spawn(scene):
         handle=(logs/f'scene-{scene}.log').open('w')
-        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--precook',str(scene)],cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
+        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parent/'region_units.py'),'--precook',str(scene)],cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
         proc.log_path=logs/f'scene-{scene}.log';proc.log_handle=handle;return proc
     def finish(proc):
         proc.log_handle.close();return proc.log_path.read_text()
@@ -582,7 +386,7 @@ def precook_parallel(pending,fingerprints,out):
                 if proc.returncode:
                     for other in running.values():other.kill()
                     raise ValueError(f'Precook of scene {scene} failed with status {proc.returncode}:\n{log[-4000:]}')
-        import time;time.sleep(0.2)
+        time.sleep(0.2)
 
 
 def write_report(path, report):

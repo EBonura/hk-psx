@@ -746,7 +746,23 @@ class Atlas:
         if len(self.stream)>256*1024:raise ValueError('animation and alpha metadata RAM bank exceeds 256 KiB')
 
 
-def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,shared_geometry=None,write_shared=True,stage_for_similarity=False):
+def cook_annotations(s,sc,region):
+    """The records laid over a region's scenery: its actors, hazards and shrooms.
+
+    They go into scene.json and the cooked report and never into room.hk, so they are a unit of
+    their own (host/region_units.py): an edit to the actor recognisers recooks these and not the
+    scenery. `append_actor_art` runs here, into an atlas this call throws away, for the admission
+    rather than the art: it owns the refusal that clears `movement_supported` for a frame the
+    animation cache cannot hold, and that verdict has to be the same here as in the postpass
+    (host/regions.py::postpack_actor_bank).
+    """
+    bounds=region.get('interaction_bounds',region['activation_bounds'])
+    actors=actor_sources(sc,bounds)
+    hazards=hazard_sources(sc,bounds)
+    shrooms=shroom_sources(sc,bounds)
+    append_actor_art(s,sc,actors,Atlas(max_textures=MAX_ROOM_TEXTURES),[],[])
+    return {'actors':actors,'hazards':hazards,'shrooms':shrooms}
+def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,shared_geometry=None,write_shared=True,stage_for_similarity=False,annotations=True):
     out=Path(output or ROOT/'data');out.mkdir(parents=True,exist_ok=True)
     s=source or Source();sc=scene or Scene(s,'level6');scene_file=Path(sc.file.name).name
     region=region or {'camera_x':CAM_X,'camera_y':CAM_Y,'collision_bounds':(15,-5,78,35),'activation_bounds':(15,-5,62,25)}
@@ -768,9 +784,10 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # masks; only the views that can reach it force its art into their draws.
     secrets=secret_sources(s,sc,errors=unsupported)
     reachable={r['source'] for r in secret_sources(s,sc,region.get('interaction_bounds',region['activation_bounds']))}
-    actors=actor_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
-    hazards=hazard_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
-    shrooms=shroom_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
+    # With annotations=False the three lists are placeholders: the caller cooks them as their own unit
+    # (cook_annotations) and merges them into scene.json and the report.
+    notes=cook_annotations(s,sc,region) if annotations else {'actors':[],'hazards':[],'shrooms':[]}
+    actors,hazards,shrooms=notes['actors'],notes['hazards'],notes['shrooms']
     from benches import bench_sources
     benches=bench_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     forced_renderers=cut_renderers|{i for b in breakables for key in ('off_renderer_ids','on_renderer_ids') for i in b[key]}
@@ -890,18 +907,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
                 if write_shared:im.save(out/f'knight-{index}.png')
             tex,box=framecache[cachekey];frames.append({'texture':tex,'box':box,'sprite':index,'event':fr})
         clips.append({'name':name,'start':start,'count':len(c['frames']),'fps':c['fps'],'wrap':guest_wrap(c),'loopStart':c.get('loopStart',0)})
-    # Into an atlas this pack throws away, for the admission rather than the art.
-    # host/regions.py::postpack_actor_bank builds one scene-wide actor bank and
-    # appends it to every view of the scene, then replaces this row's clip
-    # indices with its own, so art cooked into a base pack here is never read:
-    # it is only paid for, and only by the one view that happens to contain an
-    # actor's authored transform. Measured on Crossroads_10 view 244, which is
-    # where the False Knight is authored: 75,752 bytes of the 393,216-byte room
-    # budget, which is what its clip set was competing against. The pass still
-    # runs because it owns the refusal that clears `movement_supported` for a
-    # frame the animation cache cannot hold, and that verdict has to be the same
-    # here as in the postpass.
-    append_actor_art(s,sc,actors,Atlas(max_textures=MAX_ROOM_TEXTURES),[],[])
+    # The actors' own art is never cooked into this pack (cook_annotations says why).
     from effects import append_grass_impact_art,append_door_debris_art
     grass_impact=append_grass_impact_art(s,sc,atlas,frames,clips)
     door_refusals=[]
@@ -1067,7 +1073,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
         dump(ROOT/'.hkpsx/vitals-source.json',vital_values)
         (ROOT/'data/params.rs').write_text(params)
         dump(ROOT/'.hkpsx/combat-source.json',{'hero':s.sid(hero),'nails':nails,'grass':grass,'source_methods':['HeroController.Attack','HeroController.DoAttack','HeroController.CanAttack','HeroAnimationController.Update','NailSlash.StartSlash','NailSlash.FixedUpdate','GrassCut.OnTriggerEnter2D','GrassCut.ShouldCut','GrassBehaviour.Start'],'semantics':{'attack_seconds':constants['ATTACK_DURATION'],'cooldown_seconds':constants['ATTACK_COOLDOWN_TIME'],'alternate_reset_seconds':constants['ALT_ATTACK_RESET'],'polygon_source_fixed_steps':[1,5],'source_fixed_dt':dt,'first_horizontal_body_clip':'SlashAlt','first_horizontal_effect':'SlashEffect'},'limitations':['This attack-extraction report does not describe the separate world, damage, enemy and pogo runtime; arbitrary PlayMaker execution remains unsupported','Grass cut renderer switch only; source cut particles, sound and shader bending omitted','Attack input buffering and animation cancellation are not implemented','FixedUpdate collision phase resampled to 60Hz; original runtime trajectories not compared']})
-    dump(out/'scene.json',{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'secrets':secrets,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'decor':decor,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
+    dump(out/('scene.json' if annotations else 'scene-base.json'),{'tilemap_fill':tilemap_summary,'draws':draws,'frames':frames,'clips':clips,'grass':grass,'grass_impact':grass_impact,'door_debris':door_debris,'particle_effects':particle_effects,'breakables':breakables,'secrets':secrets,'actors':actors,'hazards':hazards,'benches':benches,'shrooms':shrooms,'decor':decor,'edges':edges,'atlas':atlas.entries,'texture_request_to_canonical':atlas.request_map})
     if write_shared:
         for i,page in enumerate(atlas.pages):(out/f'page-{i}.bin').write_bytes(page)
         (out/'palettes.bin').write_bytes(b''.join(atlas.palettes))
