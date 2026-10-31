@@ -541,18 +541,19 @@ pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>
         .filter(|o| o.kind() == KIND_POGO)
         .map(|object| PogoTarget { object })
 }
+/// Whether a remote-art carrier's edges are blank, given whether its state bit is set. An
+/// ordinary carrier's edges (a gate, a broken stone) go once the bit is set; an inverted one
+/// (flag 1: a vine platform's `Activated Plat`) exists only once it is set.
+#[inline(always)]
+fn remote_edges_blank(carrier_flags: u16, set: bool) -> bool {
+    set != (carrier_flags & 1 != 0)
+}
 /// True when a broken breakable of this region owns room edge `index`.
 ///
 /// Walks the region's objects by index rather than through `Breakables`, whose
 /// trailing-fade count this does not need: it is the deepest frame of the
 /// Knight's sweep, which runs on the 1 KiB scratchpad stack.
 #[inline(never)]
-/// Whether a remote-art carrier's edges are blank, given whether its state bit is set. An
-/// ordinary carrier's edges (a gate, a broken stone) go once the bit is set; an inverted one
-/// (flag 1: a vine platform's `Activated Plat`) exists only once it is set.
-fn remote_edges_blank(carrier_flags: u16, set: bool) -> bool {
-    set != (carrier_flags & 1 != 0)
-}
 fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
     let Some(bank) = bank_region(region) else {
         return false;
