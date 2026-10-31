@@ -52,10 +52,16 @@ def world_banks(output):
     lever = {'source': 'test:30', 'name': 'Lever', 'state_index': 2, 'box': [v / Q for v in [400, 0, 500, 100]],
              'hit_polygons': [[[x / Q, y / Q] for x, y in [[400, 0], [500, 0], [500, 100], [400, 100]]]],
              'persistence': [{'dont_save': False, 'semi_persistent': False}]}
+    # A second switch, state 3 at 600..700, whose gate opens 20 ticks after the hit.
+    slow = dict(lever, source='test:32', state_index=3, open_ticks=20,
+                box=[v / Q for v in [600, 0, 700, 100]],
+                hit_polygons=[[[x / Q, y / Q] for x, y in [[600, 0], [700, 0], [700, 100], [600, 100]]]])
     links = [{'kind': 'breakable', 'owner_source': 'test:30', 'state_index': 2, 'state_scene': 0,
               'off_draws': [3], 'on_draws': [], 'edge_indices': [2]},
              {'kind': 'breakable', 'owner_source': 'test:31', 'state_index': 7, 'state_scene': 3,
-              'off_draws': [], 'on_draws': [], 'edge_indices': [4]}]
+              'off_draws': [], 'on_draws': [], 'edge_indices': [4]},
+             {'kind': 'breakable', 'owner_source': 'test:30', 'state_index': 2, 'state_scene': 0,
+              'off_draws': [], 'on_draws': [], 'edge_indices': [3], 'inverted': True}]
     def row(chunk, breakables, pieces=(), levers=()):
         bounds = [v / Q for v in [0, 0, 1000, 1000]]
         return {'chunk_id': chunk, 'scene_id': 0, 'activation_bounds': bounds, 'camera_bounds': bounds,
@@ -64,7 +70,7 @@ def world_banks(output):
     # Pieces 0 (owner 0), 1 and 2 (owner 1); region 1 draws all three, region 2 only piece 1, as another frame.
     pieces = [fragment(7, 0, 3), fragment(8, 1, 4), fragment(9, 1, 5)]
     payload, _ = encode_scene({'scene_id': 0, 'scene_name': 'Fixture', 'file': 'fixture'},
-                              [row(1, [prop(0, triangle, True), prop(1, square, False)], pieces, [lever]), row(2, [], [dict(pieces[1], frame=9)])])
+                              [row(1, [prop(0, triangle, True), prop(1, square, False)], pieces, [lever, slow]), row(2, [], [dict(pieces[1], frame=9)])])
     (output/'fixture.hkwm').write_bytes(payload)
     return {'HK_TEST_SCENE0_BANK': str(output/'scene0.hkwm'), 'HK_TEST_FIXTURE_BANK': str(output/'fixture.hkwm')}
 

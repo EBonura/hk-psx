@@ -8,7 +8,8 @@ from audit_resident_bank import dense_pack,aligned
 from scene import Scene
 from combat import grass_sources,nail_sources,transformed_box,generated_params
 from scenery_geometry import packet_bound, CHILD_CAPACITY
-from breakables import breakable_sources,bind_breakables
+from breakables import breakable_sources,bind_breakables,battle_gates as arena_gates,SOFT_TERRAIN_LAYER
+from world_links import bit_enabled,tk2d_art
 from reveal_masks import reveal_mask_sources
 from materials import scenery_material
 from tilemap_fill import append_tilemap_fills
@@ -774,6 +775,8 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     from benches import bench_sources
     benches=bench_sources(sc,region.get('interaction_bounds',region['activation_bounds']))
     forced_renderers=cut_renderers|{i for b in breakables for key in ('off_renderer_ids','on_renderer_ids') for i in b[key]}
+    bit_gids,bit_renderers=bit_enabled(sc)
+    forced_renderers|=bit_renderers
     forced_renderers|={int(sid.split(':')[-1]) for b in breakables for fade in b.get('mask_fades',[]) for sid in fade['renderer_sources']}
     # A secret's art has to be a draw in every view that binds the secret, the
     # way a Breakable's whole and remnant parts are.
@@ -839,6 +842,12 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
                                 None if record['source'] in reachable else (cam_x,cam_y))
             if draw is not None:draws.append(draw)
         except Exception as ex:unsupported.append({'id':record['renderer_source'],'type':'tk2dSprite','error':str(ex)})
+    # The idle art of every switch and gate (host/world_links.py): tk2d sprites no other pass draws.
+    for sprite_source in tk2d_art(sc):
+        try:
+            draw=tk2d_wall_draw(s,sc,{'renderer_source':sprite_source},atlas,images,shared_pixels,scenery_cap,(cam_x,cam_y))
+            if draw is not None:draws.append(draw)
+        except Exception as ex:unsupported.append({'id':sprite_source,'type':'tk2dSprite','error':str(ex)})
     decor_groups=[]
     for record in ([] if region.get('scene_name') in DECOR_DEFERRED else decor_sources(sc)):
         try:
@@ -1029,10 +1038,17 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     # 4.16 units tall against a jump apex of 2.87, with Crossroads_04's at
     # 12.66. Crossroads_09 would be impassable between its only two doors and
     # Crossroads_08 cut into three columns.
+    # Two kinds of collider join the terrain although they are not an active layer-8 object on
+    # load: an arena gate on the Soft Terrain layer (Fungus1_21's Battle Gate Bone; `BG Control`
+    # is the selector, not the layer), and the inactive object a persistent bit turns on (a vine
+    # platform's Activated Plat, bound `inverted` so it is blank until the bit is set).
+    soft_gates={g['gid'] for g in arena_gates(sc,[])}
     for i,(typ,t) in sc.objects.items():
         if typ not in ('EdgeCollider2D','BoxCollider2D','PolygonCollider2D'):continue
         gid=t['m_GameObject']['m_PathID']
-        if not sc.active(gid) or not t['m_Enabled'] or t['m_IsTrigger'] or sc.gos[gid]['m_Layer']!=8:continue
+        layer=sc.gos[gid]['m_Layer']
+        if not (sc.active(gid) or gid in bit_gids) or not t['m_Enabled'] or t['m_IsTrigger']:continue
+        if layer!=8 and not (layer==SOFT_TERRAIN_LAYER and gid in soft_gates):continue
         off=t['m_Offset'];paths=[]
         if typ=='BoxCollider2D':
             w=t['m_Size']['x']/2;h=t['m_Size']['y']/2;paths=[[{'x':x,'y':y} for x,y in [(-w,-h),(w,-h),(w,h),(-w,h),(-w,-h)]]]

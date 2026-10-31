@@ -340,6 +340,10 @@ BG_CONTROL_FSM = 'BG Control'
 # False Knight arena. Excluding the placement variable, every active gate in the
 # catalogue hashes to it, so one pin covers the family rather than one per room.
 BG_CONTROL_SHA256 = '98a0b55f39c2f01fa2e16c353d581532179c4893a03437b10cbee49b19e8ca9f'
+# The Bone variant (Fungus1_21's Battle Gate Bone, on the Soft Terrain layer) differs only in its
+# tk2d clips: `battle_gate` below checks the start and close states it shares, so it is pinned
+# beside the family. Its art is not drawn (the clips are not the family's).
+BONE_GATE_SHA256 = '525bab5a6c08ab2800b7909b6a564f2da7c0dedea43d10ea5f23ffe41d6bc8bc'
 BG_CONTROL_PLACEMENT_VARIABLE = 'Start Closed'
 BG_CONTROL_START_STATE = 'Opened'
 BG_CONTROL_START_ACTIONS = ('GetOwner', 'BoolTest', 'Tk2dPlayAnimation', 'SetCollider')
@@ -352,6 +356,8 @@ BG_CONTROL_CLOSE_STATE = 'Quick Close'
 # arena is won. Nothing in this port broadcasts it.
 BG_CONTROL_OPEN_EVENT = 'BG OPEN'
 TERRAIN_LAYER = 8
+# Layer 25 is `Soft Terrain`: Fungus1_21's `Battle Gate Bone` is a BG Control on it.
+SOFT_TERRAIN_LAYER = 25
 
 
 def _state_actions(fsm, name):
@@ -428,13 +434,14 @@ def battle_gate(sc, gid, fsm):
         raise ValueError(f'arena gate collider is a {collider_type}')
     if not body['m_Enabled'] or body['m_IsTrigger']:
         raise ValueError('arena gate collider is not a serialized solid')
-    if sc.gos[gid]['m_Layer'] != TERRAIN_LAYER:
+    if sc.gos[gid]['m_Layer'] not in (TERRAIN_LAYER, SOFT_TERRAIN_LAYER):
         raise ValueError(f"arena gate is on layer {sc.gos[gid]['m_Layer']}, not terrain")
     polygons = collider_polygons(sc, gid, collider_type, body)
     points = [p for polygon in polygons for p in polygon]
     file = Path(sc.file.name).name
     return {
         'gid': gid, 'position': sc.point(gid), 'start_closed': bool(start_closed),
+        'layer': sc.gos[gid]['m_Layer'],
         # The verdict the cook needs, and the join key it needs it under:
         # world_geometry keys every terrain edge by its collider's source id.
         'solid_on_load': bool(start_closed), 'collider_source': sc.sid(body_id),
@@ -471,7 +478,7 @@ def battle_gates(sc, errors=None):
             continue
         try:
             digest = fsm_digest(tree['fsm'], (BG_CONTROL_PLACEMENT_VARIABLE,))
-            if digest != BG_CONTROL_SHA256:
+            if digest not in (BG_CONTROL_SHA256, BONE_GATE_SHA256):
                 raise ValueError(f'unverified BG Control variant: {digest}')
             record = battle_gate(sc, gid, tree['fsm'])
             record.update(source=f'{file}:{index}', game_object=f'{file}:{gid}',

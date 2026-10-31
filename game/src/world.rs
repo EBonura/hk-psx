@@ -547,6 +547,12 @@ pub fn pogo_targets(region: &Region) -> impl Iterator<Item = PogoTarget<'static>
 /// trailing-fade count this does not need: it is the deepest frame of the
 /// Knight's sweep, which runs on the 1 KiB scratchpad stack.
 #[inline(never)]
+/// Whether a remote-art carrier's edges are blank, given whether its state bit is set. An
+/// ordinary carrier's edges (a gate, a broken stone) go once the bit is set; an inverted one
+/// (flag 1: a vine platform's `Activated Plat`) exists only once it is set.
+fn remote_edges_blank(carrier_flags: u16, set: bool) -> bool {
+    set != (carrier_flags & 1 != 0)
+}
 fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
     let Some(bank) = bank_region(region) else {
         return false;
@@ -569,7 +575,7 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
                 for entry in object.remote_art() {
                     let id = id + entry.state as usize;
                     if !entry.grass
-                        && broken[id / 32] & (1 << (id % 32)) != 0
+                        && remote_edges_blank(object.flags(), broken[id / 32] & (1 << (id % 32)) != 0)
                         && entry.edges.into_iter().any(|e| e as usize == index)
                     {
                         return true;
@@ -825,7 +831,13 @@ pub struct State {
     triggers: Triggers,
     gates: Gates,
     pub secrets: crate::secret_breaks::Hits,
+    /// Switches hit whose gate has not opened yet: (state id, ticks left). A switch's flag word
+    /// holds the source's wait (its `Hit` state plus the gate's own opening) and the bit is set
+    /// when it runs out, or when the scene is left, which the source does on a reload.
+    pending_levers: [(u32, u16); PENDING_LEVERS],
 }
+/// Switches that can be waiting at once.
+const PENDING_LEVERS: usize = 2;
 /// Most gates one scene's first region may list before `State::gate` falls
 /// back to reading them from the bank. The largest on the disc lists 6.
 const GATE_SLOTS: usize = 8;
@@ -903,7 +915,9 @@ fn fill_edges(
             }
             for entry in object.remote_art() {
                 let id = object.state_id() as usize + entry.state as usize;
-                if !entry.grass && broken[id / 32] & (1 << (id % 32)) != 0 {
+                if !entry.grass
+                    && remote_edges_blank(object.flags(), broken[id / 32] & (1 << (id % 32)) != 0)
+                {
                     for i in entry.edges {
                         blank(i);
                     }
@@ -964,6 +978,7 @@ impl State {
                 list: [NO_GATE; GATE_SLOTS],
             },
             secrets: crate::secret_breaks::Hits::new(),
+            pending_levers: [(0, 0); PENDING_LEVERS],
         }
     }
     pub fn broken(&self, id: usize) -> bool {
@@ -1170,6 +1185,15 @@ impl State {
     pub fn tick(&mut self) {
         self.impacts.tick();
         self.secrets.tick();
+        for slot in 0..PENDING_LEVERS {
+            let (id, ticks) = self.pending_levers[slot];
+            if ticks > 0 {
+                self.pending_levers[slot].1 = ticks - 1;
+                if ticks == 1 {
+                    self.break_object(id as usize, 0);
+                }
+            }
+        }
         // Only broken source objects with an unfinished fade need a timer
         // update; retain scene-global countdowns and exact simultaneous expiry.
         for (word, active) in self.fade_active.iter_mut().enumerate() {
@@ -1199,6 +1223,7 @@ impl State {
         assert!(scene < SCENES);
         self.grass.fill(0);
         self.secrets.reset();
+        self.open_pending_levers();
         // The scene being reset is the admitted one: both callers pass the
         // current region's scene before the next admission.
         let bank = admitted_bank().expect("world metadata admitted for scene reset");
@@ -1263,7 +1288,7 @@ impl State {
             if !self.broken(id)
                 && overlap(bounds, object.bounds())
                 && object.hit_by(polygon)
-                && self.break_object(id, object.fade_ticks())
+                && self.break_or_wait(&object)
             {
                 // A switch (flag 16, host/world_links.py) has set its bit, and the terrain and art
                 // bound to the bit follow. It breaks nothing: no particles, no debris. It counts as
@@ -1357,6 +1382,41 @@ impl State {
             e.taken.min(2) as usize
         };
         particles::pool().spawn_break(region.scene, e.id | stage << 13, 2, facing);
+    }
+    /// The break of one object a nail swing landed on: at once, or for a switch whose flag word
+    /// carries a wait (the source's `Hit` state, then the gate's own opening) after it, through
+    /// `pending_levers`. False when the object was already broken or is already waiting.
+    #[inline(never)]
+    fn break_or_wait(&mut self, object: &Breakable) -> bool {
+        let id = object.id();
+        let wait = object.fade_ticks();
+        if object.object.flags() & 16 == 0 || wait == 0 {
+            return self.break_object(id, wait);
+        }
+        if self.broken(id)
+            || self.pending_levers.iter().any(|&(waiting, ticks)| ticks > 0 && waiting as usize == id)
+        {
+            return false;
+        }
+        match self.pending_levers.iter_mut().find(|slot| slot.1 == 0) {
+            Some(slot) => {
+                *slot = (id as u32, wait);
+                true
+            }
+            None => self.break_object(id, 0),
+        }
+    }
+    /// Open every waiting switch now: the scene is being left, and the source's switch has
+    /// already persisted its hit by then.
+    #[inline(never)]
+    fn open_pending_levers(&mut self) {
+        for slot in 0..PENDING_LEVERS {
+            let (id, ticks) = self.pending_levers[slot];
+            if ticks > 0 {
+                self.pending_levers[slot].1 = 0;
+                self.break_object(id as usize, 0);
+            }
+        }
     }
     /// One nail swing against one secret whose object carries flag 8.
     #[inline(never)]
@@ -2392,7 +2452,10 @@ mod broken_edge_tests {
                             o.remote_art().any(|entry| {
                                 let id = o.state_id() as usize + entry.state as usize;
                                 !entry.grass
-                                    && broken[id / 32] & (1 << (id % 32)) != 0
+                                    && remote_edges_blank(
+                                        o.flags(),
+                                        broken[id / 32] & (1 << (id % 32)) != 0,
+                                    )
                                     && entry.edges.into_iter().any(|e| e as usize == index)
                             })
                         })
