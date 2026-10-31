@@ -30,6 +30,75 @@ fn read_word(bytes: &[u8], offset: u32) -> Result<u32> {
             .try_into()?,
     ))
 }
+/// A mangled (v0) Rust symbol as the identifiers of its path, `hk_psx::actor_bank::bind`: the same in every build, unlike the
+/// crate disambiguators (`Cs...._`) and back-references (`B7_`) the mangling adds.
+fn symbol_path(name: &str) -> String {
+    let Some(rest) = name.strip_prefix("_R") else {
+        return name.to_owned();
+    };
+    let bytes = rest.as_bytes();
+    let (mut parts, mut i) = (Vec::new(), 0);
+    while i < bytes.len() {
+        let c = bytes[i];
+        if (c == b'C' && matches!(bytes.get(i + 1), Some(b's' | b'd')))
+            || (c == b'B' && bytes.get(i + 1).is_some_and(|n| n.is_ascii_alphanumeric()))
+        {
+            i = rest[i..].find('_').map_or(bytes.len(), |at| i + at + 1);
+        } else if c.is_ascii_digit() {
+            let mut j = i;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            let length: usize = rest[i..j].parse().unwrap_or(0);
+            if bytes.get(j) == Some(&b'_') {
+                i = j + 1;
+            } else {
+                if let Some(identifier) = rest.get(j..j + length).filter(|_| length != 0) {
+                    parts.push(identifier.to_owned());
+                }
+                i = j + length.max(1);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    if parts.is_empty() { name.to_owned() } else { parts.join("::") }
+}
+
+/// The gate on resident code calling into a code module. A resident function that calls a module's function jumps into the
+/// trap in every room that does not carry the module (a frozen game: the first nail hit on a husk did, because
+/// `render::resident_quad_flash` was a member of the `hornet_art` module). Each (caller, module, callee) edge must be in the
+/// reviewed list `HK_MODULE_EDGES_FILE` (host/module_edges.json); `HK_MODULE_EDGES=update`, or no list yet, writes the build's
+/// edges there instead of failing.
+fn check_module_edges(edges: &BTreeSet<(String, String, String)>) -> Result<()> {
+    let Ok(file) = std::env::var("HK_MODULE_EDGES_FILE") else {
+        return Ok(());
+    };
+    let approved: BTreeSet<(String, String, String)> = match fs::read(&file) {
+        Ok(bytes) => serde_json::from_slice::<Vec<(String, String, String)>>(&bytes)?.into_iter().collect(),
+        Err(_) => BTreeSet::new(),
+    };
+    let new: Vec<_> = edges.difference(&approved).collect();
+    if new.is_empty() {
+        return Ok(());
+    }
+    if approved.is_empty() || std::env::var("HK_MODULE_EDGES").is_ok_and(|v| v == "update") {
+        let all: BTreeSet<_> = edges.union(&approved).collect();
+        fs::write(&file, serde_json::to_vec_pretty(&all)? )?;
+        eprintln!("hk-module-publish: wrote {} approved resident-to-module edges to {file}", all.len());
+        return Ok(());
+    }
+    let lines: Vec<String> = new.iter().map(|(c, m, f)| format!("  {c} -> [{m}] {f}")).collect();
+    Err(format!(
+        "{} resident call(s) into a code module that {file} does not approve:\n{}\nA resident function that calls into a module \
+         traps (a frozen game) in every room that does not carry the module. Either make the callee resident (drop it from the \
+         module in host/code_modules.py), or guard the call with `modules::require` and approve the edge with \
+         HK_MODULE_EDGES=update after checking each one.",
+        new.len(),
+        lines.join("\n")
+    )
+    .into())
+}
 fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
     let bytes = fs::read(elf_path)?;
     let elf = Elf::parse(&bytes)?;
@@ -41,6 +110,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
     let mut images = Vec::new();
     // Every edge from one cold module into another, so one build lists them all.
     let mut cross: Vec<String> = Vec::new();
+    let mut edges: BTreeSet<(String, String, String)> = BTreeSet::new();
     for module in modules {
         let name = module["name"].as_str().ok_or("module name")?;
         let id = module["id"].as_u64().ok_or("module id")?;
@@ -117,6 +187,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
                                 && s.bytes != 0
                         })
                         .ok_or("unowned cold export")?;
+                    edges.insert((symbol_path(caller.name), name.to_owned(), symbol_path(export.name)));
                     calls.insert((caller.name, export.name));
                     continue;
                 }
@@ -132,6 +203,7 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
     if !cross.is_empty() {
         return Err(format!("cross-cold dependency: {}", cross.join("; ")).into());
     }
+    check_module_edges(&edges)?;
 
     let result = json!({"header":".ps_exe_head","resident":[".text",".data",".bss"],"compact_sites":"HK_MODULE_IMPORTS","compact_ranges":"HK_MODULE_IMPORT_RANGE","compact_trap":"__hk_module_trap","images":images});
     if output.exists() {
@@ -707,5 +779,21 @@ fn main() {
     if let Err(error) = result {
         eprintln!("hk-module-publish: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+
+    #[test]
+    fn a_symbol_is_its_path_without_the_builds_disambiguators() {
+        assert_eq!(symbol_path("_RNvNtCs83EHDMRVXgH_6hk_psx6render19resident_quad_flash"), "hk_psx::render::resident_quad_flash");
+        assert_eq!(symbol_path("_RNvNtCsAAAAAAAAAAA_6hk_psx6render19resident_quad_flash"), "hk_psx::render::resident_quad_flash");
+        assert_eq!(
+            symbol_path("_RNCNvMsh_NtCs83EHDMRVXgH_6hk_psx7enemiesNtB7_10EnemyWorld13prepare_drawss4_0B9_"),
+            "hk_psx::enemies::EnemyWorld::prepare_draws"
+        );
+        assert_eq!(symbol_path("main"), "main");
     }
 }

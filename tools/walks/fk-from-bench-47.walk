@@ -11,4 +11,4 @@ include crossroads-10.walk
 include false-knight.walk
 include city-crest.walk
 include chest.walk
-check end HK_FK_DEATHS == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_FK_STAGGERS == 3 ; HK_FK_CONVERSIONS == 3 ; HK_PICKUPS_TAKEN == 1 ; HK_CHESTS_OPENED == 1 ; HK_HEALTH >= 1
+check end HK_FK_DEATHS == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_FK_STAGGERS == 3 ; HK_FK_CONVERSIONS == 3 ; HK_PICKUPS_TAKEN == 1 ; HK_CHESTS_OPENED == 1 ; HK_HEALTH >= 1 ; HK_ACTOR_BANK_MISSES == 0 ; HK_ACTOR_BANK_UNBOUND == 0 ; HK_MINIONS_KILLED == 1

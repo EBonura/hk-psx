@@ -32,7 +32,8 @@ def publish(root, elf, link_map, out, scene_code, art):
     # Every invocation owns a fresh publication, preserving earlier guard evidence.
     import tempfile
     publication = Path(tempfile.mkdtemp(prefix='shared-publication-',dir=out))/'images'
-    def run(*args): subprocess.run([str(publisher),*map(str,args)],check=True)
+    # The reviewed list of resident-to-module calls (host/module_edges.json): `describe` fails the build on a new edge.
+    def run(*args): subprocess.run([str(publisher),*map(str,args)],check=True,env=dict(os.environ,HK_MODULE_EDGES_FILE=str(root/'host/module_edges.json')))
     # A stored form from an earlier build binds that build's raw bytes (module ids move when a module is added): drop it, it is rewritten below.
     for stale in (out/'chunks').glob('*.stored'): stale.unlink()
     for stale in (out/'chunks').glob('*.binding.json'): stale.unlink()
