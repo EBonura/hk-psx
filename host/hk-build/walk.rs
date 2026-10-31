@@ -22,6 +22,9 @@
 //! press      BUTTONS [for N] [rest N]    tap (3 ticks, no rest unless told)
 //! hold       BUTTONS until COND [timeout N]
 //! include    FILE [times N]              the lines of FILE (N times over, for a round of reactions)
+//! loop       NAME until COND max N timeout T   ... `end`   the lines between are a block the gate repeats until COND (checked before
+//!                                        every pass), at most N passes and T ticks (psoxide-gate 358eae9a "Loops and blocks"); a fight
+//!                                        is one round of reactions in a loop instead of N copies. No probe, check, card or reboot inside
 //! def        NAME EXPRESSION             name an expression; `$NAME` stands for it in later lines
 //! hold       BUTTONS for N               hold for N ticks
 //! repeat     N press BUTTONS [for H] [rest R]
@@ -228,6 +231,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
     let mut card = None;
     let mut max_ticks = 3_000_000u64;
     let mut body = String::new();
+    // Blocks of the loops written so far (top level of the journey), and the loops still open: (name, until, max, timeout, outer body).
+    let mut blocks = String::new();
+    let mut open: Vec<(String, Cond, u64, u64, String, String)> = Vec::new();
     for (index, line) in text.lines().enumerate() {
         let located = |e: String| format!("line {}: {e}", index + 1);
         let (code, comment) = match line.split_once('#') {
@@ -381,8 +387,39 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
             "raw" => {
                 let _ = writeln!(body, "{}", rest.join(" "));
             }
+            "loop" => {
+                const USAGE: &str = "loop NAME until COND max N timeout T";
+                let [loop_name, "until", cond @ ..] = rest else {
+                    return Err(located(USAGE.into()));
+                };
+                let at = cond.iter().position(|t| *t == "max").ok_or(located(USAGE.into()))?;
+                let (cond, opts) = cond.split_at(at);
+                let opts = options(opts).map_err(located)?;
+                let (Some(max), Some(timeout)) = (opts.get("max"), opts.get("timeout")) else {
+                    return Err(located(USAGE.into()));
+                };
+                let cond = parse_cond(cond, &words).map_err(located)?;
+                open.push((loop_name.to_string(), cond, *max, *timeout, std::mem::take(&mut body), label.to_string()));
+            }
+            "end" => {
+                let (loop_name, cond, max, timeout, outer, loop_label) =
+                    open.pop().ok_or(located("`end` without `loop`".into()))?;
+                let inner = std::mem::replace(&mut body, outer);
+                if inner.contains("checkpoint") || inner.contains("[step.card]") {
+                    return Err(located(format!("loop {loop_name}: a loop body holds no probe, check, card or reboot")));
+                }
+                // The body's steps are the block's: `[[step]]` and `[step.X]` become `[[block.step]]` and `[block.step.X]`.
+                let _ = writeln!(blocks, "\n[[block]]\nname = \"{}\"", escape(&loop_name));
+                blocks.push_str(&inner.replace("[[step]]", "[[block.step]]").replace("[step.", "[block.step."));
+                let _ = writeln!(body, "\n[[step]]\nlabel = \"{}\"\nblock = \"{}\"", escape(&loop_label), escape(&loop_name));
+                let _ = writeln!(body, "max_iter = {max}\ntimeout = {timeout}");
+                write_cond(&mut body, "step.until", &cond, None);
+            }
             other => return Err(located(format!("unknown directive `{other}`"))),
         }
+    }
+    if let Some((loop_name, ..)) = open.last() {
+        return Err(format!("loop {loop_name} is never closed with `end`"));
     }
     let name = name.ok_or("a walk script starts with `name NAME`")?;
     let title = title.unwrap_or_else(|| name.clone());
@@ -394,6 +431,7 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
     if let Some((path, sha)) = card {
         let _ = writeln!(toml, "card_fixture = {{ path = \"{}\", sha256 = \"{sha}\" }}", path.display());
     }
+    toml.push_str(&blocks);
     toml.push_str(&body);
     Ok(toml)
 }
@@ -1036,6 +1074,23 @@ mod tests {
         std::fs::write(dir.join("main.walk"), "name t\ninclude round.walk times 4\n").unwrap();
         let text = expand(&dir.join("main.walk")).unwrap();
         assert_eq!(text.matches("wait 3").count(), 4);
+    }
+
+    #[test]
+    fn a_loop_becomes_a_block_and_one_loop_step() {
+        let toml = compile_text(
+            "name t\nloop fight until expr u32(HK_X) == 0 max 40 timeout 6000\nhold cross for 3\nhold left until x ge 5 timeout 9\nend\nwait 2\n",
+        )
+        .unwrap();
+        assert!(toml.contains("[[block]]\nname = \"fight\""), "{toml}");
+        assert!(toml.contains("[[block.step]]") && toml.contains("[block.step.hold_until]"), "{toml}");
+        assert!(toml.contains("block = \"fight\"\nmax_iter = 40\ntimeout = 6000\n[step.until]\nkind = \"expr\""), "{toml}");
+        assert!(toml.find("[[block]]").unwrap() < toml.find("block = \"fight\"").unwrap());
+        assert!(toml.ends_with("wait = 2\n"), "{toml}");
+        assert!(compile_text("name t\nloop a until x ge 1 max 3\nend\n").unwrap_err().contains("loop NAME"));
+        assert!(compile_text("name t\nloop a until x ge 1 max 3 timeout 9\n").unwrap_err().contains("never closed"));
+        assert!(compile_text("name t\nend\n").unwrap_err().contains("without"));
+        assert!(compile_text("name t\nloop a until x ge 1 max 3 timeout 9\nprobe p x\nend\n").unwrap_err().contains("no probe"));
     }
 
     #[test]

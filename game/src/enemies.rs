@@ -50,6 +50,18 @@ pub static mut HK_HORNET_X: i32 = 0;
 #[cfg(feature = "hornet")]
 #[no_mangle]
 pub static mut HK_HORNET_Y: i32 = 0;
+/// The state her `Control` FSM is in (host data/hornet3_names.txt numbers them), for a walk that reacts to what she is about to do.
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_STATE: u16 = 0;
+/// Ticks her `Control` FSM has been in that state.
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_AGE: u16 = 0;
+/// The thrown Needle's position (Q16.16 world units; x `i32::MAX` while it is not out).
+#[cfg(feature = "hornet")]
+#[no_mangle]
+pub static mut HK_HORNET_NEEDLE: [i32; 2] = [i32::MAX, 0];
 /// The Cloak Corpse is still waiting to show its shiny.
 pub fn cloak_waiting() -> bool {
     unsafe { HK_HORNET_CLOAK_WAIT != 0 }

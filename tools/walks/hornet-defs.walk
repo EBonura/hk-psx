@@ -1,0 +1,32 @@
+# Hornet (Greenpath) as expressions over the raw words the guest publishes: HK_HORNET_STATE and HK_HORNET_AGE (her Control FSM state, numbered in
+# data/hornet3_names.txt, and the ticks she has been in it), HK_HORNET_X/Y, HK_HORNET_NEEDLE (x, y; x 2147483647 while no needle is out), HK_HORNET_PHASE
+# (0 asleep, 1 fighting, 2 dying, 3 over). Q16 world units (65536 = 1); px and py come from walk-prelude.walk.
+def hs u16(HK_HORNET_STATE)
+def age u16(HK_HORNET_AGE)
+def hx i32(HK_HORNET_X)
+def hy i32(HK_HORNET_Y)
+def hlive u32(HK_HORNET_PHASE) <= 1 && $hs != 62 && $hs != 63 && $hs != 68
+# Her horizontal offset from the Knight (positive: she is to his right) and whether she stands at his height.
+def hdx $hx - $px
+def level abs($hy - $py) <= 196608
+def adx abs($hdx)
+# Her attack states: the ground dash, the spheres (ground and air), her leaps and air dash; the needle she throws.
+def g_dash $hs == 3
+def sphere ($hs == 25 || $hs == 26 || $hs == 30 || $hs == 31)
+def airborne ($hs == 9 || $hs == 10 || $hs == 15 || $hs == 17)
+def needle_out i32(HK_HORNET_NEEDLE) != 2147483647
+def needle_near $needle_out && abs(i32(HK_HORNET_NEEDLE) - $px) <= 327680 && abs(i32(HK_HORNET_NEEDLE + 4) - $py) <= 131072
+# States in which no hit box of hers is out (idle, recovering, running, stunned): bit per state.
+def hcalm $hs < 64 && ((4566826223321225330 >> $hs) & 1) == 1
+# In a swing's reach (the Knight's origin to her centre: 3.2 and her half width), at his height.
+def reach_left $hlive && $level && $hdx < 0 && $adx <= 229376
+def reach_right $hlive && $level && $hdx >= 0 && $adx <= 229376
+# Her ground dash is on its way: the wind-up lasts 33 ticks and the dash 10; a jump from the 19th tick of the wind-up is high when she passes.
+def dash_coming $hlive && (($hs == 2 && $age >= 19) || $hs == 3) && $adx < 524288
+# Where her dash ends (it covers 5.7 units toward the Knight): the jump drifts away from that.
+def dash_end ($hdx < 0 ? $hx + 373555 : $hx - 373555)
+# She is winding up the needle (48 ticks) and the Knight is inside its reach (7.7 units out and back, a little more with the needle's length).
+def throw_near $hlive && $hs == 35 && $adx < 622592
+# Focus: masks missing, SOUL for it (or one under way), on the ground, and no hit box can reach him for the next stretch: the Knight is
+# still invulnerable from a hit and she is not near, or she is throwing from beyond the needle's reach (the throw is 100 ticks in which she stays put).
+def hheal $focus && !$g_dash && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504)

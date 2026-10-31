@@ -469,6 +469,9 @@ pub static mut HK_BREAK_COUNT: u32 = 0;
 pub static mut HK_BREAK_SHAKES: u32 = 0;
 #[no_mangle]
 pub static mut HK_HEALTH: u32 = 5;
+/// Ticks of invulnerability the Knight has left after a hit (a walk heals inside it).
+#[no_mangle]
+pub static mut HK_INVULN: u16 = 0;
 #[no_mangle]
 pub static mut HK_DEATHS: u32 = 0;
 #[no_mangle]
@@ -1393,6 +1396,7 @@ fn main() {
                         HK_GRASS_CUT_MASK = cut;
                         HK_NAIL_ATTACK_COUNT = game.attacks;
                         HK_HEALTH = game.vitals.health as u32;
+                        HK_INVULN = game.vitals.invulnerable_ticks;
                         HK_BLUE_HEALTH = game.vitals.blue_health as u32;
                         HK_SOUL = game.vitals.soul as u32;
                         HK_SIM_TICKS = input::CONSUMED;

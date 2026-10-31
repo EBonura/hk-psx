@@ -1,0 +1,35 @@
+name walk-hornet-fight
+title Hornet beaten fairly, closed loop, from the seeded card at the Fungus1_04 entrance (SOUL 0, no cheat), then the Cloak
+max_ticks 40000
+# hornet-04-entry.mcd is a seeded record (docs/ROUTES.md): Fungus1_04 at the gate Fungus1_21 leads in by (x 94.5, y 32.4), Vengeful Spirit owned
+# (the walk casts none: SOUL goes to Focus). A card keeps no SOUL (the original zeroes it on a load too), so the fight starts at 0.
+# The fight is one round of reactions (hornet-round.walk, on the raw words of hornet-defs.walk) in a gate loop until she is dying: no cheat,
+# no invulnerability, the nail only. Needs a gate with loops (PSoXide-emulator 358eae9a).
+card hornet-04-entry.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-04.walk
+wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
+repeat 4 press cross rest 45
+wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
+include hornet-defs.walk
+check sealed HK_HORNET_ENCOUNTERS == 1 ; HK_ARENA_GATE_CLOSES == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+loop hornet-fight until expr u32(HK_HORNET_PHASE) >= 2 || u32(HK_DEATHS) > 0 max 5000 timeout 30000
+include hornet-round.walk
+end
+wait until HK_HORNET_PHASE == 3 timeout 900
+wait until expr u16(HK_HORNET_CLOAK_WAIT) == 0 timeout 900
+check hornet-gone HK_HORNET_HP == 0 ; HK_ARENA_GATE_OPENS >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HORNET_ENCOUNTERS == 1
+walk 23.2
+wait until HK_WALK_READY == 1 timeout 300
+repeat 3 press up rest 45
+wait 120
+check cloak HK_WORLD_PLAYER == 67108868 ; HK_DEATHS == 0
+press cross
+wait 60
+hold right+r2 for 20
+wait 30
+check dash HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0

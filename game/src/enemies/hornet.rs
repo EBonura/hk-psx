@@ -151,6 +151,17 @@ pub fn tick(
         let at = s.fight.boss.world.world_of(0).0;
         super::HK_HORNET_X = at[0];
         super::HK_HORNET_Y = at[1];
+        let state = s.fight.boss.tree().state(0) as u16;
+        super::HK_HORNET_AGE = if state == super::HK_HORNET_STATE { super::HK_HORNET_AGE.saturating_add(1) } else { 0 };
+        super::HK_HORNET_STATE = state;
+        let w = &s.fight.boss.world;
+        // Object 7 is the Needle: out while it and every ancestor are active.
+        super::HK_HORNET_NEEDLE = if w.active_in_hierarchy(7) {
+            let n = w.world_of(7).0;
+            [n[0], n[1]]
+        } else {
+            [i32::MAX, 0]
+        };
     }
     if s.fight.phase == Phase::Gone {
         return;

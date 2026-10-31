@@ -1,0 +1,20 @@
+# One round of the Hornet fight: reactions in order of what matters; each costs no time when there is nothing to react to.
+hold circle until expr !$hheal timeout 240           # Focus when nothing can reach him
+wait until HK_FOCUS_LOCKED == 0 timeout 120
+hold cross+left until expr !($dash_coming && $px < $dash_end && $px > 1114112) timeout 300      # jump her ground dash, drifting away from where it ends
+hold cross+right until expr !($dash_coming && $px >= $dash_end && $px < 2359296) timeout 300
+hold cross until expr !$dash_coming timeout 300
+hold left until expr !($throw_near && $hdx > 0 && $px > 1114112) timeout 220            # out of the needle's reach while she winds up
+hold right until expr !($throw_near && $hdx <= 0 && $px < 2359296) timeout 220
+hold cross until expr !($hlive && $needle_near && $py < 2031616) timeout 120                  # jump the needle
+hold left until expr !($hlive && ($sphere || $airborne) && $hdx > 0 && $adx < 393216 && $px > 1114112) timeout 220   # give ground from a sphere or a leap
+hold right until expr !($hlive && ($sphere || $airborne) && $hdx < 0 && $adx < 393216 && $px < 2359296) timeout 220
+hold right until expr !($hlive && $hcalm && $level && $hdx > 262144 && $adx > 229376) timeout 300            # close on her when she is calm
+hold left until expr !($hlive && $hcalm && $level && $hdx < -262144 && $adx > 229376) timeout 40
+hold right until expr !($ready && $reach_right && i32(HK_PLAYER_FACING) < 0) timeout 10
+hold square until expr !($ready && $reach_right) timeout 90
+wait until HK_NAIL_BUSY == 0 timeout 90
+hold left until expr !($ready && $reach_left && i32(HK_PLAYER_FACING) > 0) timeout 10
+hold square until expr !($ready && $reach_left) timeout 90
+wait until HK_NAIL_BUSY == 0 timeout 90
+wait 2

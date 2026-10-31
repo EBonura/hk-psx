@@ -91,7 +91,7 @@ fight reuses it, its first 8,365 polls are the road's).
   pause menu's Invincible and Pure Nail cheats (`HK_CHEATS` 3), a Square mash with left and right sweeps that takes her through
   phase 1 (first hit at poll 9,177) to her death (9,789, phase 2: the corpse writes `hornet1Defeated`) and her leaving (9,989,
   phase 3), the walk to the shiny, UP three times (the Cloak, bit 2, at 10,116), the item-get panel closed and the dash both ways.
-  **It uses two cheats**: a kill without them needs a Knight that dodges her, which an open-loop tape cannot do, and no fair-kill
+  **It uses two cheats** (the fair kill is `walk-hornet-fight`, docs/ROUTES.md: closed loop, nail only, no invulnerability): a kill without them needs a Knight that dodges her, which an open-loop tape cannot do, and no fair-kill
   search exists for her as `tools/boss_sim.py` has for the False Knight. Her fight, her hurting the Knight and her stagger are shown
   by `hornet-road` as it stands (she hurts a Knight who stands still: `HK_HORNET_HURT`) and by the host tests.
   The tape is deterministic from the load into her room, and it depends on the polls the guest takes: redo it (the route string is

@@ -1,0 +1,70 @@
+# Fungus1_04 from the arrival through the right gate (94.5, 32.4) to her Encounter trigger (x 24.1 to 32.2): the last hop drops into it and her greeting starts.
+# Planned with hk-walkplan room Fungus1_21 Fungus1_04 Fungus1_21 --goal 30 28.4 --tol 1.0 --open 37.9,26.9,38.9,44.6 (the battle gate there is closed in the cooked edges).
+walk 92.01
+walk 92.44   # run-up
+walk 92.01   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 86.75
+walk 87.18   # run-up
+walk 86.75   # take-off
+hold left+cross for 34
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 77.76
+walk 78.19   # run-up
+walk 77.76   # take-off
+hold left+cross for 34
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 68.50
+walk 68.93   # run-up
+walk 68.50   # take-off
+hold left+cross for 16
+hold left for 25
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 61.99
+walk 62.42   # run-up
+walk 61.99   # take-off
+hold left+cross for 12
+hold left for 18
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 56.74
+walk 57.17   # run-up
+walk 56.74   # take-off
+hold left+cross for 16
+hold left for 25
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 50.24
+walk 50.67   # run-up
+walk 50.24   # take-off
+hold left+cross for 20
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 45.26
+walk 45.69   # run-up
+walk 45.26   # take-off
+hold left+cross for 8
+hold left for 15
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 42.51   # run-up
+walk 42.08   # take-off
+hold left+cross for 8
+hold left for 18
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 38.91   # run-up
+walk 38.48   # take-off
+hold left+cross for 12
+hold left for 43
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
