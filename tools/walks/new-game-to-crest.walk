@@ -1,5 +1,5 @@
 name walk-new-game-to-crest
-title cold boot to the City Crest: new game, King's Pass, Dirtmouth bench, the Crossroads, the bench at the hub, the cave, the False Knight, the room below
+title cold boot to the City Crest: new game, King's Pass, Dirtmouth bench, the Crossroads, the bench at the hub, the cave, the False Knight, the room below with its Crest and chest
 max_ticks 90000
 # The whole of it on the shipping disc: no cheat, no route-input feature, no recorded input. Every step waits on a word the game
 # publishes (position, counts, flags) and drives the pad from it (docs/ROUTES.md, Walks). It ends with the City Crest taken.
@@ -21,4 +21,5 @@ include crossroads-21.walk
 include crossroads-10.walk
 include false-knight.walk
 include city-crest.walk
-check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_BENCH_RESTS >= 2 ; HK_SAVE_WRITES >= 2 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 1 ; HK_SCENE_LOADS >= 14 ; HK_FK_DEATHS == 1 ; HK_FK_STAGGERS == 3 ; HK_FK_CONVERSIONS == 3 ; HK_PICKUPS_TAKEN == 1
+include chest.walk
+check end HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_SAVE_LOADED == 0 ; HK_GREAT_DOOR_OPENED == 1 ; HK_BENCH_RESTS >= 2 ; HK_SAVE_WRITES >= 2 ; HK_SAVE_ERRORS == 0 ; HK_HEALTH >= 1 ; HK_SCENE_LOADS >= 14 ; HK_FK_DEATHS == 1 ; HK_FK_STAGGERS == 3 ; HK_FK_CONVERSIONS == 3 ; HK_PICKUPS_TAKEN == 1 ; HK_CHESTS_OPENED == 1

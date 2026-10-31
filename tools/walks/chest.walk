@@ -1,0 +1,15 @@
+# The chest in the room below (Crossroads_10, scene 11: position x 6.7 y 12.8, on the ledge whose top is y 11, Knight height 12.39,
+# x 2 to 12). From the Crest at x 38: back along the floor, over the 3.9-high pillar at x 18.3 to 18.8, up the plate at x 12.9 to 14.4
+# (top 6.7) and the ledge, then a swing at the chest from x 9.5 (a nail strike with the Knight inside its reach box opens it).
+at 37.9 3.39
+walk 21.0
+leap 20.2 left 44 16.5 3.39 cross 30
+walk 16.0
+hop 13.6 8.05 lead 0.25
+walk 13.1
+hop 10.5 12.39 lead 0
+walk 9.5
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20       # face the chest
+press square                                                    # the swing opens it
+wait until HK_CHESTS_OPENED ge 1 timeout 120
+wait 60
