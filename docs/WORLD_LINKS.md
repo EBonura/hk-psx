@@ -27,6 +27,16 @@ Separately, any collider object may carry `DeactivateIfPlayerdataTrue(bool)`, wh
 
 At run time (`game/src/world.rs`) the nail sets the bit through `State::strike` (flag 16: no debris, no particles, one `EnemyKillShake` as the source's `Hit` sends). Everything after that is the existing object-state path: `fill_edges` blanks the bound edges while the bit is set, `State::apply` hides the bound draws, `for_each_persistent_broken` and `restore_broken` save and restore the bit as a `Kind::Breakable` item (`scene * 128 + index`), so the gate survives a bench save, a power cycle and Continue. The closed gate's collision is the gate object's own collider, tagged by `edge_sources` in the room pack, never anonymous terrain.
 
+## Vine platforms (the same system, the other way round)
+
+A `VinePlatform` (Greenpath, 7 in Fungus1_06 alone) hangs from a vine. A nail hit on its `Vine` child (`VinePlatformCut`) drops it onto an `Activated Plat`, an inactive object that becomes solid for good (the platform's own `PersistentBoolItem`). The cook (`world_links.vine_records`) makes the vine's trigger a lever, binds the hanging platform's collider and sprites as an ordinary off binding, and binds the `Activated Plat` collider as an **inverted** binding: a carrier with flag 1 whose edges exist only while the bit is set (`remote_edges_blank` in game/src/world.rs). `world_links.bit_enabled` tells `host/cook.py` which inactive objects to bake: it bakes their colliders as terrain edges and forces their renderers to be draws, so the same bit shows the new platform and hides the old one.
+
+`tools/inactive_census.py` lists every class of inactive solid collider in the source that the cook skips, with the vine platforms' `Activated Plat` marked. The classes with a persistent bit or an FSM that enables them are the next candidates (`Break Wall` in Crossroads_27, `Quaked Floor`, `Toll Gate` objects that start inactive); the rest are boss-arena props, corpses and colosseum platforms.
+
+## Arena gates
+
+`BG Control` gates are selected by FSM, not layer. Fungus1_21's `Battle Gate Bone` is on the Soft Terrain layer (25) and now bakes as a gate; because its `Battle Control` is not run by the port nothing would ever open it, so a Soft Terrain gate loads open (`battle_gates.survey`). `tools/arena_gate_census.py` prints every gate in the source and the verdict of the cook: 82 gates, 58 accepted (the family and the Bone variant, which differ only in tk2d clips), 24 refused (Deepnest 9, Archives 6, Ruins 4, Outskirts 2, Hive 2: FSM variants starting in `Init`, each needs its own recognizer; Abyss_19: a gate whose collider is not solid).
+
 ## Adding a room
 
 Nothing to author. Add the scene to the cooked catalogue, recook, and read `report['link_policy']` in `data/regions.json`:

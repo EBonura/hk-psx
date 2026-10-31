@@ -33,6 +33,12 @@ index`), lifts the terrain edges and hides the draws bound to a set bit
     cooked switch sets is bound to that switch's bit, in whatever scene it is
     (the carrier's state base is the switch's scene).
 
+A `VinePlatform` is the same pair folded into one object: a nail cut on its `Vine` child
+(`VinePlatformCut`) sets a persistent bit; the hanging platform's collider and art go, and
+the `Activated Plat` the platform falls onto, an inactive object the cook skips otherwise,
+becomes solid and visible (`bit_enabled` tells the cook which inactive objects to bake). Its
+edges are bound with `inverted`: present while the bit is SET.
+
 A gate target whose FSM is not one of the gate families (slide floors, doors,
 lifts, bells, stompers) is not opened: it is counted in the report by family so
 what is left for later areas is known. The cook never guesses: a target is bound
@@ -57,7 +63,9 @@ LEVER_FLAG = 16
 LEVER_TOP = 119
 STATES_PER_SCENE = 128
 TICKS_PER_SECOND = 60
-RENDERER_TYPES = ('MeshRenderer', 'SpriteRenderer')
+# A tk2dSprite is drawn by the cook as one scenery draw whose source is the sprite component
+# (`tk2d_art`); a MeshRenderer or SpriteRenderer is its own draw source.
+RENDERER_TYPES = ('MeshRenderer', 'SpriteRenderer', 'tk2dSprite')
 
 
 class Refused(Exception):
@@ -222,15 +230,9 @@ def gate_target(sc, gid, live_events, reload_events, sets_playerdata):
             'renderer_sources': renderers, 'delay_ticks': round(seconds * TICKS_PER_SECOND)}
 
 
-def switch_record(sc, index, fsm, refusals):
-    """The record of one `Switch Control`, or a Refused."""
-    gid = _components_gid(sc, index)
-    states = {state['name'] for state in fsm['states']}
-    if not {'Initiate', 'Idle', 'Hit', 'Open'} <= states:
-        raise Refused('switch states are not Initiate, Idle, Hit, Open')
+def open_targets(fsm):
+    """{object pointer: (events `Open` sends it on a hit, events `Activated` sends on a reload)}."""
     variables = _fsm_object_variables(fsm)
-    # Per target object: the events `Open` sends it when the hit lands, and those
-    # `Activated` sends on a reload (the gate must open for both).
     targets = {}
     for state, slot in (('Open', 0), ('Activated', 1)):
         for action, fields in _state_actions(fsm, state):
@@ -241,7 +243,45 @@ def switch_record(sc, index, fsm, refusals):
             pointer = variables.get(owner.get('name')) if isinstance(owner, dict) else None
             if pointer is not None and isinstance(event, dict) and event.get('value'):
                 targets.setdefault(pointer, (set(), set()))[slot].add(event['value'])
-    targets = {p: events for p, events in targets.items() if events[0] and events[1]}
+    return {p: events for p, events in targets.items() if events[0] and events[1]}
+
+
+def tk2d_art(sc):
+    """Draw sources (tk2dSprite ids) of the idle art of every switch and gate the scene binds.
+
+    The cook draws each as one scenery draw (host/cook.py `tk2d_wall_draw`). A gate's draw is
+    bound off by its switch's bit; the switch's own stays. Neither plays its animation: the
+    pillar's shake and sink and the switch's activated frame are not drawn.
+    """
+    found = []
+    for index, (kind, tree) in sorted(sc.objects.items()):
+        if kind != 'PlayMakerFSM' or tree['fsm']['name'] != SWITCH_FSM:
+            continue
+        gid = tree['m_GameObject']['m_PathID']
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        scalars = _fsm_scalars(tree['fsm'])
+        sets = scalars.get('Player Data') if scalars.get('SetPlayerData') else None
+        gates = []
+        for pointer, (live, reload) in open_targets(tree['fsm']).items():
+            if pointer in sc.gos and sc.active(pointer):
+                try:
+                    gate_target(sc, pointer, live, reload, sets)
+                except Refused:
+                    continue
+                gates.append(pointer)
+        for under in [gid, *gates]:
+            found.extend(sc.sid(i) for i, k, t in _components(sc, under) if k == 'tk2dSprite')
+    return sorted(set(found))
+
+
+def switch_record(sc, index, fsm, refusals):
+    """The record of one `Switch Control`, or a Refused."""
+    gid = _components_gid(sc, index)
+    states = {state['name'] for state in fsm['states']}
+    if not {'Initiate', 'Idle', 'Hit', 'Open'} <= states:
+        raise Refused('switch states are not Initiate, Idle, Hit, Open')
+    targets = open_targets(fsm)
     if not targets:
         raise Refused('switch sends no event to an object of its scene')
     scalars = _fsm_scalars(fsm)
@@ -278,6 +318,90 @@ def switch_record(sc, index, fsm, refusals):
 
 def _components_gid(sc, index):
     return sc.objects[index][1]['m_GameObject']['m_PathID']
+
+
+VINE_PLATFORM = 'VinePlatform'
+VINE_CUT = 'VinePlatformCut'
+
+
+def _descendants(sc, root):
+    """Every GameObject under `root`, itself included."""
+    children = {}
+    for tid, tree in sc.transforms.items():
+        children.setdefault(tree['m_Father']['m_PathID'], []).append(tid)
+    stack = [sc.go_transform[root]]
+    found = []
+    while stack:
+        tid = stack.pop()
+        found.append(sc.transforms[tid]['m_GameObject']['m_PathID'])
+        stack.extend(children.get(tid, []))
+    return found
+
+
+def _renderer_sources(sc, gids):
+    return [sc.sid(index) for gid in gids for index, kind, tree in _components(sc, gid)
+            if kind in RENDERER_TYPES and tree['m_Enabled']]
+
+
+def vine_records(sc):
+    """One record per `VinePlatform` of the scene, shaped like a switch with one gate.
+
+    The cut is the `Vine` child's trigger (`VinePlatformCut`). While the bit is clear the
+    hanging platform stands (its collider, its `Plat Sprite` and the vine sprites); once set
+    it is gone, and the `Activated Plat` collider and sprite are there instead.
+    """
+    records = []
+    for index, (kind, tree) in sorted(sc.objects.items()):
+        if kind != VINE_PLATFORM:
+            continue
+        gid = tree['m_GameObject']['m_PathID']
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        activated = tree['activatedSprite']['m_PathID']
+        below = _descendants(sc, gid)
+        cuts = [cut for under in below for _, cut_kind, cut in _components(sc, under) if cut_kind == VINE_CUT]
+        if activated not in sc.gos or len(cuts) != 1:
+            raise Refused('vine platform without exactly one cut and an Activated Plat')
+        cut = cuts[0]
+        cut_gid = cut['m_GameObject']['m_PathID']
+        triggers = _colliders(sc, cut_gid, solid=False)
+        if not triggers:
+            raise Refused('vine cut has no trigger collider')
+        polygons = [polygon for _, k, t in triggers for polygon in collider_polygons(sc, cut_gid, k, t)]
+        sprites = cut['sprites']['m_PathID']
+        vine_art = _descendants(sc, sprites) if sprites in sc.gos else []
+        plat_art = [under for under in below if sc.gos[under]['m_Name'] == 'Plat Sprite']
+        records.append({
+            'source': f'{_file(sc)}:{index}', 'game_object': f'{_file(sc)}:{gid}',
+            'name': sc.gos[gid]['m_Name'], 'box': _box(polygons), 'hit_polygons': polygons,
+            'persistence': _persistence(sc, gid) or [{'dont_save': True, 'semi_persistent': False}],
+            'sets_playerdata': None, 'hit_delay_ticks': 0, 'family': VINE_PLATFORM,
+            'gates': [{
+                'game_object': f'{_file(sc)}:{gid}', 'name': sc.gos[gid]['m_Name'], 'family': VINE_PLATFORM,
+                'collider_sources': [source for source, _, _ in _colliders(sc, gid, solid=True)],
+                # The hanging platform's art and the cut vine (not the stub the vine leaves).
+                'renderer_sources': _renderer_sources(sc, plat_art + vine_art),
+                'on_collider_sources': [source for source, _, _ in _colliders(sc, activated, solid=True)],
+                'on_renderer_sources': _renderer_sources(sc, [activated]),
+                'delay_ticks': 0}]})
+    return records
+
+
+def bit_enabled(sc):
+    """(GameObject ids, renderer ids) the scene leaves inactive that a persistent bit turns on.
+
+    The cook bakes these colliders as terrain and draws these renderers although the object
+    is inactive on load: the `Activated Plat` of a vine platform. Their edges are bound as
+    `inverted`, so they are blank until the bit is set.
+    """
+    gids = set()
+    renderers = set()
+    for kind, tree in sc.objects.values():
+        if kind == VINE_PLATFORM and tree['activatedSprite']['m_PathID'] in sc.gos:
+            gid = tree['activatedSprite']['m_PathID']
+            gids.add(gid)
+            renderers.update(i for i, k, t in _components(sc, gid) if k in RENDERER_TYPES)
+    return gids, renderers
 
 
 def observers(sc):
@@ -338,6 +462,15 @@ def postpack_links(report, source, scenes=None):
             for gate in record['gates']:
                 gate['scene_id'] = sid
             pending.append(record)
+        try:
+            vines = vine_records(sc)
+        except Refused as error:
+            vines = []
+            refusals.append({'switch': f'{_file(sc)}:vine', 'scene': info['scene_name'], 'reason': str(error)})
+        for record in vines:
+            record.update(scene_id=sid, scene_name=info['scene_name'])
+            record['gates'][0]['scene_id'] = sid
+            pending.append(record)
     by_scene = Counter()
     for record in pending:
         free = _free_states(report, record['scene_id'])
@@ -366,8 +499,9 @@ def postpack_links(report, source, scenes=None):
     report['links'] = links
     report['link_observers'] = observed
     report['link_policy'] = {
-        'switches': len(links),
-        'gates': sum(len(r['gates']) for r in links),
+        'switches': sum(1 for r in links if r.get('family') != VINE_PLATFORM),
+        'vine_platforms': sum(1 for r in links if r.get('family') == VINE_PLATFORM),
+        'gates': sum(len(r['gates']) for r in links if r.get('family') != VINE_PLATFORM),
         'observers': len(observed),
         'refused_targets_by_family': dict(sorted(Counter(
             r['reason'] for r in refusals if 'target' in r).items())),
@@ -386,19 +520,29 @@ def bindings_for(report, region, draw_sources, edge_sources):
     bindings = []
 
     def bind(owner, state_scene, state_index, target):
-        off = [i for i, source in enumerate(draw_sources) if source in target['renderer_sources']]
-        edges = [i for i, source in enumerate(edge_sources) if source in target['collider_sources']]
-        if off or edges:
-            bindings.append({'kind': 'breakable', 'owner_source': owner, 'state_index': state_index,
-                             'state_scene': state_scene, 'off_draws': off, 'on_draws': [],
-                             'edge_indices': edges})
+        def draws(key):
+            return [i for i, source in enumerate(draw_sources) if source in target.get(key, [])]
+
+        def edges(key):
+            return [i for i, source in enumerate(edge_sources) if source in target.get(key, [])]
+        off, on, gone, back = (draws('renderer_sources'), draws('on_renderer_sources'),
+                               edges('collider_sources'), edges('on_collider_sources'))
+        base = {'kind': 'breakable', 'owner_source': owner, 'state_index': state_index,
+                'state_scene': state_scene}
+        if off or on or gone:
+            bindings.append(dict(base, off_draws=off, on_draws=on, edge_indices=gone))
+        if back:
+            # Present while the bit is SET: the carrier of these entries is inverted.
+            bindings.append(dict(base, off_draws=[], on_draws=[], edge_indices=back, inverted=True))
 
     for link in report.get('links', []):
         if link['scene_id'] == scene:
             box = link['box']
             if not (box[2] < x0 - 2 or box[0] > x1 + 2 or box[3] < y0 - 2 or box[1] > y1 + 2):
-                levers.append({key: link[key] for key in (
-                    'source', 'name', 'box', 'hit_polygons', 'persistence', 'state_index')})
+                levers.append(dict({key: link[key] for key in (
+                    'source', 'name', 'box', 'hit_polygons', 'persistence', 'state_index')},
+                    # The source's `Hit` wait, then the longest of its gates' own opening.
+                    open_ticks=link['hit_delay_ticks'] + max(g['delay_ticks'] for g in link['gates'])))
         for gate in link['gates']:
             if gate['scene_id'] == scene:
                 bind(link['source'], link['scene_id'], link['state_index'], gate)

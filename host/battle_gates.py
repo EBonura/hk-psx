@@ -48,14 +48,6 @@ import rustsrc  # noqa: E402
 MAX_GATES = 32
 
 
-# Fungus1_21's `Battle Gate Bone`: BG Control with its own tk2d clips, so its
-# digest differs from breakables.BG_CONTROL_SHA256 and breakables.battle_gates
-# refuses it. It sits on layer 25, not the terrain layer (8), so the cook bakes no
-# edge for it and there is no collider here to open or close: the variant is
-# recognised only so that it is not mistaken for an unreadable gate. host/breakables.py
-# is a region cook input, so the variant is admitted here, after the region cook.
-BONE_GATE_SHA256 = '525bab5a6c08ab2800b7909b6a564f2da7c0dedea43d10ea5f23ffe41d6bc8bc'
-
 
 def _upright(sc, gid):
     """Whether the gate is drawn as the runtime draws every gate: upright,
@@ -76,17 +68,14 @@ def _upright(sc, gid):
 def all_gates(sc, errors=None):
     """Every active arena gate of the scene that is terrain: the family's.
 
-    The Bone variant is dropped (see BONE_GATE_SHA256); any other refusal goes to
-    `errors`, or raises when there is none.
+    The Bone variant (breakables.BONE_GATE_SHA256) is admitted without art; any refusal
+    goes to `errors`, or raises when there is none.
     """
-    from breakables import BG_CONTROL_PLACEMENT_VARIABLE, battle_gates
-    from false_knight import fsm_digest
+    from breakables import BG_CONTROL_SHA256, battle_gates
     refused = []
-    found = [dict(g, art=_upright(sc, g['gid'])) for g in battle_gates(sc, refused)]
+    found = [dict(g, art=_upright(sc, g['gid']) and g['fsm_sha256'] == BG_CONTROL_SHA256)
+             for g in battle_gates(sc, refused)]
     for error in refused:
-        tree = sc.objects[int(error['id'].rsplit(':', 1)[1])][1]
-        if fsm_digest(tree['fsm'], (BG_CONTROL_PLACEMENT_VARIABLE,)) == BONE_GATE_SHA256:
-            continue
         if errors is None:
             raise ValueError(error['error'])
         errors.append(error)
@@ -150,6 +139,7 @@ def survey(source, report):
     one room share the name `Battle Gate 2` up to a suffix, and the bit a gate
     owns has to survive a rename in the source.
     """
+    from breakables import TERRAIN_LAYER
     from scene import Scene
     gates = []
     refused = []
@@ -162,7 +152,11 @@ def survey(source, report):
             gates.append({'scene': meta['scene_id'], 'scene_name': meta['scene_name'],
                           'name': record['name'], 'source': record['source'],
                           'collider_source': record['collider_source'],
-                          'solid_on_load': record['solid_on_load'], 'art': record['art'],
+                          # A Soft Terrain gate (Fungus1_21's Moss Knights arena) belongs to a
+                          # `Battle Control` the port does not run, so nothing would ever send
+                          # its BG OPEN: it loads open, and stays a row the day an arena drives it.
+                          'solid_on_load': record['solid_on_load'] and record['layer'] == TERRAIN_LAYER,
+                          'art': record['art'],
                           'box': record['box'], 'position': list(record['position'])})
     if refused:
         raise ValueError(f'unreadable BG Control gates: {refused}')

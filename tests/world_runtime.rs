@@ -179,7 +179,7 @@ fn only_owned_edges_disappear() {
 /// A switch (flag 16, host/world_links.py) is struck like a breakable but breaks nothing: it sets
 /// its bit once, flings no debris and plays no break sound, and the edges bound to the bit go,
 /// whether the bit is this scene's or another scene's (FIXTURE_BANK: lever state 2 at 400..500,
-/// bindings to scene 0 state 2 edge 2 and to scene 3 state 7 edge 4).
+/// bindings to scene 0 state 2 edge 2 and to scene 3 state 7 edge 4, and an inverted one: state 2 edge 3).
 #[test]
 fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
     let bytes = edge_room_bytes(&[[1, 2, 3, 2], [4, 5, 4, 6], [7, 8, 9, 8], [1, 1, 2, 1], [5, 5, 6, 5]]);
@@ -193,11 +193,13 @@ fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
     let attack = &[[-450, 50], [-445, 50], [-445, 55], [-450, 55]][..];
     assert_eq!(state.edge(&r, &room, 2), [7, 8, 9, 8]);
     assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5]);
+    assert_eq!(state.edge(&r, &room, 3), [0; 4], "an inverted edge (an Activated Plat) is absent until the bit");
     let hit = state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     assert_eq!((hit.broken, hit.door_sounds, hit.last_broken), (1, 0, None));
     assert!(state.broken(2) && !state.broken(0) && !state.broken(1));
     assert_eq!(state.edge(&r, &room, 2), [0; 4], "the gate of this scene opens");
     assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5], "another scene's gate waits for its own bit");
+    assert_eq!(state.edge(&r, &room, 3), [1, 1, 2, 1], "the inverted edge appears with the bit");
     assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "once");
     state.restore_broken(3 * 128 + 7);
     assert_eq!(state.edge(&r, &room, 4), [0; 4], "a saved bit of scene 3 lifts the binding in scene 0");
@@ -207,6 +209,33 @@ fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
     let mut saved: std::vec::Vec<usize> = std::vec::Vec::new();
     state.for_each_persistent_broken(0, |id| saved.push(id));
     assert!(saved.contains(&2), "the switch of the resident scene is a save item (flag 1)");
+}
+
+/// A switch with a wait in its flag word (the source's `Hit` state, then the gate's opening) sets its
+/// bit when the wait runs out, or when the scene is left (FIXTURE_BANK: lever state 3, 20 ticks).
+#[test]
+fn a_switch_with_a_wait_opens_after_it_or_when_the_scene_is_left() {
+    let r = region();
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 2;
+    let player = Player::spawn(0, 0);
+    let attack = &[[-650, 50], [-645, 50], [-645, 55], [-650, 55]][..];
+    let mut state = State::new();
+    let hit = state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    assert_eq!(hit.broken, 1, "the camera shakes at the hit");
+    assert!(!state.broken(3));
+    assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "not twice");
+    for _ in 0..19 {
+        state.tick();
+    }
+    assert!(!state.broken(3), "still waiting");
+    state.tick();
+    assert!(state.broken(3), "the wait is over");
+    let mut state = State::new();
+    state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    state.reset_scene(0);
+    assert!(state.broken(3), "leaving the scene opens it, as a reload would");
 }
 
 #[test]

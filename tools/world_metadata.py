@@ -246,7 +246,9 @@ def encode_scene(scene, rows):
                 raise ValueError("lever state aliases another source object")
             if not 1 <= len(record["hit_polygons"]) <= 8:
                 raise ValueError("lever hit polygon count outside 1..8")
-            flags = (1 if persistent_object(record) else 0) | LEVER_FLAG
+            # The flag word's top ten bits are the wait between the hit and the bit (ticks).
+            wait = bounded(record.get("open_ticks", 0), MAX_FADE_TICKS + 1, "lever wait")
+            flags = (1 if persistent_object(record) else 0) | LEVER_FLAG | wait << 6
             add_object("breakable", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, flags,
                        record["box"], "hit_polygons",
                        (index_list([], draw_count, "lever off draw"),
@@ -317,9 +319,12 @@ def encode_scene(scene, rows):
             per_scene = GRASS_PER_SCENE if grass else BREAKABLES_PER_SCENE
             state = bounded(binding["state_index"], per_scene, "remote art state")
             base = binding.get("state_scene", scene["scene_id"])
-            if grass and (binding["edge_indices"] or base != scene["scene_id"]):
-                raise ValueError("remote grass binding has no collider and no other scene")
-            stream = streams.setdefault(base, [])
+            inverted = bool(binding.get("inverted"))
+            if grass and (binding["edge_indices"] or base != scene["scene_id"] or inverted):
+                raise ValueError("remote grass binding has no collider, no other scene, no inversion")
+            if inverted and (binding["off_draws"] or binding["on_draws"]):
+                raise ValueError("an inverted binding carries edges only")
+            stream = streams.setdefault((base, inverted), [])
             lists = [[bounded(v, draw_count, "remote art off draw") for v in binding["off_draws"]],
                      [bounded(v, draw_count, "remote art on draw") for v in binding["on_draws"]],
                      [bounded(v, edge_count, "remote art edge index") for v in binding["edge_indices"]]]
@@ -330,13 +335,15 @@ def encode_scene(scene, rows):
                 stream.append(state)
                 for chunk in part:
                     stream.extend(chunk)
-        for base, stream in sorted(streams.items()):
+        for (base, inverted), stream in sorted(streams.items()):
             first = len(indices)
             indices.extend(bounded(v, 0x10000, "remote art stream word") for v in stream)
             if first > 0xFFFF or len(stream) > 0xFFFF:
                 raise ValueError("remote art stream exceeds the u16 span")
+            # Flag 1: the carrier's edges exist only while their bit is set (a vine platform's
+            # Activated Plat); flag 0: they exist until it is set.
             add_object("remote_art", {"source": f"remote_art:{row['chunk_id']}"},
-                       base * BREAKABLES_PER_SCENE, 0, row["activation_bounds"], None,
+                       base * BREAKABLES_PER_SCENE, int(inverted), row["activation_bounds"], None,
                        (first | len(stream) << 16, 0, 0))
         for record in row.get("grass", []):
             state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")
