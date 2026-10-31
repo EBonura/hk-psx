@@ -15,15 +15,15 @@
 //! ([`poem`]) and then streams the Prologue (`HKINTRO1.STR`) and the Intro
 //! (`HKINTRO2.STR`) through the SDK's MDEC player with their XA audio, in the
 //! order the source's `Opening_Sequence` plays them, until the last frame or
-//! until the player skips the rest the way the original lets him (a first press
+//! until the player skips each part the way the original lets him (a first press
 //! of any button shows "Press any button to skip", a second one while it
-//! shows skips). It then puts the hardware state back and returns into the
+//! shows skips the part that is playing and starts the next: the poem, the Prologue and the Intro each
+//! skip on their own, as `ChainSequence.SkipSingle` does). It then puts the hardware state back and returns into the
 //! game, which carries on into the new game with everything it had loaded:
 //! no reload of the game's executable, no second boot.
 //!
-//! The program is called three ways (the mailbox's mode word, [`Mode`]): to play the poem with its piano
-//! until the piano is over, then to play the movies, then, when the player skipped, only to put the screen
-//! back. Between the first and the second call the game loads the first scene while the poem goes on: the
+//! The program is called two ways (the mailbox's mode word, [`Mode`]): to play the poem with its piano
+//! until the piano is over, then to play the movies. Between the first and the second call the game loads the first scene while the poem goes on: the
 //! program's [`hk_poem_tick`] draws the poem's frames from inside the game's loader (game/src/intro.rs),
 //! which keeps the program's image in the pool and its state in the hand-off block.
 //!
@@ -117,13 +117,10 @@ enum Mode {
     Poem,
     /// Play the movies, then put the screen back.
     Movies,
-    /// Put the screen back.
-    Screen,
 }
 
 /// What a call tells the game (mailbox word 11).
 const RESULT_DONE: u32 = 0;
-const RESULT_SKIPPED: u32 = 1;
 /// The piano is over and the poem is not.
 const RESULT_YIELD: u32 = 2;
 
@@ -158,7 +155,6 @@ impl Handoff {
             screen: (word(8) as i32 as i16, word(9) as i32 as i16),
             mode: match word(10) {
                 1 => Mode::Movies,
-                2 => Mode::Screen,
                 _ => Mode::Poem,
             },
         })
@@ -357,6 +353,8 @@ impl Skip {
     /// A movie is starting: the player has cleared its buffers.
     fn begin_movie(&mut self) {
         self.bars = true;
+        // A prompt still up from the part before belongs to it: the next part wants its own first press.
+        self.prompt.since = None;
         self.prompt.drawn = None;
         show_rows(self.window_top, PICTURE_BOTTOM);
     }
@@ -516,8 +514,8 @@ fn main() {
             // SAFETY: the block the game reserved for the poem's state; nothing else touches it.
             let carry = unsafe { &mut *CARRY };
             match poem::play(&mut skip, peripherals.cd, carry) {
-                poem::First::Ended(poem::End::Finished) => {}
-                poem::First::Ended(poem::End::Skipped) => result = RESULT_SKIPPED,
+                // A skipped poem is a poem that is over: the Prologue follows, as in the original.
+                poem::First::Ended(_) => {}
                 poem::First::Yield => {
                     // The game calls `hk_poem_tick` with its own global pointer; both addresses are ours.
                     let gp: u32;
@@ -539,19 +537,14 @@ fn main() {
         }
         Mode::Movies => {
             for movie in &MOVIES {
-                // A skip ends the whole sequence, as it does in the original, not just
-                // the movie that is playing.
+                // A skip ends the movie that is playing and nothing else: the next one starts, as
+                // `ChainSequence.SkipSingle` moves the original on to the next part.
                 match play_movie(&mut skip, movie, arena) {
-                    Some(Stop::End) => {}
-                    Some(Stop::Skipped) => {
-                        result = RESULT_SKIPPED;
-                        break;
-                    }
+                    Some(Stop::End | Stop::Skipped) => {}
                     _ => break,
                 }
             }
         }
-        Mode::Screen => {}
     }
     hand_back_the_screen(&mut gpu, display, &mut skip);
     // SAFETY: the player and the poem have returned: no DMA is running and the drive is paused.

@@ -1,0 +1,177 @@
+# New Game on the shipping disc: the poem, the Prologue and the Intro each skip on their own, as in the original
+# (OpeningSequence.Skip calls ChainSequence.SkipSingle, which ends the part that is playing and lets the chain go on to
+# the next). Two presses in the poem (the first shows "Press any button to skip", the second while it shows skips) start
+# the Prologue; two more skip the Prologue and start the Intro; two more skip the Intro and the Knight drops in. After
+# each skip the game has not arrived yet (region 79) and the program is still in its movies call (the hand-off block's
+# mode word is 1).
+#
+#   psoxide-gate run tools/journeys/new-game-skip-parts.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#
+# from the repository root, with build/hk-psx.map the link map of that disc. The disc is the shipping one (the poem
+# and the movies are not on a test disc). Route-split: no pad tape.
+name = "new-game-skip-parts"
+title = "new game: skip the poem, the Prologue and the Intro one at a time"
+disc = ["lib/Hollow Knight (hk-psx).cue"]
+symbols = ["build/hk-psx.map"]
+max_ticks = 200000
+
+# The game's hand-off block (game/src/intro.rs `Hand`, mailbox word 10): 0 while the poem is the program's, 1 once it
+# is calling for the movies. The block is never cleared, so 1 stays after the movies.
+[addr]
+HK_INTRO_MODE = 0x801F_FFE8
+
+[[step]]
+label = "title"
+wait = 300
+
+[[step]]
+label = "Start Game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold = 3
+
+[[step]]
+label = "poem-9s: the first lines are up"
+wait = 540
+checkpoint = "poem-9s"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_INTRO_MODE"
+op = "eq"
+value = 0
+
+[[step]]
+label = "any button: the prompt appears over the poem"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+checkpoint = "prompt-poem"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "a second press while it shows skips the poem only"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Prologue is on (the movies call), the game has not arrived"
+wait = 300
+checkpoint = "prologue"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_INTRO_MODE"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "ne"
+value = 79
+
+[[step]]
+label = "any button: the prompt appears over the Prologue"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+checkpoint = "prompt-prologue"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "a second press while it shows skips the Prologue only"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Intro is on, the game has not arrived"
+wait = 300
+checkpoint = "intro"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_INTRO_MODE"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "ne"
+value = 79
+
+[[step]]
+label = "any button: the prompt appears over the Intro"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+checkpoint = "prompt-intro"
+golden = false
+no_matrix = true
+
+[[step]]
+label = "a second press while it shows skips the Intro and the game starts"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Knight drops in (region 79 = the top view of the shaft)"
+timeout = 7200
+[step.wait_until]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "eq"
+value = 79
+
+[[step]]
+label = "the Knight is at the top of the shaft"
+timeout = 600
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "gt"
+value = 3_000_000
+
+[[step]]
+label = "he has landed on the ledge and stays there"
+timeout = 1800
+[step.wait_until]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "lt"
+value = 800_000
+
+[[step]]
+label = "settled on the ledge, unhurt"
+wait = 180
+checkpoint = "landed"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_Y"
+op = "between"
+value = 720_000
+value_hi = 770_000
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+op = "eq"
+value = 0

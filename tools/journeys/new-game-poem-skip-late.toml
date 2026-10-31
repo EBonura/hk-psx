@@ -1,8 +1,8 @@
 # New Game on the shipping disc: a first press late in the poem (22 s: the piano is over and the game is loading the first
-# scene behind the poem) shows "Press any button to skip", a second one while it shows skips the poem and both movies,
-# and the Knight drops in once the load has finished.
+# scene behind the poem) shows "Press any button to skip", a second one while it shows skips the poem only. The load
+# finishes behind a black screen, the Prologue and the Intro follow (two presses skip each) and the Knight drops in.
 #
-#   psoxide-gate run tools/journeys/new-game-poem-skip.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
+#   psoxide-gate run tools/journeys/new-game-poem-skip-late.toml --disc <Hollow Knight (hk-psx).cue> --no-hw --out <dir>
 #
 # from the repository root, with build/hk-psx.map the link map of that disc. The disc is the shipping one (the poem
 # and the movies are not on a test disc). Route-split: no pad tape.
@@ -11,6 +11,12 @@ title = "new game: skip the poem late, while the first scene loads behind it"
 disc = ["lib/Hollow Knight (hk-psx).cue"]
 symbols = ["build/hk-psx.map"]
 max_ticks = 200000
+
+# The game's hand-off block (game/src/intro.rs `Hand`, mailbox word 10): 0 while the poem is the program's, 1 once it
+# is calling for the movies (while the loader draws the rest of the poem it holds the game's VBlank count). The block is
+# never cleared, so 1 stays after the movies.
+[addr]
+HK_INTRO_MODE = 0x801F_FFE8
 
 [[step]]
 label = "title"
@@ -48,7 +54,67 @@ golden = false
 no_matrix = true
 
 [[step]]
-label = "a second press while it shows skips everything"
+label = "a second press while it shows skips the poem only"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the load finishes and the Prologue is on, the game has not arrived"
+wait = 600
+checkpoint = "prologue"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_INTRO_MODE"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "ne"
+value = 79
+
+[[step]]
+label = "any button: the prompt appears over the Prologue"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "a second press while it shows skips the Prologue only"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+label = "the Intro is on, the game has not arrived"
+wait = 300
+checkpoint = "intro"
+golden = false
+no_matrix = true
+[[step.assert]]
+kind = "ram"
+sym = "HK_INTRO_MODE"
+op = "eq"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+op = "ne"
+value = 79
+
+[[step]]
+label = "any button: the prompt appears over the Intro"
+press = ["triangle"]
+hold = 3
+
+[[step]]
+wait = 40
+
+[[step]]
+label = "a second press while it shows skips the Intro and the game starts"
 press = ["triangle"]
 hold = 3
 
