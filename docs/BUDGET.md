@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |786,412|
-| Code-to-data alignment |4|
-| Linked data, including menu and HUD |281,656|
-| BSS, including shared scene arena and runtime pools |791,924|
-| Total static span |1,860,004|
+| Linked code |792,628|
+| Code-to-data alignment |12|
+| Linked data, including menu and HUD |285,576|
+| BSS, including shared scene arena and runtime pools |792,028|
+| Total static span |1,870,252|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |122,204|
+| Unallocated gap before reserved stack |111,956|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |13,660|
+| Free RAM below the module pool |3,412|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d61a4`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d89ac`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -635,3 +635,5 @@ The 2026-10-31 False Knight walk (docs/ROUTES.md, "The False Knight and the City
 The 2026-10-31 move of the walker's derived senses out of the guest (`HK_WALK_STRIKE_*`, `TURN_*`, `JUMPSTRIKE`, `FOCUS`, `HK_FOE_GAP_*`, `HK_FOE_LIVE`, `HK_FOE_DX/DY` and the `FoeSenses` code that computed them; they are expressions in `host/hk-build/walk-prelude.walk` now, evaluated by the gate over a raw `HK_ACT` table of the live bodied actors, `HK_PLAYER_VY` and `HK_HEALTH_MAX`) took linked code from 786,664 to 785,832 bytes (-832), linked data from 281,400 to 281,656 (+256, the table) and BSS from 791,964 to 791,924 (-40), so free RAM below the module pool on the shipping build went from 13,620 to 14,236 (+616). The False Knight words stay (they are raw), and the Goam sense (`HK_WALK_GOAM_*`, a window of a Goam's own state) stays in `props.rs`.
 
 The 2026-10-31 boss hit flare (the nail's centre throws a white core and fans of thin streaks, `boss_fx::HIT` and owner 0xD045 cooked from `BossLook`'s `hit` layers; the False Knight's draws white out instead of flashing the infected orange, `FLASH_WHITE`) and the thicker death burst (data only) took linked code from 785,832 to 786,412 bytes, so free RAM below the module pool on the shipping build went from 14,236 to 13,660 (-576). The cost is the contact point's centroid and request at the hit, the white flash mapping in the draw path and the third owner in the frame's drain.
+
+The 2026-10-31 actor art bank and the three False Knight arena husks (docs/ACTOR-BANK.md; Barger, Hornhead and Runner, 99 sprites and 25 clips between them) took 10,248 bytes of the 13,660 that were free below the module pool, leaving 3,412: linked code 786,412 to 792,628 (+6,216: the bank reader `actor_bank` bind, upload, set and read 3.0 KB, the draw branch in `prepare_draws` and `Draws::push_part` 1.8 KB, `frame::render` +1.3 KB with the hit-flash quad that must be resident because the bank draws it where Hornet's module is not loaded), linked data 281,656 to 285,576 (+3,920: 3,420 bytes of the bank's linked rest, the tail of its 39,420 bytes that did not fit the room's pool slack, and its tables), BSS +104. The head of the bank (36,000 bytes) is the `art_husks` data package in Crossroads_10's pool: room 14 is 18,952 (false_knight) + 6,376 (debris) + 36,000 (art_husks) + the 43,008 carried = 104,336 of 104,448 (+112). The scene arena did not grow (the six bank views' records add 4.7 KB to Crossroads_10's resident raw, inside the arena's slack). What could leave resident, in order: a better bank coder (static Huffman by left pixel measured -28 percent on the husks' 34,690 coded bytes, -11 percent on Hornet's 129,732) moves the linked rest into the pool and opens the slack for the reader as an overlay module (3.0 KB); the draw branch is on the hot path.
