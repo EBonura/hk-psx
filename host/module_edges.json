@@ -21,6 +21,16 @@
   ],
   [
     "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
+    "actor_fsm",
+    "hk_psx::enemies::Actor::advance_fsm_actor"
+  ],
+  [
+    "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
+    "actor_fsm",
+    "hk_psx::enemies::Actor::advance_fsm_dead"
+  ],
+  [
+    "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
     "aspid",
     "hk_psx::enemies::Actor::advance_aspid::world::terrain::EnemyWorld::tick::runner_event::frame::simulate"
   ],
@@ -130,6 +140,26 @@
     "hk_psx::enemies::Actor::advance_vengefly::world::terrain"
   ],
   [
+    "hk_psx::enemies::Actor::local_bounds",
+    "actor_fsm",
+    "hk_sim::fsm_actor::hurt_box"
+  ],
+  [
+    "hk_psx::enemies::Actor::local_bounds",
+    "actor_fsm",
+    "hk_sim::fsm_actor::turned"
+  ],
+  [
+    "hk_psx::enemies::Actor::new",
+    "actor_fsm",
+    "hk_sim::fsm_actor::FsmActor::new"
+  ],
+  [
+    "hk_psx::enemies::Actor::new",
+    "actor_fsm",
+    "hk_sim::fsm_actor::rest"
+  ],
+  [
     "hk_psx::enemies::Actor::new",
     "crawler",
     "hk_sim::crawler_fsm::Crawler::new"
@@ -198,6 +228,11 @@
     "hk_psx::frame::interact",
     "hornet_art",
     "hk_psx::enemies::hornet::convo_tick"
+  ],
+  [
+    "hk_psx::frame::render",
+    "actor_fsm",
+    "hk_sim::fsm_actor::finished"
   ],
   [
     "hk_psx::frame::render",
@@ -357,12 +392,27 @@
   [
     "hk_sim::fsm3::dispatch",
     "fsm3_world",
+    "hk_sim::fsm3_fx::entry"
+  ],
+  [
+    "hk_sim::fsm3::dispatch",
+    "fsm3_world",
     "hk_sim::fsm3_object::entry"
   ],
   [
     "hk_sim::fsm3::dispatch",
     "hornet",
     "hk_sim::fsm3b::entry"
+  ],
+  [
+    "main",
+    "actor_fsm",
+    "hk_sim::fsm_actor::hurt_box"
+  ],
+  [
+    "main",
+    "actor_fsm",
+    "hk_sim::fsm_actor::turned"
   ],
   [
     "main",

@@ -821,6 +821,28 @@ impl VengeflyRuntime {
         }
     }
 }
+/// A family on the compact actor tier (`hk_sim::fsm_actor`): no body, so what is live is the tree's clip and the
+/// box the playing frame puts on the object. The placement's quarter turn is `Actor::spawn_quarter`.
+#[derive(Clone, Copy)]
+struct FsmRuntime {
+    fsm: hk_sim::fsm_actor::FsmActor,
+    animation_tick: u32,
+    /// The clip (a slot of the family's bound clips) and the tick it has been playing.
+    clip: u8,
+    family: u8,
+    /// Killed: the death clip plays out, then nothing draws.
+    dying: bool,
+}
+impl FsmRuntime {
+    fn clip_id(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::FsmActor { clips, .. } = spec.controller else {
+            panic!("FsmActor runtime with other metadata")
+        };
+        clips[self.clip as usize]
+    }
+}
+/// A box nothing can overlap: an `FsmActor` whose frame carries no collider.
+const NO_FRAME_BOX: [i32; 4] = [1 << 30; 4];
 /// Bouncing Fly: the controller owns the flight angle and facing; this runtime
 /// turns it into a 5.2 unit/s velocity and reports the blocked side.
 #[derive(Clone, Copy)]
@@ -1565,6 +1587,7 @@ enum Runtime {
     Runner(RunnerRuntime),
     Climber(ClimberRuntime),
     Vengefly(VengeflyRuntime),
+    FsmActor(FsmRuntime),
     Gruzzer(GruzzerRuntime),
     AcidFlyer(AcidFlyerRuntime),
     Mosquito(MosquitoRuntime),
@@ -1625,6 +1648,13 @@ impl Actor {
     fn vengefly(&self) -> Option<VengeflyRuntime> {
         if let Runtime::Vengefly(v) = self.runtime {
             fsm3_ready(crate::modules::VENGEFLY, crate::modules::FSM3_VENGEFLY3).then_some(v)
+        } else {
+            None
+        }
+    }
+    fn fsm_actor(&self) -> Option<FsmRuntime> {
+        if let Runtime::FsmActor(f) = self.runtime {
+            fsm3_ready(crate::modules::ACTOR_FSM, crate::modules::FSM_FAMILY_TREES[f.family as usize]).then_some(f)
         } else {
             None
         }
@@ -1973,6 +2003,11 @@ impl Actor {
                     animation_tick: 0,
                     clip: hk_sim::vengefly::Clip::Idle,
                 }),
+                ActorController::FsmActor { family, .. } => {
+                    let (fsm, play) = hk_sim::fsm_actor::FsmActor::new(family, seed);
+                    let (clip, animation_tick) = play.unwrap_or_else(|| hk_sim::fsm_actor::rest(family));
+                    Runtime::FsmActor(FsmRuntime { fsm, animation_tick, clip, family, dying: false })
+                }
                 ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime {
                     controller: hk_sim::gruzzer::Gruzzer::new(seed),
                     activation: if scene == 4 && (7038..=7046).contains(&placement.source_id) { 255 } else { 0 },
@@ -2232,6 +2267,13 @@ impl Actor {
     }
     fn local_bounds(&self, spec: &ActorSpec) -> [i32; 4] {
         let b = spec.bounds;
+        if let Some(f) = self.fsm_actor() {
+            // tk2d puts the playing frame's collider on the object: none while the trap rests.
+            return match hk_sim::fsm_actor::hurt_box(f.family, f.clip, f.animation_tick) {
+                Some(frame) if !f.dying => hk_sim::fsm_actor::turned(frame, self.spawn_quarter as i32),
+                _ => NO_FRAME_BOX,
+            };
+        }
         if let Some(climber) = self.climber() {
             // The source box collider turns with the transform; at rest the
             // rotation is cardinal, so the rotated box is again axis aligned.
@@ -2459,6 +2501,10 @@ impl Actor {
                 self.advance_gruz_dead(&mut boss, count, &edge, emit);
                 self.seat_gruz(boss);
             }
+            if let Some(mut f) = self.fsm_actor() {
+                self.advance_fsm_dead(&mut f);
+                self.runtime = Runtime::FsmActor(f);
+            }
         } else {
             self.advance(spec, room, count, edge, context, emit);
         }
@@ -2495,6 +2541,12 @@ impl Actor {
                 self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
                 "enemy left validated Q16 scene bounds"
             );
+            return;
+        }
+        if let Some(mut f) = self.fsm_actor() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_fsm_actor(&mut f, spec, context);
+            self.runtime = Runtime::FsmActor(f);
             return;
         }
         if let Some(mut fly) = self.gruzzer() {
@@ -2887,6 +2939,34 @@ impl Actor {
         self.walk.direction = guard.controller.facing();
         self.runtime = Runtime::HuskGuard(*guard);
         vx
+    }
+    /// One 60 Hz step of a compact-tier family: whether the hero's body is in the trigger box (the actor's own frame,
+    /// turned by the placement's quarter), then the trees.
+    // Its own function so the adapter can stream as a code module.
+    #[inline(never)]
+    fn advance_fsm_actor(&mut self, f: &mut FsmRuntime, spec: &ActorSpec, context: RunnerContext) {
+        let ActorController::FsmActor { trigger, .. } = spec.controller else {
+            panic!("FsmActor runtime with other metadata")
+        };
+        let t = hk_sim::fsm_actor::turned(trigger, self.spawn_quarter as i32);
+        let hb = context.hero_body;
+        let inside = hb[0] <= self.x + t[2] && hb[2] >= self.x + t[0] && hb[1] <= self.y + t[3] && hb[3] >= self.y + t[1];
+        f.animation_tick = f.animation_tick.saturating_add(1);
+        if let Some((clip, from)) = f.fsm.tick(inside) {
+            f.clip = clip;
+            f.animation_tick = from;
+        }
+    }
+    /// A killed compact-tier object plays its death clip where it stood.
+    #[inline(never)]
+    fn advance_fsm_dead(&mut self, f: &mut FsmRuntime) {
+        if f.dying {
+            f.animation_tick = f.animation_tick.saturating_add(1);
+        } else if let Some(clip) = hk_sim::fsm_actor::death(f.family) {
+            f.dying = true;
+            f.clip = clip;
+            f.animation_tick = 0;
+        }
     }
     fn vengefly_senses(
         &self,
@@ -5527,6 +5607,7 @@ impl EnemyWorld {
                 Runtime::FalseKnight(_) => 17,
                 Runtime::Mawlek(_) => 18,
                 Runtime::GruzMother(_) => 19,
+                Runtime::FsmActor(_) => 20,
             };
             let flags =
                 a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.health.flash > 0) as u32) << 2;
@@ -6515,6 +6596,7 @@ impl EnemyWorld {
                                 Runtime::Crawler(_)
                                 | Runtime::Runner(_)
                                 | Runtime::Static { .. }
+                                | Runtime::FsmActor(_)
                                 | Runtime::FalseKnight(_)
                                 | Runtime::Mawlek(_)
                                 | Runtime::GruzMother(_) => {}
@@ -6910,7 +6992,13 @@ impl EnemyWorld {
             if actor.parked_reserve() {
                 continue;
             }
-            let (clip_id, animation_tick, position, facing) = if actor.health.dead {
+            let (clip_id, animation_tick, position, facing) = if let Some(f) = actor.fsm_actor() {
+                // A killed object plays its death clip out and is gone; the art faces left (-1 native), turned below.
+                if f.dying && hk_sim::fsm_actor::finished(f.family, f.clip, f.animation_tick) {
+                    continue;
+                }
+                (f.clip_id(spec), f.animation_tick, (actor.x, actor.y), -1)
+            } else if actor.health.dead {
                 let (Some(corpse), Some(corpse_spec)) = (actor.corpse, spec.corpse) else {
                     continue;
                 };
@@ -7093,6 +7181,8 @@ impl EnemyWorld {
                 .climber()
                 .filter(|_| !actor.health.dead)
                 .map(|c| -c.controller.rotation())
+                // A compact-tier object keeps its placement's quarter turn.
+                .or_else(|| actor.fsm_actor().map(|_| -(actor.spawn_quarter as i32) * 90 * ONE))
                 // The lunge's FaceAngle, by the same M * R * F reading: the
                 // transform's z angle, negated (Q12 turns to Q16 degrees).
                 .or_else(|| {

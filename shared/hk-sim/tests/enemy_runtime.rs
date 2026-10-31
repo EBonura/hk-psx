@@ -694,9 +694,11 @@ mod modules {
     pub const HUSKS: usize = 2;
     pub const VENGEFLY: usize = 3;
     pub const GRUZZER: usize = 4;
-    pub const FSM3_CRAWLER3: u32 = 0;
-    pub const FSM3_GRUZZER3: u32 = 0;
-    pub const FSM3_VENGEFLY3: u32 = 0;
+    pub const FSM3_CRAWLER3: psx_math::Mask64 = psx_math::Mask64::from_words(0, 0);
+    pub const FSM3_GRUZZER3: psx_math::Mask64 = psx_math::Mask64::from_words(0, 0);
+    pub const FSM3_VENGEFLY3: psx_math::Mask64 = psx_math::Mask64::from_words(0, 0);
+    pub const ACTOR_FSM: usize = 15;
+    pub const FSM_FAMILY_TREES: [psx_math::Mask64; 1] = [psx_math::Mask64::from_words(0, 0)];
     pub const CRAWLER: usize = 17;
     pub const BALDUR: usize = 5;
     pub const ASPID: usize = 6;
@@ -711,7 +713,7 @@ mod modules {
     pub fn require(_k: usize) -> bool {
         true
     }
-    pub fn require_all(_m: u32) -> bool {
+    pub fn require_all(_m: psx_math::Mask64) -> bool {
         true
     }
 }

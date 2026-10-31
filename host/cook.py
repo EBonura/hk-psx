@@ -365,6 +365,9 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
         library_o=s.ref(sc.file,actor['tk2dSpriteAnimator']['library']);library=s.read(library_o)
         matrix=sc.world(sc.go_transform[actor['game_object']]);sprite=actor['tk2dSprite']
         sx=abs(matrix[0][0]*sprite['_scale']['x']);sy=abs(matrix[1][1]*sprite['_scale']['y'])
+        # A placement turned a quarter has no diagonal; its scale is the norm of each basis column (the guest turns the sprite).
+        if control.get('art_axes')=='basis':
+            sx=math.hypot(matrix[0][0],matrix[1][0])*sprite['_scale']['x'];sy=math.hypot(matrix[0][1],matrix[1][1])*sprite['_scale']['y']
         color=sprite['_color'];alpha=round(color['a']*255)
         # A recognizer that already knows which of its clips are the walk and
         # turn slots says so, rather than growing this chain a branch per

@@ -1,4 +1,4 @@
-//! Cook the HKFSM03 banks (`cook-all`, or one of `cook-crawlers3`, `cook-gruzzer3`, `cook-vengeflies3`,
+//! Cook the HKFSM03 banks (`cook-all`, or one of `cook-crawlers3`, `cook-gruzzer3`, `cook-vengeflies3`, `cook-families`,
 //! `cook-scripts3`, each over the repository root) or print one original FSM (`inspect DATA FILE:PATH_ID`).
 use hk_fsm_cook::cook3;
 use hk_unity::{playmaker::enabled, Source, Value};
@@ -12,6 +12,7 @@ fn main() -> Res {
             "cook-crawlers3" => Some(cook3::cook_crawlers3(root)),
             "cook-gruzzer3" => Some(cook3::cook_gruzzer3(root)),
             "cook-vengeflies3" => Some(cook3::cook_vengeflies3(root)),
+            "cook-families" => Some(hk_fsm_cook::enemy_family::cook_families(root)),
             "cook-scripts3" => Some(cook3::cook_scripts3(root)),
             _ => None,
         };

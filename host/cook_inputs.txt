@@ -15,6 +15,9 @@ host/mawlek.py
 host/runner.py
 host/climber.py
 host/vengefly.py
+# The enemy-family pipeline: the manifest rows and the table-driven recognizer actors.py calls for them.
+host/enemy_family.py
+host/enemy_families.json
 host/gruzzer.py
 host/baldur.py
 host/aspid.py
