@@ -38,9 +38,24 @@ Nothing to author. Add the scene to the cooked catalogue, recook, and read `repo
 
 `tools/world_links_census.py` runs the same recognizers over every scene of the source, cooked or not, and prints what is left for later areas.
 
+## What is left (tools/world_links_census.py over all 501 scenes, 2026-10-31)
+
+62 `Switch Control` switches. The system runs 27 collider gates behind nail switches (Toll Gate 23, Gate 2, Pillar Control 1, Gate Control 1) and leaves out:
+
+* 26 switches whose `Idle` is `ReceivedDamage` + an `IntSwitch` on the attack type (the Mines, Mantis Village and City levers, the Mantis Gates among them): they take nail and spell damage events through `damages_enemy`, not a `Nail Attack` trigger. Needs the `IntSwitch` compare values decoded from the raw action arrays (`action_fields` prints the field positions, not the values) and the spell hit path.
+* 3 switches whose FSM has other states.
+* 13 targets that are not collider gates: slide floors and doors (`Control`, 6), `Stop Stompers` (2), `Lift Control` (1), `Stag Bell` (1), `Cut Vine Plat` (1, a switch that targets a switch), one `Mantis Gate` with no solid collider, one `Gate` whose ACTIVATE path does not remove its collider.
+* Lifts: 41 `Call Lever` and 16 `Control Lever` (elevators), and 2 `BridgeLever` (City bridges, a C# component): a different object kind each.
+
+`DeactivateIfPlayerdataTrue` colliders: 6 objects on 4 bools; one is bound (`shamanPillar`). The others read bools no switch sets (`crossroadsInfected`, `hegemolDefeated`, ...) and keep the fresh-save answer.
+
 ## Telemetry and proof
 
-`HK_BREAK_COUNT` counts a switch hit as a break; `HK_WORLD_ITEMS` and `HK_WORLD_RESTORED` count its saved bit. Walks: `walk-crossroads-shortcut` (open the Crossroads_06 pillar from its east side, leave through it into Crossroads_33), the same with a save, power cycle and Continue in between, and `walk-fungus1-22-gate` (docs/ROUTES.md).
+`HK_BREAK_COUNT` counts a switch hit as a break (the camera's `EnemyKillShake`); `HK_WORLD_ITEMS` and `HK_WORLD_RESTORED` count the saved bits. Walks (docs/ROUTES.md, "Switches and gates"), all on the shipping disc, all the same ticks twice:
+
+* `walk-crossroads-shortcut` (1,444 ticks): seeded at Crossroads_06's right-hand entry, along the tunnel (planned), left to the pillar and stopped by it, back to the Gate Switch, one swing, out through the left exit into Crossroads_33 and away from the spot the sliding wall used to wall in.
+* `walk-shortcut-reload` (735 ticks): `Continue` from a card that holds the switch's save item (`tools/cards/shortcut-06-opened.mcd`, made with `seed_card.py --item 1:8:119:1`), then the same exit with nothing hit. A bench save after a hit is not walked: the only bench in reach is the Ancestral Mound's, and the climb from the switch back to the Mound's door is a chain of marginal hops that the planner's plans did not survive on the disc when joined to the walk of the tunnel (they pass alone from a seeded card). The write side is covered by the `a_switch_sets_its_bit...` test in `tests/world_runtime.rs`: the switch's id is among `for_each_persistent_broken`'s items, the same call every other persistent breakable is saved through (`walk-crest-save-reload` pins twelve of them).
+* `walk-fungus1-22-gate` (959 ticks): seeded on the upper floor east of the Metal Gate, stands on the gate, jumps back, hits the Gate Switch and drops through the opening.
 
 ## Known simplifications
 

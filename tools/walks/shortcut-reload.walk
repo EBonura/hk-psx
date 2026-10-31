@@ -1,0 +1,23 @@
+name walk-shortcut-reload
+title Crossroads_06's pillar and Crossroads_33's sliding wall are open after Continue from a save that holds the Gate Switch's bit
+max_ticks 9000
+# Boots from tools/cards/shortcut-06-opened.mcd: Crossroads_06 east of the switch, with the SceneData item the game writes when a hit
+# switch is saved (persist::Kind::Breakable 1, scene 8, state 119, value 1; the item word is what seed_card.py --item 1:8:119:1 builds).
+# Nothing is hit in this walk: the pillar is open because the save says the switch was. Together with walk-crossroads-shortcut (the hit
+# and the opening) and the world_runtime test a_switch_sets_its_bit... (the bit is a save item: for_each_persistent_broken) this is
+# the save and reload of the system. A bench save in the Ancestral Mound after a hit is not walked: the climb from the switch back up
+# to the Mound's door is a chain of marginal hops the planner's plan did not survive on the disc (docs/WORLD_LINKS.md).
+card shortcut-06-opened.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+check continued HK_SAVE_LOADED == 1 ; HK_WORLD_RESTORED == 10 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+# Left along the floor: no pillar stops him at x 1.7.
+hold left until HK_SCENE_LOADS ge 2 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 900
+check arrived-in-33 x between 38 46 ; y between 33.5 36 ; HK_SCENE_LOADS == 2
+hold left until x le 40 timeout 600
+check walked-free x le 40 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0

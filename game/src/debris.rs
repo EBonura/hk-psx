@@ -709,6 +709,9 @@ impl Pool {
     /// Launch `specs`' pieces (those of one owner that just broke). A piece already
     /// live keeps its flight. A full pool retires its longest-stopped piece for a new
     /// one; when every piece is still moving the newcomer is dropped and counted.
+    // Always inlined into its one caller, `world::State::strike`: out of line, the instance for
+    // `owner_fragments` was 3.5 KB in the debris module and pushed two rooms past the code pool.
+    #[inline(always)]
     pub fn spawn(&mut self, scene: usize, specs: impl Iterator<Item = Spec>, kind: u8, facing: i32) {
         assert!(scene < 256);
         for spec in specs {

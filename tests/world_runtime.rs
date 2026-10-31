@@ -201,9 +201,12 @@ fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
     assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "once");
     state.restore_broken(3 * 128 + 7);
     assert_eq!(state.edge(&r, &room, 4), [0; 4], "a saved bit of scene 3 lifts the binding in scene 0");
-    let mut saved = std::vec::Vec::new();
+    let mut saved: std::vec::Vec<usize> = std::vec::Vec::new();
     state.for_each_persistent_broken(1, |id| saved.push(id));
     assert!(saved.contains(&(3 * 128 + 7)));
+    let mut saved: std::vec::Vec<usize> = std::vec::Vec::new();
+    state.for_each_persistent_broken(0, |id| saved.push(id));
+    assert!(saved.contains(&2), "the switch of the resident scene is a save item (flag 1)");
 }
 
 #[test]

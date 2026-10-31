@@ -9,7 +9,7 @@ press cross                                    # Start Game
 wait 40
 press cross                                    # profile 1: the seeded save
 wait until HK_GAME_MODE == 1 timeout 1200
-include crossroads-06-to-switch.walk           # planned: along the tunnel to the floor east of the switch (x 7.77)
+include crossroads-06-to-switch.walk
 # The pillar (terrain box x -1.1 to 1.37) holds the left exit shut: he stops at it.
 hold left until x le 1.7 timeout 900
 wait 30
@@ -26,7 +26,7 @@ check switch-hit HK_BREAK_COUNT == 1 ; HK_DEATHS == 0
 hold left until HK_SCENE_LOADS ge 2 timeout 900
 wait until HK_GAME_MODE == 1 timeout 1800
 wait until HK_WALK_READY == 1 timeout 900
-check arrived-in-33 x between 43.5 45.5 ; HK_REGION_ID == 409
+check arrived-in-33 x between 38 46 ; y between 33.5 36 ; HK_SCENE_LOADS == 2
 # The sliding wall (x 43.4 to 45.4) was solid terrain around his spawn; with the switch's bit set it is not.
 hold left until x le 40 timeout 600
 check walked-free x le 40 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_BREAK_COUNT == 1

@@ -1253,11 +1253,6 @@ impl State {
         let polygon = &transformed[..points.len()];
         for object in region_breakables(region) {
             let id = object.id();
-            // A switch (flag 16, host/world_links.py); out of line so `strike` keeps its shape.
-            if object.object.flags() & 16 != 0 {
-                result.broken += self.strike_lever(object, bounds, polygon);
-                continue;
-            }
             if object.object.flags() & 8 != 0 {
                 if let Some(e) = self.strike_secret(object, bounds, polygon, swing, body) {
                     result.broken += u16::from(e.broke);
@@ -1270,6 +1265,13 @@ impl State {
                 && object.hit_by(polygon)
                 && self.break_object(id, object.fade_ticks())
             {
+                // A switch (flag 16, host/world_links.py) has set its bit, and the terrain and art
+                // bound to the bit follow. It breaks nothing: no particles, no debris. It counts as
+                // a break for the camera's `EnemyKillShake`, which the source's `Hit` sends too.
+                if object.object.flags() & 16 != 0 {
+                    result.broken += 1;
+                    continue;
+                }
                 particles::pool().spawn_break(region.scene, id, nail.kind as u8, player.facing);
                 // `Breakable.Hit`: the nail's impact at the mid-point between it and the object,
                 // and Dust Hit Med there.
@@ -1355,20 +1357,6 @@ impl State {
             e.taken.min(2) as usize
         };
         particles::pool().spawn_break(region.scene, e.id | stage << 13, 2, facing);
-    }
-    /// One nail swing against one switch (flag 16): the nail sets its bit once and the terrain
-    /// and art bound to the bit follow. It breaks nothing, so it flings no debris and raises
-    /// no particles; it counts as a break for the camera's `EnemyKillShake`, which the
-    /// source's `Hit` state sends too.
-    #[inline(never)]
-    fn strike_lever(&mut self, object: Breakable, bounds: [i32; 4], polygon: &[[i32; 2]]) -> u16 {
-        let id = object.id();
-        u16::from(
-            !self.broken(id)
-                && overlap(bounds, object.bounds())
-                && object.hit_by(polygon)
-                && self.break_object(id, 0),
-        )
     }
     /// One nail swing against one secret whose object carries flag 8.
     #[inline(never)]

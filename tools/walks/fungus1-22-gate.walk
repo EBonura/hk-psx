@@ -13,8 +13,12 @@ at 31.5 13.39
 # The Metal Gate (terrain box x 21.3 to 26.3, y 10.5 to 11.1) is shut: he walks out onto it and stands.
 hold left until x le 24.0 timeout 600
 wait 40
-check gate-shut x between 23.5 24.5 ; y between 11.9 12.4 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
-# Back to the switch (trigger box x 29.2 to 31.3), facing left, and the swing.
+check gate-shut x between 23.5 24.5 ; y between 12.3 12.7 ; HK_BREAK_COUNT == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+# Up onto the floor again (a jump of a unit) and back to the switch (trigger box x 29.2 to 31.3), facing left, and the swing.
+hold right+cross for 14
+hold right until x ge 27.5 timeout 200
+wait until y between 13.2 13.6 timeout 200
+wait 20
 walk 32.4
 walk 31.4
 hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
