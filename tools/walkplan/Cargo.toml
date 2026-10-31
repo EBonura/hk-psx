@@ -1,0 +1,13 @@
+[package]
+name = "hk-walkplan"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Plans a walk through one room: a search over the guest's own Player::step, printed as a walk fragment"
+
+# Its own workspace, like tools/hkref: a host tool that needs only hk-sim and the cooked room packs.
+[workspace]
+
+[dependencies]
+hk-sim = { path = "../../shared/hk-sim" }
+serde_json = "1"
