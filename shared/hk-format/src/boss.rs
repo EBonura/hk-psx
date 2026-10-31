@@ -46,33 +46,6 @@ impl Blob for &[u8] {
     }
 }
 
-/// Several banks read as one (a scene's bank slices, game/src/actor_bank.rs): sprites and parts are numbered globally, the first
-/// bank's first. Each function takes the banks as their `(sprites, parts)` counts, in order.
-///
-/// The bank holding global sprite `sprite`: (its index in the list, the sprite's number in it, the global number of its first part).
-pub fn locate_sprite(banks: impl Iterator<Item = (u32, u32)>, mut sprite: usize) -> Option<(usize, usize, usize)> {
-    let mut parts = 0;
-    for (i, (sprites, count)) in banks.enumerate() {
-        if sprite < sprites as usize {
-            return Some((i, sprite, parts));
-        }
-        sprite -= sprites as usize;
-        parts += count as usize;
-    }
-    None
-}
-
-/// The bank holding global part `part`: (its index in the list, the part's number in it).
-pub fn locate_part(banks: impl Iterator<Item = (u32, u32)>, mut part: usize) -> Option<(usize, usize)> {
-    for (i, (_, count)) in banks.enumerate() {
-        if part < count as usize {
-            return Some((i, part));
-        }
-        part -= count as usize;
-    }
-    None
-}
-
 /// Where logical offset `at` lives: the chunk and the byte inside the chunk.
 pub const fn locate(at: usize) -> (usize, usize) {
     (at / CHUNK_PAYLOAD, CHUNK_HEADER + at % CHUNK_PAYLOAD)
@@ -317,24 +290,6 @@ mod tests {
         assert_eq!(locate(0), (0, 8));
         assert_eq!(locate(CHUNK_PAYLOAD - 1), (0, CHUNK_BYTES - 1));
         assert_eq!(locate(CHUNK_PAYLOAD), (1, 8));
-    }
-
-    #[test]
-    fn banks_are_numbered_as_one() {
-        // Three sprites with four parts, then two sprites with two parts.
-        let banks = [(3u32, 4u32), (2, 2)];
-        let at = |s| locate_sprite(banks.iter().copied(), s);
-        assert_eq!(at(0), Some((0, 0, 0)));
-        assert_eq!(at(2), Some((0, 2, 0)));
-        assert_eq!(at(3), Some((1, 0, 4)));
-        assert_eq!(at(4), Some((1, 1, 4)));
-        assert_eq!(at(5), None);
-        let part = |p| locate_part(banks.iter().copied(), p);
-        assert_eq!(part(3), Some((0, 3)));
-        assert_eq!(part(4), Some((1, 0)));
-        assert_eq!(part(5), Some((1, 1)));
-        assert_eq!(part(6), None);
-        assert_eq!(locate_sprite(core::iter::empty(), 0), None);
     }
 
     #[test]

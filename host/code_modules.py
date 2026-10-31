@@ -188,7 +188,7 @@ if HORNET:
 ALWAYS_RESIDENT = {m for m in os.environ.get('HK_RESIDENT_MODULES', '').split(',') if m}
 # Room art: the prop art (host/props.py) split by prop kind, carried by the
 # rooms that place that kind. Data packages: no fixups, no import sites.
-# Compact actor art banks (host/actor_banks.json, game/src/actor_bank.rs): the first slice of a scene's bank is a package of its
+# Compact actor art banks (host/actor_banks.json, game/src/actor_bank.rs): the head of a scene's bank is a package of its
 # own, carried by that scene, so a scene that opts in adds one data module and one that does not changes nothing here.
 import actor_bank
 DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ()) + tuple(actor_bank.packages())
