@@ -208,8 +208,9 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64) -> Op
                             (l.y - landed.y).abs() < ONE / 3 && (l.x - landed.x).abs() < ONE
                         })
                     });
+                    // The pad is only held until the landing: a longer hold would walk on along the floor.
                     if steady {
-                        found.push((landed, cost + ticks + 1, Act::Jump { dir, held, steer, from_x: player.x }));
+                        found.push((landed, cost + ticks + 1, Act::Jump { dir, held: held.min(ticks), steer: steer.min(ticks), from_x: player.x }));
                     }
                 }
             }
