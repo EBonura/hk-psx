@@ -5,6 +5,16 @@
     "hk_psx::boss_bank::append_needed"
   ],
   [
+    "hk_psx::boss_hooks::bind_bank",
+    "bank_reader",
+    "hk_psx::actor_bank::attach"
+  ],
+  [
+    "hk_psx::boss_hooks::upload",
+    "bank_reader",
+    "hk_psx::actor_bank::upload"
+  ],
+  [
     "hk_psx::boss_hooks::upload",
     "hornet_art",
     "hk_psx::boss_bank::upload"

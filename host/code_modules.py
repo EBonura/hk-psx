@@ -156,6 +156,11 @@ MODULES = {
                   '*9lifeblood12presentation5apply*', '*9lifeblood12presentation4draw*',
                   '*9lifeblood12presentation10draw_frame*'),
 }
+# The actor bank reader (game/src/actor_bank.rs): binding a scene's bank, handing the bytes to the reader, and the part decode
+# (the shared hk_format::boss decoder, one instance per reader, so this module carries its own). The scenes that have a bank
+# carry it beside the bank's data package (`scene_modules`); the resident side keeps the statics, the table reads and the
+# draw (`boss_hooks::bind_bank` and `upload` guard their calls with `modules::loaded`).
+MODULES['bank_reader'] = ('*10actor_bank3set*', '*10actor_bank6attach*', '*10actor_bank6upload*', '*10actor_bank6Pieces*')
 if HORNET:
     # The fight (hornet_fight.rs), her two trees (hornet.rs), the boss tier's action code (fsm3b, which the resident kernel
     # reaches through one import site) and the scene objects it acts on (fsm3_world), and the guest side that ticks and draws
@@ -308,7 +313,7 @@ def scene_modules(regions_rs, debris=()):
     if actor_bank.packages():
         from quality import SCENE_TABLE
         for package, scene in actor_bank.packages().items():
-            out.setdefault(next(s['scene_id'] for s in SCENE_TABLE if s['scene_name'] == scene), set()).add(package)
+            out.setdefault(next(s['scene_id'] for s in SCENE_TABLE if s['scene_name'] == scene), set()).update((package, 'bank_reader'))
     scripts = fsm3_modules(FSM3_SCRIPTS)
     for sid in script_scenes():
         out.setdefault(sid, set()).update(scripts)

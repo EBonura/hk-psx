@@ -82,6 +82,7 @@ pub mod mossman_audio;
 pub mod hornet_scene;
 pub mod boss_art;
 pub mod boss_bank;
+pub mod boss_codec;
 pub mod boss_measure;
 pub mod husk_measure;
 pub mod actor_bank;

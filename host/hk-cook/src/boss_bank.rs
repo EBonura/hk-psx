@@ -4,6 +4,7 @@ use crate::atlas::Atlas;
 use crate::boss_art::{self as ba, Library};
 use crate::hornet_scene::Group;
 use crate::common::py_round;
+use crate::boss_codec as codec;
 use hk_format::boss as fmt;
 use std::collections::BTreeMap;
 
@@ -28,6 +29,11 @@ pub struct Stats {
     pub texel_bytes: usize,
     pub coded_bytes: usize,
     pub table_bytes: usize,
+    /// Parts coded with the bank's Huffman table, the bytes of that table, and what the parts' texels would take as packbits
+    /// alone (the coder before the table).
+    pub huffman_parts: usize,
+    pub code_table_bytes: usize,
+    pub packbits_bytes: usize,
     pub chunks: usize,
     pub palettes: usize,
     /// Per-channel RMS the shared palettes add to what the room quantizer decided, over the opaque texels.
@@ -40,6 +46,55 @@ fn put16(v: &mut Vec<u8>, n: usize) -> Result<()> {
 }
 fn put32(v: &mut Vec<u8>, n: u32) {
     v.extend(n.to_le_bytes());
+}
+
+/// How each part is stored, and the code table the `CODED` ones share (empty if none is). A part takes the smallest of its
+/// texels as they are (`RAW`), packbits and the table's coder; the table is built from the parts that end up using it, so
+/// it is rebuilt until the set is stable. A table that does not pay for itself is not written at all, which leaves a bank
+/// every old reader can read.
+fn store_parts(parts: &[&ba::Part], stats: &mut Stats) -> (Vec<u8>, Vec<(Vec<u8>, u16)>) {
+    let alternative: Vec<(Vec<u8>, u16)> = parts
+        .iter()
+        .map(|p| {
+            let packed = ba::packbits(&p.texels);
+            if packed.len() < p.texels.len() {
+                (packed, 0)
+            } else {
+                (p.texels.clone(), fmt::RAW)
+            }
+        })
+        .collect();
+    stats.packbits_bytes = alternative.iter().map(|(b, _)| b.len()).sum();
+    stats.texel_bytes = parts.iter().map(|p| p.texels.len()).sum();
+    let planes: Vec<codec::Plane> = parts.iter().map(|p| codec::Plane { width: p.w, height: p.h, texels: &p.texels }).collect();
+    let mut kept: Vec<usize> = (0..parts.len()).collect();
+    let mut best: Option<(Vec<u8>, Vec<(usize, Vec<u8>)>)> = None;
+    for _ in 0..6 {
+        let chosen: Vec<codec::Plane> = kept.iter().map(|&i| codec::Plane { width: planes[i].width, height: planes[i].height, texels: planes[i].texels }).collect();
+        let coded = codec::encode(&chosen, codec::Options::default());
+        let streams: Vec<(usize, Vec<u8>)> = kept.iter().copied().zip(coded.streams).collect();
+        let still: Vec<usize> = streams.iter().filter(|(i, s)| s.len() < alternative[*i].0.len()).map(|(i, _)| *i).collect();
+        let stable = still.len() == kept.len();
+        best = Some((coded.table, streams.into_iter().filter(|(i, _)| still.contains(i)).collect()));
+        if stable || still.is_empty() {
+            break;
+        }
+        kept = still;
+    }
+    let (table, streams) = best.expect("the loop runs at least once");
+    let saved: usize = streams.iter().map(|(i, s)| alternative[*i].0.len() - s.len()).sum();
+    let mut out = alternative;
+    let mut table = table;
+    if streams.is_empty() || saved <= table.len() {
+        table.clear();
+    } else {
+        for (i, s) in streams {
+            out[i] = (s, fmt::CODED);
+            stats.huffman_parts += 1;
+        }
+    }
+    stats.raw_parts = out.iter().filter(|(_, f)| *f == fmt::RAW).count();
+    (table, out)
 }
 
 /// Cook `lib` onto `palettes` shared palettes.
@@ -67,8 +122,12 @@ pub fn build(lib: &Library, id: u16, palettes: usize) -> Result<Built> {
             group_of[m] = g;
         }
     }
-    // The tables.
-    let mut parts_out: Vec<(fmt::Part, Vec<u8>)> = vec![];
+    // The tables. Every sprite's parts are cut first; the coder then sees them all, because one code table serves the bank.
+    struct Cut {
+        part: ba::Part,
+        sprite: usize,
+    }
+    let mut cuts: Vec<Cut> = vec![];
     let mut sprite_rows: Vec<fmt::Sprite> = vec![];
     let (mut err, mut px) = (0.0, 0usize);
     let mut stats = Stats::default();
@@ -76,36 +135,35 @@ pub fn build(lib: &Library, id: u16, palettes: usize) -> Result<Built> {
         let (plane, e, _, _) = ba::recolour(s, &refs[i], &merged.words[group_of[i]], true);
         err += e;
         px += plane.iter().filter(|&&p| p != 0).count();
-        let first = parts_out.len();
-        for part in ba::parts(&plane, s.w, s.h, 64) {
-            let coded = ba::packbits(&part.texels);
-            let (bytes, raw) = if coded.len() < part.texels.len() { (coded, false) } else { (part.texels.clone(), true) };
-            stats.texel_bytes += part.texels.len();
-            stats.raw_parts += raw as usize;
-            parts_out.push((
-                fmt::Part {
-                    x: part.x as u16,
-                    y: part.y as u16,
-                    width: part.w as u8,
-                    height: part.h as u8,
-                    coded: bytes.len() as u16 | if raw { fmt::RAW } else { 0 },
-                    sprite: i as u16,
-                    offset: 0,
-                },
-                bytes,
-            ));
-        }
+        let first = cuts.len();
+        cuts.extend(ba::parts(&plane, s.w, s.h, 64).into_iter().map(|part| Cut { part, sprite: i }));
         let q = |v: f64| py_round(v * 65536.0) as i32;
         sprite_rows.push(fmt::Sprite {
             width: s.w as u16,
             height: s.h as u16,
             bounds: [q(s.box_[0]), q(s.box_[1]), q(s.box_[2]), q(s.box_[3])],
             first_part: first as u16,
-            parts: (parts_out.len() - first) as u16,
+            parts: (cuts.len() - first) as u16,
             palette: group_of[i] as u8,
         });
     }
     stats.added_rms = (err / (3.0 * px.max(1) as f64)).sqrt();
+    let (table, stored) = store_parts(&cuts.iter().map(|c| &c.part).collect::<Vec<_>>(), &mut stats);
+    let mut parts_out: Vec<(fmt::Part, Vec<u8>)> = vec![];
+    for (c, (bytes, flag)) in cuts.iter().zip(stored) {
+        parts_out.push((
+            fmt::Part {
+                x: c.part.x as u16,
+                y: c.part.y as u16,
+                width: c.part.w as u8,
+                height: c.part.h as u8,
+                coded: bytes.len() as u16 | flag,
+                sprite: c.sprite as u16,
+                offset: 0,
+            },
+            bytes,
+        ));
+    }
     // The clips.
     let mut clip_rows: Vec<(u16, u16, u32, u8, u8)> = vec![];
     let mut seq: Vec<u16> = vec![];
@@ -122,7 +180,8 @@ pub fn build(lib: &Library, id: u16, palettes: usize) -> Result<Built> {
     let off_seq = off_clip + clip_rows.len() * fmt::CLIP_BYTES;
     let off_sprite = off_seq + seq.len() * 2;
     let off_part = off_sprite + sprite_rows.len() * fmt::SPRITE_BYTES;
-    let data = off_part + parts_out.len() * fmt::PART_BYTES;
+    let table_at = off_part + parts_out.len() * fmt::PART_BYTES;
+    let data = table_at + table.len();
     let mut at = data;
     for (p, bytes) in parts_out.iter_mut() {
         p.offset = at as u32;
@@ -162,11 +221,13 @@ pub fn build(lib: &Library, id: u16, palettes: usize) -> Result<Built> {
         put16(&mut blob, p.sprite as usize)?;
         put32(&mut blob, p.offset);
     }
-    assert_eq!(blob.len(), data);
+    assert_eq!(blob.len(), table_at);
+    blob.extend(&table);
     for (_, bytes) in &parts_out {
         blob.extend(bytes);
     }
-    stats.table_bytes = data;
+    stats.table_bytes = table_at;
+    stats.code_table_bytes = table.len();
     stats.coded_bytes = blob.len() - data;
     stats.sprites = n;
     stats.parts = parts_out.len();
@@ -207,12 +268,9 @@ pub fn decode_sprite(blob: &[u8], built: &Built, i: usize) -> Option<(Vec<u8>, [
     let mut plane = vec![0u8; w * h];
     for p in 0..s.parts as usize {
         let part = bank.part(s.first_part as usize + p);
-        let mut d = bank.decode(&part);
         let stride = fmt::Part::stride(part.width as usize);
-        let mut bytes = vec![];
-        while let Some(b) = d.next_byte() {
-            bytes.push(b);
-        }
+        let mut bytes = vec![0u8; part.texel_bytes()];
+        bank.decode_into(&part, &mut bytes)?;
         for y in 0..part.height as usize {
             for x in 0..part.width as usize {
                 plane[(part.y as usize + y) * w + part.x as usize + x] = (bytes[y * stride + x / 2] >> ((x & 1) * 4)) & 15;
@@ -286,12 +344,8 @@ mod tests {
             for p in 0..s.parts as usize {
                 let part = bank.part(s.first_part as usize + p);
                 assert_eq!(part.sprite as usize, i);
-                let mut d = bank.decode(&part);
-                let mut bytes = vec![];
-                while let Some(b) = d.next_byte() {
-                    bytes.push(b);
-                }
-                assert_eq!(bytes.len(), part.texel_bytes());
+                let mut bytes = vec![0u8; part.texel_bytes()];
+                bank.decode_into(&part, &mut bytes).unwrap();
                 let stride = fmt::Part::stride(part.width as usize);
                 for y in 0..part.height as usize {
                     for x in 0..part.width as usize {
@@ -304,5 +358,72 @@ mod tests {
         let atlas = atlas_of(&built).unwrap();
         assert_eq!(atlas.entries.len(), built.chunks.len());
         assert_eq!(atlas.stream.len(), built.chunks.len() * 2048);
+    }
+
+    /// Recode the banks named by `HK_RECODE_IN` (paths joined by `+`, read as one blob, as the guest does) with the current
+    /// coder and print what it saves; with `HK_RECODE_OUT` set, write the recoded bank there. Not a test of anything but the
+    /// cooker's own measurements, so it is ignored by default: `HK_RECODE_IN=a.bin cargo test -p hk-cook recode -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn recode_a_cooked_bank() {
+        let Ok(paths) = std::env::var("HK_RECODE_IN") else { return };
+        let old: Vec<u8> = paths.split('+').flat_map(|p| std::fs::read(p).unwrap()).collect();
+        let bank = fmt::Bank::open(old.as_slice()).unwrap();
+        let mut texels = vec![];
+        for i in 0..bank.parts as usize {
+            let part = bank.part(i);
+            let mut bytes = vec![0u8; part.texel_bytes()];
+            bank.decode_into(&part, &mut bytes).unwrap();
+            texels.push((part, bytes));
+        }
+        let cuts: Vec<ba::Part> =
+            texels.iter().map(|(p, t)| ba::Part { x: p.x as usize, y: p.y as usize, w: p.width as usize, h: p.height as usize, texels: t.clone() }).collect();
+        let mut stats = Stats::default();
+        let (table, stored) = store_parts(&cuts.iter().collect::<Vec<_>>(), &mut stats);
+        let part_at = bank.table_at() - bank.parts as usize * fmt::PART_BYTES;
+        let old_data: usize = (0..bank.parts as usize).map(|i| (bank.part(i).coded & fmt::LEN_MASK) as usize).sum();
+        let mut out = old[..part_at].to_vec();
+        let mut at = part_at + stored.len() * fmt::PART_BYTES + table.len();
+        for (i, (bytes, flag)) in stored.iter().enumerate() {
+            let p = bank.part(i);
+            out.extend(p.x.to_le_bytes());
+            out.extend(p.y.to_le_bytes());
+            out.extend([p.width, p.height]);
+            out.extend((bytes.len() as u16 | flag).to_le_bytes());
+            out.extend(p.sprite.to_le_bytes());
+            out.extend((at as u32).to_le_bytes());
+            at += bytes.len();
+        }
+        out.extend(&table);
+        for (bytes, _) in &stored {
+            out.extend(bytes);
+        }
+        let new_data: usize = stored.iter().map(|(b, _)| b.len()).sum::<usize>() + table.len();
+        println!(
+            "recode: {} parts, {} coded with the table; texel data {old_data} -> {new_data} bytes ({:+.1} percent) of which table {}; blob {} -> {}",
+            stored.len(),
+            stats.huffman_parts,
+            (new_data as f64 / old_data as f64 - 1.0) * 100.0,
+            table.len(),
+            old.len(),
+            out.len()
+        );
+        // The new blob decodes to the same texels.
+        let new = fmt::Bank::open(out.as_slice()).unwrap();
+        if std::env::var("HK_RECODE_PARTS").is_ok() {
+            for (i, (p, t)) in texels.iter().enumerate() {
+                let (tokens, literals) = codec::token_counts(&codec::Plane { width: p.width as usize, height: p.height as usize, texels: t }, codec::Options::default());
+                println!("part {i} {}x{} stream {} tokens {tokens} literals {literals}", p.width, p.height, stored[i].0.len());
+            }
+        }
+        for (i, (_, want)) in texels.iter().enumerate() {
+            let part = new.part(i);
+            let mut got = vec![0u8; part.texel_bytes()];
+            new.decode_into(&part, &mut got).unwrap();
+            assert_eq!(&got, want, "part {i}");
+        }
+        if let Ok(path) = std::env::var("HK_RECODE_OUT") {
+            std::fs::write(path, &out).unwrap();
+        }
     }
 }

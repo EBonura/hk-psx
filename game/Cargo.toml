@@ -51,6 +51,8 @@ intro = []
 # Test discs only (HK_GUEST_FEATURES=route-input, the disc `cargo hk-build validate` plays); a shipping build
 # has no such input.
 route-input = []
+# Times each actor bank part decode with Timer2 (system clock / 8): HK_ACTOR_BANK_DECODE_TICKS and _MAX. Diagnostic discs only.
+bank-timing = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }

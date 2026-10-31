@@ -11,7 +11,7 @@
 //! no marker (`NO_MARKER`) and no frame can match it.
 //!
 //! The bank's animation-cache keys are the boss bank's (`boss_bank::KEY_BASE`): a scene carries one or the other.
-use hk_format::boss::{Bank, Part, Sprite, BANK_MAGIC, PART_BYTES, RAW, SPRITE_BYTES};
+use hk_format::boss::{decode_part, Bank, Blob, Part, Sprite, BANK_MAGIC, PART_BYTES, SPRITE_BYTES};
 use hk_format::Room;
 
 /// A scene that draws actors from a bank: its manifest index, the module id of the data package that holds the head of the
@@ -41,6 +41,13 @@ pub const MAX_PALETTES: usize = 16;
 pub static mut HK_ACTOR_BANK_UPLOADS: u32 = 0;
 #[no_mangle]
 pub static mut HK_ACTOR_BANK_PARTS_DRAWN: u32 = 0;
+/// Diagnostic discs (`bank-timing`): the Timer2 ticks (system clock / 8) all part decodes took, and the longest one.
+#[cfg(feature = "bank-timing")]
+#[no_mangle]
+pub static mut HK_ACTOR_BANK_DECODE_TICKS: u32 = 0;
+#[cfg(feature = "bank-timing")]
+#[no_mangle]
+pub static mut HK_ACTOR_BANK_DECODE_MAX: u32 = 0;
 /// Sprites asked for that the bank does not have (must stay 0).
 #[no_mangle]
 pub static mut HK_ACTOR_BANK_MISSES: u32 = 0;
@@ -73,6 +80,18 @@ fn read(at: usize, out: &mut [u8]) {
     let m = in_rest.len().min(out.len() - n);
     out[n..n + m].copy_from_slice(&in_rest[..m]);
     out[n + m..].fill(0);
+}
+/// The blob as the shared decoder reads it: the one concrete `read`, so the decoder is one instance of generic code.
+struct Pieces;
+impl Blob for Pieces {
+    fn byte(&self, at: usize) -> u8 {
+        let mut b = [0u8; 1];
+        read(at, &mut b);
+        b[0]
+    }
+    fn read(&self, at: usize, out: &mut [u8]) {
+        read(at, out);
+    }
 }
 fn u32_at(at: usize) -> u32 {
     let mut b = [0; 4];
@@ -146,16 +165,27 @@ fn part_at(i: usize) -> Part {
     }
 }
 
-/// Bind the bank of manifest scene `scene` (or none) to the view `room`: hand its bytes to the reader and find the
-/// carrier textures among the room's, once per view bind (`render::init`). A scene without an entry in
-/// `data/actor_banks.rs` costs this one search; a scene with one whose package is not resident leaves the frames that name
-/// the bank drawing nothing (`HK_ACTOR_BANK_UNBOUND`, and `HK_ACTOR_BANK_MISSES` per frame).
+/// Take the bank away: no sprites, no marker. Resident; every view bind starts with it (`boss_hooks::bind_bank`).
+#[inline(never)]
+pub fn clear() {
+    unsafe {
+        HEAD = &[];
+        REST = &[];
+        MARKER = NO_MARKER;
+        SPRITES = 0;
+    }
+}
+
+/// Bind the bank of manifest scene `scene` (if it has one) to the view `room`: hand its bytes to the reader and find the
+/// carrier textures among the room's, once per view bind. Lives in the `bank_reader` module, which the scenes with a bank
+/// carry, so only `boss_hooks::bind_bank` calls it, after `clear` and only with the module resident. A scene with an entry
+/// in `data/actor_banks.rs` whose package is not resident leaves the frames that name the bank drawing nothing
+/// (`HK_ACTOR_BANK_UNBOUND`, and `HK_ACTOR_BANK_MISSES` per frame).
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
-pub fn bind(room: &Room, scene: usize) {
-    set(&[], &[]);
+pub fn attach(room: &Room, scene: usize) {
     let Some(entry) = SCENE_BANKS.iter().find(|e| e.scene == scene) else { return };
-    match crate::modules::bytes(entry.package) {
+    match crate::boss_hooks::package(entry.package) {
         Some(head) => set(head, entry.rest),
         None => unsafe { HK_ACTOR_BANK_UNBOUND = HK_ACTOR_BANK_UNBOUND.wrapping_add(1) },
     }
@@ -238,30 +268,18 @@ pub fn upload(index: usize, slot: usize) -> Option<u32> {
     }
     let mut buf = Buf([0; 2048]);
     let out = &mut buf.0[..len];
-    let mut at = part.offset as usize;
-    if part.coded & RAW != 0 {
-        read(at, out);
-    } else {
-        // Packbits: a token below 0x80 is a literal of token + 1 bytes, from 0x80 a run of (token & 0x7f) + 2 copies of the next.
-        let mut done = 0;
-        while done < len {
-            let mut token = [0u8; 2];
-            read(at, &mut token);
-            at += 1;
-            if token[0] < 0x80 {
-                let n = (token[0] as usize + 1).min(len - done);
-                read(at, &mut out[done..done + n]);
-                at += token[0] as usize + 1;
-                done += n;
-            } else {
-                let n = ((token[0] & 0x7f) as usize + 2).min(len - done);
-                out[done..done + n].fill(token[1]);
-                at += 1;
-                done += n;
-            }
-        }
+    // One decoder for every coder (shared/hk-format `boss.rs`): raw, packbits, and the bank's Huffman table, which follows the
+    // part table.
+    #[cfg(feature = "bank-timing")]
+    let started = psx_io::timers::counter(psx_io::timers::Timer::Timer2);
+    decode_part(&Pieces, unsafe { PART_AT as usize + PARTS as usize * PART_BYTES }, &part, out)?;
+    #[cfg(feature = "bank-timing")]
+    unsafe {
+        let ticks = psx_io::timers::counter(psx_io::timers::Timer::Timer2).wrapping_sub(started) as u32;
+        HK_ACTOR_BANK_DECODE_TICKS = HK_ACTOR_BANK_DECODE_TICKS.wrapping_add(ticks);
+        HK_ACTOR_BANK_DECODE_MAX = HK_ACTOR_BANK_DECODE_MAX.max(ticks);
     }
-    crate::texture_upload::upload(crate::animation_cache::dest(slot, part.width as u16, part.height as u16), &buf.0[..len]);
+    crate::boss_hooks::upload_texels(slot, part.width, part.height, &buf.0[..len]);
     unsafe { HK_ACTOR_BANK_UPLOADS = HK_ACTOR_BANK_UPLOADS.wrapping_add(1) };
     crate::input::poll_only();
     Some(len as u32)
