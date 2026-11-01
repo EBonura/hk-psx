@@ -15,3 +15,6 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 ## 2026-10-31 (hk-walker, by hand)
 
 - Retired from `validate` (pins deleted; the tape, route and cuts kept for a host simulation): hornet-fight, whose kill needed the pause menu's Invincible and Pure Nail cheats (`HK_CHEATS` 3). `walk-hornet-fight` replaces it: the same fight closed loop, nail only, no cheat, with the seal, the open gates, the Cloak and the dash checked on game state.
+## 2026-11-01 (hk-world, by hand)
+
+- hornet-road and hornet-road-defeated: the neutral ticks before the Fungus1_21 stretch (`load 6577 6636 2` in their `.cuts`) go from 2 to 1. Landing 2 (switch art in Fungus1_22's lower hall, vine platforms) moved the 22 to 21 load by one tick; the tape inside Fungus1_21 follows the Moss Chargers' phase, which passed with 1 and 3 and failed with 0, 2 and 4. `cargo hk-build measure` cannot read the pad on a disc where the route does not pass, so it was found by trying each value (the other 60 journeys of `validate --prune` passed unchanged). hk-walker's closed-loop route through 22 and 21 replaces this tape.
