@@ -16,8 +16,10 @@ leap 22.69 left 30 20.14 29.39 cross 24
 guard 8
 leap 20.14 left 40 14.82 31.39 cross 24
 guard 8
-walk 12.06
-leap 12.06 left 61 4.03 31.39 cross 24
+# Take off 0.6 units from the ledge's edge (x 11.75) instead of 0.3: the landing ledge reaches x 7.0, so there is room to spare, and a frame
+# of lag between the walk and the jump no longer walks him off the edge (hk-intro3 disc layout).
+walk 12.35
+leap 12.35 left 61 4.03 31.39 cross 24
 guard 8
 hold left until HK_SCENE_LOADS ge 13 timeout 1500   # out of the left gate at the top
 wait until HK_GAME_MODE == 1 timeout 1800
