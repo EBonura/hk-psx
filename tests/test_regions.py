@@ -121,7 +121,7 @@ class RegionTests(unittest.TestCase):
         """
         from quality import MEASURED_VIEW_LAYOUTS,grid_layout
         regions=fixed_regions()
-        self.assertEqual(set(MEASURED_VIEW_LAYOUTS),{'Fungus1_02','Fungus1_19','Fungus1_22','Fungus1_21','Fungus1_04'})
+        self.assertEqual(set(MEASURED_VIEW_LAYOUTS),{'Fungus1_02','Fungus1_19','Fungus1_22','Fungus1_21','Fungus1_04','Fungus1_31'})
         for name,boxes in MEASURED_VIEW_LAYOUTS.items():
             scene=next(s for s in SCENES if s['scene_name']==name)
             laid=[r['activation_bounds'] for r in regions if r['scene_name']==name]
@@ -135,11 +135,11 @@ class RegionTests(unittest.TestCase):
                                     f'{name} leaves ({x}, {y}) in no view')
 
     def test_greenpath_stays_inside_the_catalogue_chunk_bound(self):
-        """`world.generate` refuses above 1024 chunks, and that is what limits
-        how much of Greenpath a batch can admit. It is the region catalogue and
-        not RAM: the twenty-four Greenpath scenes that cook on the plain grid
-        would need 404 more views against the 301 free at build 159."""
-        self.assertLessEqual(len(fixed_regions()),1024)
+        """`world.generate` refuses above `world.MAX_REGIONS` chunks (the 16 bits a gate's
+        destination slot holds). The catalogue is what limits how many scenes a batch can
+        admit, not RAM: each slot costs a few linked bytes (see the note at MAX_REGIONS)."""
+        from world import MAX_REGIONS
+        self.assertLessEqual(len(fixed_regions()),MAX_REGIONS)
 
     def test_budget_split_preserves_parent_coverage(self):
         parent=initial_regions()[1]
