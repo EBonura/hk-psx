@@ -573,10 +573,11 @@ fn broken_edge(broken: &[u32], region: &Region, index: usize) -> bool {
             }
             // A remote binding (a breakable another view lists) holds its edges too.
             KIND_REMOTE_ART => {
+                let flags = object.flags();
                 for entry in object.remote_art() {
                     let id = id + entry.state as usize;
                     if !entry.grass
-                        && remote_edges_blank(object.flags(), broken[id / 32] & (1 << (id % 32)) != 0)
+                        && remote_edges_blank(flags, broken[id / 32] & (1 << (id % 32)) != 0)
                         && entry.edges.into_iter().any(|e| e as usize == index)
                     {
                         return true;
@@ -914,10 +915,11 @@ fn fill_edges(
             if object.kind() != KIND_REMOTE_ART {
                 continue;
             }
+            let flags = object.flags();
             for entry in object.remote_art() {
                 let id = object.state_id() as usize + entry.state as usize;
                 if !entry.grass
-                    && remote_edges_blank(object.flags(), broken[id / 32] & (1 << (id % 32)) != 0)
+                    && remote_edges_blank(flags, broken[id / 32] & (1 << (id % 32)) != 0)
                 {
                     for i in entry.edges {
                         blank(i);
@@ -1027,6 +1029,7 @@ impl State {
     }
     /// Returns false for an already broken source object, including another
     /// copy of its metadata after loading an overlapping region.
+    #[inline(never)]
     pub fn break_object(&mut self, id: usize, fade_ticks: u16) -> bool {
         if self.broken(id) {
             return false;
@@ -1186,15 +1189,7 @@ impl State {
     pub fn tick(&mut self) {
         self.impacts.tick();
         self.secrets.tick();
-        for slot in 0..PENDING_LEVERS {
-            let (id, ticks) = self.pending_levers[slot];
-            if ticks > 0 {
-                self.pending_levers[slot].1 = ticks - 1;
-                if ticks == 1 {
-                    self.break_object(id as usize, 0);
-                }
-            }
-        }
+        self.run_levers(false);
         // Only broken source objects with an unfinished fade need a timer
         // update; retain scene-global countdowns and exact simultaneous expiry.
         for (word, active) in self.fade_active.iter_mut().enumerate() {
@@ -1224,7 +1219,7 @@ impl State {
         assert!(scene < SCENES);
         self.grass.fill(0);
         self.secrets.reset();
-        self.open_pending_levers();
+        self.run_levers(true);
         // The scene being reset is the admitted one: both callers pass the
         // current region's scene before the next admission.
         let bank = admitted_bank().expect("world metadata admitted for scene reset");
@@ -1279,7 +1274,8 @@ impl State {
         let polygon = &transformed[..points.len()];
         for object in region_breakables(region) {
             let id = object.id();
-            if object.object.flags() & 8 != 0 {
+            let flags = object.object.flags();
+            if flags & 8 != 0 {
                 if let Some(e) = self.strike_secret(object, bounds, polygon, swing, body) {
                     result.broken += u16::from(e.broke);
                     result.secret = Some(e);
@@ -1289,12 +1285,12 @@ impl State {
             if !self.broken(id)
                 && overlap(bounds, object.bounds())
                 && object.hit_by(polygon)
-                && self.break_or_wait(&object)
+                && self.hit_object(id, flags)
             {
                 // A switch (flag 16, host/world_links.py) has set its bit, and the terrain and art
                 // bound to the bit follow. It breaks nothing: no particles, no debris. It counts as
                 // a break for the camera's `EnemyKillShake`, which the source's `Hit` sends too.
-                if object.object.flags() & 16 != 0 {
+                if flags & 16 != 0 {
                     result.broken += 1;
                     continue;
                 }
@@ -1384,19 +1380,18 @@ impl State {
         };
         particles::pool().spawn_break(region.scene, e.id | stage << 13, 2, facing);
     }
-    /// The break of one object a nail swing landed on: at once, or for a switch whose flag word
-    /// carries a wait (the source's `Hit` state, then the gate's own opening) after it, through
-    /// `pending_levers`. False when the object was already broken or is already waiting.
+    /// A nail swing landed on object `id` whose flag word is `flags`: it breaks after the
+    /// fade the word's top bits hold. A switch (flag 16) carries the source's wait there
+    /// instead (its `Hit` state, then the gate's own opening): its bit is set when
+    /// `run_levers` counts it out. False when the object was already broken, is already
+    /// waiting, or both slots are taken.
     #[inline(never)]
-    fn break_or_wait(&mut self, object: &Breakable) -> bool {
-        let id = object.id();
-        let wait = object.fade_ticks();
-        if object.object.flags() & 16 == 0 || wait == 0 {
+    fn hit_object(&mut self, id: usize, flags: u16) -> bool {
+        let wait = flags >> 6;
+        if flags & 16 == 0 || wait == 0 {
             return self.break_object(id, wait);
         }
-        if self.broken(id)
-            || self.pending_levers.iter().any(|&(waiting, ticks)| ticks > 0 && waiting as usize == id)
-        {
+        if self.pending_levers.iter().any(|&(waiting, ticks)| ticks > 0 && waiting as usize == id) {
             return false;
         }
         match self.pending_levers.iter_mut().find(|slot| slot.1 == 0) {
@@ -1404,18 +1399,22 @@ impl State {
                 *slot = (id as u32, wait);
                 true
             }
-            None => self.break_object(id, 0),
+            None => false,
         }
     }
-    /// Open every waiting switch now: the scene is being left, and the source's switch has
+    /// One tick of the waiting switches, which break when their wait runs out. With `flush`
+    /// every waiting switch breaks now: the scene is being left, and the source's switch has
     /// already persisted its hit by then.
     #[inline(never)]
-    fn open_pending_levers(&mut self) {
-        for slot in 0..PENDING_LEVERS {
-            let (id, ticks) = self.pending_levers[slot];
-            if ticks > 0 {
-                self.pending_levers[slot].1 = 0;
-                self.break_object(id as usize, 0);
+    fn run_levers(&mut self, flush: bool) {
+        for index in 0..PENDING_LEVERS {
+            let slot = &mut self.pending_levers[index];
+            if slot.1 != 0 {
+                slot.1 = if flush { 0 } else { slot.1 - 1 };
+                if slot.1 == 0 {
+                    let id = slot.0 as usize;
+                    self.break_object(id, 0);
+                }
             }
         }
     }
