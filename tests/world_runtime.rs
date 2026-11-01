@@ -885,7 +885,11 @@ fn every_breakable_on_every_disc_bank_can_be_struck_open() {
                                 let mut player = Player::spawn(x, y);
                                 player.facing = facing;
                                 let body = [x - hk_sim::ONE / 4, y - hk_sim::ONE, x + hk_sim::ONE / 4, y];
-                                state.strike(&region, &nail, nail_data::ATTACK_PARAMS, nail_data::NAIL_POLYGONS, &player, 1, body);
+                                let hit = state.strike(&region, &nail, nail_data::ATTACK_PARAMS, nail_data::NAIL_POLYGONS, &player, 1, body);
+                                // A switch counts the source's wait out (at most 1,023 ticks) before its bit is set.
+                                if hit.broken > 0 && !state.broken(b.id()) {
+                                    for _ in 0..1024 { state.tick(); }
+                                }
                                 if state.broken(b.id()) { found = true; break 'search; }
                             }
                             y += step;

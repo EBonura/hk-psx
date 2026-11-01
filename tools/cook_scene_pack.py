@@ -127,10 +127,10 @@ def mandatory_packets(room):
         texture, = struct.unpack_from('<H', room, pos)
         coords = struct.unpack_from('<8i', room, pos + 8)
         _, _, _, w, h = struct.unpack_from('<5H', room, 40 + texture * 16)
-        packets = packet_bound(list(zip(coords[::2], coords[1::2])), w, h)['packets']
-        if packets > CHILD_CAPACITY:
-            raise ValueError(f'draw {index} needs {packets} children > {CHILD_CAPACITY}')
-        total += packets
+        bound = packet_bound(list(zip(coords[::2], coords[1::2])), w, h)['packets']
+        if bound > CHILD_CAPACITY:
+            raise ValueError(f'draw {index} needs {int(bound)} children > {CHILD_CAPACITY}')
+        total += bound.on_screen
     return total
 
 
