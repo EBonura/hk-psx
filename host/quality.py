@@ -296,6 +296,16 @@ SCENE_TABLE = (
      'runtime_bounds': [-2, -6, 92, 55], 'camera_global_bounds': [0, 0, 90, 50]},
     {'scene_id': 62, 'scene_name': 'Fungus1_04', 'file': 'level132',
      'runtime_bounds': [-2, -5, 97, 51], 'camera_global_bounds': [0, 0, 95, 50]},
+    # The way to Hornet from Fungus1_30 without the shaft shortcut: Fungus1_31 (its top reaches
+    # Fungus1_32), then Fungus1_32 into Fungus1_21. Envelopes are tools/cook_scene_pack.py's `envelope`
+    # for each scene (2026-11-01). Fungus1_32 cooks on the plain grid (16 views). Fungus1_31's grid
+    # has views over the draw-packet reservation even counting only the cells a 320x240 window
+    # can touch (scenery_geometry.Packets.on_screen), so it carries the 33 views that halving
+    # each such view reached (the scene pack's own count).
+    {'scene_id': 63, 'scene_name': 'Fungus1_31', 'file': 'level158',
+     'runtime_bounds': [-1, -6, 38, 138], 'camera_global_bounds': [0, 0, 36, 133]},
+    {'scene_id': 64, 'scene_name': 'Fungus1_32', 'file': 'level159',
+     'runtime_bounds': [-2, -6, 83, 45], 'camera_global_bounds': [0, 0, 82, 40]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
@@ -485,6 +495,13 @@ MEASURED_VIEW_LAYOUTS = {
                    (94, 11, 97, 27), (-2, 27, 22, 43), (22, 27, 46, 43), (46, 27, 70, 43), (70, 27, 94, 43),
                    (94, 27, 97, 43), (-2, 43, 22, 51), (22, 43, 46, 51), (46, 43, 70, 51), (70, 43, 94, 51),
                    (94, 43, 97, 51)),
+    'Fungus1_31': ((-1, -6, 23, 10), (23, -6, 38, 10), (-1, 10, 11, 26), (11, 10, 23, 18), (11, 18, 23, 26),
+                   (23, 10, 38, 26), (-1, 26, 11, 42), (11, 26, 23, 34), (11, 34, 17, 42), (17, 34, 23, 42),
+                   (23, 26, 38, 42), (-1, 42, 11, 58), (11, 42, 23, 50), (11, 50, 23, 58), (23, 42, 38, 58),
+                   (-1, 58, 11, 74), (11, 58, 23, 66), (11, 66, 23, 74), (23, 58, 38, 74), (-1, 74, 11, 90),
+                   (11, 74, 23, 82), (11, 82, 23, 90), (23, 74, 38, 90), (-1, 90, 11, 106), (11, 90, 23, 98),
+                   (11, 98, 23, 106), (23, 90, 38, 106), (-1, 106, 11, 122), (11, 106, 23, 114),
+                   (11, 114, 23, 122), (23, 106, 38, 122), (-1, 122, 23, 138), (23, 122, 38, 138)),
 }
 # Scenes after the two hand-tuned ones use the grid over their catalog envelope.
 GRID_SCENE_LAYOUTS = {scene['scene_id']: MEASURED_VIEW_LAYOUTS.get(scene['scene_name'])
