@@ -1,6 +1,12 @@
 # One round of the False Knight fight, in the order of what matters (false-knight-defs.walk has the expressions). A reaction
 # costs no time when there is nothing to react to, so a round with nothing to do is the final `wait 3`; every long hold also
 # ends when a slam wave comes, and the next round begins by jumping it.
+# Phase tolerance (hk-intro3 found it, 11-01): the pad reaches the game byte by byte (d-pad and Select/Start in the first, face and
+# shoulder buttons in the second), so a hold that sets a d-pad button and a face button at once can be read torn when the gate sets
+# it in the middle of a poll: the game saw Square one tick before Up, and the nail chose a side slash, which cannot reach the Head.
+# Which polls tear depends on the disc's frame phase, and a hop cycle repeats its phase, so on one disc every swing of a stagger
+# missed. A direction that must be there when a button is pressed is therefore held one step EARLIER (the jump holds Up, so the
+# swing's Up+Square only adds Square). Reactions here never need two buttons to arrive together.
 hold cross until expr !$wave_near timeout 120                                   # jump a slam wave that is nearly here
 hold circle until expr !$want_focus || $wave_near timeout 400                   # Focus while he is far off
 wait until HK_FOCUS_LOCKED == 0 timeout 200
@@ -11,7 +17,7 @@ hold right until expr !$down_right || $wave_near timeout 900                    
 hold left until expr !$down_left || $wave_near timeout 900
 hold right until expr !$under_right || $wave_near timeout 400                   # armour rolling or open: stand under the Head
 hold left until expr !$under_left || $wave_near timeout 400
-hold cross until expr !($reach_jump && $ready) timeout 60                       # the Head is above a swing: jump to it
+hold up+cross until expr !($reach_jump && $ready) timeout 60                    # the Head is above a swing: jump to it, Up already held (see below)
 hold right until expr !$close_right || $wave_near timeout 300                   # idle and out of reach: close on him
 hold left until expr !$close_left || $wave_near timeout 300
 hold up+square until expr !($reach_up && $ready) timeout 90                     # swing at whatever a nail would land on
