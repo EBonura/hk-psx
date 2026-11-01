@@ -1,4 +1,4 @@
-# Planned and played with hk-walkplan room (tools/walkplan/src/room.rs): one hop at a time over the room's collision, fights between hops, a probe after each.
+# Planned and played with hk-walkplan room (tools/walkplan/src/room.rs) on the landing-2 world (737c98c) with HK_WALKPLAN_MARGIN=0.4 (a take-off 0.4 either side lands on the same floor: the walk's own stop overshoots its mark by one or two ticks of pad lag, 0.14 to 0.28): one hop at a time over the room's collision, fights between hops, a probe after each. The Blocker's shell (x 75 to 77) is cooked as terrain but is gone once he is dead, so the plan opens it (--open 73,9,78,18).
 at 82.30 11.39
 walk 79.26
 walk 79.69   # run-up
@@ -42,53 +42,44 @@ snipe
 guard 2
 retreat 62.61 63.41
 heal
-walk 63.23   # run-up
-walk 62.80   # take-off
+walk 62.52
+walk 62.95   # run-up
+walk 62.52   # take-off
 hold left+cross for 20
 hold left for 20
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 55.27 58.42
+fight 4 55.28 58.43
 snipe
 guard 2
-retreat 55.27 58.42
+retreat 55.28 58.43
 heal
-walk 57.69   # run-up
-walk 57.26   # take-off
+walk 56.71
+walk 57.14   # run-up
+walk 56.71   # take-off
 hold left+cross for 24
 hold left for 14
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 51.54 53.31
+fight 4 51.45 53.30
 snipe
 guard 2
-retreat 51.54 53.31
+retreat 51.45 53.30
 heal
-walk 52.44   # run-up
-walk 52.01   # take-off
+walk 51.88   # run-up
+walk 51.45   # take-off
 hold left+cross for 34
 hold left for 17
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 41.30 46.66
+fight 4 41.30 46.67
 snipe
 guard 2
-retreat 41.30 46.66
+retreat 41.30 46.67
 heal
-walk 45.38   # run-up
-walk 44.95   # take-off
-hold left+cross for 5
-hold left for 14
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-fight 4 41.31 46.67
-snipe
-guard 2
-retreat 41.31 46.67
-heal
-walk 41.50
-walk 41.93   # run-up
-walk 41.50   # take-off
+walk 42.46
+walk 42.89   # run-up
+walk 42.46   # take-off
 hold left+cross for 34
 hold left for 58
 wait 6
@@ -98,11 +89,10 @@ snipe
 guard 2
 retreat 27.89 31.04
 heal
-walk 27.94
-walk 28.37   # run-up
-walk 27.94   # take-off
+walk 30.17   # run-up
+walk 29.74   # take-off
 hold left+cross for 12
-hold left for 24
+hold left for 25
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
 fight 4 20.28 24.67
@@ -110,10 +100,11 @@ snipe
 guard 2
 retreat 20.28 24.67
 heal
-walk 23.39   # run-up
-walk 22.96   # take-off
-hold left+cross for 28
-hold left for 29
+walk 22.13
+walk 22.56   # run-up
+walk 22.13   # take-off
+hold left+cross for 34
+hold left for 27
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
 fight 4 3.75 16.65
@@ -121,22 +112,10 @@ snipe
 guard 2
 retreat 3.75 16.65
 heal
-walk 15.51   # run-up
-walk 15.08   # take-off
-hold left+cross for 12
-hold left for 22
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-fight 4 3.75 16.65
-snipe
-guard 2
-retreat 3.75 16.65
-heal
-walk 10.10
-walk 10.53   # run-up
-walk 10.10   # take-off
+walk 14.12   # run-up
+walk 13.69   # take-off
 hold left+cross for 8
-hold left for 12
+hold left for 18
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
 fight 4 3.75 16.65
@@ -144,9 +123,9 @@ snipe
 guard 2
 retreat 3.75 16.65
 heal
-walk 7.05
-walk 7.48   # run-up
-walk 7.05   # take-off
+walk 8.99
+walk 9.42   # run-up
+walk 8.99   # take-off
 hold left+cross for 5
 hold left for 13
 wait 6
@@ -156,54 +135,31 @@ snipe
 guard 2
 retreat 3.75 16.65
 heal
-walk 4.99   # run-up
-walk 4.56   # take-off
-hold left+cross for 5
-hold left for 7
+walk 6.93   # run-up
+walk 6.50   # take-off
+hold left+cross for 8
+hold left for 13
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 1.75 2.90
+fight 4 3.60 16.66
 snipe
 guard 2
-retreat 1.75 2.90
+retreat 3.60 16.66
 heal
-walk 2.47   # run-up
-walk 2.90   # take-off
-hold right+cross for 16
-hold right for 3
+walk 3.32
+walk 3.32   # take-off
+hold right+cross for 24
+hold right for 6
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 5.16 8.25
+fight 4 5.25 8.25
 snipe
 guard 2
-retreat 5.16 8.25
+retreat 5.25 8.25
 heal
-walk 4.47
-walk 4.90   # run-up
-walk 4.47   # take-off
-hold left+cross for 5
-hold left for 7
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-fight 4 1.75 2.81
-snipe
-guard 2
-retreat 1.75 2.81
-heal
-walk 2.38   # run-up
-walk 2.81   # take-off
-hold right+cross for 16
-hold right for 3
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-fight 4 5.16 8.25
-snipe
-guard 2
-retreat 5.16 8.25
-heal
-walk 5.99
-walk 5.56   # run-up
-walk 5.99   # take-off
+walk 6.96
+walk 6.53   # run-up
+walk 6.96   # take-off
 hold right+cross for 16
 hold right for 9
 wait 6
@@ -213,30 +169,20 @@ snipe
 guard 2
 retreat 9.26 14.25
 heal
-walk 9.16   # run-up
-walk 9.45   # take-off
+walk 11.53
+walk 11.10   # run-up
+walk 11.53   # take-off
 hold right+cross for 5
 hold right for 8
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
-fight 4 9.26 14.25
+fight 4 9.27 14.25
 snipe
 guard 2
-retreat 9.26 14.25
+retreat 9.27 14.25
 heal
-walk 10.82   # run-up
-walk 11.25   # take-off
-hold right+cross for 5
-hold right for 8
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-fight 4 9.26 14.25
-snipe
-guard 2
-retreat 9.26 14.25
-heal
-walk 13.48   # run-up
-walk 13.05   # take-off
+walk 13.76   # run-up
+walk 13.33   # take-off
 hold left+cross for 16
 hold left for 3
 wait 6
