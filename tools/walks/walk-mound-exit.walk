@@ -1,0 +1,19 @@
+name walk-mound-exit
+title the Snail Shaman's spell, then out of the Ancestral Mound by its left gate: the Knight arrives standing on Crossroads_06's top platform (not sealed in the pocket under it), walks down the room, hits the Gate Switch and leaves through the pillar into Crossroads_33
+max_ticks 30000
+# From the seeded Mound card of walk-mound-spell (Vengeful Spirit not yet earned). The regression this holds: the door1 spawn used to be 0.73 inside the
+# top platform and the Knight dropped into a sealed pocket (x 19.25 to 31.75, y 25.39) from which nothing led out.
+card mound-spell.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+at 28 8.39
+include mound-spell.walk
+check spell-earned HK_SPELL_EARNED == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+include mound-exit.walk
+wait until HK_WALK_READY == 1 timeout 300
+check on-the-top-platform x between 23 29.5 ; y between 30.2 30.6 ; HK_DEATHS == 0
+include crossroads-06-from-mound.walk
+check arrived-in-33 x between 38 47 ; y between 33.5 36 ; HK_SCENE_LOADS == 3 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 3

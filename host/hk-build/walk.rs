@@ -30,6 +30,8 @@
 //! repeat     N press BUTTONS [for H] [rest R]
 //! probe      NAME WORD [WORD...]         checkpoint that reports each word (never passes)
 //! check      NAME COND [; COND...]       checkpoint whose conditions must hold
+//! sync       poll                        from here on, every wait/hold/press acts on the game's own pad polls (`sync = "poll"`,
+//!                                        psoxide-gate 03b72e6f or later) instead of video frames; HK polls once per simulation tick
 //! snapshot                               hand the memory card to the next journey
 //! reboot                                 power the console off and on again with the memory card as it stands (a save made earlier
 //!                                        in the walk is reloaded from Continue); `HK_SCENE_LOADS` constants after it count from the reload
@@ -230,6 +232,8 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
     let mut title = None;
     let mut card = None;
     let mut max_ticks = 3_000_000u64;
+    // HK_WALK_SYNC=poll turns it on for every script (a planner run or a whole validate), the `sync` directive per script.
+    let mut sync = std::env::var("HK_WALK_SYNC").is_ok_and(|v| v == "poll");
     let mut body = String::new();
     // Blocks of the loops written so far (top level of the journey), and the loops still open: (name, until, max, timeout, outer body).
     let mut blocks = String::new();
@@ -284,8 +288,16 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 };
                 words.insert(alias.to_string(), word);
             }
+            "sync" => match rest {
+                ["poll"] => sync = true,
+                ["frame"] => sync = false,
+                _ => return Err(located("sync poll | frame".into())),
+            },
             "wait" => {
                 step(&mut body);
+                if sync {
+                    body.push_str("sync = \"poll\"\n");
+                }
                 match rest {
                     ["until", cond @ ..] => {
                         let at = cond.iter().position(|t| *t == "timeout");
@@ -308,6 +320,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 };
                 let pad = buttons(pad).map_err(located)?;
                 step(&mut body);
+                if sync {
+                    body.push_str("sync = \"poll\"\n");
+                }
                 match tail {
                     ["until", cond @ ..] => {
                         let at = cond.iter().position(|t| *t == "timeout");
@@ -340,6 +355,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 let pad = buttons(pad).map_err(located)?;
                 let opts = options_of(opts, &[("for", "for"), ("rest", "rest")]).map_err(located)?;
                 step(&mut body);
+                if sync {
+                    body.push_str("sync = \"poll\"\n");
+                }
                 let _ = writeln!(body, "press = [{pad}]");
                 let _ = writeln!(body, "hold = {}", opts.get("for").copied().unwrap_or(3));
                 if let Some(rest) = opts.get("rest") {
@@ -1012,6 +1030,16 @@ mod tests {
         let plain = compile_text("name t\nat 10 5.39\nfight 2\n").unwrap();
         assert!(!plain.contains("950272"));
         assert!(compile_text("name t\nfight 2 8.5\n").unwrap_err().contains("fight"));
+    }
+
+    #[test]
+    fn sync_poll_marks_the_steps_after_it() {
+        let toml = compile_text("name t\nwait 3\nsync poll\nwait 4\nhold right for 2\nwait until HK_GAME_MODE == 1\npress cross\nsync frame\nwait 5\n").unwrap();
+        let from_env = std::env::var("HK_WALK_SYNC").is_ok_and(|v| v == "poll");
+        // wait 3 only when the environment turned it on for the whole script; the four steps after the directive always; `sync frame` ends it.
+        let marked = toml.matches("sync = \"poll\"").count();
+        assert_eq!(marked, if from_env { 5 } else { 4 }, "{toml}");
+        assert!(compile_text("name t\nsync sideways\n").unwrap_err().contains("sync"));
     }
 
     #[test]

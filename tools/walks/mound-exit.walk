@@ -1,0 +1,77 @@
+# The Ancestral Mound, from the floor where the Snail Shaman's cutscene wakes the Knight (x 46.3) back along the pits to the left gate and out
+# into Crossroads_06 (planned with hk-walkplan room on the disc, margin 0.4). The exit is waited for by the arrival: the door1 spawn
+# (28.41, 30.40) is on the top platform, where HeroController.FindGroundPoint puts a Knight entering by a door (docs/WORLD_LINKS.md, Gate arrivals).
+at 46.28 8.39
+walk 43.79
+walk 44.22   # run-up
+walk 43.79   # take-off
+hold left+cross for 12
+hold left for 19
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 50.62
+snipe
+guard 2
+retreat 0.30 50.62
+heal
+walk 39.93   # run-up
+walk 39.50   # take-off
+hold left+cross for 20
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 50.62
+snipe
+guard 2
+retreat 0.30 50.62
+heal
+walk 33.43   # run-up
+walk 33.00   # take-off
+hold left+cross for 34
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 50.62
+snipe
+guard 2
+retreat 0.30 50.62
+heal
+walk 24.01
+walk 24.44   # run-up
+walk 24.01   # take-off
+hold left+cross for 34
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 50.62
+snipe
+guard 2
+retreat 0.30 50.62
+heal
+walk 14.74
+walk 15.17   # run-up
+walk 14.74   # take-off
+hold left+cross for 34
+hold left for 27
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.31 50.63
+snipe
+guard 2
+retreat 0.31 50.63
+heal
+walk 5.75
+walk 6.18   # run-up
+walk 5.75   # take-off
+hold left+cross for 12
+hold left for 18
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.30 50.62
+snipe
+guard 2
+retreat 0.30 50.62
+heal
+walk 1.05
+hold left until expr abs(i32(HK_PLAYER_X) - 1861878) <= 327680 && abs(i32(HK_PLAYER_Y) - 1992335) <= 196608 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800

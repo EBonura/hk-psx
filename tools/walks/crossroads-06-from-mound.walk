@@ -1,0 +1,81 @@
+# Crossroads_06 from the Mound's door (the top platform, x 24.5 y 30.39) down the room to the Gate Switch, a nail swing at it from x 7.9
+# facing left, and out through the pillar it opens into Crossroads_33 (arrival x 44.5, y 34.4). Planned with hk-walkplan room (margin 0.4);
+# the pillar is waited out by pushing left until the arrival, so no timer stands in for its 1.5 s.
+at 24.54 30.39
+walk 21.50
+walk 21.93   # run-up
+walk 21.50   # take-off
+hold left+cross for 24
+hold left for 28
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 9.27 46.72
+snipe
+guard 2
+retreat 9.27 46.72
+heal
+walk 13.75
+walk 14.18   # run-up
+walk 13.75   # take-off
+hold left+cross for 16
+hold left for 24
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 1.75 18.65
+snipe
+guard 2
+retreat 1.75 18.65
+heal
+walk 8.49
+walk 8.06   # run-up
+walk 8.49   # take-off
+hold right+cross for 5
+hold right for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 1.75 18.64
+snipe
+guard 2
+retreat 1.75 18.64
+heal
+walk 10.69   # run-up
+walk 11.12   # take-off
+hold right+cross for 12
+hold right for 19
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 1.75 18.64
+snipe
+guard 2
+retreat 1.75 18.64
+heal
+walk 14.98   # run-up
+walk 15.41   # take-off
+hold right+cross for 12
+hold right for 20
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 18.27 21.25
+snipe
+guard 2
+retreat 18.27 21.25
+heal
+walk 17.90
+drop 16.10 3.39
+fight 4 2.12 17.25
+snipe
+guard 2
+retreat 2.12 17.25
+heal
+walk 15.00
+walk 15.43   # run-up
+walk 15.00   # take-off
+hold left+cross for 24
+hold left for 26
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
+press square                                   # the Gate Switch
+hold left until expr abs(i32(HK_PLAYER_X) - 2916352) <= 327680 && abs(i32(HK_PLAYER_Y) - 2254520) <= 196608 timeout 1500
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 900
