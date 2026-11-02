@@ -34,7 +34,7 @@ class WorldMetadata(unittest.TestCase):
         """Objects of the scene-0 HKWMTA01 bank as (kind, state, flags, extra, index lists)."""
         import struct
         from world_metadata import encode_scene
-        payload,_=encode_scene(data['scenes'][0],[r for r in data['regions'] if r['scene_id']==0])
+        payload,_=encode_scene(data['scenes'][0],[dict(r,statics=dict(r['statics'],packet_budget=0)) if 'statics' in r else r for r in data['regions'] if r['scene_id']==0])
         offset,count,stride=struct.unpack_from('<3I',payload,76)
         ioffset,icount,_=struct.unpack_from('<3I',payload,112)
         indices=struct.unpack_from(f'<{icount}H',payload,ioffset)

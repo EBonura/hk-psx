@@ -29,7 +29,7 @@ def world_banks(output):
     scene0 = dict(scene0, reveal_mask_controllers=controllers, reveal_controllers=len(controllers))
     # The tests read breakables and gates out of this bank, not rigid debris, and the
     # region report on disk may predate the piece fields the encoder now requires.
-    payload, _ = encode_scene(scene0, [dict(r, door_debris=[]) for r in report['regions'] if r['scene_id'] == 0])
+    payload, _ = encode_scene(scene0, [dict(r, door_debris=[], statics=dict(r['statics'], packet_budget=0)) for r in report['regions'] if r['scene_id'] == 0])
     (output/'scene0.hkwm').write_bytes(payload)
     triangle = [[100, 0], [200, 0], [100, 100]]
     square = [[100, 0], [200, 0], [200, 100], [100, 100]]

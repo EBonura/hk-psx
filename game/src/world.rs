@@ -623,9 +623,20 @@ pub fn false_knight_scene() -> Option<usize> {
     })
 }
 /// Scene owner of a catalogue slot (the catalogue's scene id, not the manifest index): two byte loads.
+#[cfg(not(test))]
 pub fn scene_of(region_id: usize) -> usize {
     crate::disc::SCENE_IDS[crate::disc::scene_index(region_id)] as usize
 }
+/// The native harnesses (tests/world_runtime.rs, tools/route_probe.rs) have no disc: they read the generated
+/// per-slot scene list, which the guest does not link.
+#[cfg(test)]
+pub fn scene_of(region_id: usize) -> usize {
+    REGION_SCENES[region_id] as usize
+}
+#[cfg(not(test))]
+const REGION_COUNT: usize = crate::disc::REGION_COUNT;
+#[cfg(test)]
+const REGION_COUNT: usize = REGION_SCENES.len();
 /// Build the Region value for a catalogue slot from the admitted bank.
 /// None while that slot's scene bank is not the admitted one.
 #[inline(never)]
@@ -636,7 +647,7 @@ pub fn resident(region_id: usize) -> Option<Region> {
 /// word 0 of its statics object, so no per-view table is linked for it.
 #[inline(never)]
 pub fn resident_with_budget(region_id: usize) -> Option<(Region, usize)> {
-    if region_id >= crate::disc::REGION_COUNT {
+    if region_id >= REGION_COUNT {
         return None;
     }
     let scene = scene_of(region_id);
