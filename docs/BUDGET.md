@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |791,052|
-| Code-to-data alignment |116|
-| Linked data, including menu and HUD |284,744|
+| Linked code |791,352|
+| Code-to-data alignment |72|
+| Linked data, including menu and HUD |280,712|
 | BSS, including shared scene arena and runtime pools |791,564|
-| Total static span |1,867,484|
+| Total static span |1,863,708|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |114,724|
+| Unallocated gap before reserved stack |118,500|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |6,180|
+| Free RAM below the module pool |9,956|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d7edc`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d701c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 419,840 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -643,3 +643,5 @@ The 2026-10-31 shared bank coder and the bank reader as a room module (docs/ACTO
 The 2026-10-31 switch system (docs/WORLD_LINKS.md) took no free RAM: linked code went 789,980 to 789,928 bytes (-52) and the code-to-data alignment grew by the same 52, so 9,300 bytes stay free below the module pool. The nail branch for a switch is one flag test inside `State::strike`'s ordinary break (no function of its own), and `debris::Pool::spawn` is `#[inline(always)]` into its one caller: without that, adding any code to `strike` made LLVM leave `Pool::spawn` out of line, which moved 3.5 KB into the debris module and put rooms 14 and 9 past the code pool (at the time room 14 had +112 B; it prints as `pool fit: room 14` in the build log, +4,288 B now). The switches' data is in the scene banks on disc: Crossroads_06, 33 and Fungus1_22 gained their lever and gate records inside the arena's slack.
 
 The 2026-10-31 two-word room module sets (host/code_modules.py `SCENE_MODULES_HI`, game/src/modules.rs; a room may name any module id below 56, where it could name 32) moved the shipping disc's free RAM below the module pool from 9,300 to 9,316: linked code 789,928 to 790,072, linked data 282,296 to 282,152, alignment 88 to 72. Measured on a build without the opening movies with one probe row in the high list: 10,580 to 10,468 (the alignment step differs by build, so the mechanism itself costs 112 bytes there and nothing on the shipping disc). Each room that names an id of 32 or more adds 4 bytes of table. Module images did not grow; the aspid and false_knight images shrank by about 400 bytes each.
+
+The 2026-11-02 Fungus1_31 and Fungus1_32 admission (49 views, two scenes) took the free RAM below the module pool from 8,636 to 6,180 (-2,456; linked data +2,560 of tables, code +288, BSS -488). The per-view tables then left the resident image: the room index of a view is its slot minus its scene's first slot (`disc::local_index`; `host/pack_scenes.py manifest` refuses a pack whose scene views are not consecutive slots in room order and a const assert in `disc.rs` refuses a generated table that disagrees), its scenery packet budget is word 0 of its `KIND_REGION_STATICS` object in the scene metadata bank (`world::resident_with_budget`, `render::init`), and `REGION_SCENES` is the two byte loads `disc::SCENE_IDS[REGION_OWNER[slot]]`. A view costs one byte now (`disc::REGION_OWNER`) where it cost five (REGION_SCENES 1, REGION_SCENE_LOCAL 2, SCENERY_PACKET_BUDGETS 2), 1,062 views: linked data -4,032, code +300, so the shipping build has 9,956 free (main fb50731 8,636). What a new scene still costs resident: a directory of about 180 bytes (SceneDesc 36, CoverageDesc 36, WorldMetaDesc 60, EffectArtDesc 16, SceneLight 8, ranges, camera, first slot) plus 32 bytes per atlas page chunk (708 rows for 65 scenes, 349 bytes a scene) plus 152 bytes per distinct enemy type (106 types, 16 KB): about 0.8 KB a scene, the next thing to move out. A first version that called a separate `packet_budget` for the bind cost 460 bytes of code, and a `resident` that called `resident_with_budget` out of line put the scratchpad stack chain 28 bytes over its limit (`resident` is an inline wrapper now).
