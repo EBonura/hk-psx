@@ -100,6 +100,6 @@ fight reuses it, its first 8,365 polls are the road's).
   20.7, y 49.9 to 53.9 and x 24.3 to 24.75, y 57 to 61) open only on the Toll Machines' broadcast after a 50 Geo payment
   (`Price String Name` STAGWAY_CROSSROADS, Prices sheet; machines at (10.5, 52.0) and (22.3, 59.2)). hkref confirms that in the
   original the Knight cannot pass the first gate unpaid (he lands against its face at x 19.96, the jump is capped by a ceiling 1.1
-  above the slab), and hk-walkplan reaches the top exit only with both gates open. The port has no Toll Machine yet. Fungus1_03
+  above the slab), and hk-walkplan reaches the top exit only with both gates open. The port's Toll Machine (docs/WORLD_LINKS.md; `walk-toll-31-pay`, `-refuse`, `-reload`) takes the 50 Geo at the machine at (10.5, 52.0) or (22.3, 59.2) and removes both gates; a fair walk has to bring the Geo (the rocks that would pay for it in Greenpath are partly uncooked, see hk-world NOTES). Fungus1_03
   (13 views) is not admitted.
 - Fungus1_04's other exit, to Fungus1_25, is not admitted either, so nothing the Cloak opens in Greenpath can be walked to yet.
