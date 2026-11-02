@@ -147,12 +147,22 @@
   [
     "hk_psx::enemies::Actor::local_bounds",
     "actor_fsm",
+    "hk_psx::enemies::Actor::fsm_bounds"
+  ],
+  [
+    "hk_psx::enemies::Actor::local_bounds",
+    "actor_fsm",
     "hk_sim::fsm_actor::hurt_box"
   ],
   [
     "hk_psx::enemies::Actor::local_bounds",
     "actor_fsm",
     "hk_sim::fsm_actor::turned"
+  ],
+  [
+    "hk_psx::enemies::Actor::new",
+    "actor_fsm",
+    "hk_psx::enemies::Actor::spawn_fsm_actor"
   ],
   [
     "hk_psx::enemies::Actor::new",
@@ -238,6 +248,11 @@
     "hk_psx::frame::interact",
     "toll",
     "hk_psx::toll::live::tick"
+  ],
+  [
+    "hk_psx::frame::render",
+    "actor_fsm",
+    "hk_psx::enemies::Actor::fsm_draw"
   ],
   [
     "hk_psx::frame::render",
@@ -413,6 +428,11 @@
     "hk_sim::fsm3::dispatch",
     "hornet",
     "hk_sim::fsm3b::entry"
+  ],
+  [
+    "main",
+    "actor_fsm",
+    "hk_psx::enemies::Actor::fsm_bounds"
   ],
   [
     "main",

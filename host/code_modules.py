@@ -101,7 +101,7 @@ MODULES = {
     'gruzzer': _sim('gruzzer') + _actor('advance_gruzzer'),
     # The enemy-family pipeline's adapter (host/enemy_families.json): one module for every family that runs its original
     # PlayMaker trees on the compact tier. The families' banks are data inside it; their action code is the fsm3 modules.
-    'actor_fsm': _sim('fsm_actor') + _actor('advance_fsm_actor', 'advance_fsm_dead'),
+    'actor_fsm': _sim('fsm_actor') + _actor('spawn_fsm_actor', 'advance_fsm_actor', 'advance_fsm_dead', 'fsm_bounds', 'fsm_draw'),
     # Gruz Mother: its controller, its arena handling and its corpse and
     # burster; the seven reserve flies it releases are the Gruzzer module's.
     'gruz_mother': _sim('gruz_mother') + _actor('apply_gruz', 'advance_gruz', 'advance_gruz_dead',
