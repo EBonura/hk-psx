@@ -75,6 +75,14 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
                        for scene in sorted({row['scene_id'] for row in meta['regions']})]
     scene_raw_fnv=scene_raw_fnv or {}
     enemies=geo_enemies()
+    # Each view's scenery packet budget (host/scenery_geometry.py generate(), run just before this pack) rides in its
+    # statics object, so the guest links no per-view table for it.
+    budgets=json.loads((ROOT/'.hkpsx/scenery-geometry-budgets.json').read_text())['regions'] if any('statics' in r for r in meta.get('regions',[])) else []
+    budget_of={r['chunk_id']:r['mandatory_packets'] for r in budgets}
+    for row in meta.get('regions',[]):
+        if 'statics' in row:
+            if row['chunk_id'] not in budget_of:raise ValueError(f"Region {row['chunk_id']} has no scenery packet budget")
+            row['statics']['packet_budget']=budget_of[row['chunk_id']]
     for scene in sorted(source_scenes,key=lambda value:value['scene_id']):
         rows=[row for row in meta['regions'] if row['scene_id']==scene['scene_id']]
         source_scene=dict(scene)
@@ -202,6 +210,10 @@ def manifest(report,metadata):
         chunks=[r['chunk_id']for r in e['source_rooms']]
         if not chunks:raise ValueError('Scene has no region')
         representatives.append(min(chunks)-1)
+        # The guest derives a view's room index as its slot minus its scene's first slot (disc::local_index), so a
+        # scene's views must be consecutive catalogue slots in room order. Refuse the pack here, not at runtime.
+        if chunks!=list(range(min(chunks),min(chunks)+len(chunks))):
+            raise ValueError(f"Scene {e['scene_id']} views are not consecutive catalogue slots in room order: {chunks[:6]}")
         for local,chunk in enumerate(chunks):
             if chunk in lookup:raise ValueError('Region belongs to multiple scenes')
             if index>=256 or local>=256:raise ValueError('Scene/room index exceeds the (u8,u8) slot table')

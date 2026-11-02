@@ -164,19 +164,26 @@ class PackScenes(unittest.TestCase):
                 build_guest.scene_manifest('joint')
                 self.assertEqual(run.call_args.args[0][-2:],['--residency','joint'])
 
-    def test_region_mapping_uses_source_local_order_not_contiguous_scene_assumption(self):
-        scenes=allocate_scenes([entry(1,400,1,1,[2]),entry(0,800,2,3,[1,3])])
+    def test_region_mapping_uses_source_local_order_and_refuses_interleaved_scenes(self):
+        scenes=allocate_scenes([entry(1,400,1,1,[3]),entry(0,800,2,3,[1,2])])
         scenes[0]['black_cores']=[[0,0,8,8]]
         scenes[0]['opaque_cores']=[[0,0,16,8]]
         r={'scenes':scenes,'arena_bytes':1179648,'raw_resident_bytes':1200,'total_pages':3,'total_palettes':4,'atlases':atlases_for(scenes)}
-        m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1},{'chunk_id':3,'scene_id':0}]}
-        text=manifest(r,m);self.assertIn('(0,0),\n(1,0),\n(0,1),',text);self.assertIn('SCENE_REGIONS:&[u16]=&[0,1]',text)
+        m={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':0},{'chunk_id':3,'scene_id':1}]}
+        text=manifest(r,m);self.assertIn('(0,0),\n(0,1),\n(1,0),',text);self.assertIn('SCENE_REGIONS:&[u16]=&[0,2]',text)
         self.assertIn('SCENE_TEXTURE_CAPACITY:usize=96;',text)
         self.assertIn('SCENE_DRAW_CAPACITY:usize=64;',text)
         self.assertNotIn('SCENE_BLACK_CORES',text);self.assertNotIn('SCENE_OPAQUE_CORES',text)
         command=decoder_command(r);at=command.index('--atlases');self.assertEqual(command[at-5:at],['1179648','scene0.hlzc','scene0.hk','scene1.hlzc','scene1.hk'])
-        m['regions'][1]['scene_id']=0
+        m['regions'][1]['scene_id']=1
         with self.assertRaises(ValueError):manifest(r,m)
+        # The guest derives a view's room index as its slot minus the scene's first slot: a scene whose views are
+        # not consecutive catalogue slots fails the pack.
+        gapped=allocate_scenes([entry(1,400,1,1,[2]),entry(0,800,2,3,[1,3])])
+        gapped[0]['black_cores']=[[0,0,8,8]];gapped[0]['opaque_cores']=[[0,0,16,8]]
+        rg={'scenes':gapped,'arena_bytes':1179648,'raw_resident_bytes':1200,'total_pages':3,'total_palettes':4,'atlases':atlases_for(gapped)}
+        mg={'regions':[{'chunk_id':1,'scene_id':0},{'chunk_id':2,'scene_id':1},{'chunk_id':3,'scene_id':0}]}
+        with self.assertRaisesRegex(ValueError,'consecutive catalogue slots'):manifest(rg,mg)
     def test_serialized_scene_draws_receive_packet_bound_checks(self):
         sys.path.insert(0,str(Path(__file__).resolve().parent))
         from test_scene_bank import source_room

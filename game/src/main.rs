@@ -925,7 +925,7 @@ fn main() {
     }
     // A record from another disc build may name a slot this catalogue lacks.
     .filter(|s| {
-        (s.region as usize) < world::REGION_SCENES.len()
+        (s.region as usize) < disc::REGION_COUNT
             && world::scene_of(s.region as usize) == s.scene as usize
     });
     // A new game on a disc that carries the movies plays them first (intro.rs) and carries on from here
@@ -1635,9 +1635,11 @@ fn bind_view(
 ) -> world::Region {
     let (x, y) = game.camera.position();
     let view = cache.camera_view(scene, x, y, game.view, game.region_id);
+    let (region, budget) =
+        world::resident_with_budget(view).expect("camera view in the admitted bank");
     if render::bound_view() != view {
         let room = cache.room_for(view).expect("camera view resident");
-        render::init(&room, bank, view, cache.coverage());
+        render::init(&room, bank, view, budget, cache.coverage());
         unsafe {
             HK_VIEW_BINDS = HK_VIEW_BINDS.wrapping_add(1);
         }
@@ -1646,7 +1648,6 @@ fn bind_view(
     unsafe {
         HK_VIEW_ID = view as u32 + 1;
     }
-    let region = world::resident(view).expect("camera view in the admitted bank");
     let c = region.camera;
     if x < c[0] || x > c[2] || y < c[1] || y > c[3] {
         unsafe {

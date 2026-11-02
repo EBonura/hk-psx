@@ -598,10 +598,10 @@ fn region_breakables(region: &Region) -> Breakables<'static> {
 /// The selected region as a runtime value: identity and bounds from the
 /// admitted bank, effect tables from the per-scene statics and the variant
 /// catalogues the bank's `KIND_REGION_STATICS` object indexes. No region
-/// *content* is linked. Three small tables are still indexed by catalogue
-/// slot, and they are the whole per-slot cost of the catalogue, seven bytes:
-/// `REGION_SCENES` here (1), `disc::REGION_SCENE_LOCAL` (4) and
-/// `render::SCENERY_PACKET_BUDGETS` (2).
+/// *content* is linked. One small table is still indexed by catalogue
+/// slot, and it is the whole per-slot cost of the catalogue, one byte:
+/// `disc::REGION_OWNER` (the manifest scene of the slot). The room index inside the scene is the slot
+/// minus the scene's first slot, and the scenery packet budget rides in the slot's statics object.
 #[derive(Clone, Copy)]
 pub struct Region {
     pub global_id: usize,
@@ -622,15 +622,24 @@ pub fn false_knight_scene() -> Option<usize> {
             .any(|spec| matches!(spec.controller, hk_sim::ActorController::FalseKnight { .. }))
     })
 }
-/// Scene owner of a catalogue slot.
+/// Scene owner of a catalogue slot (the catalogue's scene id, not the manifest index): two byte loads.
 pub fn scene_of(region_id: usize) -> usize {
-    REGION_SCENES[region_id] as usize
+    crate::disc::SCENE_IDS[crate::disc::scene_index(region_id)] as usize
 }
 /// Build the Region value for a catalogue slot from the admitted bank.
 /// None while that slot's scene bank is not the admitted one.
 #[inline(never)]
 pub fn resident(region_id: usize) -> Option<Region> {
-    let scene = *REGION_SCENES.get(region_id)? as usize;
+    resident_with_budget(region_id).map(|(region, _)| region)
+}
+/// `resident`, with the slot's scenery packet budget: the host's `mandatory_packets` for the view, carried in
+/// word 0 of its statics object, so no per-view table is linked for it.
+#[inline(never)]
+pub fn resident_with_budget(region_id: usize) -> Option<(Region, usize)> {
+    if region_id >= crate::disc::REGION_COUNT {
+        return None;
+    }
+    let scene = scene_of(region_id);
     let bank = admitted_bank()?;
     if bank.scene_id() as usize != scene {
         return None;
@@ -643,16 +652,21 @@ pub fn resident(region_id: usize) -> Option<Region> {
         .expect("region statics object in the admitted bank");
     let catalogue =
         |index: i32, len: usize| (index >= 0 && (index as usize) < len).then_some(index as usize);
-    Some(Region {
-        global_id: region_id + 1,
-        scene,
-        bounds: region.bounds(),
-        collision_bounds: region.collision_bounds(),
-        camera: region.camera(),
-        grass_impact: catalogue(statics.extra(2), IMPACT_CATALOG.len()).map(|i| IMPACT_CATALOG[i]),
-        particle_bank: catalogue(statics.extra(1), PARTICLE_BANKS.len()).map(|i| PARTICLE_BANKS[i]),
-        grass_emitters: SCENE_EMITTERS[scene],
-    })
+    Some((
+        Region {
+            global_id: region_id + 1,
+            scene,
+            bounds: region.bounds(),
+            collision_bounds: region.collision_bounds(),
+            camera: region.camera(),
+            grass_impact: catalogue(statics.extra(2), IMPACT_CATALOG.len())
+                .map(|i| IMPACT_CATALOG[i]),
+            particle_bank: catalogue(statics.extra(1), PARTICLE_BANKS.len())
+                .map(|i| PARTICLE_BANKS[i]),
+            grass_emitters: SCENE_EMITTERS[scene],
+        },
+        statics.extra(0) as usize,
+    ))
 }
 /// The rigid debris code is the `debris` room module (host/code_modules.py): resident in the scenes
 /// whose metadata bank carries pieces, which are the only ones that can launch or draw any.

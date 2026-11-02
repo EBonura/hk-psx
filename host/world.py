@@ -24,12 +24,16 @@ GRASS_PER_SCENE = 1024
 # both refuse above 65535 in their own generators.
 #
 # This replaces a 1024 that was called a sanity bound and was never measured.
-# It bit at 943 regions with 99,716 bytes of linked headroom still free, and a
-# slot costs seven linked bytes, read out of build 161's link map rather than
-# estimated: REGION_SCENES 1 byte (data/regions.rs), REGION_SCENE_LOCAL 4
-# (data/scene_manifest.rs), SCENERY_PACKET_BUDGETS 2 (data/scenery_budgets.rs).
-# Those three are the whole per-slot cost; nothing else in the guest is sized
-# per slot, and the scene arena and the metadata bank are per scene, so neither
+# It bit at 943 regions with 99,716 bytes of linked headroom still free. A slot
+# costs one linked byte now (2026-11-02): the manifest scene that owns it
+# (disc::REGION_OWNER, from data/scene_manifest.rs). It used to cost seven
+# (REGION_SCENES 1, REGION_SCENE_LOCAL 2 and SCENERY_PACKET_BUDGETS 2 as built,
+# 1,062 views = 5.3 KB): the room index inside the scene is the slot minus the
+# scene's first slot (host/pack_scenes.py refuses a pack whose views are not
+# contiguous and in order), and the scenery packet budget rides in the slot's
+# statics object of its scene's metadata bank. That owner byte is the whole
+# per-slot cost; nothing else in the guest is sized per slot, and the scene
+# arena and the metadata bank are per scene, so neither
 # moves when the catalogue grows. RAM needs no bound of its own here either:
 # the linker's RAM region is LOAD_ADDR..STACK_INIT less STACK_RESERVE (see
 # host/stack_budget.py), so a catalogue that does not fit fails the link.

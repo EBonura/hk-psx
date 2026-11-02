@@ -86,6 +86,7 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(0,2),(1,0),(1,1),(1,2)];
+static REGION_OWNER:&[u8]=&[0,0,0,1,1,1];
 struct SceneDesc{raw_len:usize,scene_id:usize}
 const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{raw_len:4096,scene_id:0},SceneDesc{raw_len:2048,scene_id:46}];
 fn runner_family(_:usize)->Option<bool>{Some(false)}
@@ -95,6 +96,7 @@ mod runner_audio{
  pub fn family_ready(_:bool)->bool{unsafe{READY}}
 }
 fn scene_index(region:usize)->usize{REGION_SCENE_LOCAL[region].0}
+fn local_index(region:usize)->usize{REGION_SCENE_LOCAL[region].1}
 #[derive(Clone,Copy,Debug,PartialEq)]enum LoadError{RoomMismatch}
 static mut HK_REGION_ACTIVATIONS:u32=0;
 static mut HK_ROOM_CACHE_HITS:u32=0;
@@ -203,6 +205,8 @@ const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
+static REGION_OWNER:&[u8]=&[0,0,1];
+fn local_index(region:usize)->usize{REGION_SCENE_LOCAL[region].1}
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,2),(2,4)];
 #[derive(Copy,Clone)]struct SceneDesc{scene_id:usize,ram_offset:usize,arena_capacity:usize,stored_len:usize,stored_fnv:u32,raw_len:usize,raw_fnv:u32}
 const SCENE_MANIFEST:&[SceneDesc]=&[
@@ -566,6 +570,7 @@ const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
 const SCENE_ATLAS_RANGES:&[(usize,usize)]=&[(0,20),(20,23)];
 const REGION_SCENE_LOCAL:&[(usize,usize)]=&[(0,0),(0,1),(1,0)];
+static REGION_OWNER:&[u8]=&[0,0,1];
 struct SceneDesc{scene_id:usize}
 const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{scene_id:0},SceneDesc{scene_id:46}];
 fn tail_disarm(){}

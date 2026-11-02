@@ -333,9 +333,8 @@ const _: () = assert!(PACK_HEADER_SECTORS * SECTOR_BYTES <= SCENE_ARENA_BYTES);
 // fails the build here as well as at the cook. host/world.py MAX_REGIONS is the
 // host half of the same ceiling and refuses first; this is the guest's own.
 const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
-// The owner half of a REGION_SCENE_LOCAL slot is a u8, like its other half, the
-// scene-local room index (which caps one scene at 256 regions); host/pack_scenes.py
-// refuses both overflows where the mapping is built.
+// The owner half of a REGION_SCENE_LOCAL slot is a u8; host/pack_scenes.py refuses an overflow
+// where the mapping is built.
 const _: () = assert!(SCENE_COUNT <= 1 << 8);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
@@ -438,8 +437,45 @@ fn atlas_fingerprint(scene: usize) -> u32 {
     }
     hash
 }
+/// Manifest scene that owns each catalogue slot: the only per-view table the disc keeps. A slot's
+/// scene-local room index is not stored; `local_index` derives it, which holds because the views of
+/// a scene are contiguous and in order (host/pack_scenes.py `manifest` refuses a pack where they
+/// are not, and the check below refuses a generated table that disagrees).
+/// Catalogue slots on the disc.
+pub const REGION_COUNT: usize = REGION_SCENE_LOCAL.len();
+static REGION_OWNER: [u8; REGION_COUNT] = region_owners();
+const fn region_owners() -> [u8; REGION_COUNT] {
+    let mut owners = [0u8; REGION_COUNT];
+    let mut region = 0;
+    while region < owners.len() {
+        let (owner, local) = REGION_SCENE_LOCAL[region];
+        assert!(
+            region == SCENE_REGIONS[owner as usize] as usize + local as usize,
+            "a scene's views must be contiguous catalogue slots in room order"
+        );
+        owners[region] = owner;
+        region += 1;
+    }
+    owners
+}
 pub const fn scene_index(region: usize) -> usize {
-    REGION_SCENE_LOCAL[region].0 as usize
+    REGION_OWNER[region] as usize
+}
+/// The catalogue scene id of each manifest scene (a byte each: `world::scene_of`).
+pub static SCENE_IDS: [u8; SCENE_COUNT] = scene_ids();
+const fn scene_ids() -> [u8; SCENE_COUNT] {
+    let mut ids = [0u8; SCENE_COUNT];
+    let mut scene = 0;
+    while scene < SCENE_COUNT {
+        assert!(SCENE_MANIFEST[scene].scene_id < 256, "a catalogue scene id is a byte");
+        ids[scene] = SCENE_MANIFEST[scene].scene_id as u8;
+        scene += 1;
+    }
+    ids
+}
+/// The room index of catalogue slot `region` inside its scene's bank.
+pub const fn local_index(region: usize) -> usize {
+    region - SCENE_REGIONS[scene_index(region)] as usize
 }
 /// The manifest index of catalogue scene `scene_id`, if the disc carries it.
 pub fn manifest_index(scene_id: usize) -> Option<usize> {
@@ -877,9 +913,7 @@ impl Cache {
                 & !3;
         }
         if offset > SCENE_ARENA_BYTES
-            || REGION_SCENE_LOCAL
-                .iter()
-                .any(|&(s, _)| s as usize >= SCENE_COUNT)
+            || REGION_OWNER.iter().any(|&s| s as usize >= SCENE_COUNT)
         {
             return Err(LoadError::RoomMismatch);
         }
@@ -2223,10 +2257,7 @@ impl Cache {
         }
         crate::gate_probe::set(crate::gate_probe::META_CHECK);
         let bank = checked_world_metadata(&tail[..m.raw_len], scene)?;
-        let expected_regions = REGION_SCENE_LOCAL
-            .iter()
-            .filter(|&&(owner, _)| owner as usize == scene)
-            .count();
+        let expected_regions = REGION_OWNER.iter().filter(|&&owner| owner as usize == scene).count();
         if bank.region_count() != expected_regions {
             return Err(LoadError::WorldMeta);
         }
@@ -2579,10 +2610,10 @@ impl Cache {
                 return Err(LoadError::RoomMismatch);
             }
             let mut mapped = 0;
-            for (region, &(s, local)) in REGION_SCENE_LOCAL.iter().enumerate() {
+            for (region, &s) in REGION_OWNER.iter().enumerate() {
                 if s as usize == index {
                     mapped += 1;
-                    if scene.chunk_id(local as usize) != Some(region + 1) {
+                    if scene.chunk_id(local_index(region)) != Some(region + 1) {
                         return Err(LoadError::RoomMismatch);
                     }
                 }
@@ -2930,7 +2961,7 @@ impl Cache {
         None
     }
     pub fn is_ready(&self, region: usize) -> bool {
-        REGION_SCENE_LOCAL.get(region).is_some_and(|&(scene, _)| {
+        REGION_OWNER.get(region).is_some_and(|&scene| {
             let scene = scene as usize;
             if runner_family(scene).is_some_and(|m| !crate::runner_audio::family_ready(m)) {return false;}
             if SCENE_GATE_LOAD {
@@ -2952,8 +2983,7 @@ impl Cache {
         if !self.is_ready(region) {
             return None;
         }
-        let (index, local) = REGION_SCENE_LOCAL[region];
-        self.scene(index as usize).room(local as usize)
+        self.scene(scene_index(region)).room(local_index(region))
     }
     fn scene(&self, index: usize) -> Scene<'_> {
         assert!(if SCENE_GATE_LOAD {
@@ -3000,8 +3030,7 @@ impl Cache {
     /// or None while that scene's metadata is not the admitted one. Resolved
     /// once per region entry so per-tick trigger reads need no id scan.
     pub fn world_region_index(&self, region_id: usize) -> Option<usize> {
-        let &(owner, _) = REGION_SCENE_LOCAL.get(region_id)?;
-        let owner = owner as usize;
+        let owner = *REGION_OWNER.get(region_id)? as usize;
         if self.metadata_scene != owner
             || self.metadata_len != WORLD_META_MANIFEST.get(owner)?.raw_len
         {

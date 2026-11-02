@@ -32,7 +32,7 @@ def piece(source, owner, frame, **changes):
 def region(chunk, pieces):
     box = [0.0, 0.0, 30.0, 20.0]
     return {'chunk_id': chunk, 'activation_bounds': box, 'camera_bounds': box, 'door_debris': pieces,
-            'statics': {'door_debris': 0, 'particle_bank': -1, 'grass_impact': -1}}
+            'statics': {'packet_budget': 0, 'particle_bank': -1, 'grass_impact': -1}}
 
 
 def sample_bank():

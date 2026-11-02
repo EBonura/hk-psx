@@ -455,10 +455,11 @@ def encode_scene(scene, rows):
         statics = row.get("statics")
         if statics is not None:
             # Variant catalogue indices the runtime Region value resolves:
-            # (word 0 was the door debris variant; the pieces ride in the bank now),
+            # word 0 the view's scenery packet budget (host/scenery_geometry.py `mandatory_packets`; it was the door
+            # debris variant, whose pieces ride in the bank now),
             # particle bank (-1 none), grass impact (-1 none).
             add_object("region_statics", {"source": f"{scene['file']}:0"}, 0xFFFFFFFF, 0, row["activation_bounds"], None,
-                       (0,
+                       (bounded(statics["packet_budget"], 65536, "scenery packet budget"),
                         statics["particle_bank"] if statics["particle_bank"] < 0 else bounded(statics["particle_bank"], 8, "particle bank variant"),
                         statics["grass_impact"] if statics["grass_impact"] < 0 else bounded(statics["grass_impact"], 32, "impact variant")))
         if row_index == 0:

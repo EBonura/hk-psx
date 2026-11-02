@@ -346,7 +346,13 @@ pub fn bound_view() -> usize {
 #[inline(never)]
 #[optimize(size)]
 #[cfg_attr(not(test), optimize(size))]
-pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>) {
+pub fn init(
+    room: &Room,
+    bank: usize,
+    region: usize,
+    scenery_packets: usize,
+    coverage: CoverageView<'_>,
+) {
     crate::input::checkpoint();
     unsafe {
         BOUND_VIEW = region;
@@ -378,7 +384,7 @@ pub fn init(room: &Room, bank: usize, region: usize, coverage: CoverageView<'_>)
         // The cooker bounds every mandatory child, even if all source draws
         // are visible. Optional scissors can only spend the remaining capacity.
         EXTRA_ALLOWANCE = CAP
-            .checked_sub(DYNAMIC_PACKET_RESERVE + SCENERY_PACKET_BUDGETS[region] as usize)
+            .checked_sub(DYNAMIC_PACKET_RESERVE + scenery_packets)
             .expect("scenery packet budget");
         SCENERY_ALLOWANCE = EXTRA_ALLOWANCE.saturating_sub(LIGHT_RESERVE);
         if scene_changed {
