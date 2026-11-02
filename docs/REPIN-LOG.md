@@ -18,3 +18,6 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 ## 2026-11-01 (hk-world, by hand)
 
 - hornet-road and hornet-road-defeated: the neutral ticks before the Fungus1_21 stretch (`load 6577 6636 2` in their `.cuts`) go from 2 to 1. Landing 2 (switch art in Fungus1_22's lower hall, vine platforms) moved the 22 to 21 load by one tick; the tape inside Fungus1_21 follows the Moss Chargers' phase, which passed with 1 and 3 and failed with 0, 2 and 4. `cargo hk-build measure` cannot read the pad on a disc where the route does not pass, so it was found by trying each value (the other 60 journeys of `validate --prune` passed unchanged). hk-walker's closed-loop route through 22 and 21 replaces this tape.
+## 2026-11-02 (hk-enemies, by hand, disc 066464cfee87)
+
+- journey-crossroads: long_frames 43 to 44 (measured 44). Resident layout drift: the route crosses no room with a family actor and loads no `actor_fsm` module; resident code moved by -780 bytes. Frame time 207 of 257 and 474 frames over 2 vblanks, closed loop 10 of 10.
