@@ -69,11 +69,14 @@ fn every_scene_script_matches_hkscr01_over_a_wandering_hero() {
     let mut total_writes = 0;
     let mut total_changes = 0;
     for scene in scenes {
-        // Fungus1_31's `Hornet Encounter Control` (`Set PlayerData`) is a GetPlayerDataInt + IntCompare that sets
-        // hornetGreenpath to 3. HKSCR01 runs it; the light families of HKFSM03 have no IntCompare (it is a boss-tier
-        // op), so on the disc it is inert, as it was before the room was admitted. The two banks cook the same
-        // instance, but only HKSCR01 acts on it: leave the room out of the comparison until the op is in the light
-        // families (see NOTES.md, hk-world 11-02).
+        // Fungus1_31's `Hornet Encounter Control` (`Set PlayerData`) is a GetPlayerDataInt + IntCompare that raises
+        // hornetGreenpath to 3 when it is below. HKSCR01 runs it; the light families of HKFSM03 have no IntCompare
+        // (a boss-tier op), so on the disc it is inert. hornetGreenpath is Hornet's Greenpath sighting counter:
+        // `Hornet Encounter GP1/GP2/GP3` (Fungus1_02, 10, 30) destroy themselves above 0/1/2 and set it to 1/2/3, and her
+        // arena encounter (Fungus1_04) only tests for 4. So inert changes nothing on 10 -> 30 -> 31 -> 32 -> 21 -> 04:
+        // the counter is only ever read by the GP sightings, which are not ported yet (they are a port gap of their
+        // own, see NOTES.md hk-world 11-02); when they are, IntCompare goes into the light families and this room
+        // comes back into the comparison.
         if INERT_ON_DISC.contains(&scene) {
             continue;
         }
