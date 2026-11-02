@@ -639,7 +639,7 @@ const REGION_COUNT: usize = crate::disc::REGION_COUNT;
 const REGION_COUNT: usize = REGION_SCENES.len();
 /// Build the Region value for a catalogue slot from the admitted bank.
 /// None while that slot's scene bank is not the admitted one.
-#[inline(never)]
+#[inline(always)]
 pub fn resident(region_id: usize) -> Option<Region> {
     resident_with_budget(region_id).map(|(region, _)| region)
 }
