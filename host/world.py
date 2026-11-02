@@ -348,6 +348,9 @@ def entry_terrain(scene_file):
     return _ENTRY_TERRAIN[scene_file]
 
 
+FIND_GROUND_POINT_DISTANCE = 10
+
+
 def entry_ground_y(scene_file, x, y):
     """The Knight's origin height after `HeroController.EnterScene` places him at a left or right gate.
 
@@ -361,7 +364,7 @@ def entry_ground_y(scene_file, x, y):
         if a[0] == b[0] or not min(a[0], b[0]) <= x <= max(a[0], b[0]):
             continue
         ground = a[1] + (x - a[0]) * (b[1] - a[1]) / (b[0] - a[0])
-        if 0 <= y - ground <= 10:
+        if 0 <= y - ground <= FIND_GROUND_POINT_DISTANCE:
             hits.append(ground)
     return max(hits) + hero_ground_elevation() if hits else None
 
@@ -396,13 +399,24 @@ def resolve_gates(report, regions, scene):
             xy[0] += 1
         elif destination['name'].startswith('right'):
             xy[0] -= 1
+        elif destination['name'].startswith('door'):
+            # GatePosition.door: `SetPosition2D(FindGroundPoint(enterGate.transform.position))`, the
+            # gate's own x, no entryOffset (the IL of HeroController.<EnterScene>d__487, state after the
+            # 'Idle' clip, then 'Exit Door To Idle').
+            xy = list(destination['position'][:2])
         # HeroController.EnterScene stands a Knight entering by a left or right gate on
         # the ground below the gate (FindGroundPointY from the gate's height, entryOffset.y
         # unused), not at the gate's own height: the walk-in keeps him at this height, so
         # a gate set above the floor floated him in over it.
         target_region = locate_region(regions, target['scene_id'], xy)
-        if destination['name'].startswith(('left', 'right')) and 'position' in destination:
+        if destination['name'].startswith(('left', 'right', 'door')) and 'position' in destination:
             ground = entry_ground_y(target['file'], xy[0], destination['position'][1])
+            if ground is None:
+                # The source logs 'Could not find ground point' and leaves the Knight where he was: a
+                # spawn the Knight is not standing on is a place he can be sealed into (the Ancestral
+                # Mound's exit put him 0.73 inside Crossroads_06's top platform and he fell into a pocket).
+                raise ValueError(f'gate {gate["source"]} -> {destination["name"]} of {gate["target_scene"]}: '
+                                 f'no ground within {FIND_GROUND_POINT_DISTANCE} units under {xy[0]:.2f}, {destination["position"][1]:.2f}')
             if ground is not None:
                 grounded = [xy[0], ground]
                 # The region search follows the grounded spawn; the authored point still
