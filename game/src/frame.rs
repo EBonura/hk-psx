@@ -754,6 +754,16 @@ pub fn interact(
     if shaman::tick(r.scene, body, can_inspect && !dialogue::open(), pad.bits()).wake {
         game.wake = true;
     }
+    // The Toll Machines (game/src/toll.rs), in the rooms that place one: UP in range, the Yes/No box, the Geo.
+    if crate::modules::loaded(crate::modules::TOLL) {
+        let eligible = can_inspect && (toll::open() || !dialogue::open());
+        let paid = toll::tick(r.scene, body, eligible, pad.bits(), game.geo.wallet(), &mut game.state);
+        if paid > 0 {
+            game.geo.take(paid, geo::GEO_PARAMS);
+        }
+    } else {
+        toll::idle(pad.bits());
+    }
     // Sly's `Shop Region`, whose trigger answers UP the way an
     // NPC's does. It takes the same hero body, so the shop and a
     // conversation cannot disagree about where the Knight is.

@@ -1413,9 +1413,19 @@ impl State {
     #[inline(never)]
     fn hit_object(&mut self, id: usize, flags: u16) -> bool {
         let wait = flags >> 6;
+        // A Toll Machine's bit (flag 32, host/world_links.py `toll_record`) is the room's toll module's to set,
+        // by paying; the nail leaves it alone.
+        if flags & 32 != 0 {
+            return false;
+        }
         if flags & 16 == 0 || wait == 0 {
             return self.break_object(id, wait);
         }
+        self.queue_lever(id, wait)
+    }
+    /// A switch's bit `id` will be set in `wait` ticks. False when it is already waiting or both slots are taken.
+    #[inline(never)]
+    fn queue_lever(&mut self, id: usize, wait: u16) -> bool {
         if self.pending_levers.iter().any(|&(waiting, ticks)| ticks > 0 && waiting as usize == id) {
             return false;
         }
@@ -1426,6 +1436,11 @@ impl State {
             }
             None => false,
         }
+    }
+    /// A Toll Machine took its price: the scene's toll bit `id` is set after the source's wait, and with the
+    /// scene's gates gone (the room's toll module, game/src/toll.rs).
+    pub fn toll_paid(&mut self, id: usize, wait: u16) -> bool {
+        self.queue_lever(id, wait)
     }
     /// One tick of the waiting switches, which break when their wait runs out. With `flush`
     /// every waiting switch breaks now: the scene is being left, and the source's switch has

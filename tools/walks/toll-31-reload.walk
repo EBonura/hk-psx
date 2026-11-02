@@ -1,0 +1,39 @@
+name walk-toll-31-reload
+title Fungus1_31's tolls survive a save: pay, cross, sit at the bench and save, power cycle and Continue: the Geo stays spent and the gates stay gone
+max_ticks 12000
+# Boots from tools/cards/toll-31-geo60.mcd (seeded: see toll-31-pay.walk). The bench is behind the first gate (x 27.34, y 50.64).
+card toll-31-geo60.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+press up
+wait 20
+press cross
+wait 100
+hold right until x ge 15.2 timeout 300
+hold right+cross for 16
+hold right for 60
+wait 30
+check in-the-alcove x between 21 32 ; y between 50.5 52.5 ; HK_GEO_WALLET == 10 ; HK_TOLL_PAID == 50
+walk 27.34
+press up
+wait until HK_BENCH_RESTS ge 1 timeout 600
+wait 120
+press cross
+wait until HK_SAVE_WRITES ge 1 timeout 900
+wait 90
+check saved HK_SAVE_ERRORS == 0 ; HK_BENCH_RESTS >= 1 ; HK_GEO_WALLET == 10
+reboot
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1500
+wait 120
+check reloaded HK_SAVE_LOADED == 1 ; HK_SAVE_ERRORS == 0 ; HK_GEO_WALLET == 10 ; HK_TOLL_PAID == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+hold left until x le 18.5 timeout 600
+wait 20
+check gate-stayed-gone x between 12 18.7 ; HK_GEO_WALLET == 10

@@ -45,6 +45,14 @@ The reservation used to count every cell of every draw's grid. The renderer (`ga
 
 The cook totals each view as it cooks (`regions.py`, workers included), prints `PACKETS region ...` for views within 64 packets of the limit and fails on the first one over; `generate()` prints the twelve tightest views in every build log.
 
+## Toll Machines
+
+A `Toll Machine` FSM (Fungus1_31 has two; Crossroads_49b's `Toll Machine Lift` has no gate in its scene and is left out) is an UP-to-inspect Yes/No box that takes Geo and then broadcasts `TOLL GATE OPEN` to every FSM of the scene (`Open Gates`, event target 4). Every `Toll Gate` answers by playing its open clip and destroying itself, and answers `TOLL GATE OPENED` (sent on load by a machine whose own persistent bool is set) by destroying itself at once. `world_links.toll_record` reads one record per scene: the machines (range box = the trigger collider UP is answered in, `Prompt Marker`, price = the `Prices` row named by the instance's `Price String Name`, question = the `Prompts` row named by `Prompt Convo`), the gates (the same `gate_target` the switches use, with `TOLL GATE OPEN` / `TOLL GATE OPENED`), and one persistent scene bit for the group, because every machine opens every gate. The bit is a lever object with flag 32 (the nail leaves it alone, `State::hit_object`); the gates are remote-art bindings on it, exactly the Metal Gate's. Nothing in the record is keyed on a scene or a name.
+
+`host/tolls.py` writes `data/toll.rs` (the machines' scene, range, marker, price, the bit's state id, the question and the wait between Yes and the bit: the source's `Pause Before Box Drop`, 0.5 s; its `Box Disappear Anim` wait is disabled in the placed instances and the clip is not modelled). The guest half is `game/src/toll.rs`, the `toll` room module (host/code_modules.py: the scenes named by the `Machine { scene: N,` rows carry it; `modules::loaded(TOLL)` guards `frame::interact` and `dialogue::prepare`, both approved in host/module_edges.json): UP inside a range opens the box with the price beside the question, `Yes` is not selectable while the wallet is short, `Yes` takes the Geo (`geo::take`) and queues the bit through `State::toll_paid` (the lever wait slot, so leaving the scene flushes it), `No`/O closes. Once the bit is set, or being set, no machine of the scene answers. Telemetry: `HK_TOLL_OPENED`, `HK_TOLL_PAID`, `HK_TOLL_STEP` (0 closed, 1 box with Yes chosen, 2 with No chosen).
+
+Not reproduced: `Take Control` (the hero is held by the panel, not walked to the machine), the hero's `Box_up` / `Box_disappear` clips, the machine's and the gates' art (the gates are invisible walls before and after, as every `tk2dSprite` object without a `tk2d_art` entry is; the draws would recook the scene's views), the coin sound.
+
 ## Adding a room
 
 Nothing to author. Add the scene to the cooked catalogue, recook, and read `report['link_policy']` in `data/regions.json`:

@@ -1,0 +1,26 @@
+name walk-toll-31-pay
+title Fungus1_31's Toll Machine: UP opens the Yes/No box, Yes takes 50 Geo, the gates are gone half a second later and the Knight crosses where the first one stood
+max_ticks 6000
+# Boots from tools/cards/toll-31-geo60.mcd (a seeded record, docs/ROUTES.md: Fungus1_31 at the left machine, x 10.5, y 51.4, 60 Geo in the
+# wallet). It proves the machine and the gates, not the journey to them; the fair journey is toll-31-fair.walk. The first Toll Gate is a
+# slab at x 20.2 to 20.7 (y 49.9 to 53.9) under a ceiling at y 55: unpaid, a jump from the ledge at x 16 lands against its face at x 19.96.
+card toll-31-geo60.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check start HK_GEO_WALLET == 60 ; HK_TOLL_STEP == 0 ; HK_TOLL_PAID == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+press up
+wait 20
+check box HK_TOLL_STEP == 1 ; HK_TOLL_OPENED == 1 ; HK_TOLL_PAID == 0
+press cross
+wait 10
+check paid HK_TOLL_STEP == 0 ; HK_TOLL_PAID == 50 ; HK_GEO_WALLET == 10
+wait 90
+hold right until x ge 15.2 timeout 300
+hold right+cross for 16
+hold right for 60
+wait 30
+check past-the-gate x between 21 32 ; y between 50.5 52.5 ; HK_DEATHS == 0 ; HK_CHEATS == 0

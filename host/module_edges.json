@@ -20,6 +20,11 @@
     "hk_psx::boss_bank::upload"
   ],
   [
+    "hk_psx::dialogue::prepare",
+    "toll",
+    "hk_psx::toll::live::prepare"
+  ],
+  [
     "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
     "aspid",
     "hk_psx::enemies::Actor::advance_aspid::world::terrain::EnemyWorld::tick::runner_event::frame::simulate"
@@ -198,6 +203,11 @@
     "hk_psx::frame::interact",
     "hornet_art",
     "hk_psx::enemies::hornet::convo_tick"
+  ],
+  [
+    "hk_psx::frame::interact",
+    "toll",
+    "hk_psx::toll::live::tick"
   ],
   [
     "hk_psx::frame::render",

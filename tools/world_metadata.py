@@ -27,6 +27,7 @@ BREAKABLES_PER_SCENE = 128
 GRASS_PER_SCENE = 1024
 MAX_FADE_TICKS = 1023  # ten flag bits
 LEVER_FLAG = 16  # a switch breakable (host/world_links.py)
+TOLL_FLAG = 32  # a Toll Machine's bit: a lever the nail leaves alone (game/src/toll.rs sets it)
 MAX_Q16 = 512 * 65536
 KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21}
 MAX_REVEAL_CONTROLLERS = 16
@@ -248,7 +249,9 @@ def encode_scene(scene, rows):
                 raise ValueError("lever hit polygon count outside 1..8")
             # The flag word's top ten bits are the wait between the hit and the bit (ticks).
             wait = bounded(record.get("open_ticks", 0), MAX_FADE_TICKS + 1, "lever wait")
-            flags = (1 if persistent_object(record) else 0) | LEVER_FLAG | wait << 6
+            # Flag 32: a Toll Machine's bit (host/world_links.py `toll_record`). The nail leaves it alone; the
+            # room's toll module sets it when the Geo is paid (game/src/toll.rs).
+            flags = (1 if persistent_object(record) else 0) | LEVER_FLAG | (TOLL_FLAG if record.get("toll") else 0) | wait << 6
             add_object("breakable", record, scene["scene_id"] * BREAKABLES_PER_SCENE + state, flags,
                        record["box"], "hit_polygons",
                        (index_list([], draw_count, "lever off draw"),

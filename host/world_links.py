@@ -52,9 +52,13 @@ import heapq
 from collections import Counter
 from pathlib import Path
 
+import language
+
 from breakables import _components, _state_actions as _authored_actions, collider_polygons, TERRAIN_LAYER
 
 SWITCH_FSM = 'Switch Control'
+TOLL_MACHINE_FSM = 'Toll Machine'
+TOLL_GATE_FSM = 'Toll Gate'
 GATE_FAMILIES = ('Pillar Control', 'Gate', 'Gate Control', 'Mantis Gate', 'Toll Gate')
 OBSERVER_COMPONENT = 'DeactivateIfPlayerdataTrue'
 HIT_EVENT = 'NAIL HIT'
@@ -316,6 +320,114 @@ def switch_record(sc, index, fsm, refusals):
             'gates': gates}
 
 
+TOLL_OPEN_EVENT = 'TOLL GATE OPEN'
+TOLL_REOPEN_EVENT = 'TOLL GATE OPENED'
+# Yes: `Pause Before Box Drop` waits 0.5 s, `Box Disappear Anim` 3.0 s, then `Open Gates` broadcasts.
+TOLL_WAIT_STATES = ('Pause Before Box Drop', 'Box Disappear Anim')
+
+
+def _literal_wait(fsm, name):
+    """Seconds of the one enabled literal `Wait` of state `name` (0 when it has none), or None.
+
+    The source's `Box Disappear Anim` holds a 3 s `Wait` that is disabled in the placed instances: that state
+    lasts the hero's `Box_disappear` clip, which is not modelled (the gates open 0.5 s after Yes).
+    """
+    from focus import action_parameters
+    state = next((s for s in fsm['states'] if s['name'] == name), None)
+    if state is None:
+        return None
+    data = state['actionData']
+    waits = [dict(action_parameters(data, i)).get('time') for i, n in enumerate(data['actionNames'])
+             if n.endswith('Wait') and data['actionEnabled'][i]]
+    if not waits:
+        return 0.0
+    if len(waits) != 1 or not isinstance(waits[0], dict) or waits[0].get('useVariable'):
+        return None
+    return float(waits[0]['value'])
+
+
+def _fsm_strings(fsm):
+    return {v['name']: v['value'] for v in fsm['variables']['stringVariables']}
+
+
+def toll_record(sc, source, info):
+    """The toll machines of one scene and the gates they open, as one link record, or None.
+
+    A `Toll Machine` takes Geo at a Yes/No box and then broadcasts `TOLL GATE OPEN` to every FSM of
+    the scene (`Open Gates`, event target 4); every `Toll Gate` answers by playing its open clip and
+    destroying itself, and answers `TOLL GATE OPENED` (sent on load by a machine whose own persistent
+    bool is set) by destroying itself at once. So all the machines of a scene share the one bit that
+    removes all of its gates, and the port keeps one persistent bit for the group. The record is
+    shaped like a switch's, with `toll` holding what the guest's module needs (host/tolls.py): per
+    machine its range box (the trigger collider UP is answered in), its prompt marker, its price and its
+    question. A scene with machines but no gate (the Toll Machine Lift of Crossroads_49b) has none.
+    """
+    machines = []
+    gates = []
+    for index, (kind, tree) in sorted(sc.objects.items()):
+        if kind != 'PlayMakerFSM':
+            continue
+        gid = tree['m_GameObject']['m_PathID']
+        if gid not in sc.gos or not sc.active(gid):
+            continue
+        if tree['fsm']['name'] == TOLL_MACHINE_FSM:
+            machines.append((index, gid, tree['fsm']))
+        elif tree['fsm']['name'] == TOLL_GATE_FSM:
+            gates.append(gid)
+    if not machines or not gates:
+        return None
+    states = {s['name'] for _, _, fsm in machines for s in fsm['states']}
+    if not {'Send Text', 'Yes', 'No', 'Open Gates', 'Activated?', *TOLL_WAIT_STATES} <= states:
+        raise Refused('toll machine states are not the ones this pass walks')
+    refusals = []
+    bound = []
+    for gid in sorted(gates):
+        try:
+            bound.append(gate_target(sc, gid, {TOLL_OPEN_EVENT}, {TOLL_REOPEN_EVENT}, None))
+        except Refused as error:
+            refusals.append({'switch': f'{_file(sc)}:{gid}', 'scene': info['scene_name'], 'reason': str(error),
+                             'target': sc.gos[gid]['m_Name']})
+    if refusals or not bound:
+        raise Refused('toll gate this pass cannot open: ' + '; '.join(r['reason'] for r in refusals))
+    prices = language.sheet(source, 'Prices')
+    prompts = language.sheet(source, 'Prompts')
+    waits = set()
+    described = []
+    for index, gid, fsm in machines:
+        strings = _fsm_strings(fsm)
+        triggers = _colliders(sc, gid, solid=False)
+        if not triggers:
+            raise Refused('toll machine has no range trigger')
+        polygons = [polygon for _, k, tree in triggers for polygon in collider_polygons(sc, gid, k, tree)]
+        marker = [m for m in _descendants(sc, gid) if sc.gos[m]['m_Name'] == 'Prompt Marker']
+        if len(marker) != 1:
+            raise Refused('toll machine without one Prompt Marker')
+        x, y, _ = sc.point(marker[0])
+        name = strings['Price String Name']
+        wait = 0.0
+        for state in TOLL_WAIT_STATES:
+            seconds = _literal_wait(fsm, state)
+            if seconds is None:
+                raise Refused(f'toll machine {state} is not a plain wait')
+            wait += seconds
+        waits.add(round(wait, 3))
+        described.append({
+            'source': f'{_file(sc)}:{index}', 'game_object': f'{_file(sc)}:{gid}',
+            'box': _box(polygons), 'polygons': polygons, 'marker': [x, y],
+            'price': int(prices[name]), 'price_name': name,
+            'question': prompts[strings['Prompt Convo']], 'question_key': strings['Prompt Convo'],
+            'persistence': _persistence(sc, gid)})
+    if len(waits) != 1:
+        raise Refused('toll machines wait differently')
+    first = described[0]
+    polygons = [p for d in described for p in d['polygons']]
+    return {'source': first['source'], 'game_object': first['game_object'], 'name': 'Toll Machine',
+            'box': _box(polygons), 'hit_polygons': polygons,
+            'persistence': first['persistence'] or [{'dont_save': True, 'semi_persistent': False}],
+            'sets_playerdata': None, 'hit_delay_ticks': round(next(iter(waits)) * TICKS_PER_SECOND),
+            'family': TOLL_MACHINE_FSM, 'toll': {'machines': described}, 'gates': bound}
+
+
 def _components_gid(sc, index):
     return sc.objects[index][1]['m_GameObject']['m_PathID']
 
@@ -463,6 +575,16 @@ def postpack_links(report, source, scenes=None):
                 gate['scene_id'] = sid
             pending.append(record)
         try:
+            toll = toll_record(sc, source, info)
+        except Refused as error:
+            toll = None
+            refusals.append({'switch': f'{_file(sc)}:toll', 'scene': info['scene_name'], 'reason': str(error)})
+        if toll is not None:
+            toll.update(scene_id=sid, scene_name=info['scene_name'])
+            for gate in toll['gates']:
+                gate['scene_id'] = sid
+            pending.append(toll)
+        try:
             vines = vine_records(sc)
         except Refused as error:
             vines = []
@@ -499,9 +621,11 @@ def postpack_links(report, source, scenes=None):
     report['links'] = links
     report['link_observers'] = observed
     report['link_policy'] = {
-        'switches': sum(1 for r in links if r.get('family') != VINE_PLATFORM),
+        'switches': sum(1 for r in links if r.get('family') not in (VINE_PLATFORM, TOLL_MACHINE_FSM)),
+        'toll_machines': sum(len(r['toll']['machines']) for r in links if r.get('family') == TOLL_MACHINE_FSM),
         'vine_platforms': sum(1 for r in links if r.get('family') == VINE_PLATFORM),
-        'gates': sum(len(r['gates']) for r in links if r.get('family') != VINE_PLATFORM),
+        'gates': sum(len(r['gates']) for r in links if r.get('family') not in (VINE_PLATFORM, TOLL_MACHINE_FSM)),
+        'toll_gates': sum(len(r['gates']) for r in links if r.get('family') == TOLL_MACHINE_FSM),
         'observers': len(observed),
         'refused_targets_by_family': dict(sorted(Counter(
             r['reason'] for r in refusals if 'target' in r).items())),
@@ -542,7 +666,8 @@ def bindings_for(report, region, draw_sources, edge_sources):
                 levers.append(dict({key: link[key] for key in (
                     'source', 'name', 'box', 'hit_polygons', 'persistence', 'state_index')},
                     # The source's `Hit` wait, then the longest of its gates' own opening.
-                    open_ticks=link['hit_delay_ticks'] + max(g['delay_ticks'] for g in link['gates'])))
+                    open_ticks=link['hit_delay_ticks'] + max(g['delay_ticks'] for g in link['gates']),
+                    toll=link.get('family') == TOLL_MACHINE_FSM))
         for gate in link['gates']:
             if gate['scene_id'] == scene:
                 bind(link['source'], link['scene_id'], link['state_index'], gate)

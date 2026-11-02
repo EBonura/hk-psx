@@ -121,6 +121,9 @@ MODULES = {
     'shop': ('*6hk_psx4shop12presentation*',),
     'shaman': ('*6hk_psx6shaman4live4draw*',),
     'cornifer': ('*6hk_psx6mapper4live4tick*',),
+    # The Toll Machines' box (game/src/toll.rs): the range test, the Yes/No state and its drawing. Entry points are
+    # guarded by `modules::loaded(TOLL)`; the rooms that place a machine carry it (data/toll.rs).
+    'toll': ('*6hk_psx4toll4live4tick*', '*6hk_psx4toll4live7prepare*'),
     'crawler': _sim('crawler_fsm') + _actor('advance_crawler_fsm'),
     # The shared HKFSM03 runtime's action code (hk_sim::fsm3_*, one source file per PlayMaker action family). The
     # kernel itself is resident: the simulation runs on the 1 KiB scratchpad stack, where the stack guard refuses
@@ -187,6 +190,8 @@ if HORNET:
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
                 'cornifer': ('cornifer.rs', 'CORNIFER_SCENE'),
+                # Every scene that places a Toll Machine: one `Machine { scene: N,` row each.
+                'toll': ('toll.rs', r'Machine \{ scene: (\d+),'),
                 # The cocoon's scene is the `scene` field of its cooked `LIFE_SPEC`.
                 'lifeblood': ('lifeblood.rs', r'Spec\{\s*scene:(\d+)')}
 if HORNET:
@@ -266,8 +271,11 @@ def room_scenes():
     root = Path(__file__).resolve().parents[1] / 'data'
     for name, (file, const) in ROOM_MODULES.items():
         pattern = const if '(' in const else rf'pub const {const}:usize=(\d+);'
-        m = re.search(pattern, (root / file).read_text())
-        out.setdefault(int(m[1]), set()).add(name)
+        found = list(re.finditer(pattern, (root / file).read_text()))
+        if not found:
+            raise ValueError(f'{file} has no scene for the {name} module')
+        for m in found:
+            out.setdefault(int(m[1]), set()).add(name)
     return out
 
 

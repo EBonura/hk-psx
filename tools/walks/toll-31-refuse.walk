@@ -1,0 +1,27 @@
+name walk-toll-31-refuse
+title Fungus1_31's Toll Machine with 49 Geo: Yes is not selectable, No closes the box, nothing is taken and the gate still stops the Knight
+max_ticks 6000
+# Boots from tools/cards/toll-31-geo49.mcd (a seeded record: the left machine, 49 Geo, one short of the toll).
+card toll-31-geo49.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check start HK_GEO_WALLET == 49 ; HK_TOLL_STEP == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+press up
+wait 20
+check box-no-chosen HK_TOLL_STEP == 2 ; HK_TOLL_OPENED == 1
+press up
+wait 10
+check yes-not-selectable HK_TOLL_STEP == 2
+press cross
+wait 20
+check refused HK_TOLL_STEP == 0 ; HK_TOLL_PAID == 0 ; HK_GEO_WALLET == 49
+wait 60
+hold right until x ge 15.2 timeout 300
+hold right+cross for 16
+hold right for 60
+wait 30
+check still-before-the-gate x between 15 20.1 ; y between 50.5 52.5 ; HK_TOLL_PAID == 0 ; HK_GEO_WALLET == 49

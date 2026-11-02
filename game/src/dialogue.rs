@@ -201,12 +201,14 @@ pub fn open() -> bool {
     }
     (unsafe { STATE.open() || CONVO.open() })
         || crate::mapper::open()
+        || crate::toll::open()
         || crate::game_map::open()
         || crate::shaman::open()
 }
 pub fn consumes_actions() -> bool {
     (unsafe { STATE.consumes_actions() || CONVO.consumes_actions() })
         || crate::mapper::consumes_actions()
+        || crate::toll::consumes_actions()
         || crate::game_map::open()
         || crate::shaman::consumes_actions()
 }
@@ -222,6 +224,7 @@ pub fn cancel() {
         HK_NPC_PAGE = 0;
     }
     crate::mapper::cancel();
+    crate::toll::cancel();
     crate::game_map::cancel();
     crate::shaman::cancel();
 }
@@ -236,6 +239,7 @@ pub fn reset() {
         HK_NPC_PAGE = 0;
     }
     crate::mapper::cancel();
+    crate::toll::cancel();
     crate::game_map::cancel();
     publish_cursors();
 }
@@ -591,6 +595,7 @@ pub fn prepare(
         } else if let Some(id) = CONVO.active {
             panel(NPC_LINES[id].conversations[CONVO.entry].pages, CONVO.page);
         } else if crate::mapper::prepare(camera, geo) {
+        } else if crate::modules::loaded(crate::modules::TOLL) && crate::toll::prepare(camera, geo) {
         } else if crate::shaman::prepare(camera) {
         } else if closing() {
         } else if let Some(id) = STATE.prompt {
@@ -687,6 +692,7 @@ pub(crate) fn panel_up(save_ui: crate::save_ui::Ui) -> bool {
         || save_ui != crate::save_ui::Ui::Idle
         || unsafe { STATE.active.is_some() || CONVO.active.is_some() }
         || crate::mapper::open()
+        || crate::toll::open()
         || crate::shaman::open()
 }
 /// The one text panel, shared by a tablet and an NPC conversation (and, through `panel_box`, by
@@ -1048,6 +1054,7 @@ pub(crate) fn prompt_up() -> bool {
         STATE.prompt.is_some()
             || CONVO.prompt.is_some()
             || crate::mapper::prompting()
+            || crate::toll::prompting()
             || crate::pickups::prompt().is_some()
             || (!PROMPT.1.is_empty()
                 && psx_rt::interrupts::vblank_count().wrapping_sub(PROMPT.3) <= PROMPT_OUT + 2)
