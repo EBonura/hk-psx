@@ -2493,7 +2493,7 @@ impl Actor {
     ) {
         if self.health.dead {
             if let (Some(corpse), Some(corpse_spec)) = (&mut self.corpse, spec.corpse) {
-                corpse.tick(corpse_spec, count, &edge);
+                corpse.tick(*corpse_spec, count, &edge);
             }
             // `End Wait` runs after the boss's death event, so the arena has to
             // keep counting for the two seconds the source waits before BG OPEN.
@@ -6646,7 +6646,7 @@ impl EnemyWorld {
                             );
                             if let Some(corpse_spec) = spec.corpse {
                                 let mut corpse = hk_sim::Corpse::spawn(
-                                    corpse_spec,
+                                    *corpse_spec,
                                     actor.x,
                                     actor.y,
                                     nail.kind,
@@ -7042,7 +7042,7 @@ impl EnemyWorld {
                     continue;
                 }
                 (
-                    corpse.clip(corpse_spec),
+                    corpse.clip(*corpse_spec),
                     corpse.animation_tick,
                     (corpse.x, corpse.y),
                     corpse.facing,
@@ -8354,7 +8354,7 @@ mod runner_runtime_tests {
         },
         walk_clip: 0,
         turn_clip: 1,
-        corpse: Some(hk_sim::CorpseSpec {
+        corpse: Some(&hk_sim::CorpseSpec {
             air_clip: 2,
             land_clip: 2,
             bounds: [-ONE / 2, -ONE, ONE / 2, 0],

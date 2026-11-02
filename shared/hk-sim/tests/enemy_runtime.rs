@@ -1347,7 +1347,7 @@ fn lethal_hit_replaces_live_actor_with_persistent_nondamaging_source_corpse() {
             health: 5,
             ..SPEC.health
         },
-        corpse: Some(CorpseSpec {
+        corpse: Some(&CorpseSpec {
             air_clip: 0,
             land_clip: 0,
             bounds: SPEC.bounds,
@@ -1421,7 +1421,7 @@ const EGG_SAC: ActorSpec = ActorSpec {
         turn_ticks: 0,
         turn_cooldown_ticks: 0,
     },
-    corpse: Some(CorpseSpec {
+    corpse: Some(&CorpseSpec {
         air_clip: 0,
         land_clip: 0,
         bounds: [0; 4],

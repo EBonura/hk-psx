@@ -201,7 +201,7 @@ pub fn generated_corpse(record: Option<&Json>) -> Result<String> {
         ("spawn_offset", bracket(list(record, "spawn_offset")?)),
     ];
     Ok(format!(
-        "Some(hk_sim::CorpseSpec {{{}}})",
+        "Some(&hk_sim::CorpseSpec {{{}}})",
         fields
             .iter()
             .map(|(k, v)| format!("{k}:{v}"))

@@ -219,7 +219,7 @@ pub struct ActorSpec {
     pub walk: WalkParams,
     pub walk_clip: u16,
     pub turn_clip: u16,
-    pub corpse: Option<crate::CorpseSpec>,
+    pub corpse: Option<&'static crate::CorpseSpec>,
     pub recoil_speed: i32,
     pub recoil_ticks: u16,
     /// SOUL a Dream Nail slash takes from this actor, once. Zero where the
@@ -230,9 +230,10 @@ pub struct ActorSpec {
 // so a controller variant wider than the widest one already here grows every
 // type in the world at once rather than only its own family. That is the cost
 // worth holding, and it is easier to hold here than to rediscover from a link
-// map later.
+// map later. The corpse is a reference (60 distinct specs serve 88 actors; the linker merges the equal
+// constants), which took the spec from 152 to 108 bytes.
 const _: () = assert!(
-    core::mem::size_of::<ActorSpec>() == 152,
+    core::mem::size_of::<ActorSpec>() == 104 + core::mem::size_of::<usize>(),
     "a wider actor spec costs its difference times every enemy type in the world"
 );
 

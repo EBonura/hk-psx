@@ -484,7 +484,7 @@ def generated_corpse(record):
     fields['remove_after_land']=int(record.get('remove_after_land',0))
     fields['hold_ticks']=int(record.get('hold_ticks',0))
     fields.update({k:'['+','.join(map(str,record[k]))+']'for k in ('bounds','spawn_offset')})
-    return 'Some(hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
+    return 'Some(&hk_sim::CorpseSpec {'+','.join(f'{k}:{v}'for k,v in fields.items())+'})'
 
 def append_grass_impact_art(source,scene,atlas,frames,clips):
     """Original shared Slash Impact clip family; static so bursts do not pin LRU slots."""
