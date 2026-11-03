@@ -18,6 +18,10 @@ FSM_SHA256 = '73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2'
 LEAP_FSM_SHA256 = '15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47'
 LEAP_CLIPS = {'Idle': (6, 12, 0), 'Walk': (7, 12, 0), 'Turn': (2, 10, 2), 'Attack': (11, 12, 2), 'Land': (2, 15, 2),
               'Death Air': (1, 30, 6), 'Death Land': (8, 12, 2)}
+# Fungus Zombie Attack (Mossman_Shaker): the same Walker with a gas attack instead of the swipe.
+GAS_FSM_SHA256 = 'cc88d8649e57979e517d3e38d7107434319755ed316f9c54ba7eec5d19e28aa9'
+GAS_CLIPS = {'Idle': (5, 12, 0), 'Walk': (10, 12, 0), 'Turn': (2, 12, 2), 'Attack': (8, 15, 1), 'Attack End': (1, 30, 0),
+             'Death Air': (3, 12, 2), 'Death Land': (4, 12, 1)}
 ASSEMBLY_SHA256 = 'e9048ef6a633970f735e01ec166d3959f610eaea7a88d827d48d67b1e5fb87bd'
 ASSEMBLIES = {'Assembly-CSharp.dll': ASSEMBLY_SHA256,
               'PlayMaker.dll': '0ef0e7829d125e1f632c8a189260ec6c6882630be6932c8c7ae032efbc53469a',
@@ -172,9 +176,9 @@ def driving_fsm(records):
     contract; exactly one movement FSM is.
     """
     matches = [data for _, typ, data in records
-               if typ == 'PlayMakerFSM' and data['fsm']['name'] in ('Zombie Swipe', 'Zombie Leap')]
+               if typ == 'PlayMakerFSM' and data['fsm']['name'] in ('Zombie Swipe', 'Zombie Leap', 'Fungus Zombie Attack')]
     if len(matches) != 1:
-        raise ValueError('Runner requires exactly one Zombie Swipe or Zombie Leap FSM')
+        raise ValueError('Runner requires exactly one Zombie Swipe, Zombie Leap or Fungus Zombie Attack FSM')
     return matches[0]
 
 
@@ -188,18 +192,32 @@ def recognize(sc, actor):
     variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
                  for v in group if isinstance(v, dict) and 'name' in v and 'value' in v and not isinstance(v['value'], dict)}
     leap = fsm.get('name') == 'Zombie Leap'
-    parameters = walker_parameters(walker, 1. if leap else variables.get('Lunge Speed'))
+    gas = fsm.get('name') == 'Fungus Zombie Attack'
+    parameters = walker_parameters(walker, 1. if leap or gas else variables.get('Lunge Speed'))
     # The serialized FSM embeds owner references, so the fingerprint covers its
     # structure and scalar parameters (states, transitions, enabled actions and
     # their fields, variables other than Lunge Speed).
     fingerprint = fsm_fingerprint(fsm)
-    if not fsm_component['m_Enabled'] or fingerprint != (LEAP_FSM_SHA256 if leap else FSM_SHA256):
+    if not fsm_component['m_Enabled'] or fingerprint != (GAS_FSM_SHA256 if gas else LEAP_FSM_SHA256 if leap else FSM_SHA256):
         raise ValueError('unverified Runner FSM variant')
     if leap:
         parameters['lunge_speed'] = 0.; parameters['lunge_velocity_q16'] = [0, 0]
         parameters['attack'] = {'kind': 'Leap', 'jump_speed_y': 20., 'jump_x_factor': 1.25, 'idle_time': variables.get('Idle Time')}
         if parameters['attack']['idle_time'] != .5:
             raise ValueError('unsupported Leaper idle time')
+    elif gas:
+        from focus import action_fields
+        parameters['lunge_speed'] = 0.; parameters['lunge_velocity_q16'] = [0, 0]
+        states = {s['name']: s['actionData'] for s in fsm['states']}
+        def wait(state, action):
+            data = states[state]
+            index = next(i for i, n in enumerate(data['actionNames']) if n.endswith('.' + action))
+            fields = action_fields(data, index)
+            return fields['timeMax' if action == 'WaitRandom' else 'time']['value']
+        # The pinned fingerprint covers these values; they are read, not assumed.
+        parameters['attack'] = {'kind': 'Gas', 'delay_ticks': ticks(wait('Attack Delay', 'WaitRandom')),
+                                'antic_ticks': ticks(wait('Attack Antic', 'Wait')), 'attack_ticks': ticks(wait('Attack', 'Wait')),
+                                'cd_ticks': ticks(wait('CD', 'Wait')), 'idle_ticks': ticks(wait('Idle Pause', 'Wait'))}
     else:
         parameters['attack'] = {'kind': 'Swipe'}
     for name, expected in ASSEMBLIES.items():
@@ -248,7 +266,7 @@ def recognize(sc, actor):
     if not animator['m_Enabled'] or animator['isRealtime']:
         raise ValueError('Runner requires enabled scaled-time animation')
     library = source.ref(sc.file, animator['library']); clips = source.read(library)['clips']
-    animation = clip_contract(clips, LEAP_CLIPS if leap else CLIPS)
+    animation = clip_contract(clips, GAS_CLIPS if gas else LEAP_CLIPS if leap else CLIPS)
     if leap:
         attack = next(c for c in clips if c['name'] == 'Attack')
         triggers = [i for i, frame in enumerate(attack['frames']) if frame.get('triggerEvent')]
@@ -261,9 +279,10 @@ def recognize(sc, actor):
     _, audio_source = _one(records, 'AudioSource')
     # Unity6 stores the assigned loop in m_Resource; m_audioClip is null here.
     loop = source.ref(sc.file, audio_source['m_Resource'])
-    anticipate = next(state for state in fsm['states'] if state['name'] == 'Anticipate')['actionData']
-    chase = [source.ref(sc.file, ref) for ref in anticipate['unityObjectParams']]
-    if len(chase) != 2 or any(obj.type.name != 'AudioClip' for obj in [loop, *chase]):
+    # The Shaker's tree plays its own one-shots (AudioPlaySimple, AudioPlayerOneShot); the swipe's chase pair is not its.
+    anticipate = next((state['actionData'] for state in fsm['states'] if state['name'] == 'Anticipate'), None)
+    chase = [] if gas else [source.ref(sc.file, ref) for ref in anticipate['unityObjectParams']]
+    if len(chase) != (0 if gas else 2) or any(obj.type.name != 'AudioClip' for obj in [loop, *chase]):
         raise ValueError('Runner audio references differ from the verified FSM')
     if leap:
         # The Leaper's random attack samples are not in the resident Runner bank;

@@ -41,7 +41,10 @@ def corpse_source(source, scene, actor):
     expected_bounce=.2 if runner or moss else .45 if climber else .3
     # Climber corpse (.hkpsx/climber70/references.json): Death Air loops eight
     # frames at 30 fps, Death Land holds three frames at 15 fps.
-    expected_timing=[(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,3),(12,2,2)]
+    # The Mossman_Shaker's `Corpse_Mossman_Shaker` is the Runner's launch with its own three-frame Death Air and a four-frame Death Land
+    # that loops from its second frame.
+    shaker=runner and actor.get('name','').startswith('Mossman_Shaker')
+    expected_timing=[(12,2,3),(12,1,4)] if shaker else [(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,3),(12,2,2)]
     components=list(_components(scene,actor['game_object']))
     deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
     if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
@@ -56,19 +59,21 @@ def corpse_source(source, scene, actor):
     # The Shield's own corpse is the same structure under its own name, which is
     # why it reads against the Runner's expectations at all.
     if runner and not (go['m_Name'].startswith('Corpse Zombie Basic ')
-                       or go['m_Name'] in ('Corpse Zombie Leaper','Corpse Zombie Shield')):
+                       or go['m_Name'] in ('Corpse Zombie Leaper','Corpse Zombie Shield') or shaker and go['m_Name']=='Corpse_Mossman_Shaker'):
         raise ValueError(f'unvalidated corpse prefab for controller: {kind} spawns {go["m_Name"]!r}')
     parts={}
     for ref in go['m_Component']:
         component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
         if typ in parts:raise ValueError('duplicate corpse component')
         parts[typ]=(component,source.read(component))
+    # The Shaker's corpse is a `CorpseFungusExplode`: the Corpse fields, with fungusExplode set (its spore burst on landing is not presented).
+    if shaker and 'Corpse' not in parts and 'CorpseFungusExplode' in parts:parts['Corpse']=parts['CorpseFungusExplode']
     required=('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','BoxCollider2D','ObjectBounce','Transform')
     if any(k not in parts for k in required):raise ValueError('incomplete corpse prefab')
     corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1];bounce=parts['ObjectBounce'][1]
     # resetRotation only matters for a rotated owner; the guest corpse is drawn
     # upright, which is what the reset produces for the Climber.
-    special=('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive')+(() if climber or moss else ('resetRotation',))
+    special=('breaker','bigBreaker','chunker','deathStun')+(() if shaker else ('fungusExplode',))+('goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive')+(() if climber or moss else ('resetRotation',))
     if any(corpse[k]for k in special):
         raise ValueError('unsupported special corpse')
     if corpse['landEffects']['m_PathID']:raise ValueError('unsupported additional corpse land effects')
@@ -83,12 +88,12 @@ def corpse_source(source, scene, actor):
     selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
     if runner and source.sid(library_o)!=actor['movement_control'].get('library_source'):raise ValueError('corpse animation library differs from the actor library')
     if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=expected_timing:raise ValueError('unvalidated corpse clip timing')
-    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+    if any(c.get('loopStart',0)!=(1 if shaker and c['name']=='Death Land' else 0) or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
         raise ValueError('unsupported corpse animation events/loop start')
     matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
     box=parts['BoxCollider2D'][1];off=box['m_Offset'];size=box['m_Size']
     if runner:
-        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper','ZombieShield'):
+        if not death['m_Enabled'] or death['playerDataName'] not in ('ZombieRunner','ZombieBarger','ZombieHornhead','ZombieLeaper','ZombieShield','MossmanShaker'):
             raise ValueError('unvalidated Runner corpse identity')
         # A mirrored placement is admitted (Crossroads_37's Leaper), so accept a
         # plain x mirror here too. sx/sy above already take the magnitude, and
