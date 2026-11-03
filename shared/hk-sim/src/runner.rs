@@ -832,8 +832,7 @@ impl Runner {
 const GAS_POLYGON: [[i32; 2]; 7] = [[-182559, 157479], [1475, 214480], [183672, 163632], [284184, 11905], [301355, -94436], [-296176, -93141], [-279846, 21562]];
 /// `Attack`'s `SetScale` 0.2 then `iTweenScaleTo` (1, 1, 1) over 0.4 s with easeOutCirc, per tick since the hit box went on: the
 /// scale less 0.2, Q16 (`0.2 + 0.8 * sqrt(1 - (1 - t) ^ 2)`, t = tick / 24).
-const GAS_GROWTH: [u16; 25] = GAS_GROWTH_TABLE;
-const GAS_GROWTH_TABLE: [u16; 25] = [0, 14976, 20953, 25382, 28981, 32032, 34678, 37008, 39078, 40927, 42584, 44071, 45405, 46598, 47661, 48603, 49430, 50149, 50764, 51278, 51695, 52018, 52246, 52383, 52429];
+const GAS_GROWTH: [u16; 25] = [0, 14976, 20953, 25382, 28981, 32032, 34678, 37008, 39078, 40927, 42584, 44071, 45405, 46598, 47661, 48603, 49430, 50149, 50764, 51278, 51695, 52018, 52246, 52383, 52429];
 /// The hit box's scale `age` ticks after it went on, Q16.
 pub fn gas_scale(age: u16) -> i32 {
     ONE / 5 + i32::from(GAS_GROWTH[usize::from(age.min(24))])
@@ -844,9 +843,11 @@ pub fn gas_polygon(age: u16, facing: i32, at: [i32; 2]) -> [[i32; 2]; 7] {
     let scale = gas_scale(age);
     let mirror = -facing.signum();
     let mut out = [[0; 2]; 7];
+    // Q16 times Q16 overflows a word: keep 12 bits of each (the cloud's edge is good to a 4096th of a unit) and a plain multiply.
+    let s = scale >> 4;
     for (o, p) in out.iter_mut().zip(GAS_POLYGON.iter()) {
-        o[0] = at[0] + mirror * psx_math::int32::mul_shr_i32(p[0], scale, 16);
-        o[1] = at[1] + psx_math::int32::mul_shr_i32(p[1], scale, 16);
+        o[0] = at[0] + mirror * (((p[0] >> 4) * s) >> 8);
+        o[1] = at[1] + (((p[1] >> 4) * s) >> 8);
     }
     out
 }
