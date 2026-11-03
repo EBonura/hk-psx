@@ -16,7 +16,6 @@ mod disc;
 mod earned_focus;
 mod intro;
 mod pacing;
-mod region_cache;
 mod repin;
 mod routes;
 mod scene_gate;
@@ -149,6 +148,10 @@ struct Options {
 
 /// The repository root: this package lives in host/hk-build.
 fn root() -> PathBuf {
+    // `cook --check` runs this same binary over a scratch clone of the checkout.
+    if let Some(other) = std::env::var_os("HK_BUILD_ROOT") {
+        return PathBuf::from(other).canonicalize().expect("HK_BUILD_ROOT");
+    }
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -356,6 +359,46 @@ fn code_fingerprint(root: &Path) -> Result<Value> {
     Ok(Value::Object(code))
 }
 
+/// What the Rust steps of the cook stage (the Mossman, Shaman runner and Hornet scene cookers, which run
+/// inside this binary after `host/regions.py`) depend on: the non-Python entries of `cook_inputs.txt` and
+/// the sources of those steps. Every Python dependency of the stage is recorded by the stage itself
+/// (`host/stagecache.py`), not listed here.
+fn rust_step_fingerprint(root: &Path) -> Result<Value> {
+    let mut code = serde_json::Map::new();
+    let listed = COOK_INPUTS
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.ends_with(".py"));
+    for line in listed.chain(RUST_COOK_STEPS.iter().copied()) {
+        code.insert(line.to_string(), Value::String(sha256_file(&root.join(line))?));
+    }
+    Ok(Value::Object(code))
+}
+
+/// Sources of the Rust steps `cook_cached` runs after the Python region cook (the rest of what they link
+/// is covered by the cook store key and the asset key, which hash the whole of `host/hk-cook`).
+const RUST_COOK_STEPS: [&str; 3] = [
+    "host/hk-cook/src/mossman_scene.rs",
+    "host/hk-cook/src/shaman_runner_scene.rs",
+    "host/hk-cook/src/hornet_scene.rs",
+];
+
+/// `python host/stagecache.py status regions`: Ok(digest of the stage record) when the region cook stage
+/// still describes the code and files on disk, Err(why) when it does not.
+fn region_stage_status(root: &Path) -> std::result::Result<String, String> {
+    let output = Command::new(venv_python(root))
+        .args(["host/stagecache.py", "status", "regions"])
+        .current_dir(root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if output.status.success() {
+        Ok(text)
+    } else {
+        Err(if text.is_empty() { String::from_utf8_lossy(&output.stderr).trim().to_string() } else { text })
+    }
+}
+
 /// Bind an interrupted region cook to every file in the selected retail data
 /// directory before any region is reused. The final provenance remains a
 /// separate completion record and is never synthesised here.
@@ -395,7 +438,6 @@ fn write_source_input_fingerprints(root: &Path, source: &Path) -> Result<Value> 
         "HK_SOURCE_FINGERPRINT_CHECKED",
         sha256_file(&root.join(".hkpsx/regions-source-inputs.json"))?,
     );
-    std::env::set_var("HK_REGION_CACHE_HELPER", std::env::current_exe()?);
     Ok(value)
 }
 
@@ -443,13 +485,21 @@ fn describe_stale(stale: &[String]) -> String {
 }
 
 /// Recook only when the Windows inputs, the cooker code or the generated outputs changed.
+///
+/// "The cooker code" is judged by what the last cook actually ran (host/stagecache.py): the stage record
+/// names every Python function it executed and every file it read, so an edit to code it never ran
+/// leaves the cook a hit. A miss runs `host/regions.py`, which finds each region unit's own receipt
+/// fresh or cooks it again (host/region_units.py). `force` ignores every receipt (HK_FORCE_COOK).
 fn cook_cached(root: &Path, force: bool) -> Result<()> {
     let provenance = root.join(".hkpsx/regions-provenance.json");
     let cache = root.join(".hkpsx/regions-cook-cache.json");
-    let code = code_fingerprint(root)?;
+    let code = rust_step_fingerprint(root)?;
     let source = selected_source(root)?;
     let source_inputs = write_source_input_fingerprints(root, &source)?;
     let source_manifest_sha256 = sha256_file(&root.join(".hkpsx/regions-source-inputs.json"))?;
+    if force {
+        std::env::set_var("HK_FORCE_COOK", "1");
+    }
     if !force && provenance.exists() && cache.exists() {
         let prov = read_json(&provenance)?;
         let old = read_json(&cache)?;
@@ -459,29 +509,40 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
         } else {
             None
         };
+        let stage = region_stage_status(root);
         if prov["source"].as_str() == source.to_str()
             && old["code"] == code
             && old["source_manifest_sha256"].as_str() == Some(&source_manifest_sha256)
+            && stage.as_ref().is_ok_and(|digest| old["stage"].as_str() == Some(digest.as_str()))
             && inputs_unchanged(&source, &prov)
             && stale.as_ref().is_some_and(Vec::is_empty)
         {
-            println!("Cook cache hit: source hashes and generated outputs match.");
+            println!("Cook cache hit: the cook's code, source hashes and generated outputs match.");
             return Ok(());
         }
-        match stale {
-            Some(stale) if !stale.is_empty() => println!("Cook cache miss: {}", describe_stale(&stale)),
-            Some(_) => println!("Cook cache miss: cooker code or retail source changed."),
-            None => println!("Cook cache miss: no record of the region report as the cook left it."),
+        match (stale, stage) {
+            (Some(stale), _) if !stale.is_empty() => println!("Cook cache miss: {}", describe_stale(&stale)),
+            (None, _) => println!("Cook cache miss: no record of the region report as the cook left it."),
+            (_, Err(why)) => println!("Cook cache miss: {why}"),
+            _ => println!("Cook cache miss: cooker code or retail source changed."),
         }
     }
-    python_step(root, "host/regions.py", region_cook_args(&provenance))?;
+    // Nothing that vouched for the last cook may outlive the files this one is about to rewrite.
+    std::fs::remove_file(&cache).ok();
+    run_python(root, &["host/stagecache.py", "forget", "regions"])?;
+    let mut args = vec!["host/stagecache.py", "run", "regions", "host/regions.py"];
+    args.extend_from_slice(region_cook_args(&provenance));
+    run_python(root, &args)?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
     // Hornet's sprite clips join Fungus1_04's banks once the scene is admitted (host/hk-cook hornet_scene.rs).
     hk_cook::hornet_scene::cook(root)?;
-    if source_input_fingerprints(&source)? != source_inputs || code_fingerprint(root)? != code {
+    if source_input_fingerprints(&source)? != source_inputs || rust_step_fingerprint(root)? != code {
         return Err("retail source or cooker code changed during region cook".into());
     }
+    // The stage record is only written by a run that finished and was judged fresh by its own record:
+    // a cook whose code changed while it ran (an edit mid-cook) leaves a record that is stale at once.
+    let stage = region_stage_status(root).map_err(|why| format!("the region cook stage is not fresh after it ran: {why}"))?;
     // The asset stage rewrites data/regions.json (the arena waves, see
     // `assets_cached`), so the cache can only vouch for the report as the region
     // cook left it: keep that copy and record it instead of the live file.
@@ -490,7 +551,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
     std::fs::write(
         &cache,
         serde_json::to_string_pretty(
-            &serde_json::json!({"code": code, "source_manifest_sha256": source_manifest_sha256, "outputs": outputs}),
+            &serde_json::json!({"code": code, "stage": stage, "source_manifest_sha256": source_manifest_sha256, "outputs": outputs}),
         )?,
     )?;
     Ok(())
@@ -2660,17 +2721,6 @@ fn main() {
                 std::process::exit(1);
             }
         }
-    }
-    if action == "region-cache-check" || action == "region-cache-record" {
-        let region = args.next().unwrap_or_else(|| usage());
-        if args.next().is_some() {
-            usage();
-        }
-        if let Err(error) = region_cache::run(&root(), &action, &region) {
-            eprintln!("error: {error}");
-            std::process::exit(1);
-        }
-        return;
     }
     let mut options = Options {
         hollow_knight: None,

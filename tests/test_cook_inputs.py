@@ -1,15 +1,9 @@
-"""host/cook_inputs.txt, which two readers parse differently on purpose.
+"""host/cook_inputs.txt: the cook store key and the Rust steps' inputs.
 
-The build (host/hk-build/main.rs) hashes every path in the file to decide
-whether to run the cook at all. host/regions.py hashes only the paths above the
-postpass divider to decide whether a single region can reuse its earlier pack.
-Both mistakes this arrangement allows are quiet: a postpass file left out of the
-file entirely means the whole-cook cache hits and the postpass never runs, and a
-postpass file listed above the divider recooks every region for a change that
-cannot alter one cooked byte.
-
-Neither reader strips a trailing comment, so an inline one turns the whole line
-into a path that does not exist.
+What a region or the cook stage recooks is decided by the code and files it actually ran
+(host/depcache.py), not by this list. The build (host/hk-build/main.rs) hashes every path for the cook
+store key and the non-Python ones for the Rust steps. It does not strip a trailing comment, so an
+inline one turns the whole line into a path that does not exist.
 """
 import sys, unittest
 from pathlib import Path
@@ -44,25 +38,14 @@ class CookInputsTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue((ROOT / path).is_file(), path)
 
-    def test_no_path_sits_in_both_sections(self):
+    def test_no_path_is_listed_twice(self):
         above, below = sections()
-        self.assertEqual(set(above) & set(below), set())
         self.assertEqual(len(above + below), len(set(above + below)))
 
-    def test_the_postpass_code_is_listed_but_not_hashed_per_region(self):
-        # These run after the per-region cook, over packs it already wrote.
+    def test_the_cook_tracking_files_are_listed_for_the_store_key(self):
         above, below = sections()
-        for path in ('host/regions.py', 'host/npc_sources.py', 'host/npc_dialogue.py',
-                     'host/npcs.py'):
-            self.assertIn(path, below)
-            self.assertNotIn(path, above)
-
-    def test_regions_agrees_with_this_parse(self):
-        # The real reader, not a second copy of the rule.
-        import regions
-        source = Path(regions.__file__).read_text()
-        self.assertIn(repr(DIVIDER), source,
-                      'host/regions.py must break on the same divider string')
+        for path in ('host/depcache.py', 'host/region_units.py', 'host/region_plan.py', 'host/stagecache.py'):
+            self.assertIn(path, above + below)
 
 
 if __name__ == '__main__':

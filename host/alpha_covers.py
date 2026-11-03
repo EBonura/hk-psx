@@ -67,10 +67,21 @@ def _cache():
         import atexit,json
         from pathlib import Path
         _CACHE_PATH=Path(__file__).resolve().parents[1]/'.hkpsx'/'alpha-covers-cache.json'
-        try:_CACHE.update(json.loads(_CACHE_PATH.read_text()))
+        try:_CACHE.update(_current(json.loads(_CACHE_PATH.read_text())))
         except (OSError,ValueError):pass
         atexit.register(_flush)
     return _CACHE
+
+_CODE_KEY='__code__'
+
+def _code_stamp():
+    """The digest of this file: a record is only as good as the cover code that made it."""
+    import hashlib
+    return hashlib.sha256(open(__file__,'rb').read()).hexdigest()
+
+def _current(stored):
+    """The records of `stored` when they were made by this file's code, else none."""
+    return {k:v for k,v in stored.items() if k!=_CODE_KEY} if stored.get(_CODE_KEY)==_code_stamp() else {}
 
 def _flush():
     if not _DIRTY:return
@@ -79,9 +90,10 @@ def _flush():
     # Parallel cook workers flush concurrently: merge what others wrote since
     # this process loaded the cache, and rename from a per-process temp file.
     merged={}
-    try:merged.update(json.loads(_CACHE_PATH.read_text()))
+    try:merged.update(_current(json.loads(_CACHE_PATH.read_text())))
     except (OSError,ValueError):pass
     merged.update(_CACHE)
+    merged[_CODE_KEY]=_code_stamp()
     temp=_CACHE_PATH.with_suffix(f'.{os.getpid()}.tmp');temp.write_text(json.dumps(merged,separators=(',',':')));temp.replace(_CACHE_PATH)
 
 def compute_record(width,height,palette,pixels):
