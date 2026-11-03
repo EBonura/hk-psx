@@ -487,6 +487,14 @@ fn scan_with(
                         false
                     }
                 });
+            // The Shaker (Gas) plays none of the Runner banks' sounds, so it shares a room with either family.
+            let gas = fields.iter().find(|(k, _)| k == "parameters").is_some_and(|(_, p)| {
+                matches!(p, Json::Obj(p) if p.iter().any(|(k, a)| k == "attack"
+                    && matches!(a, Json::Obj(a) if a.iter().any(|(k, v)| k == "kind" && *v == Json::Str("Gas".into())))))
+            });
+            if gas {
+                continue;
+            }
             mossman |= calm;
             ordinary |= !calm;
         }

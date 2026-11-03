@@ -347,6 +347,15 @@ pub(crate) fn generated_actor_records_with_bounds(
                         py_round(num(need(attack, "jump_x_factor")?)? * 65536.0),
                         ticks(num(need(attack, "idle_time")?)?)
                     )
+                } else if cj(attack, "kind") == Some(&Json::Str("Gas".into())) {
+                    format!(
+                        "hk_sim::runner::Attack::Gas {{delay:{},antic_ticks:{},attack_ticks:{},cd_ticks:{},idle_ticks:{}}}",
+                        num(need(attack, "delay_ticks")?)?.trunc() as i64,
+                        num(need(attack, "antic_ticks")?)?.trunc() as i64,
+                        num(need(attack, "attack_ticks")?)?.trunc() as i64,
+                        num(need(attack, "cd_ticks")?)?.trunc() as i64,
+                        num(need(attack, "idle_ticks")?)?.trunc() as i64
+                    )
                 } else if cj(attack, "kind") == Some(&Json::Str("SwipeCalm".into())) {
                     "hk_sim::runner::Attack::SwipeCalm".to_string()
                 } else if cj(attack, "kind") == Some(&Json::Str("Swipe".into())) {
