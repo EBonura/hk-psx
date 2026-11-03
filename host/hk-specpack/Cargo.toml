@@ -1,0 +1,16 @@
+# Writes every scene's spec chunk (the ActorSpec/CorpseSpec wire form, shared/hk-sim/src/wire.rs) and
+# data/scene_specs.rs. Its own workspace, like hk-sim: host/hk-build extracts the generated spec
+# statics from data/regions.rs into $HK_SPECPACK_SRC/scene_actors.rs, which this crate compiles in
+# (include!), so the cooker's Rust text stays the one definition of a spec and rustc is its parser.
+[package]
+name = "hk-specpack"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+hk-sim = { path = "../../shared/hk-sim" }
+
+[profile.release]
+codegen-units = 1

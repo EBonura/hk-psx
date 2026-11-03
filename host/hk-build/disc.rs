@@ -85,6 +85,8 @@ pub struct Plan {
     /// The boot's own code chunks (the title's, modules.rs `BOOT_CODE_CHUNKS`).
     pub boot_ids: Vec<usize>,
     pub data_ids: Vec<usize>,
+    /// The scene spec chunks (scene_specs.rs), by manifest scene, numbered after the stream tails.
+    pub spec_ids: Vec<usize>,
 }
 
 /// WORLD.PAK chunk ids in disc order, which is read order rather than kind.
@@ -153,6 +155,9 @@ pub fn disc_order(p: &Plan) -> Result<Vec<usize>> {
                 order.push(atlas_base + i + 1);
             }
         }
+        // The scene's enemy types come before the scene chunk, so the split windows (everything but the scene and
+        // its metadata, then those two) keep their shape and a prefetch holds the specs with the atlases.
+        order.push(*p.spec_ids.get(index).ok_or("one spec chunk per manifest scene")?);
         order.extend([int(room, "chunk_id")?, int(bank, "chunk_id")?]);
         order.extend(p.art_ids.iter().filter(|c| c.1 == index).map(|c| c.0));
         // The stream tail follows the group (and its art), so the gate's own reads never reach it.
@@ -346,6 +351,19 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
             tail_ids.push((id, index));
         }
     }
+    // One spec chunk per manifest scene, after the tails (data/scene-specs, host/hk-build/scene_specs.rs).
+    let mut spec_ids = Vec::new();
+    let spec_base = menu_id + 1 + list(modules, "chunks")?.len() + tail_ids.len();
+    for (i, room) in rooms.iter().enumerate() {
+        let id = spec_base + i;
+        copy(
+            &root
+                .join("data/scene-specs")
+                .join(format!("scene_{}.hkspec", int(room, "scene_id")?)),
+            &chunks.join(format!("chunk_{id}.spec")),
+        )?;
+        spec_ids.push(id);
+    }
     Ok(Plan {
         rooms,
         clips: nc,
@@ -362,6 +380,7 @@ fn stage(root: &Path, chunks: &Path, modules: &Value) -> Result<Plan> {
         tail_ids,
         boot_ids,
         data_ids,
+        spec_ids,
     })
 }
 
@@ -592,6 +611,7 @@ mod tests {
             tail_ids: Vec::new(),
             boot_ids: Vec::new(),
             data_ids: Vec::new(),
+            spec_ids: vec![80, 81],
         }
     }
 
@@ -627,10 +647,10 @@ mod tests {
     }
 
     #[test]
-    fn a_scene_group_is_sfx_coverage_effects_scene_metadata() {
+    fn a_scene_group_is_sfx_coverage_effects_specs_scene_metadata() {
         let order = disc_order(&plan()).unwrap();
         let at = order.iter().position(|&c| c == 50).unwrap();
-        assert_eq!(order[at..at + 5], [50, 10, 36, 1, 20]);
+        assert_eq!(order[at..at + 6], [50, 10, 36, 80, 1, 20]);
     }
 
     #[test]
@@ -663,6 +683,9 @@ mod tests {
         assert!(disc_order(&p).is_err());
         let mut p = plan();
         p.scene_sfx_ids.pop();
+        assert!(disc_order(&p).is_err());
+        let mut p = plan();
+        p.spec_ids.pop();
         assert!(disc_order(&p).is_err());
     }
 }

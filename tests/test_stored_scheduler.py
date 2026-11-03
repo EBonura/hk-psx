@@ -309,6 +309,7 @@ impl Cache{
  }
  // The room's code chunk heads its group; this harness's rooms carry none.
  fn prepare_code(&mut self,_wanted:usize,_:Stage)->Result<(),LoadError>{Ok(())}
+ fn prepare_specs(&mut self,_wanted:usize,_:Stage)->Result<(),LoadError>{Ok(())}
  // The scene's one-shot bank heads its group and is uploaded before any decode.
  fn prepare_scene_sfx(&mut self,_wanted:usize,_:Stage)->Result<(),LoadError>{
   assert_eq!(self.loaded_scenes,0,"the scene sound bank stages before any scene owns the arena");Ok(())

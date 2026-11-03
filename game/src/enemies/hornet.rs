@@ -351,7 +351,10 @@ pub fn convo_prepare() -> bool {
         // The conversation box's line pitch.
         const ROW: i16 = 16;
         let y = panel_box(HORNET_ITEM.len() as i16);
-        for (i, line) in HORNET_ITEM.iter().enumerate() {
+        // black_box: the compiler would otherwise fold the four lines into immediate string addresses, and the SDK
+        // overlay tool pairs a hoisted `lui` in a branch delay slot with the wrong `addiu`, so whether it passes its
+        // `.data` bounds check would depend on where the linked data ends (docs/SCENE-SPECS.md, hk-resident 11-03).
+        for (i, line) in core::hint::black_box(HORNET_ITEM).iter().enumerate() {
             panel_text(160 - panel_width(line) / 2, y + i as i16 * ROW, line);
         }
         return true;

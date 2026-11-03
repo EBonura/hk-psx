@@ -69,7 +69,8 @@ const LANE_STATE: &[&str] = &[
 ];
 
 /// Generated after the asset cache is stamped; the asset cache does not vouch for them.
-const WRITTEN_AFTER_CACHES: &[&str] = &["boot-art.hk", "boot_art.rs", "intro.exe"];
+const WRITTEN_AFTER_CACHES: &[&str] =
+    &["boot-art.hk", "boot_art.rs", "intro.exe", "scene_specs.rs", "regions_guest.rs"];
 
 /// An object younger than this is never collected (a publish writes objects before its manifest).
 const GC_GRACE_SECONDS: u64 = 3600;
@@ -173,7 +174,7 @@ fn in_scope(rel: &str) -> bool {
         return false;
     }
     let name = rel.rsplit('/').next().unwrap_or(rel);
-    !(name.ends_with(".tmp") || WRITTEN_AFTER_CACHES.contains(&name))
+    !(name.ends_with(".tmp") || name.ends_with(".hkspec") || WRITTEN_AFTER_CACHES.contains(&name))
 }
 
 /// Every file of a snapshot's scope present under `root`, repo-relative and sorted.

@@ -126,7 +126,14 @@ const fn head_len(scene: usize) -> usize {
         None => SCENE_MANIFEST[scene].raw_len,
     }
 }
-const TOTAL_CHUNKS: usize = PACK_CHUNKS + TAIL_COUNT;
+/// One spec chunk per manifest scene (spec_pool.rs): the scene's `ActorSpec`s and `CorpseSpec`s, filed in its
+/// group just before the scene chunk and numbered after the stream tails.
+const SPEC_INDEX: usize = TAIL_INDEX + TAIL_COUNT;
+const TOTAL_CHUNKS: usize = SPEC_INDEX + SCENE_COUNT;
+/// Whether the chunk carries its own checksum (a spec chunk: its length is the cook's constant, its hash in its frame).
+const fn self_checked(index: usize) -> bool {
+    index >= SPEC_INDEX && index < TOTAL_CHUNKS
+}
 /// The payloads sit on the disc in the order they are read, not by kind.
 /// Group 0 is boot's, in its read order: the world bank, the title's code and the title art
 /// (all before the title), then bootstrap's SFX bank, Focus bank, Geo and Runner banks; then the ambience clips, which a scene gate reads
@@ -169,7 +176,7 @@ const fn group_len(group: usize) -> usize {
     } else if group == DATA_GROUP {
         crate::modules::DATA_CHUNKS
     } else {
-        5 + scene_atlases(group - 1) + code_slots(group - 1) + art_slots(group - 1) + tail_slots(group - 1)
+        6 + scene_atlases(group - 1) + code_slots(group - 1) + art_slots(group - 1) + tail_slots(group - 1)
     }
 }
 /// The members a gate stages: the whole group but its art chunk, which is
@@ -228,6 +235,8 @@ const fn member(group: usize, j: usize) -> usize {
     } else if j < 3 + atlases {
         ATLAS_INDEX + SCENE_ATLAS_RANGES[scene].0 as usize + j - 3
     } else if j == 3 + atlases {
+        SPEC_INDEX + scene
+    } else if j == 4 + atlases {
         scene
     } else {
         METADATA_INDEX + scene
@@ -236,7 +245,7 @@ const fn member(group: usize, j: usize) -> usize {
 /// The inverse of `member`: which group a chunk index is filed in, and where.
 fn group_of(index: usize) -> Option<(usize, usize)> {
     let (group, j) = if index < SCENE_COUNT {
-        (1 + index, 3 + scene_atlases(index))
+        (1 + index, 4 + scene_atlases(index))
     } else if index < ATLAS_INDEX {
         (0, 8 + index - SCENE_COUNT)
     } else if index < FOCUS_INDEX {
@@ -248,7 +257,7 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         (1 + index - COVERAGE_INDEX, 1)
     } else if index < EFFECT_INDEX {
         let s = index - METADATA_INDEX;
-        (1 + s, 4 + scene_atlases(s))
+        (1 + s, 5 + scene_atlases(s))
     } else if index < BANK_INDEX {
         // Effect art is filed by scene id, the groups by manifest index.
         let id = index - EFFECT_INDEX;
@@ -294,9 +303,11 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
         } else {
             (g, group_len(g) - 1 - tail_slots(g - 1))
         });
-    } else if index < TOTAL_CHUNKS {
+    } else if index < SPEC_INDEX {
         let g = 1 + tail_scene(index - TAIL_INDEX);
         return Some((g, group_len(g) - 1));
+    } else if index < TOTAL_CHUNKS {
+        (1 + index - SPEC_INDEX, 3 + scene_atlases(index - SPEC_INDEX))
     } else {
         return None;
     };
@@ -575,10 +586,13 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
     } else if index < PACK_CHUNKS {
         let (len, fnv) = crate::modules::disc_spec(index - CODE_INDEX);
         (len, fnv, SCENE_ARENA_BYTES)
-    } else if index < TOTAL_CHUNKS {
+    } else if index < SPEC_INDEX {
         // The stream tail lands in its scene's gap, whole sectors, as it is stored.
         let d = &SCENE_SPLITS[index - TAIL_INDEX];
         (d.gap_len, d.tail_stored_fnv, d.gap_len)
+    } else if index < TOTAL_CHUNKS {
+        // The cook pads every spec chunk to the same length; its checksum is in its frame.
+        (crate::spec_pool::CHUNK_BYTES, 0, SCENE_ARENA_BYTES)
     } else {
         return None;
     })
@@ -1065,7 +1079,7 @@ impl Cache {
                     || group_of(i) != Some((group, j))
                     || e.chunk_id as usize != i + 1
                     || e.byte_size as usize != size
-                    || (!word_hashed(i) && e.checksum != checksum)
+                    || (!word_hashed(i) && !self_checked(i) && e.checksum != checksum)
                     || e.sector_offset as usize != next
                     || e.sector_count as usize != size.div_ceil(SECTOR_BYTES)
                 {
@@ -1250,8 +1264,8 @@ impl Cache {
             } else if (EFFECT_INDEX..BANK_INDEX).contains(&index) {
                 (EFFECT_ART_MANIFEST[index - EFFECT_INDEX].raw_len, 0)
             }
-            // The scene's one-shot bank is uploaded as it lies, never decoded.
-            else if (SCENE_SFX_INDEX..PACK_CHUNKS).contains(&index) {
+            // The scene's one-shot bank is uploaded as it lies, never decoded; so is its spec chunk.
+            else if (SCENE_SFX_INDEX..PACK_CHUNKS).contains(&index) || self_checked(index) {
                 (0, 0)
             } else {
                 return false;
@@ -2024,6 +2038,25 @@ impl Cache {
         crate::scene_sfx::upload(id, bytes);
         Ok(())
     }
+    /// The scene's enemy types (spec_pool.rs), the group's chunk before the scene: decoded into the pool
+    /// from the bytes where they landed, before any decode reuses them.
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
+    fn prepare_specs(&mut self, scene: usize, st: Stage) -> Result<(), LoadError> {
+        let (end, input) = self.stage(SPEC_INDEX + scene, st, 0)?;
+        let len = crate::spec_pool::CHUNK_BYTES;
+        if end < input + len {
+            return Err(LoadError::RoomMismatch);
+        }
+        let bytes = unsafe {
+            core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(input), len)
+        };
+        if crate::spec_pool::load(SCENE_MANIFEST[scene].scene_id as usize, bytes) {
+            Ok(())
+        } else {
+            Err(LoadError::RoomMismatch)
+        }
+    }
     /// The scene's code modules (modules.rs): resident already when the
     /// prefetch let them install while the Knight walked here; otherwise
     /// installed now from the group's first chunk. Nothing of the outgoing
@@ -2522,6 +2555,7 @@ impl Cache {
             self.preloaded = wanted as u16;
             return Ok(());
         }
+        self.prepare_specs(wanted, st)?;
         while self.loaded_scenes < if SCENE_GATE_LOAD { 1 } else { SCENE_COUNT } {
             let index = if SCENE_GATE_LOAD {
                 wanted
@@ -3672,6 +3706,10 @@ pub fn preverify_step(mut budget: usize) {
         };
         // Hash member j only if the prefetch holds all of it.
         let sectors = size.div_ceil(SECTOR_BYTES);
+        if self_checked(member(g, v.j)) {
+            v.next(sectors);
+            continue;
+        }
         if v.first < p.skip || v.first + sectors > p.skip + p.sectors {
             v.next(sectors);
             continue;
