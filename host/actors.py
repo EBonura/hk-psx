@@ -766,7 +766,10 @@ def generated_actor_records(region):
                 raise ValueError(f'Runner is missing validated corpse: {actor["source"]}')
             p = control['parameters']
             attack = p.get('attack', {'kind': 'Swipe'})
-            if attack['kind'] == 'Leap':
+            if attack['kind'] == 'Gas':
+                attack_text = (f'hk_sim::runner::Attack::Gas {{delay:{attack["delay_ticks"]},antic_ticks:{attack["antic_ticks"]},'
+                               f'attack_ticks:{attack["attack_ticks"]},cd_ticks:{attack["cd_ticks"]},idle_ticks:{attack["idle_ticks"]}}}')
+            elif attack['kind'] == 'Leap':
                 attack_text = (f'hk_sim::runner::Attack::Leap {{trigger_ticks:{int(attack["trigger_ticks"])},jump_speed_y:{round(attack["jump_speed_y"] * 65536)},'
                                f'jump_x_factor:{round(attack["jump_x_factor"] * 65536)},idle_ticks:{ticks(attack["idle_time"])}}}')
             else:

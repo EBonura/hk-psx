@@ -381,6 +381,10 @@ def append_actor_art(s,sc,actors,atlas,frames,clips):
                 # Leaper: the Attack clip anticipates and keeps playing through the
                 # jump (lunge slot), Land is the cooldown clip.
                 bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack','lunge':'Attack','cooldown':'Land'}
+            elif control['parameters'].get('attack',{}).get('kind')=='Gas':
+                # Shaker: the Attack clip plays from the antic to the idle pause; Attack End is the clip the FSM never plays
+                # on the Walker's own cycle, bound to the unused lunge and cooldown slots with it.
+                bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack','lunge':'Attack','cooldown':'Attack'}
             else:
                 bindings={'walk':'Walk','turn':'Turn','idle':'Idle','anticipate':'Attack Anticipate',
                           'lunge':'Attack Lunge','cooldown':'Attack Cooldown'}
