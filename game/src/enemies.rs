@@ -1668,6 +1668,21 @@ impl Actor {
             None
         }
     }
+    /// The Shaker's gas hit box: ticks since it went on while it is on.
+    fn gas_age(&self) -> Option<u16> {
+        match &self.runtime {
+            Runtime::Runner(r) => r.controller.gas_age(),
+            _ => None,
+        }
+    }
+    /// The gas hit box in the world (see `hk_sim::runner::gas_polygon`).
+    fn gas_polygon(&self, age: u16) -> [[i32; 2]; 7] {
+        let facing = match &self.runtime {
+            Runtime::Runner(r) => r.controller.facing(),
+            _ => -1,
+        };
+        hk_sim::runner::gas_polygon(age, facing, [self.x, self.y])
+    }
     /// A compact-tier family actor whose module and action code are resident. Every resident site asks this one
     /// copy; everything else about the tier is code in the `actor_fsm` module, so a new family adds nothing here.
     #[inline(never)]
@@ -5039,6 +5054,8 @@ impl Actor {
                     }
                     continue;
                 }
+                // The Shaker's footsteps are its own clip, in neither Runner bank: it walks silently.
+                Action::AudioStop | Action::AudioPlay if matches!(runner.controller.attack_kind(), hk_sim::runner::Attack::Gas { .. }) => continue,
                 Action::AudioStop => RunnerEventKind::AudioStop,
                 Action::AudioPlay => if runner.controller.attack_kind()==hk_sim::runner::Attack::SwipeCalm {RunnerEventKind::MossmanAudioPlay}else{RunnerEventKind::AudioPlay},
                 Action::ChaseSound => {
@@ -6857,6 +6874,16 @@ impl EnemyWorld {
                         damage = hk_sim::husk_guard::SWIPE_DAMAGE;
                         swipe_tick = u32::from(elapsed) + 1;
                     }
+                }
+            }
+            // The Shaker's gas: while the hit box is on its DamageHero (1) hurts through the cloud's polygon, and the cloud puffs
+            // every twelve ticks (the boss emitters' `bleed` of the scene's Shaker look, host/hk-cook break_effects/fx.rs).
+            if let Some(age) = actor.gas_age() {
+                if hk_sim::polygon_hits_box(&actor.gas_polygon(age), body) {
+                    damage = 1;
+                }
+                if age % 12 == 0 {
+                    crate::boss_fx::request(crate::boss_fx::BLEED, actor.x, actor.y, actor.scene);
                 }
             }
             if damage != 0 {

@@ -171,7 +171,21 @@ fn bindings_for(control: &Json, library: &Value) -> Result<Vec<(String, String)>
                 .and_then(|p| cj(p, "attack"))
                 .and_then(|a| cj(a, "kind"))
                 == Some(&Json::Str("Leap".into()));
-            let mut b = if leap {
+            let gas = cj(control, "parameters")
+                .and_then(|p| cj(p, "attack"))
+                .and_then(|a| cj(a, "kind"))
+                == Some(&Json::Str("Gas".into()));
+            let mut b = if gas {
+                // Shaker: the Attack clip plays from the antic to the idle pause; the unused lunge and cooldown slots hold it too.
+                pairs(&[
+                    ("walk", "Walk"),
+                    ("turn", "Turn"),
+                    ("idle", "Idle"),
+                    ("anticipate", "Attack"),
+                    ("lunge", "Attack"),
+                    ("cooldown", "Attack"),
+                ])
+            } else if leap {
                 // Leaper: the Attack clip anticipates and keeps playing through the jump (lunge slot), Land is the cooldown clip.
                 pairs(&[
                     ("walk", "Walk"),

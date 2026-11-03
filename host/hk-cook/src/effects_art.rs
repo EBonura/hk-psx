@@ -146,6 +146,10 @@ fn loop_start(c: &Value) -> i64 {
     c.get("loopStart").and_then(Value::int).unwrap_or(0)
 }
 
+fn named_clip_is(c: &Value, name: &str) -> bool {
+    c.get("name").and_then(Value::str).as_deref() == Some(name)
+}
+
 fn has_trigger(c: &Value) -> bool {
     get(c, "frames")
         .ok()
@@ -280,6 +284,16 @@ fn zombie_corpse(
     let climber = kind == "Climber";
     // `Corpse Moss Crawler`: the Crawler's launch and offset, bounce 0.2, a four-frame looping Death Air.
     let moss = kind == "MossWalker";
+    // `Corpse_Mossman_Shaker`: the Runner's launch with its own three-frame Death Air and a four-frame Death Land that loops
+    // from its second frame, a `CorpseFungusExplode` (the Corpse fields with fungusExplode set; its spore burst is not presented).
+    let shaker = runner
+        && !mossman
+        && sc
+            .go(gid)
+            .and_then(|g| g.get("m_Name"))
+            .and_then(Value::str)
+            .is_some_and(|n| n.starts_with("Mossman_Shaker"));
+    let corpse_part = if shaker { "CorpseFungusExplode" } else { "Corpse" };
     let expected_offset = vec3(0.0, if runner || climber { 0.0 } else { 0.5 }, 0.0);
     let expected_bounce = if runner || moss {
         0.2
@@ -288,7 +302,9 @@ fn zombie_corpse(
     } else {
         0.3
     };
-    let expected_timing: [(f64, i64, usize); 2] = if mossman {
+    let expected_timing: [(f64, i64, usize); 2] = if shaker {
+        [(12.0, 2, 3), (12.0, 1, 4)]
+    } else if mossman {
         [(12.0, 2, 3), (12.0, 2, 3)]
     } else if runner {
         [(30.0, 6, 1), (12.0, 2, 8)]
@@ -327,14 +343,15 @@ fn zombie_corpse(
         && !mossman
         && !(name.starts_with("Corpse Zombie Basic ")
             || name == "Corpse Zombie Leaper"
-            || name == "Corpse Zombie Shield")
+            || name == "Corpse Zombie Shield"
+            || shaker && name == "Corpse_Mossman_Shaker")
     {
         return err(format!(
             "unvalidated corpse prefab for controller: {kind} spawns {name:?}"
         ));
     }
     if [
-        "Corpse",
+        corpse_part,
         "tk2dSprite",
         "tk2dSpriteAnimator",
         "Rigidbody2D",
@@ -348,7 +365,7 @@ fn zombie_corpse(
         return err("incomplete corpse prefab");
     }
     let (corpse, body, bounce) = (
-        prefab.part("Corpse")?,
+        prefab.part(corpse_part)?,
         prefab.part("Rigidbody2D")?,
         prefab.part("ObjectBounce")?,
     );
@@ -358,7 +375,6 @@ fn zombie_corpse(
         "bigBreaker",
         "chunker",
         "deathStun",
-        "fungusExplode",
         "goopExplode",
         "hatcher",
         "instantChunker",
@@ -366,6 +382,9 @@ fn zombie_corpse(
         "spineBurst",
         "zomHive",
     ];
+    if !shaker {
+        special.push("fungusExplode");
+    }
     if !(climber || moss) {
         special.push("resetRotation");
     }
@@ -415,7 +434,7 @@ fn zombie_corpse(
     }
     if selected
         .iter()
-        .any(|c| loop_start(c) != 0 || has_trigger(c))
+        .any(|c| loop_start(c) != if shaker && named_clip_is(c, "Death Land") { 1 } else { 0 } || has_trigger(c))
     {
         return err("unsupported corpse animation events/loop start");
     }
@@ -434,6 +453,7 @@ fn zombie_corpse(
                     "ZombieHornhead",
                     "ZombieLeaper",
                     "ZombieShield",
+                    "MossmanShaker",
                 ]
                 .contains(&data_name.as_str()))
         {

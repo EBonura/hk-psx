@@ -29,6 +29,8 @@ use hk_unity::{Obj, Source, Value};
 const FSM_SHA256: &str = "73f11594e0115a43a66c8d1695a65916b81bfe6057c180636eed3330aaad92c2";
 /// Zombie Leap (Leaper): same Walker, a leap attack instead of the swipe.
 const LEAP_FSM_SHA256: &str = "15ecb1c0984cd4955e5412dfae354441eb9a9d19c6b2bff9d7b6fc564dc7fe47";
+/// Fungus Zombie Attack (Mossman_Shaker): the same Walker, a gas attack instead of the swipe.
+const GAS_FSM_SHA256: &str = "cc88d8649e57979e517d3e38d7107434319755ed316f9c54ba7eec5d19e28aa9";
 const MOSSMAN_FSM_SHA256: &str = "7353668aa0259b3ddcfa9046aa4533db332b1573bf02324d83bb5c35e1316b04";
 /// Audited original instances only; no generic family-name admission.
 const MOSSMAN_INSTANCES: &[(&str, i64, i64, &str)] = &[
@@ -72,6 +74,15 @@ const LEAP_CLIPS: &Clips = &[
     ("Land", 2),
     ("Death Air", 6),
     ("Death Land", 2),
+];
+const GAS_CLIPS: &Clips = &[
+    ("Idle", 0),
+    ("Walk", 0),
+    ("Turn", 2),
+    ("Attack", 1),
+    ("Attack End", 0),
+    ("Death Air", 2),
+    ("Death Land", 1),
 ];
 const CLIPS: &Clips = &[
     ("Idle", 0),
@@ -523,12 +534,12 @@ fn driving_fsm<'a>(records: &[(i64, &str, &'a Value)]) -> Result<&'a Value> {
                     .get("fsm")
                     .and_then(|f| f.get("name"))
                     .and_then(Value::str)
-                    .is_some_and(|n| n == "Zombie Swipe" || n == "Zombie Leap")
+                    .is_some_and(|n| n == "Zombie Swipe" || n == "Zombie Leap" || n == "Fungus Zombie Attack")
         })
         .map(|r| r.2)
         .collect();
     if matches.len() != 1 {
-        return err("Runner requires exactly one Zombie Swipe or Zombie Leap FSM");
+        return err("Runner requires exactly one Zombie Swipe, Zombie Leap or Fungus Zombie Attack FSM");
     }
     Ok(matches[0])
 }
@@ -604,10 +615,11 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     };
     let variable = |name: &str| variables.iter().find(|(k, _)| k == name).map(|(_, v)| *v);
     let leap = get(fsm, "name")?.str().as_deref() == Some("Zombie Leap");
+    let gas = get(fsm, "name")?.str().as_deref() == Some("Fungus Zombie Attack");
     let one_float = Value::F64(1.0);
     let mut parameters = walker_parameters_with_initial_state(
         walker,
-        if leap {
+        if leap || gas {
             Some(&one_float)
         } else {
             variable("Lunge Speed")
@@ -666,7 +678,9 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     }
     if !get(fsm_component, "m_Enabled")?.truthy()
         || fingerprint
-            != if leap {
+            != if gas {
+                GAS_FSM_SHA256
+            } else if leap {
                 LEAP_FSM_SHA256
             } else if mossman {
                 MOSSMAN_FSM_SHA256
@@ -697,6 +711,45 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         if !eq_num(idle, 0.5) {
             return err("unsupported Leaper idle time");
         }
+    } else if gas {
+        set_field(&mut parameters, "lunge_speed", Json::Float(0.0));
+        set_field(
+            &mut parameters,
+            "lunge_velocity_q16",
+            Json::List(vec![Json::Int(0), Json::Int(0)]),
+        );
+        // The pinned fingerprint covers these waits; they are read, not assumed.
+        let states = get(fsm, "states")?.list().unwrap_or(&[]);
+        let wait = |state: &str, action: &str, field: &str| -> Result<i64> {
+            let data = get(
+                states
+                    .iter()
+                    .find(|s| s.get("name").and_then(Value::str).as_deref() == Some(state))
+                    .ok_or("Gas FSM state missing")?,
+                "actionData",
+            )?;
+            let index = get(data, "actionNames")?
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .position(|n| n.str().is_some_and(|n| n.ends_with(&format!(".{action}"))))
+                .ok_or("Gas FSM action missing")?;
+            let fields = action_fields(data, index, false).map_err(|e| e.to_string())?;
+            let value = fields.iter().find(|(k, _)| k == field).ok_or("Gas FSM wait field")?;
+            Ok(ticks(value.1.get("value").and_then(Value::float).ok_or("Gas FSM wait value")?))
+        };
+        set_field(
+            &mut parameters,
+            "attack",
+            jobj(vec![
+                ("kind", js("Gas")),
+                ("delay_ticks", Json::Int(wait("Attack Delay", "WaitRandom", "timeMax")?)),
+                ("antic_ticks", Json::Int(wait("Attack Antic", "Wait", "time")?)),
+                ("attack_ticks", Json::Int(wait("Attack", "Wait", "time")?)),
+                ("cd_ticks", Json::Int(wait("CD", "Wait", "time")?)),
+                ("idle_ticks", Json::Int(wait("Idle Pause", "Wait", "time")?)),
+            ]),
+        );
     } else {
         set_field(
             &mut parameters,
@@ -846,7 +899,9 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
         .ok_or("clips is not a list")?;
     let animation = clip_contract(
         clips,
-        if leap {
+        if gas {
+            GAS_CLIPS
+        } else if leap {
             LEAP_CLIPS
         } else if mossman {
             MOSSMAN_CLIPS
@@ -893,22 +948,27 @@ pub fn recognize(sc: &Scene, source: &Source, gid: i64, position: [f64; 3]) -> R
     let (_, audio_source) = one(&records, "AudioSource")?;
     // Unity 6 stores the assigned loop in m_Resource; m_audioClip is null here.
     let looped = u(sc.deref(get(audio_source, "m_Resource")?))?;
-    let anticipate = get(
-        get(fsm, "states")?
+    // The Shaker's tree plays its own one-shots; the swipe's chase pair is not its.
+    let chase: Vec<Obj> = if gas {
+        Vec::new()
+    } else {
+        let anticipate = get(
+            get(fsm, "states")?
+                .list()
+                .unwrap_or(&[])
+                .iter()
+                .find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate"))
+                .ok_or("no Anticipate state")?,
+            "actionData",
+        )?;
+        get(anticipate, "unityObjectParams")?
             .list()
             .unwrap_or(&[])
             .iter()
-            .find(|s| s.get("name").and_then(Value::str).as_deref() == Some("Anticipate"))
-            .ok_or("no Anticipate state")?,
-        "actionData",
-    )?;
-    let chase: Vec<Obj> = get(anticipate, "unityObjectParams")?
-        .list()
-        .unwrap_or(&[])
-        .iter()
-        .map(|r| u(sc.deref(r)))
-        .collect::<Result<_>>()?;
-    if chase.len() != if mossman { 3 } else { 2 }
+            .map(|r| u(sc.deref(r)))
+            .collect::<Result<_>>()?
+    };
+    if chase.len() != if gas { 0 } else if mossman { 3 } else { 2 }
         || looped.class_id() != 83
         || chase.iter().any(|o| o.class_id() != 83)
     {

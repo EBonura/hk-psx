@@ -243,7 +243,10 @@ const _: () = assert!(
 /// that plays none of the Runner's sounds is excluded here, once, for both.
 pub fn runner_audio_family(specs: &[ActorSpec]) -> Option<bool> {
     specs.iter().find_map(|spec| match spec.controller {
-        ActorController::Runner { params, .. } => Some(params.attack == crate::runner::Attack::SwipeCalm),
+        // The Shaker plays none of the Runner's sounds (its footsteps are in neither bank): it needs no bank.
+        ActorController::Runner { params, .. } if !matches!(params.attack, crate::runner::Attack::Gas { .. }) => {
+            Some(params.attack == crate::runner::Attack::SwipeCalm)
+        }
         ActorController::ZombieShield { .. } => Some(false),
         _ => None,
     })

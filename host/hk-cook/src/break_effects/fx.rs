@@ -80,10 +80,12 @@ pub struct Kinds {
     pub breakables: bool,
     /// The False Knight's arena: his landings and slams raise dust and mist.
     pub boss: bool,
+    /// A Mossman_Shaker stands here: its gas attack and its death burst raise the scene's boss emitters (`SHAKER_LOOK`).
+    pub shaker: bool,
 }
 impl Kinds {
     pub fn any(self) -> bool {
-        self.door || self.cocoon || self.jar || self.rocks || self.breakables || self.boss
+        self.door || self.cocoon || self.jar || self.rocks || self.breakables || self.boss || self.shaker
     }
 }
 
@@ -95,6 +97,7 @@ pub fn detect(sc: &Scene) -> Kinds {
             "Breakable" => k.breakables = true,
             "GameObject" => match o.tree.get("m_Name").and_then(Value::str).as_deref() {
                 Some("Hallownest_Main_Gate") => k.door = true,
+                Some(name) if name.starts_with("Mossman_Shaker") => k.shaker = true,
                 Some("Grub Bottle") => k.jar = true,
                 Some(name) if name.starts_with("Geo Rock") => k.rocks = true,
                 _ => {}
@@ -780,6 +783,9 @@ pub fn collect(
     if kinds.boss {
         collect_boss(scene_id, gravity, c)?;
     }
+    if kinds.shaker {
+        push_boss_look(c, scene_id, gravity, &SHAKER_LOOK)?;
+    }
     Ok(())
 }
 
@@ -1100,6 +1106,31 @@ const FALSE_KNIGHT_LOOK: BossLook = BossLook {
             front: true,
         },
     ],
+};
+/// The Mossman_Shaker's spores. The original's gas is three ParticleSystems (Gas Antic, Gas Attack, Gas Idle) this port has no
+/// presentation for: the gas attack raises `bleed` every twelve ticks (soft yellow-green clouds that spread from the body and
+/// thin out), the corpse's `CorpseFungusExplode` spore burst is not raised yet. The look is an estimate, not matched
+/// to hkref frames: a visible gap, listed in docs/ENEMY-FAMILIES.md.
+const SHAKER_LOOK: BossLook = BossLook {
+    name: "Mossman Shaker",
+    bleed: &[Layer {
+        count: 5,
+        size: [2.4, 3.4],
+        cell: 2.2,
+        speed: [1.0, 5.0],
+        angle: [0.0, 360.0],
+        life: [30, 50],
+        spread: [3.0, 0.8],
+        alpha: 0.35,
+        tint: [170.0, 190.0, 70.0],
+        gravity_scale: 0.0,
+        lift: 1.2,
+        stretch: 0.0,
+        front: true,
+    }],
+    // The corpse's spore burst (`CorpseFungusExplode`) is not raised yet.
+    burst: &[],
+    hit: &[],
 };
 fn push_boss_look(c: &mut Collected, scene_id: i64, gravity: f64, look: &BossLook) -> Result<()> {
     for (owner, layers, what) in [
