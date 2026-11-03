@@ -210,7 +210,9 @@ ALWAYS_RESIDENT = {m for m in os.environ.get('HK_RESIDENT_MODULES', '').split(',
 # own, carried by that scene, so a scene that opts in adds one data module and one that does not changes nothing here.
 import actor_bank
 import enemy_family
-DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ()) + tuple(actor_bank.packages())
+# `art_fsm_state` is the room's state block for family actors (zeroed bytes, `FSM_STATE_BYTES` of data/regions.rs): each placement's
+# tree memory sits at the offset the cook gave it, and only the rooms that place a family actor carry it.
+DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if HORNET else ()) + ('art_fsm_state',) + tuple(actor_bank.packages())
 # Carried data: packages no room's static table needs, which gameplay asks for
 # at run time with `modules::carry` (the Shade's art follows the scene the
 # Knight died in). Each ships in its own chunk, in the disc's last group, and
@@ -340,6 +342,7 @@ def scene_modules(regions_rs, debris=()):
         # A family actor needs its own family's action modules, not every family's.
         for family in set(re.findall(r'ActorController::FsmActor\s*\{\s*family:(\d+)', body)):
             mods |= fsm3_modules(FAMILY_TREE[int(family)])
+            mods.add('art_fsm_state')
         for k in kinds & KIND_MODULE.keys():
             need = KIND_MODULE[k]
             mods |= {need} if isinstance(need, str) else set(need)

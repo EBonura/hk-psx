@@ -2023,7 +2023,7 @@ impl Actor {
                     animation_tick: 0,
                     clip: hk_sim::vengefly::Clip::Idle,
                 }),
-                ActorController::FsmActor { family, .. } => Self::spawn_fsm_actor(family, seed),
+                ActorController::FsmActor { family, .. } => Self::spawn_fsm_actor(family, seed, placement.state),
                 ActorController::Gruzzer => Runtime::Gruzzer(GruzzerRuntime {
                     controller: hk_sim::gruzzer::Gruzzer::new(seed),
                     activation: if scene == 4 && (7038..=7046).contains(&placement.source_id) { 255 } else { 0 },
@@ -2954,8 +2954,13 @@ impl Actor {
     // function so resident code holds one call per site.
     /// A new compact-tier actor: the tree spawned running, its first clip playing.
     #[inline(never)]
-    fn spawn_fsm_actor(family: u8, seed: u32) -> Runtime {
-        let (fsm, play) = hk_sim::fsm_actor::FsmActor::new(family, seed);
+    fn spawn_fsm_actor(family: u8, seed: u32, state: u16) -> Runtime {
+        // The tree's memory is this placement's slice of the room's state block; without the block the object stays a still prop.
+        let Some(block) = crate::modules::data_mut(crate::modules::ART_FSM_STATE) else {
+            return Runtime::Static { animation_tick: 0 };
+        };
+        // SAFETY: the cook gave every placement of the scene its own word-aligned slice of the block, sized for its family.
+        let (fsm, play) = unsafe { hk_sim::fsm_actor::FsmActor::new(family, seed, block.add(state as usize).cast()) };
         let (clip, animation_tick) = play.unwrap_or_else(|| hk_sim::fsm_actor::rest(family));
         Runtime::FsmActor(FsmRuntime { fsm, animation_tick, clip, family, dying: false })
     }
@@ -8008,6 +8013,7 @@ mod hatcher_pool_tests {
         start_alert: false,
         start_right: false,
         rotation_q16: 0,
+        state: 0,
     };
     const HATCHER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
         source_id: 5007,
@@ -8380,6 +8386,7 @@ mod runner_runtime_tests {
         start_alert: false,
         start_right: false,
         rotation_q16: 0,
+        state: 0,
     };
     // Source-free six-clip bank with the real Runner rates/lengths. Each clip's
     // frames reference a distinct texture so draw selection is independently visible.

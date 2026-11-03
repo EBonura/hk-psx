@@ -383,7 +383,8 @@ def encode_scene(scene, rows):
                          | (2 if place["random_start_direction"] else 0)
                          | (4 if place["start_alert"] else 0)
                          | (8 if place["start_right"] else 0)
-                         | bounded(place["rotation_quarter"], 4, "climber rotation quarter") << 8)
+                         | bounded(place["rotation_quarter"], 4, "climber rotation quarter") << 8
+                         | bounded(place.get("state_offset", 0) // 4, 1024, "family actor state offset") << 10)
                 if any(abs(place[axis]) > MAX_Q16 for axis in "xy"):
                     raise ValueError("actor placement outside Q16 world bounds: " + record["source"])
                 add_object("actor", record, bounded(place["source_id"], 1 << 32, "actor source id"),
