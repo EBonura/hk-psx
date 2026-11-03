@@ -379,16 +379,34 @@ def resolve_gates(report, regions, scene):
     actor spec index went the other way: the encoder derives it from the same
     `scene_actor_bank` pass this module links, rather than reading back a
     number the report happened to be carrying.
+
+    A gate that does not resolve is not silently gone: it is listed with its reason in
+    `scene['dropped_gates']` (`census_line` prints the totals), because a door to a room the
+    disc does not hold looks exactly like a door that was never there, and the way to Hornet
+    went missing behind two of them.
     """
     by_name = {other['scene_name']: other for other in report['scenes']}
     integer(scene['scene_id'], SCENES, 'gate scene')
     resolved = []
+    dropped = scene['dropped_gates'] = []
+
+    def drop(gate, reason):
+        dropped.append({'source': gate['source'], 'name': gate['name'], 'target_scene': gate['target_scene'],
+                        'entry_point': gate['entry_point'], 'reason': reason})
     for gate in scene['gates']:
-        if not gate['enabled'] or gate['target_scene'] not in by_name or 'trigger_bounds' not in gate:
+        if not gate['enabled']:
+            drop(gate, 'disabled')
+            continue
+        if 'trigger_bounds' not in gate:
+            drop(gate, 'no trigger bounds')
+            continue
+        if gate['target_scene'] not in by_name:
+            drop(gate, 'target scene not admitted')
             continue
         target = by_name[gate['target_scene']]
         matches = [g for g in target['gates'] if g['name'] == gate['entry_point']]
         if len(matches) != 1:
+            drop(gate, f'entry point {gate["entry_point"]!r} matches {len(matches)} gates of the target')
             continue
         destination = matches[0]
         xy = list(destination['position'][:2]); offset = destination.get('entry_offset', {})
@@ -426,6 +444,7 @@ def resolve_gates(report, regions, scene):
                     target_region = locate_region(regions, target['scene_id'], xy)
                 xy = grounded
         if target_region is None:
+            drop(gate, 'no view of the target holds the spawn')
             continue
         # Source HeroController top entries (the Dirtmouth well is the verified
         # case) start the drop at -12 units per second; other sides keep rest.
@@ -450,6 +469,17 @@ def resolve_gates(report, regions, scene):
                          'target_region': target_region, 'bounds': gate['trigger_bounds'],
                          'spawn': xy, 'entry_vy': entry_vy, 'side': side, 'delay_ticks': delay_ticks})
     return resolved
+
+
+def census_line(scenes):
+    """One line on every door the cook dropped, by reason, with the unadmitted rooms behind them."""
+    from collections import Counter
+    reasons = Counter(d['reason'].split(' (')[0] for scene in scenes for d in scene['dropped_gates'])
+    behind = sorted({d['target_scene'] for scene in scenes for d in scene['dropped_gates']
+                     if d['reason'] == 'target scene not admitted'})
+    kept = sum(len(scene['resolved_gates']) for scene in scenes)
+    return (f'Gates: {kept} resolved, {sum(reasons.values())} dropped ({dict(reasons)}); '
+            f'unadmitted targets: {", ".join(behind) or "none"}')
 
 
 def generate(report, out_path=None):
@@ -544,6 +574,7 @@ def generate(report, out_path=None):
     # every region at once, which the per-scene encoder never sees.
     for scene in report['scenes']:
         scene['resolved_gates'] = resolve_gates(report, regions, scene)
+    print(census_line(report['scenes']))
     result = '\n'.join(out) + '\n'
     Path(out_path or ROOT/'data/regions.rs').write_text(result)
     return result

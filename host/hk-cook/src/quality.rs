@@ -46,7 +46,7 @@ pub const SCENERY_SCENE_CAPS: [(&str, i64); 4] = [
 ];
 
 /// `SCENE_TABLE`.
-pub const SCENE_TABLE: [SceneRow; 65] = [
+pub const SCENE_TABLE: [SceneRow; 66] = [
     SceneRow {
         scene_id: 0,
         scene_name: "Tutorial_01",
@@ -501,6 +501,13 @@ pub const SCENE_TABLE: [SceneRow; 65] = [
         file: "level159",
         runtime_bounds: [Num::I(-2), Num::I(-6), Num::I(83), Num::I(45)],
         camera_global_bounds: [Num::I(0), Num::I(0), Num::I(82), Num::I(40)],
+    },
+    SceneRow {
+        scene_id: 65,
+        scene_name: "Fungus1_20_v02",
+        file: "level148",
+        runtime_bounds: [Num::I(-1), Num::I(-6), Num::I(182), Num::I(26)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(180), Num::I(25)],
     },
 ];
 

@@ -306,6 +306,11 @@ SCENE_TABLE = (
      'runtime_bounds': [-1, -6, 38, 138], 'camera_global_bounds': [0, 0, 36, 133]},
     {'scene_id': 64, 'scene_name': 'Fungus1_32', 'file': 'level159',
      'runtime_bounds': [-2, -6, 83, 45], 'camera_global_bounds': [0, 0, 82, 40]},
+    # The only room between Fungus1_32 (top1) and Fungus1_21 (top1) on the way to Hornet: the door table sends 32 top1
+    # to its bot2 and 21 top1 to its bot1. Envelope is tools/cook_scene_pack.py's `envelope` (2026-11-03); the plain
+    # grid is 16 views. Its Giant Buzzer (the Vengefly King) has no actor family yet and is left out of the cook.
+    {'scene_id': 65, 'scene_name': 'Fungus1_20_v02', 'file': 'level148',
+     'runtime_bounds': [-1, -6, 182, 26], 'camera_global_bounds': [0, 0, 180, 25]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
