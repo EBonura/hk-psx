@@ -1,9 +1,8 @@
 //! `hk-specpack <root> <source fnv>`: pack the spec statics compiled in from
 //! `$HK_SPECPACK_SRC/scene_actors.rs` (`SCENE_ACTORS`, by catalogue scene id) into
 //! `<root>/data/scene-specs/scene_<id>.hkspec` and `<root>/data/scene_specs.rs`.
-use hk_sim::runner::Attack;
 use hk_sim::wire::{self, NO_CORPSE};
-use hk_sim::{ActorController, ActorSpec, CorpseSpec};
+use hk_sim::{ActorSpec, CorpseSpec};
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -28,14 +27,11 @@ fn main() {
 /// The runner audio family a scene plays: 1 none, 2 Zombie (false), 3 Mossman (true), the codes
 /// game/src/disc.rs `runner_family` has always used.
 fn runner_family(specs: &[ActorSpec]) -> u8 {
-    specs
-        .iter()
-        .find_map(|s| match s.controller {
-            ActorController::Runner { params, .. } => Some(if params.attack == Attack::SwipeCalm { 3 } else { 2 }),
-            ActorController::ZombieShield { .. } => Some(2),
-            _ => None,
-        })
-        .unwrap_or(1)
+    match hk_sim::runner_audio_family(specs) {
+        None => 1,
+        Some(false) => 2,
+        Some(true) => 3,
+    }
 }
 
 fn run() -> Result<()> {
@@ -91,10 +87,7 @@ fn run() -> Result<()> {
         max_bytes = max_bytes.max(len);
         bodies.push(buf);
         family.push(runner_family(specs));
-        if specs
-            .iter()
-            .any(|s| matches!(s.controller, ActorController::FalseKnight { .. }))
-        {
+        if hk_sim::places_false_knight(specs) {
             if false_knight.replace(id).is_some() {
                 return Err("two scenes place the False Knight".into());
             }
@@ -182,9 +175,7 @@ mod tests {
         let text = std::fs::read_to_string(root().join("data/scene_specs.rs")).unwrap();
         let family: Vec<u8> = SCENE_ACTORS.iter().map(|s| runner_family(s)).collect();
         assert!(text.contains(&format!("pub static SCENE_RUNNER_FAMILY: [u8; {}] = {family:?};", family.len())));
-        let fk = SCENE_ACTORS
-            .iter()
-            .position(|s| s.iter().any(|x| matches!(x.controller, ActorController::FalseKnight { .. })));
+        let fk = SCENE_ACTORS.iter().position(|s| hk_sim::places_false_knight(s));
         assert_eq!(text_const("FALSE_KNIGHT_SCENE"), fk.unwrap_or(usize::MAX));
     }
 
