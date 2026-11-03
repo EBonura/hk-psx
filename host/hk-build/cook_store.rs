@@ -70,7 +70,7 @@ const LANE_STATE: &[&str] = &[
 
 /// Generated after the asset cache is stamped; the asset cache does not vouch for them.
 const WRITTEN_AFTER_CACHES: &[&str] =
-    &["boot-art.hk", "boot_art.rs", "intro.exe", "scene_specs.rs", "regions_guest.rs"];
+    &["boot-art.hk", "boot_art.rs", "intro.exe", "scene_specs.rs", "regions_guest.rs", "scene_manifest_guest.rs"];
 
 /// An object younger than this is never collected (a publish writes objects before its manifest).
 const GC_GRACE_SECONDS: u64 = 3600;

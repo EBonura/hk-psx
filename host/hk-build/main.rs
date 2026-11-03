@@ -14,6 +14,7 @@ mod card_check;
 mod cook_store;
 mod disc;
 mod earned_focus;
+mod guest_manifest;
 mod intro;
 mod pacing;
 mod region_cache;
@@ -750,7 +751,7 @@ fn asset_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
                         || n.ends_with(".hkspec")
                         || matches!(
                             &*n,
-                            "boot-art.hk" | "boot_art.rs" | "intro.exe" | "scene_specs.rs" | "regions_guest.rs"
+                            "boot-art.hk" | "boot_art.rs" | "intro.exe" | "scene_specs.rs" | "regions_guest.rs" | "scene_manifest_guest.rs"
                         )
                 })
             {
@@ -943,6 +944,7 @@ fn selected_library(options: &Options) -> PathBuf {
 /// and the cooked chunks): WORLD.PAK in read order and the XA song file.
 fn package_disc(root: &Path, work: &Path, library: &Path, intro: Option<&disc::Intro>) -> Result<()> {
     scene_specs::verify(root)?;
+    guest_manifest::verify(root)?;
     let songs = disc::Songs {
         xa: vec![root.join("data/music.xa")],
         cdda: Vec::new(),
@@ -1065,6 +1067,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // The scene spec chunks, cut from the final regions.rs (every bind has run by now).
     scene_specs::pack(root)?;
     scene_specs::test(root)?;
+    guest_manifest::pack(root)?;
     // The host suite is cheap and nothing else ran it, so a cooker regression
     // used to survive whole builds: adding a required constant to
     // `generated_params` broke a fixture and nine builds shipped before anyone
@@ -2779,7 +2782,7 @@ fn main() {
                 xa: vec![root.join("data/music.xa")],
                 cdda: options.cdda.clone(),
             };
-            scene_specs::verify(&root).and_then(|()| intro_stage(&root, intro_plan(&options, shipping_guest()))).and_then(|stage| {
+            scene_specs::verify(&root).and_then(|()| guest_manifest::verify(&root)).and_then(|()| intro_stage(&root, intro_plan(&options, shipping_guest()))).and_then(|stage| {
                 disc::package(
                     &root,
                     &work.join("hk-psx-patched.exe"),
@@ -2791,7 +2794,7 @@ fn main() {
             })
         }
         // Cut the spec statics out of data/regions.rs and pack them (a build does this itself).
-        "scene-specs" => scene_specs::pack(&root),
+        "scene-specs" => scene_specs::pack(&root).and_then(|()| guest_manifest::pack(&root)),
         "intro-cook" => {
             if options.recook {
                 let _ = std::fs::remove_dir_all(intro::dir(&root));
