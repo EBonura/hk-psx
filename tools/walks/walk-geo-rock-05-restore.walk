@@ -1,0 +1,19 @@
+name walk-geo-rock-05-restore
+title A saved Geo rock (3 hits left) is restored before its scene bank is admitted and the first swing takes its identity: four swings break it
+max_ticks 6000
+# Boots from tools/cards/geo-rock-05-left3.mcd (the geo-rock-05 card plus the save item GeoRock 7:0 with 3 hits left, tools/seed_card.py --item 2:7:0:3).
+# A rock that was never hit needs five hits (walk-geo-rock-05), so breaking it in four swings proves the saved count came back, and the clamp
+# and the bank-supplied source id are the strike's own.
+card geo-rock-05-left3.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check restored HK_GEO_ROCKS_DEPLETED == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; x between 27.5 28.5
+walk 27.4
+wait until HK_WALK_READY == 1 timeout 300
+repeat 4 press square rest 40
+wait 150
+check broken HK_GEO_ROCKS_DEPLETED == 1 ; HK_DEATHS == 0

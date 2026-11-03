@@ -1,0 +1,25 @@
+name walk-geo-rock-05
+title Crossroads_05's Geo rock from the scene bank: a nail breaks it in five hits, the rock's collider is gone and the Knight walks through where it stood
+max_ticks 6000
+# Boots from tools/cards/geo-rock-05.mcd (a seeded record, docs/ROUTES.md: Crossroads_05 at x 28.0, y 16.4 facing left, 6 Geo, nothing hit). It proves the
+# rock's path through the scene metadata bank (KIND_GEO_ROCK strike test and payout, KIND_GEO_VIEW collider edges), not the journey to it. The rock stands at
+# x 24.8 to 26.3 (y 14.7 to 16.2) and is solid until broken; 6 swings are five hits and a spare.
+card geo-rock-05.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check whole HK_GEO_ROCKS_DEPLETED == 0 ; HK_GEO_WALLET == 6 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; x between 27.5 28.5
+walk 27.4
+wait until HK_WALK_READY == 1 timeout 300
+repeat 4 press square rest 40
+wait 60
+check four-hits HK_GEO_ROCKS_DEPLETED == 0
+repeat 2 press square rest 40
+wait 150
+check broken HK_GEO_ROCKS_DEPLETED == 1 ; HK_GEO_WALLET >= 6 ; HK_DEATHS == 0
+walk 24.0
+wait until HK_WALK_READY == 1 timeout 300
+check through x between 23 25 ; HK_DEATHS == 0

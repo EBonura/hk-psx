@@ -5,6 +5,18 @@ payouts, animated loose coins, collection and a wallet HUD. These additions use
 read-only Windows source assets and observed Assembly-CSharp behavior. They do
 not implement shops, saving, charms or recoverable Shades.
 
+## Where the rocks live
+
+50 of the 53 source rocks are cooked; the three of Fungus1_21 stay out because the art bank cannot hold their art. Nothing about a rock is linked into
+the guest except the coin and art-bank tables in `data/geo.rs`. A rock is a `KIND_GEO_ROCK` object in the first region of its scene's metadata bank
+(`tools/world_metadata.py`: source id, scene-local state, bounds, collision polygons, position and payout counts); the regions that draw it carry its art
+quads as `KIND_GEO_ART` (tag 0 while broken, 1 while whole) and what a broken rock hides and unblocks as `KIND_GEO_VIEW` (a draw list then an edge list).
+`host/geo.py` `bank_rows` writes those rows into its report and `host/pack_scenes.py` hands them to the encoder. A save restores a rock by its state key
+before any bank is admitted (`World::restore_rock`); the first swing that reaches it binds its source id and clamps the saved count to the bank's hits.
+Rock art is trimmed to its visible box, cut into stacked strips of at most 16 rows when taller than the reserved VRAM slivers, admitted by an exact bank trial and placed by 400 shuffled restarts when the ordered tries fail. `walk-geo-rock-05` and
+`walk-geo-rock-05-restore` play a rock through its bank from seeded cards. Linked as tables they cost 2.8 KB of free RAM; in the bank
+the same rocks cost 176 B of free RAM (11,076 to 10,900).
+
 ## Gameplay behavior
 
 Four rocks take five hits, emitting two small Geo on every hit and five more on
