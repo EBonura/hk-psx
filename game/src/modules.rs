@@ -305,8 +305,7 @@ pub fn bytes(m: usize) -> Option<&'static [u8]> {
         )
     })
 }
-/// A resident data package as writable memory: a room's state block (`art_hornet`), zeroed by its install. Null-free or None.
-#[cfg(feature = "hornet")]
+/// A resident data package as writable memory: a room's state block (`art_hornet`, `art_fsm_state`), zeroed by its install. Null-free or None.
 #[inline(never)]
 pub fn data_mut(m: usize) -> Option<*mut u8> {
     if !is_resident(m) {

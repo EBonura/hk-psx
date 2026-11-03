@@ -530,9 +530,13 @@ def generate(report, out_path=None):
     # metadata bank, which already carries an object per placement, and
     # tools/world_metadata.py stamps the index into this list from the same
     # `scene_actor_bank` pass rather than from anything recorded here.
+    state_bytes = 0
     for scene in range(SCENES):
-        specs, _ = scene_actor_bank([r for r in regions if r['scene_id'] == scene])
+        specs, placed = scene_actor_bank([r for r in regions if r['scene_id'] == scene])
         out.append(f'static SCENE_ACTORS_{scene}: &[hk_sim::ActorSpec] = &[' + ','.join(specs) + '];')
+        state_bytes = max(state_bytes, sum((p.get('state_bytes', 0) + 3) // 4 * 4 for _, p in placed.values()))
+    # The widest room's tree memory: the size of the `art_fsm_state` package (host/code_modules.py).
+    out.append(f'pub const FSM_STATE_BYTES: usize = {state_bytes};')
     out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
     # Per-scene statics the runtime Region value borrows, and small variant
     # catalogues the bank's KIND_REGION_STATICS object indexes per region.

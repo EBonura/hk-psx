@@ -693,6 +693,12 @@ def scene_actor_bank(rows):
     # shorter of the two, so the bound has to be taken on the placements.
     if len(placed) > MAX_SCENE_ACTORS:
         raise ValueError('scene actor placements exceed the 32-slot guest pool')
+    # The room's state block: each family actor's tree memory in placement order, a word multiple apiece.
+    state = 0
+    for index, placement in placed.values():
+        if placement.get('state_bytes'):
+            placement['state_offset'] = state
+            state += (placement['state_bytes'] + 3) // 4 * 4
     return specs, placed
 
 
@@ -1026,6 +1032,12 @@ def generated_actor_records(region):
             'start_right': start_right,
             'rotation_quarter': (rotation_q16 // (90 * 65536)) % 4,
         }
+        if control['kind'] == 'FsmActor':
+            # The tree memory a family actor takes in the room's state block (`art_fsm_state`), and where `scene_actor_bank`
+            # puts it (bytes from the block's start). Only family placements carry the words: the Rust twin of this module
+            # does not generate family specs.
+            placement['state_bytes'] = row['runtime']
+            placement['state_offset'] = 0
         if placement['initial_direction'] not in (-1, 1):
             raise ValueError('actor initial direction is not a facing: ' + actor['source'])
         output.append(('hk_sim::ActorSpec {' + ','.join(f'{key}:{value}' for key, value in fields.items()) + '}',
