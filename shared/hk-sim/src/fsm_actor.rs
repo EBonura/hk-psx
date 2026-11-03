@@ -71,7 +71,7 @@ impl FsmActor {
     /// # Safety
     /// `mem` is `Family::runtime` bytes of writable, 4-aligned memory that nothing else uses while the actor lives.
     pub unsafe fn new(family: u8, seed: u32, mem: *mut u32) -> (Self, Play) {
-        let mut me = Self { mem: [mem as usize as u32, ((mem as usize as u64) >> 32) as u32], anim_left: 0xffff, family, inside: false };
+        let mut me = Self { mem: split(mem), anim_left: 0xffff, family, inside: false };
         let mut env = me.env(0);
         // SAFETY: the caller gave `mem` the bank's runtime size, 4-aligned.
         let mut tree = unsafe { Tree::init(bank(family), me.block(), &mut env, seed) };
@@ -80,7 +80,7 @@ impl FsmActor {
         (me, play)
     }
     fn block(&self) -> *mut u8 {
-        (self.mem[0] as usize | ((self.mem[1] as usize) << 16 << 16)) as *mut u8
+        join(self.mem)
     }
     fn env(&self, trigger: u8) -> Env {
         let mut env = Env::new();
@@ -183,4 +183,23 @@ pub fn turned(b: [i32; 4], quarter: i32) -> [i32; 4] {
 #[inline(never)]
 pub fn runtime_bytes(id: u8) -> usize {
     family(id).runtime as usize
+}
+
+// The block's address as two words (the host's pointers are 64 bits wide, the guest's 32).
+#[cfg(target_pointer_width = "64")]
+fn split(p: *mut u32) -> [u32; 2] {
+    let a = p as usize;
+    [a as u32, (a >> 32) as u32]
+}
+#[cfg(not(target_pointer_width = "64"))]
+fn split(p: *mut u32) -> [u32; 2] {
+    [p as usize as u32, 0]
+}
+#[cfg(target_pointer_width = "64")]
+fn join(w: [u32; 2]) -> *mut u8 {
+    (w[0] as usize | (w[1] as usize) << 32) as *mut u8
+}
+#[cfg(not(target_pointer_width = "64"))]
+fn join(w: [u32; 2]) -> *mut u8 {
+    w[0] as usize as *mut u8
 }
