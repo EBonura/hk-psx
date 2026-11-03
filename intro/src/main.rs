@@ -40,7 +40,7 @@ use psx_chainloader::runtime::{self};
 use psx_fmv::player::{self, Config, Depth, Movie, Stop};
 use psx_gpu::display::{DisplayConfig, Resolution, VideoMode};
 use psx_gpu::Gpu;
-use psx_io::gpu::{write_command, write_display_control};
+use psx_io::gpu::write_display_control;
 use psx_io::periph::ControllerPort;
 use psx_pad::Port;
 use psx_rt::{interrupts, tty, Peripherals};
@@ -253,6 +253,8 @@ impl Prompt {
         for (x, y) in movie_buffers() {
             draw_bar(x, y, level);
         }
+        // Hand the GPU back idle: the player's next transfer starts on a port with nothing left in it.
+        poem::wait_idle();
         self.drawn = Some(level);
         show_rows(top, if level == 0 { PICTURE_BOTTOM } else { PROMPT_BOTTOM });
         if level == 0 {
@@ -265,30 +267,37 @@ impl Prompt {
 /// centred in it.
 pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     // The bar black (GP0 fill: always on whole 16-pixel columns, outside the draw area).
-    write_command(0x0200_0000);
-    write_command(u32::from(y + LETTERBOX_Y) << 16 | u32::from(x));
-    write_command(u32::from(LETTERBOX_H) << 16 | 320);
+    poem::packet(&[
+        0x0200_0000,
+        u32::from(y + LETTERBOX_Y) << 16 | u32::from(x),
+        u32::from(LETTERBOX_H) << 16 | 320,
+    ]);
     if level == 0 {
         return;
     }
-    // Drawing area and offset of this buffer, no texture window.
-    write_command(0xE200_0000);
-    write_command(0xE300_0000 | u32::from(x) | u32::from(y + LETTERBOX_Y) << 10);
-    write_command(0xE400_0000 | u32::from(x + 319) | u32::from(y + 239) << 10);
-    write_command(0xE500_0000 | u32::from(x) | u32::from(y) << 11);
-    // The font's page, semi-transparent adding, as the game's text: its palette carries the
-    // semi-transparency bit, so a glyph's grey is added to the black bar.
+    // Drawing area and offset of this buffer, no texture window; the font's page, semi-transparent adding,
+    // as the game's text: its palette carries the semi-transparency bit, so a glyph's grey is added to the
+    // black bar.
     let page = TexturePage::new(prompt_text::FONT_X, prompt_text::FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1);
-    write_command(0xE100_0000 | u32::from(page));
+    poem::packet(&[
+        0xE200_0000,
+        0xE300_0000 | u32::from(x) | u32::from(y + LETTERBOX_Y) << 10,
+        0xE400_0000 | u32::from(x + 319) | u32::from(y + 239) << 10,
+        0xE500_0000 | u32::from(x) | u32::from(y) << 11,
+        0xE100_0000 | u32::from(page),
+    ]);
     let clut = u32::from(Clut::new(FONT_CLUT.0, FONT_CLUT.1).uv_word());
     let color = 0x6600_0000 | level * 0x0001_0101;
     let left = (320 - prompt_text::WIDTH) / 2;
     let top = PROMPT_TOP;
+    // One wait per glyph packet, as the poem: an unpaced burst of this size overflows the GPU's FIFO on silicon.
     for (&(u, v, dx), &width) in prompt_text::GLYPHS.iter().zip(&prompt_text::GLYPH_WIDTHS) {
-        write_command(color);
-        write_command(u32::from((left + dx) as u16) | u32::from(top as u16) << 16);
-        write_command(u32::from(u) | u32::from(v) << 8 | clut << 16);
-        write_command(u32::from(width) | u32::from(prompt_text::GLYPH_H) << 16);
+        poem::packet(&[
+            color,
+            u32::from((left + dx) as u16) | u32::from(top as u16) << 16,
+            u32::from(u) | u32::from(v) << 8 | clut << 16,
+            u32::from(width) | u32::from(prompt_text::GLYPH_H) << 16,
+        ]);
     }
 }
 
@@ -453,9 +462,7 @@ fn hand_back_the_screen(gpu: &mut Gpu, display: DisplayConfig, skip: &mut Skip) 
     // SAFETY: nothing else is using the GPU's channel; the program owns it until it returns.
     *gpu = Gpu::new(unsafe { psx_io::periph::GpuDma::steal() }, display);
     for y in [0u32, 240] {
-        write_command(0x0200_0000);
-        write_command(y << 16);
-        write_command(240 << 16 | 320);
+        poem::packet(&[0x0200_0000, y << 16, 240 << 16 | 320]);
     }
     gpu.set_draw_area((0, 0), (319, 239));
     gpu.set_draw_offset((0, 0));

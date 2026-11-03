@@ -68,10 +68,18 @@ fn brightness(line: usize, ms: u32) -> u32 {
 
 /// One packet to the GPU: one wait for the port, then its words back to back (a wait per word is the
 /// wrong pacing on silicon, see the chain loader's paint module).
-fn packet(words: &[u32]) {
+pub(crate) fn packet(words: &[u32]) {
     let _ = try_wait_command_ready(SPINS);
     for &word in words {
         write_command(word);
+    }
+}
+
+/// Wait, bounded, until the GPU has drawn everything it was given.
+pub(crate) fn wait_idle() {
+    let mut spins = SPINS;
+    while psx_io::gpu::status().bits() & GPU_IDLE != GPU_IDLE && spins != 0 {
+        spins -= 1;
     }
 }
 
@@ -184,10 +192,7 @@ impl Run {
             crate::draw_bar(x, y, prompt);
         }
         // The frame is done when the GPU says so; the flip waits for the next edge.
-        let mut spins = SPINS;
-        while psx_io::gpu::status().bits() & GPU_IDLE != GPU_IDLE && spins != 0 {
-            spins -= 1;
-        }
+        wait_idle();
         self.shown = Some(self.back);
         self.back ^= 1;
         None
