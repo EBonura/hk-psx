@@ -60,3 +60,23 @@ controller payloads and the corpse), for every scene, and checks the cooked cons
 
 A new `ActorController` variant or field: give it a tag in `wire.rs` (the compiler insists) and run
 the tests. Nothing per scene or per enemy is edited anywhere else.
+
+## The atlas rows (host/hk-build/guest_manifest.rs)
+
+`data/scene_manifest.rs` lists every atlas chunk as an `AtlasDesc` of eight words (22,656 bytes for
+708 rows). The owning scene, the raw length and the unpacked kind and count follow from a row's place
+in `SCENE_ATLAS_RANGES`, its kind and its count. On every build, after the spec pack, a Rust step
+checks that for all rows and writes `data/scene_manifest_guest.rs` with `ATLAS_ROWS` of 16-byte
+`AtlasRow`s; `disc::atlas(i)` expands a row to the old `AtlasDesc`, so every reader sees the same
+values. Like the spec pack it is derived from the final cook output each build and touches no cook
+key; `guest_manifest::verify` (disc packaging) refuses a stale guest manifest.
+
+## Not done: a header chunk per group
+
+Moving the remaining per-scene descriptors (SceneDesc, CoverageDesc, WorldMetaDesc, EffectArtDesc)
+and the 16-byte rows out of the image needs a header at the head of each group plus cook-computed
+planning aggregates (group sectors, prefix and first-window sectors, split base, atlas range), because
+`staged_prefix`, `tail_fits`, `split_fits`, the prefetch plan and `init` all decide from every chunk's
+lengths before anything is read. About 12 to 16 resident bytes a scene would remain. See hk-resident
+NOTES for the cost estimate; it is only worth doing if the resident table cost of the remaining
+scenes (about 0.25 KB a scene after this) threatens the 8,192-byte bar.

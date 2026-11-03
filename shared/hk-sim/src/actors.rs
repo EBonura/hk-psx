@@ -237,6 +237,22 @@ const _: () = assert!(
     "a wider actor spec costs its difference times every enemy type in the world"
 );
 
+/// The runner audio family a scene's enemy types play (true: Mossman), None when it places no Runner and no Zombie
+/// Shield, so entering it needs no runner bank. The cook writes this per scene as a constant (host/hk-specpack) because the
+/// next scene's bank is read ahead of its specs; the native harnesses call it on the generated statics. An enemy type
+/// that plays none of the Runner's sounds is excluded here, once, for both.
+pub fn runner_audio_family(specs: &[ActorSpec]) -> Option<bool> {
+    specs.iter().find_map(|spec| match spec.controller {
+        ActorController::Runner { params, .. } => Some(params.attack == crate::runner::Attack::SwipeCalm),
+        ActorController::ZombieShield { .. } => Some(false),
+        _ => None,
+    })
+}
+/// Whether a scene's enemy types include the False Knight.
+pub fn places_false_knight(specs: &[ActorSpec]) -> bool {
+    specs.iter().any(|spec| matches!(spec.controller, ActorController::FalseKnight { .. }))
+}
+
 /// Where one placement of an `ActorSpec` stands, and the handful of authored
 /// switches the source keeps on the object rather than on the prefab.
 ///

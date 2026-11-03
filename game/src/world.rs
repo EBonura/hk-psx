@@ -272,13 +272,7 @@ pub fn runner_family(scene_id: usize) -> Option<bool> {
 }
 #[cfg(test)]
 pub fn runner_family(scene_id: usize) -> Option<bool> {
-    SCENE_ACTORS.get(scene_id)?.iter().find_map(|spec| match spec.controller {
-        hk_sim::ActorController::Runner { params, .. } => {
-            Some(params.attack == hk_sim::runner::Attack::SwipeCalm)
-        }
-        hk_sim::ActorController::ZombieShield { .. } => Some(false),
-        _ => None,
-    })
+    hk_sim::runner_audio_family(SCENE_ACTORS.get(scene_id)?)
 }
 /// The placement `region_actors_indexed` listed at `index`.
 #[inline(never)]
@@ -627,11 +621,7 @@ pub fn false_knight_scene() -> Option<usize> {
 }
 #[cfg(test)]
 pub fn false_knight_scene() -> Option<usize> {
-    SCENE_ACTORS.iter().position(|specs| {
-        specs
-            .iter()
-            .any(|spec| matches!(spec.controller, hk_sim::ActorController::FalseKnight { .. }))
-    })
+    SCENE_ACTORS.iter().position(|specs| hk_sim::places_false_knight(specs))
 }
 /// Scene owner of a catalogue slot (the catalogue's scene id, not the manifest index): two byte loads.
 #[cfg(not(test))]

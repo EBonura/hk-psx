@@ -70,7 +70,7 @@ pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
 pub mod persistent;
 pub use actors::{
-    persistent_actor, resolve_actor_spawn, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec,
+    persistent_actor, places_false_knight, resolve_actor_spawn, runner_audio_family, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec,
     EnemyParams, Hit, PersistentActor, WalkParams, WalkState, MAX_ACTORS, SEMI_PERSISTENT,
 };
 pub use combat::polygon_hits_box;
