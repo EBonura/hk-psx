@@ -25,3 +25,5 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 ## 2026-11-03 (hk-world, by hand)
 
 - grub-jar: pacing 56 to 80 (measured 61 frames over 2 vblanks of 178; frame time 238 of its 251 ceiling, no frame of 5+ vblanks). Not layout drift: the same twin build with the Geo rock draws skipped measures 46 (frame time 227), so the cost is the Crossroads_05 rock beside the grub jar, whose art is now two stacked strips (Geo rocks 50 of 53).
+
+- grub-jar: pacing back from 80 to 56. The 80 was set for 61 frames over 2 vblanks while the rocks' art was linked; with the rocks in the scene banks the route measures 42 (frame time 224 of 251, 189 frames), so the old limit holds and a limit follows the measure.
