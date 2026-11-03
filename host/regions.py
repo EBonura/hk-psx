@@ -341,7 +341,7 @@ def scene_metadata(sc, info):
     return result
 
 
-def precook_parallel(regions, out, retail):
+def precook_parallel(regions, out, retail, limit=None):
     """Bring every region unit up to date with one worker process per (scene, part) that has a miss.
 
     The scenery of a scene and its annotations are separate processes: a result one computes and the
@@ -367,7 +367,7 @@ def precook_parallel(regions, out, retail):
     def spawn(job):
         scene,part=job
         handle=(logs/f'scene-{scene}-{part}.log').open('w')
-        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parent/'region_units.py'),'--precook',str(scene),'--part',part],
+        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parent/'region_units.py'),'--precook',str(scene),'--part',part]+(['--limit',str(limit)] if limit else []),
                               cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
         proc.log_path=logs/f'scene-{scene}-{part}.log';proc.log_handle=handle;return proc
     def finish(proc):
@@ -788,7 +788,7 @@ def main():
     # The region units (host/region_units.py) are cooked by workers and found fresh here through their
     # receipts. Without a retail manifest the build driver checked there are no receipts: cook in this process.
     retail=depcache.Retail.checked()
-    recooked=precook_parallel(pending[:args.limit] if args.limit else pending,out,retail) if retail is not None else set()
+    recooked=precook_parallel(pending[:args.limit] if args.limit else pending,out,retail,args.limit) if retail is not None else set()
     report={'format':'HKREGIONS01','complete':False,'initial_chunk_id':1,'scenes':[],
             'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed106','animation_sampling':'unchanged'},'limitations':[
                 'Tutorial and Town regions cover supported scenery and collision across their development envelopes; Town NPCs, shops, benches and progression scripts remain unsupported',

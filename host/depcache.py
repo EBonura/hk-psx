@@ -58,6 +58,8 @@ SKIP_FILES = tuple(str(ROOT / name) for name in
 # HK_ variables that name a place or a tool, not a choice the cooked bytes depend on.
 PATH_ENV = {'HK_COOK_STORE', 'HK_PSX_FRONTEND', 'HK_PSX_FRONTEND_SHA256', 'HK_OVERLAY_SDK',
             'HK_SOURCE_FINGERPRINT_CHECKED', 'HK_REGION_CACHE_HELPER', 'HK_DISC_LIBRARY', 'HK_FORCE_COOK'}
+# The judging machinery is not a dependency of what it judges: a fix to it bumps VERSION when it must void records.
+UNTRACKED = ('host/depcache.py', 'host/stagecache.py')
 CO_FUNCTION = 0x1 | 0x2  # CO_OPTIMIZED | CO_NEWLOCALS: set for functions, clear for module and class bodies
 DEPS_DIR = ROOT / '.hkpsx/cookdeps'
 
@@ -104,8 +106,9 @@ class FileCode:
         source = path.read_bytes()
         self.sha = hashlib.sha256(source).hexdigest()
         self.functions: dict[tuple[str, int], str] = {}
-        # (qualname, first line) of a code object as the interpreter loads it -> its occurrence index.
-        self.index_of: dict[tuple[str, int], int] = {}
+        # (qualname, first line) of a code object as the interpreter loads it -> its occurrence indices (two
+        # generator expressions on one line share both).
+        self.index_of: dict[tuple[str, int], list[int]] = {}
         parts: list[str] = []
         seen: dict[str, int] = {}
 
@@ -113,7 +116,7 @@ class FileCode:
             qual = code.co_qualname
             index = seen.get(qual, 0)
             seen[qual] = index + 1
-            self.index_of[(qual, code.co_firstlineno)] = index
+            self.index_of.setdefault((qual, code.co_firstlineno), []).append(index)
             digest = digest_code(code)
             if code.co_flags & CO_FUNCTION:
                 self.functions[(qual, index)] = digest
@@ -318,14 +321,21 @@ class Tracker:
         functions: dict[str, str] = {}
         for code in list(self.codes):
             rel = code_rel(code.co_filename)
-            if rel is None or not code.co_flags & CO_FUNCTION:
+            if rel is None or rel in UNTRACKED or not code.co_flags & CO_FUNCTION:
                 continue
             fc = file_code(rel)
-            index = fc.index_of.get((code.co_qualname, code.co_firstlineno))
-            parsed = fc.functions.get((code.co_qualname, index)) if index is not None else None
-            # The file on disk must still be the code that ran, or the entry would vouch for the wrong text.
-            digest = parsed if parsed is not None and parsed == digest_code(code) else '?'
-            functions[f'{rel}::{code.co_qualname}#{index}'] = digest
+            live = digest_code(code)
+            indices = fc.index_of.get((code.co_qualname, code.co_firstlineno), [])
+            if not indices:
+                functions[f'{rel}::{code.co_qualname}#?'] = '?'
+                continue
+            # Code objects that share a name and a line cannot be told apart from the running one: all of them
+            # are recorded. The file on disk must still hold the code that ran, or the entry vouches for the
+            # wrong text and is marked unusable.
+            matched = any(fc.functions.get((code.co_qualname, i)) == live for i in indices)
+            for i in indices:
+                parsed = fc.functions.get((code.co_qualname, i))
+                functions[f'{rel}::{code.co_qualname}#{i}'] = parsed if matched and parsed is not None else '?'
         skeletons: dict[str, str] = {}
         files: dict[str, str] = {}
         root_prefix = str(ROOT) + os.sep
@@ -335,12 +345,13 @@ class Tracker:
                 continue
             rel = code_rel(filename)
             if rel is not None:
-                if rel not in self.skip_skeleton:
+                if rel not in self.skip_skeleton and rel not in UNTRACKED:
                     skeletons[rel] = file_code(rel).skeleton
             elif filename.endswith('.py') and not filename.startswith(SKIP_FILE_DIRS):
                 files[os.path.relpath(filename, ROOT)] = sha256_file(Path(filename))
         for rel in self.extra_skeletons:
-            skeletons[rel] = file_code(rel).skeleton
+            if rel not in UNTRACKED:
+                skeletons[rel] = file_code(rel).skeleton
         # A file the unit also wrote is one of its outputs, not an input: the unit makes it from other things
         # (and a later step may rewrite it again, as the Rust scene cookers do the chunk files). Its bytes are
         # vouched for by whoever records the stage's outputs. A unit must not update an input in place.

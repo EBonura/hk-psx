@@ -285,12 +285,15 @@ def main(argv=None):
     parser.add_argument('--part', choices=PARTS, required=True)
     parser.add_argument('--out', type=Path, help='Diagnostic: write the region directories here instead of data/regions')
     parser.add_argument('--only', help='Diagnostic: comma separated chunk ids; the rest of the scene is left alone')
+    parser.add_argument('--limit', type=int, help='Diagnostic: leave regions numbered above this alone')
     args = parser.parse_args(argv)
     retail = depcache.Retail.checked()
     if retail is None:
         raise SystemExit('region_units: no checked retail source manifest; run through cargo hk-build')
     with new_tracker(retail) as tracker:
         only = {int(x) for x in args.only.split(',')} if args.only else None
+        if args.limit:
+            only = set(range(1, args.limit + 1)) & (only if only is not None else set(range(1, args.limit + 1)))
         run_worker(args.precook, args.part, args.out or ROOT / 'data/regions', retail, tracker, only)
 
 
