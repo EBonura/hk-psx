@@ -37,6 +37,8 @@ use crate::{
 /// A hop is run again (at most `RETRIES` passes in `RETRY_TICKS` ticks) until the Knight is within `RETRY_X` and `RETRY_Y`
 /// of where the plan landed it: a little wider than `LAND_X`/`LAND_Y`, so a hop the planner accepted is never repeated.
 const RETRIES: u32 = 3;
+/// Ticks of rest tried before a hop that missed, in turn (`--no-retry` leaves a miss as it fell).
+const WAITS: [u32; 4] = [6, 13, 21, 34];
 const RETRY_TICKS: u32 = 900;
 const RETRY_X: f64 = 0.9;
 const RETRY_Y: f64 = 0.3;
@@ -508,6 +510,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut expect: Vec<Option<(f64, Option<f64>)>> = Vec::new();
     // Where each hop's lines sit in `body`, and the landing a retry loop around it waits for (None: not wrapped).
     let mut hops: Vec<(usize, usize, Option<(f64, f64)>)> = Vec::new();
+    // How many times each hop (by index) has been run again after a miss, each with a longer rest before it.
+    let mut delayed: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
     let (mut cx, mut cy) = (sx, sy);
     let mut done = false;
     // Where the room starts, and whether a hop has already taken the exit (a vertical exit is taken by touching its
@@ -676,7 +680,9 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 eprintln!("dead");
                 break;
             }
-            if base_loads.is_some_and(|b| read.loads > b) {
+            // A tall room streams its chunks, which counts as a load too: only a hop that did not land where the plan
+            // said and came with a load took the exit.
+            if base_loads.is_some_and(|b| read.loads > b) && !ok {
                 // This hop took the exit (a scene load came with it): the room is done, play the tail once to prove it.
                 eprintln!("hop {} took the exit", j + 1);
                 body.truncate(ends[j]);
@@ -684,6 +690,23 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 expect.truncate(j + 1);
                 hops.truncate(j + 1);
                 exited = true;
+                stopped = true;
+                break;
+            }
+            let attempts = delayed.get(&j).copied().unwrap_or(0);
+            if !ok && o.retry && (attempts as usize) < WAITS.len() && !body[hops[j].0..hops[j].1].iter().any(|l| l.starts_with("drop ")) {
+                // The hop missed: a foe hit the Knight in the air, or the take-off was a hair off. Run it again a few
+                // ticks later (the world is deterministic, so a different start settles it differently) before giving
+                // in and planning from where it fell: a fragment that carries a miss only works while the miss repeats.
+                body.truncate(hops[j].0);
+                if attempts > 0 && body.last().is_some_and(|l| l.starts_with("wait ")) {
+                    body.pop();
+                }
+                body.push(format!("wait {}", WAITS[attempts as usize]));
+                delayed.insert(j, attempts + 1);
+                ends.truncate(j);
+                expect.truncate(j);
+                hops.truncate(j);
                 stopped = true;
                 break;
             }
