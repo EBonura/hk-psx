@@ -276,6 +276,7 @@ def tk2d_art(sc):
                 gates.append(pointer)
         for under in [gid, *gates]:
             found.extend(sc.sid(i) for i, k, t in _components(sc, under) if k == 'tk2dSprite')
+    found.extend(toll_art(sc))
     return sorted(set(found))
 
 
@@ -350,18 +351,8 @@ def _fsm_strings(fsm):
     return {v['name']: v['value'] for v in fsm['variables']['stringVariables']}
 
 
-def toll_record(sc, source, info):
-    """The toll machines of one scene and the gates they open, as one link record, or None.
-
-    A `Toll Machine` takes Geo at a Yes/No box and then broadcasts `TOLL GATE OPEN` to every FSM of
-    the scene (`Open Gates`, event target 4); every `Toll Gate` answers by playing its open clip and
-    destroying itself, and answers `TOLL GATE OPENED` (sent on load by a machine whose own persistent
-    bool is set) by destroying itself at once. So all the machines of a scene share the one bit that
-    removes all of its gates, and the port keeps one persistent bit for the group. The record is
-    shaped like a switch's, with `toll` holding what the guest's module needs (host/tolls.py): per
-    machine its range box (the trigger collider UP is answered in), its prompt marker, its price and its
-    question. A scene with machines but no gate (the Toll Machine Lift of Crossroads_49b) has none.
-    """
+def _toll_objects(sc):
+    """([(component index, GameObject, FSM)] of the active Toll Machines, [GameObject] of the active Toll Gates)."""
     machines = []
     gates = []
     for index, (kind, tree) in sorted(sc.objects.items()):
@@ -374,6 +365,43 @@ def toll_record(sc, source, info):
             machines.append((index, gid, tree['fsm']))
         elif tree['fsm']['name'] == TOLL_GATE_FSM:
             gates.append(gid)
+    return machines, gates
+
+
+def toll_art(sc):
+    """Draw sources (tk2dSprite ids) of the idle art of a scene's Toll Machines and Toll Gates.
+
+    A machine is its own sprite and the `Front` strip of its base (not the `Prompt Marker`'s, which the guest
+    draws itself); a gate is its one sprite, bound off by the toll bit like any gate's art. None of them plays
+    its clip: the machine's glow and the gate's opening are not drawn. A scene with machines and no gates
+    (Crossroads_49b's lift) has no toll record and no art here.
+    """
+    machines, gates = _toll_objects(sc)
+    if not machines or not gates:
+        return []
+    found = []
+    for _, gid, _ in machines:
+        for under in [gid, *_descendants(sc, gid)]:
+            if sc.gos[under]['m_Name'] != 'Prompt Marker':
+                found.extend(sc.sid(i) for i, k, t in _components(sc, under) if k == 'tk2dSprite')
+    for gid in gates:
+        found.extend(sc.sid(i) for i, k, t in _components(sc, gid) if k == 'tk2dSprite')
+    return found
+
+
+def toll_record(sc, source, info):
+    """The toll machines of one scene and the gates they open, as one link record, or None.
+
+    A `Toll Machine` takes Geo at a Yes/No box and then broadcasts `TOLL GATE OPEN` to every FSM of
+    the scene (`Open Gates`, event target 4); every `Toll Gate` answers by playing its open clip and
+    destroying itself, and answers `TOLL GATE OPENED` (sent on load by a machine whose own persistent
+    bool is set) by destroying itself at once. So all the machines of a scene share the one bit that
+    removes all of its gates, and the port keeps one persistent bit for the group. The record is
+    shaped like a switch's, with `toll` holding what the guest's module needs (host/tolls.py): per
+    machine its range box (the trigger collider UP is answered in), its prompt marker, its price and its
+    question. A scene with machines but no gate (the Toll Machine Lift of Crossroads_49b) has none.
+    """
+    machines, gates = _toll_objects(sc)
     if not machines or not gates:
         return None
     states = {s['name'] for _, _, fsm in machines for s in fsm['states']}

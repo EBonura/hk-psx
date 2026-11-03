@@ -23,7 +23,7 @@ from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks, MAX_REGIONS
 from world_links import postpack_links
 from reveal_masks import postpack_reveal_masks
-from quality import SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
+from quality import TOLL_ART, SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
 from cook import MAX_ROOM_TEXTURES
 
 SCENES = [dict(scene) for scene in SCENE_TABLE]
@@ -63,12 +63,14 @@ def region_spec(scene, bounds):
     global_camera = scene['camera_global_bounds']
     cx = [max(global_camera[0],min(global_camera[2],x)) for x in (x0,x1)]
     cy = [max(global_camera[1],min(global_camera[3],y+2)) for y in (y0,y1)]
-    return {'scene_id': scene['scene_id'], 'scene_name': scene['scene_name'],
-            'scene_file': scene['file'], 'activation_bounds': list(bounds),
-            'camera_bounds': [cx[0],cy[0],cx[1],cy[1]], 'camera_x': cx, 'camera_y': cy,
-            'collision_bounds': [x0-3,y0-5,x1+3,y1+5],
-            'interaction_bounds': [x0-2,y0-2,x1+2,y1+2],
-            'grass_bounds': [x0-2,y0-2,x1+2,y1+2], 'allow_slopes': True}
+    spec={'scene_id': scene['scene_id'], 'scene_name': scene['scene_name'],
+          'scene_file': scene['file'], 'activation_bounds': list(bounds),
+          'camera_bounds': [cx[0],cy[0],cx[1],cy[1]], 'camera_x': cx, 'camera_y': cy,
+          'collision_bounds': [x0-3,y0-5,x1+3,y1+5],
+          'interaction_bounds': [x0-2,y0-2,x1+2,y1+2],
+          'grass_bounds': [x0-2,y0-2,x1+2,y1+2], 'allow_slopes': True}
+    if scene['scene_name'] in TOLL_ART:spec['toll_art']=True
+    return spec
 
 
 def initial_regions():

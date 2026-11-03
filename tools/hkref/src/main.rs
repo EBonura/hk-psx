@@ -356,7 +356,14 @@ fn cmd_fsmtrace(p: &Profile, work: &Path) -> Result<(), String> {
     let mut unmapped = 0u16;
     let rows = tape::window_rows(&masks, 0, p.ticks, &mut unmapped);
     let env = og::Env::detect(work);
-    let win = og::Window { frames: p.ticks, rows, start: None, shot_frames: vec![] };
+    // `port.shot_interval` makes the original take a screenshot every that many ticks of the window (the trace needs
+    // none, a look at one scene object does).
+    let shot_frames: Vec<usize> = if p.shot_interval > 0 {
+        (p.shot_interval as usize..=p.ticks).step_by(p.shot_interval as usize).collect()
+    } else {
+        vec![]
+    };
+    let win = og::Window { frames: p.ticks, rows, start: None, shot_frames };
     let mut attempt = 1;
     while let Err(e) = og::run(&env, p, &win) {
         if attempt >= 3 {

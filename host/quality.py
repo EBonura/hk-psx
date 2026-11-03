@@ -322,6 +322,11 @@ SCENERY_TEXEL_CAP = 252
 # Crossroads_50 and Fungus1_10 stay at today's 48: at full resolution their
 # views need more scenery packets than a view holds (region 604: 817 + 264 >
 # 1,032), and a 128 cap does not fit either (hk-seamless, 2026-09-23).
+# Scenes whose cook draws a Toll Machine's art (host/world_links.py `toll_art`). world_links.py is not one of the files a
+# region's reuse key hashes, so a scene that gains art through it says so here: the spec of each of its regions carries
+# `toll_art`, which changes their keys and recooks them, and no other scene's. tests/test_toll_art.py checks that every scene
+# with a Toll Machine is listed.
+TOLL_ART = frozenset({'Fungus1_31'})
 SCENERY_SCENE_CAPS = {'Tutorial_01': 96, 'Town': 160, 'Crossroads_50': 48, 'Fungus1_10': 48}
 # A view's static pages live in the scene's VRAM atlas, not in any RAM arena, so a
 # view may use as many as the scene can (pack_scenes.MAX_PAGES); the scene bank
