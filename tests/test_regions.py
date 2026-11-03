@@ -154,26 +154,48 @@ class RegionTests(unittest.TestCase):
 
 
 class CookReuseTests(unittest.TestCase):
-    """A region's reuse survives the provenance list growing, not a file changing."""
-    def test_growth_keeps_a_cook_and_a_changed_input_drops_it(self):
-        import hashlib,json,tempfile
-        from regions import cook_cache_key,cached_cook,record_cook,inputs_digest
-        region={'scene_id':3,'activation_bounds':[0,0,1,1]}
-        with tempfile.TemporaryDirectory() as temp:
-            d=Path(temp)
-            for name in ('scene.json','unsupported.json'):(d/name).write_text('{}')
-            (d/'room.hk').write_bytes(b'pack')
-            cooked={'pack_sha256':hashlib.sha256(b'pack').hexdigest()}
-            first={'code':'c','inputs':{'a':'1','b':'2'}}
-            # A pack cooked before inputs were recorded is kept once, and rewritten.
-            legacy=cook_cache_key(region,first)['legacy']
-            (d/'cook-cache.json').write_text(json.dumps({'key':legacy,'cooked':cooked}))
-            self.assertEqual(cached_cook(d,cook_cache_key(region,first)),cooked)
-            self.assertIn('input_names',json.loads((d/'cook-cache.json').read_text()))
-            grown={'code':'c','inputs':{'a':'1','b':'2','new':'3'}}
-            self.assertEqual(cached_cook(d,cook_cache_key(region,grown)),cooked)
-            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'code':'c','inputs':{'a':'1','b':'9','new':'3'}})))
-            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'code':'other','inputs':grown['inputs']})))
+    """The region units' receipts (host/region_units.py): a unit is reused only while everything it used holds."""
+    def setUp(self):
+        import tempfile
+        import depcache,region_units
+        self.depcache,self.units=depcache,region_units
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.dir=Path(self.temp.name)
+        self.retail=depcache.Retail(str(self.dir),{})
+        (self.dir/'room.hk').write_bytes(b'pack')
+        self.record={'stamp':depcache.stamp(),'functions':{},'skeletons':{},'files':{},'retail':{},'dirs':{},'programs':{},'opaque':[]}
+        self.params={'part':'scenery','region':{'scene_id':3}}
+        self.saved_dir=depcache.DEPS_DIR;depcache.DEPS_DIR=self.dir/'deps'
+        self.addCleanup(setattr,depcache,'DEPS_DIR',self.saved_dir)
+        depcache._LOADED.clear();depcache._VERDICT.clear()
+        self.name=depcache.save(self.record)
+        import hashlib
+        self.receipt=self.dir/'scenery-cache.json'
+        region_units.write_receipt(self.receipt,params=self.params,deps=self.name,
+                                   outputs={'room.hk':hashlib.sha256(b'pack').hexdigest()},cooked={'pages':1})
+
+    def status(self,params=None,retail='default'):
+        self.depcache._VERDICT.clear()
+        return self.units.receipt_status(self.receipt,params or self.params,self.retail if retail=='default' else retail,self.dir)
+
+    def test_a_receipt_is_fresh_until_something_it_vouches_for_changes(self):
+        receipt,why=self.status()
+        self.assertEqual((receipt['cooked'],why),({'pages':1},''))
+        self.assertIsNone(self.status({'part':'scenery','region':{'scene_id':4}})[0],'another region spec')
+        self.assertIsNone(self.status(retail=None)[0],'a retail source the driver did not check')
+        (self.dir/'room.hk').write_bytes(b'edited')
+        self.assertEqual(self.status()[1],'an output differs from the receipt')
+        (self.dir/'room.hk').unlink()
+        self.assertIsNone(self.status()[0],'a missing output')
+
+    def test_a_forced_cook_ignores_every_receipt(self):
+        import os
+        os.environ['HK_FORCE_COOK']='1';self.addCleanup(os.environ.pop,'HK_FORCE_COOK',None)
+        self.assertEqual(self.status()[1],'full recook requested')
+
+    def test_a_receipt_whose_record_is_missing_or_stale_is_not_fresh(self):
+        (self.depcache.DEPS_DIR/f'{self.name}.json').unlink()
+        self.assertEqual(self.status()[1],'dependency record missing')
 
 if __name__ == '__main__':
     unittest.main()

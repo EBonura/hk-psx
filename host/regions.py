@@ -22,6 +22,7 @@ from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
 from actors import actor_sources, postpack_pogo
 from world import postpack_checkpoints, postpack_masks, MAX_REGIONS
 from world_links import postpack_links
+import depcache
 import region_units
 from reveal_masks import postpack_reveal_masks
 from quality import TOLL_ART, SCENE_TABLE, GRID_SCENE_LAYOUTS, REGION_LAYOUT, TOWN_EXTENSION_LAYOUT, SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXTURE_BUDGET
@@ -340,53 +341,59 @@ def scene_metadata(sc, info):
     return result
 
 
-def precook_parallel(pending, out):
-    """Bring every region unit up to date with one worker process per scene that has a miss.
+def precook_parallel(regions, out, retail):
+    """Bring every region unit up to date with one worker process per (scene, part) that has a miss.
 
-    Each worker loads its own source and scene once; a unit is a pure function of its spec, the
-    source and the code it ran, so the parent loop that follows finds every worker result fresh.
+    The scenery of a scene and its annotations are separate processes: a result one computes and the
+    other reads from an in-process cache would hide the code that made it from the second's
+    dependency record (host/depcache.py). A worker loads its own source and scene once; a unit is a
+    pure function of its spec, the source and the code it ran, so the loop in main finds every
+    worker result fresh. Returns the chunk ids that had a miss.
     """
-    import subprocess,os,time
-    base=region_units.source_base()
-    misses={}
-    for index,region in enumerate(pending):
-        if not region_units.region_is_fresh(region,index+1,out/f'region-{index+1:03}',base):
-            misses[region['scene_id']]=misses.get(region['scene_id'],0)+1
-    if not misses:return
-    # Region 1 writes the shared knight/gameplay files: cook its scene first
+    import time
+    misses=region_units.missing_parts(regions,out,retail)
+    if not misses:return set()
+    stale_chunks={index+1 for index,region in enumerate(regions)
+                  if not region_units.region_is_fresh(region,index+1,out/f'region-{index+1:03}',retail)}
+    # Region 1 writes the shared knight/gameplay files: cook its scenery first
     # so the other workers never race it, then the rest in parallel.
-    order=sorted(misses,key=lambda scene:(-(scene==pending[0]['scene_id']),-misses[scene]))
+    head=(regions[0]['scene_id'],'scenery')
+    order=sorted(misses,key=lambda job:(job!=head,-misses[job]))
     workers=max(1,min(len(order),(os.cpu_count() or 4)-2,8,
                       int(os.environ.get('CARGO_BUILD_JOBS','8'))))
-    print(f'Precooking {sum(misses.values())} regions across {len(order)} scenes with {workers} workers',flush=True)
+    if os.environ.get('HK_COOK_SERIAL'):workers=1
+    print(f'Precooking {sum(misses.values())} region units across {len(order)} workers ({workers} at a time)',flush=True)
     logs=ROOT/'.hkpsx'/'precook-logs';logs.mkdir(parents=True,exist_ok=True)
-    def spawn(scene):
-        handle=(logs/f'scene-{scene}.log').open('w')
-        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parent/'region_units.py'),'--precook',str(scene)],cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
-        proc.log_path=logs/f'scene-{scene}.log';proc.log_handle=handle;return proc
+    def spawn(job):
+        scene,part=job
+        handle=(logs/f'scene-{scene}-{part}.log').open('w')
+        proc=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parent/'region_units.py'),'--precook',str(scene),'--part',part],
+                              cwd=ROOT,stdout=handle,stderr=subprocess.STDOUT)
+        proc.log_path=logs/f'scene-{scene}-{part}.log';proc.log_handle=handle;return proc
     def finish(proc):
         proc.log_handle.close();return proc.log_path.read_text()
-    first=order[0];running={}
-    if first==pending[0]['scene_id']:
-        proc=spawn(first);proc.wait();log=finish(proc)
-        if proc.returncode:raise ValueError(f'Precook of scene {first} failed with status {proc.returncode}:\n{log[-4000:]}')
+    running={}
+    if order[0]==head:
+        proc=spawn(head);proc.wait();log=finish(proc)
+        if proc.returncode:raise ValueError(f'Precook of scene {head[0]} {head[1]} failed with status {proc.returncode}:\n{log[-4000:]}')
         order=order[1:]
     queue=list(order);attempts={}
     while queue or running:
         while queue and len(running)<workers:
-            scene=queue.pop(0);running[scene]=spawn(scene);attempts[scene]=attempts.get(scene,0)+1
-        for scene,proc in list(running.items()):
+            job=queue.pop(0);running[job]=spawn(job);attempts[job]=attempts.get(job,0)+1
+        for job,proc in list(running.items()):
             if proc.poll() is not None:
-                log=finish(proc);del running[scene]
-                if proc.returncode<0 and attempts[scene]<3:
+                log=finish(proc);del running[job]
+                if proc.returncode<0 and attempts[job]<3:
                     # A worker killed by a signal under parallel load (observed
-                    # SIGSEGV at startup) is retried; finished regions are cached.
-                    print(f'Precook worker for scene {scene} died with signal {-proc.returncode}; retrying',flush=True)
-                    queue.append(scene);continue
+                    # SIGSEGV at startup) is retried; finished regions have receipts.
+                    print(f'Precook worker for scene {job[0]} {job[1]} died with signal {-proc.returncode}; retrying',flush=True)
+                    queue.append(job);continue
                 if proc.returncode:
                     for other in running.values():other.kill()
-                    raise ValueError(f'Precook of scene {scene} failed with status {proc.returncode}:\n{log[-4000:]}')
+                    raise ValueError(f'Precook of scene {job[0]} {job[1]} failed with status {proc.returncode}:\n{log[-4000:]}')
         time.sleep(0.2)
+    return stale_chunks
 
 
 def write_report(path, report):
@@ -759,8 +766,7 @@ def refresh_actors():
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit',type=int,help='Diagnostic: stop after this many cooked regions')
-    parser.add_argument('--precook',type=int,metavar='SCENE_ID',help='Worker: cook this scene\'s cache misses into data/regions and exit')
-    parser.add_argument('--serial',action='store_true',help='Cook cache misses in this process instead of one worker per scene')
+    parser.add_argument('--serial',action='store_true',help='Run the region workers one at a time (same as HK_COOK_SERIAL=1)')
     parser.add_argument('--refresh-actors',action='store_true',help='Re-cook only actor regions after controller extraction changes')
     parser.add_argument('--append-actor-bank',action='store_true',help='Rebuild the scene-wide actor bank from immutable base packs')
     parser.add_argument('--refresh-camera',action='store_true',help='Re-read only the camera tilemaps and lock areas (postpack_camera_locks)')
@@ -776,12 +782,13 @@ def main():
     if args.refresh_actors:
         refresh_actors();return
     out=ROOT/'data/regions';out.mkdir(parents=True,exist_ok=True)
-    if args.precook is not None:
-        precook_scene(args.precook,out);return
+    if args.serial:os.environ['HK_COOK_SERIAL']='1'
     source=Source();scenes={};pixels={};geometry={}
-    fingerprints=cook_fingerprints(source)
     pending=fixed_regions();regions=[]
-    if not args.serial:precook_parallel(pending,fingerprints,out)
+    # The region units (host/region_units.py) are cooked by workers and found fresh here through their
+    # receipts. Without a retail manifest the build driver checked there are no receipts: cook in this process.
+    retail=depcache.Retail.checked()
+    recooked=precook_parallel(pending[:args.limit] if args.limit else pending,out,retail) if retail is not None else set()
     report={'format':'HKREGIONS01','complete':False,'initial_chunk_id':1,'scenes':[],
             'regions':regions,'quality':{'scenery_max_axis':SCENERY_MAX_AXIS,'static_page_budget':STATIC_PAGE_BUDGET,'texture_budget':TEXTURE_BUDGET,'room_byte_budget':ROOM_BYTE_BUDGET,'layout':'fixed106','animation_sampling':'unchanged'},'limitations':[
                 'Tutorial and Town regions cover supported scenery and collision across their development envelopes; Town NPCs, shops, benches and progression scripts remain unsupported',
@@ -800,13 +807,13 @@ def main():
         # basis for the number is written beside world.MAX_REGIONS.
         if chunk_id>MAX_REGIONS:raise ValueError(f'Region chunk table exceeds {MAX_REGIONS} slots')
         destination=out/f'region-{chunk_id:03}'
-        key=cook_cache_key(region,fingerprints);cooked=cached_cook(destination,key);cached=cooked is not None
-        if cached:
-            print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (cached)',flush=True)
+        if retail is not None:
+            cooked=region_units.read_region(region,chunk_id,destination,retail)
         else:
-            print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]}',flush=True)
-            cooked=cook_region(source,scenes[scene_id],region,chunk_id,destination,key,pixels,geometry)
-        check_packet_budget(chunk_id,region,destination,cooked)
+            print(f'REGION {chunk_id}: {region["scene_name"]} {region["activation_bounds"]} (no receipts)',flush=True)
+            cooked=cook(source,scenes[scene_id],region,destination,pixels,geometry,write_shared=chunk_id==1,stage_for_similarity=True)
+        cached=chunk_id not in recooked and retail is not None
+        region_units.check_packet_budget(chunk_id,region,destination,cooked)
         path=out/f'chunk_{chunk_id}.hk';shutil.copy2(destination/'room.hk',path)
         if chunk_id==1:
             shutil.copy2(path,ROOT/'data/room.hk')

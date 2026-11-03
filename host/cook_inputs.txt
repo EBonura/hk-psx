@@ -1,5 +1,8 @@
-# Code whose change invalidates cooked regions. Shared by host/hk-build/main.rs
-# (whole-cook cache) and host/regions.py (per-region reuse).
+# NOT what decides a recook any more. A region unit and the cook stage are judged by what they actually ran
+# (host/depcache.py records the functions and files; docs/COOK-CACHE.md), so a file missing from this list is
+# still a dependency. This list is now (1) the key of the shared cook store, which only picks a snapshot to
+# start from (a wrong pick is a miss, never a stale hit), and (2) the Rust and data files the Rust steps of the
+# cook stage depend on (the non-.py lines, hashed by host/hk-build/main.rs rust_step_fingerprint).
 host/cook.py
 # The texel quantiser every cooked texture goes through.
 host/quantize.py
@@ -53,8 +56,11 @@ tools/audit_texture_similarity.py
 tools/texture_match_groups.py
 tools/audit_resident_bank.py
 host/requirements.lock
-# The Rust interrupted-cook receipt verifier controls whether base packs are reused.
-host/hk-build/region_cache.rs
+# The dependency tracker, the unit receipts and the stage record.
+host/depcache.py
+host/region_units.py
+host/region_plan.py
+host/stagecache.py
 
 # --- postpass only ---
 # Below this line: code the cook run depends on but a single region's cooked

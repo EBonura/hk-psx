@@ -18,7 +18,6 @@ from focus import FOCUS_CLIPS,source_focus_values,generated_focus_params
 from superdash import source_superdash_values
 from dream_nail import source_dream_nail_values,generated_dream_nail_params
 from spells import source_spell_values,generated_spell_params
-from actors import actor_sources,hazard_sources,shroom_sources,source_vital_values,generated_vital_params,generated_nail_response_params
 from UnityPy.helpers.MeshHelper import MeshHandler
 
 # Camera limits for this isolated development chamber. Source locks are reported.
@@ -760,6 +759,9 @@ def cook_annotations(s,sc,region):
     animation cache cannot hold, and that verdict has to be the same here as in the postpass
     (host/regions.py::postpack_actor_bank).
     """
+    # Imported here, not at the top: the scenery unit never loads the recognisers, so an edit to them
+    # (their module level included) is not a dependency of a scenery receipt (host/depcache.py).
+    from actors import actor_sources,hazard_sources,shroom_sources
     bounds=region.get('interaction_bounds',region['activation_bounds'])
     actors=actor_sources(sc,bounds)
     hazards=hazard_sources(sc,bounds)
@@ -1079,10 +1081,13 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     breakables=bind_breakables(breakables,draws,edges)
     secrets=bind_secrets(secrets,draws,edges)
     params+=generated_params(constants,dt,nails,grass,draws)
-    params+=generated_nail_response_params(constants,dt)
+    if write_shared:
+        from actors import generated_nail_response_params
+        params+=generated_nail_response_params(constants,dt)
     params+=generated_dream_nail_params(source_dream_nail_values(s))
     params+=generated_spell_params(source_spell_values(s))
     if write_shared:
+        from actors import source_vital_values,generated_vital_params
         vital_values=source_vital_values(s,constants)
         params+=generated_vital_params(vital_values)
         focus_values=source_focus_values(s,constants)
