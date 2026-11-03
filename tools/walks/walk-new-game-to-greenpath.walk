@@ -39,7 +39,7 @@ wait until HK_WALK_READY == 1 timeout 300
 include baldur-defs.walk
 include crossroads-11-alt.walk
 include baldur-round.walk times 220
-check baldur-dead HK_ENEMY_KILLS >= 1 ; HK_ROLLERS_KILLED >= 3 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
+check baldur-dead HK_BLOCKERS_DEAD >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
 include crossroads-11-alt-west-chain.walk
 include fungus1-01-chain.walk
 include fungus1-01b-chain.walk

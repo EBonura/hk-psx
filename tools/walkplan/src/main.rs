@@ -82,13 +82,17 @@ fn set_goal_box(bounds: Option<[f64; 4]>) {
     GOAL_BOX.with(|g| g.set(bounds.map(|b| [q(b[0]), q(b[1]), q(b[2]), q(b[3])])));
 }
 
-fn in_goal_box(player: &Player) -> bool {
+fn touches_goal_box(player: &Player) -> bool {
     GOAL_BOX.with(|g| {
         g.get().is_some_and(|b| {
             let body = [player.x - PARAMS.half_width, player.y + PARAMS.bottom, player.x + PARAMS.half_width, player.y + PARAMS.top];
-            player.grounded && body[0] < b[2] && body[2] > b[0] && body[1] < b[3] && body[3] > b[1]
+            body[0] < b[2] && body[2] > b[0] && body[1] < b[3] && body[3] > b[1]
         })
     })
+}
+
+fn in_goal_box(player: &Player) -> bool {
+    player.grounded && touches_goal_box(player)
 }
 
 fn set_hazards(boxes: Vec<Edge>) {
@@ -144,6 +148,9 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
     let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let regions = json["regions"].as_array().ok_or("regions.json has no regions")?;
     let mut edges: Vec<Edge> = Vec::new();
+    // An edge a switch takes out of the room is out wherever it appears: the regions of a scene overlap, so a
+    // neighbouring pack holds the same collider again without the binding.
+    let mut blanked: Vec<Edge> = Vec::new();
     let mut found = false;
     for region in regions.iter().filter(|r| r["scene_name"] == scene) {
         found = true;
@@ -151,7 +158,9 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
         let bytes = std::fs::read(root.join(file)).map_err(|e| format!("{file}: {e}"))?;
         let blank = linked_edges(region);
         for (index, edge) in room_edges(&bytes).ok_or_else(|| format!("{file}: not an HKROOM02 pack"))?.into_iter().enumerate() {
-            if !blank.contains(&index) && !edges.contains(&edge) {
+            if blank.contains(&index) {
+                blanked.push(edge);
+            } else if !edges.contains(&edge) {
                 edges.push(edge);
             }
         }
@@ -159,7 +168,21 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
     if !found {
         return Err(format!("no scene named {scene}"));
     }
+    edges.retain(|e| !blanked.contains(e));
     edges.retain(|e| !inside_any(e, open));
+    // HK_WALKPLAN_EDGES=x0,y0,x1,y1 lists the room's edges (world units) that touch the box: what the planner stands on.
+    if let Some(b) = std::env::var("HK_WALKPLAN_EDGES")
+        .ok()
+        .map(|v| v.split(',').filter_map(|n| n.parse::<f64>().ok()).collect::<Vec<_>>())
+        .filter(|b| b.len() == 4)
+    {
+        for e in &edges {
+            let (x0, y0, x1, y1) = (units(e[0]), units(e[1]), units(e[2]), units(e[3]));
+            if x0.max(x1) >= b[0] && x0.min(x1) <= b[2] && y0.max(y1) >= b[1] && y0.min(y1) <= b[3] {
+                eprintln!("edge ({x0:.2}, {y0:.2}) -> ({x1:.2}, {y1:.2})");
+            }
+        }
+    }
     Ok(edges)
 }
 
@@ -168,12 +191,16 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
 /// `--switched` (or HK_WALKPLAN_SWITCHED=1, which the room planner reads too) every switch is taken as hit: the
 /// gates it opens are out and the platforms are in.
 fn linked_edges(region: &serde_json::Value) -> Vec<usize> {
-    let switched = std::env::var("HK_WALKPLAN_SWITCHED").is_ok_and(|v| v == "1");
+    // HK_WALKPLAN_SWITCHED: 1 takes every switch as hit, a list of state indices (`119,115`) only those.
+    let setting = std::env::var("HK_WALKPLAN_SWITCHED").unwrap_or_default();
+    let listed: Vec<u64> = setting.split(',').filter_map(|v| v.trim().parse().ok()).collect();
     let mut blank = Vec::new();
     for binding in region["remote_art_bindings"].as_array().into_iter().flatten() {
         if binding.get("state_scene").is_none() {
             continue;
         }
+        let switched = setting == "1"
+            || binding["state_index"].as_u64().is_some_and(|i| listed.contains(&i));
         if binding["inverted"].as_bool().unwrap_or(false) != switched {
             blank.extend(binding["edge_indices"].as_array().into_iter().flatten().filter_map(|v| v.as_u64()).map(|v| v as usize));
         }
@@ -289,6 +316,10 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                 while !fall.grounded && ticks < 200 {
                     step(&mut fall, edges, if hold { dir } else { 0 }, false);
                     ticks += 1;
+                    // A bottom exit is a gap in the floor: falling through its trigger takes it.
+                    if touches_goal_box(&fall) {
+                        fall.grounded = true;
+                    }
                 }
                 if fall.grounded && units(fall.y) > -30.0 && !touched() {
                     found.push((fall, cost + ticks, Act::Fall { dir, hold, ledge_x: next.x }));
