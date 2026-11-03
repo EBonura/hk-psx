@@ -18,9 +18,12 @@ def reach_jump $fk_ok && $tx0 <= $px + 196608 && $tx1 >= $px - 196608 && $ty0 <=
 def fk_idle $fk_ok && u32(HK_FK_PHASE) == 0 && $ty0 <= $py + 104857 && $ty1 >= $py - 157286
 def close_right $fk_idle && $tx0 > $px + 209715
 def close_left $fk_idle && $tx1 < $px - 209715
-# Winding up or in the air within 14 units: give ground.
-def threat_left (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx < 0 && dx > -14 * 65536 && ph >= 1 && ph <= 2)
-def threat_right (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx >= 0 && dx < 14 * 65536 && ph >= 1 && ph <= 2)
+# Winding up or in the air within 9 units: give ground. (14 until 11-03: his jump carries him about 7.5 units toward the Knight, so a Knight
+# who backs away from a jump begun 15 units off lands him 10 units off with 70 ticks of idle left, too far to close; the Knight ended up
+# against the left wall of the arena every cycle and took the third stagger after 6,000 ticks, or died first in about one phase of five.
+# At 9 the jump lands within the Knight's reach and the third stagger comes 4,400 ticks sooner; 13 of 13 phase variants passed.)
+def threat_left (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx < 0 && dx > -9 * 65536 && ph >= 1 && ph <= 2)
+def threat_right (let dx = i32(HK_FK_DX), ph = u32(HK_FK_PHASE) in dx >= 0 && dx < 9 * 65536 && ph >= 1 && ph <= 2)
 # A slam wave coming at the Knight and nearer than 5 units.
 def wave_near any(i in 0..2: let wx = i32(HK_WAVE[2 * i]), wd = i32(HK_WAVE[2 * i + 1]) in wd != 0 && ($px - wx) * wd >= 0 && ($px - wx) * wd < 5 * 65536)
 # Focus: masks missing, SOUL for it (or one under way), on the ground, and he is far off (17 units or more).
