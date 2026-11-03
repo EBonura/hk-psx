@@ -607,3 +607,74 @@ pub fn encode_chunk(
     out.get_mut(end..end + 4)?.copy_from_slice(&hash.to_le_bytes());
     Some(end + 4)
 }
+
+/// A spec with nothing in it, the pool's filler.
+pub const EMPTY_SPEC: ActorSpec = ActorSpec {
+    controller: ActorController::Gruzzer,
+    bounds: [0; 4],
+    health: EnemyParams { health: 0, contact_damage: 0, evasion_ticks: 0, invincible: false, damage_override: false },
+    walk: WalkParams { speed: 0, turn_ticks: 0, turn_cooldown_ticks: 0 },
+    walk_clip: 0,
+    turn_clip: 0,
+    corpse: None,
+    recoil_speed: 0,
+    recoil_ticks: 0,
+    dream_soul: 0,
+};
+/// A corpse with nothing in it, the pool's filler.
+pub const EMPTY_CORPSE: CorpseSpec = CorpseSpec {
+    air_clip: 0,
+    land_clip: 0,
+    bounds: [0; 4],
+    spawn_offset: [0; 2],
+    bounce_factor: 0,
+    fling_speed: 0,
+    gravity: 0,
+    breaker: false,
+    smash_bounces: 0,
+    remove_after_land: 0,
+    hold_ticks: 0,
+};
+
+/// The enemy types of the admitted scene: room for the widest scene's `S` specs and `C` corpses. One scene is in it
+/// at a time; `load` replaces the previous scene's, and references taken from the previous scene's `specs` then read
+/// the new scene's bytes, so whoever holds them must rebuild them for the new scene (the world's `sync_region` does
+/// whenever the admitted region changes).
+pub struct SpecPool<const S: usize, const C: usize> {
+    specs: [ActorSpec; S],
+    corpses: [CorpseSpec; C],
+    /// The scene (catalogue id) the pool holds and how many specs, `usize::MAX` for none.
+    loaded: (usize, usize),
+}
+impl<const S: usize, const C: usize> SpecPool<S, C> {
+    pub const fn new() -> Self {
+        Self { specs: [EMPTY_SPEC; S], corpses: [EMPTY_CORPSE; C], loaded: (usize::MAX, 0) }
+    }
+    /// Decode `scene_id`'s chunk into the pool. False, and an empty pool, when the chunk is malformed, is
+    /// another scene's or does not fit.
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
+    pub fn load(&'static mut self, scene_id: usize, chunk: &[u8]) -> bool {
+        self.loaded = (usize::MAX, 0);
+        let corpses: &'static mut [CorpseSpec] = &mut self.corpses;
+        match decode_chunk(chunk, corpses, &mut self.specs) {
+            Some(head) if head.scene_id as usize == scene_id => {
+                self.loaded = (scene_id, head.specs);
+                true
+            }
+            _ => false,
+        }
+    }
+    /// The scene's enemy types in placement order; empty for any scene but the loaded one.
+    pub fn specs(&'static self, scene_id: usize) -> &'static [ActorSpec] {
+        match self.loaded {
+            (loaded, count) if loaded == scene_id => &self.specs[..count],
+            _ => &[],
+        }
+    }
+}
+impl<const S: usize, const C: usize> Default for SpecPool<S, C> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
