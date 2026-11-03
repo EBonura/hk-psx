@@ -1,0 +1,92 @@
+# Crossroads_33 from the arrival the Gate Switch in Crossroads_06 opens (x 44.5 y 34.4, the sliding wall gone) over the ledges up to the shaft
+# below the top gate, a jump straight up through the gap in the ceiling (x 22.0, the landing the way down used) and into Crossroads_07. Planned with
+# hk-walkplan room on the disc (margin 0.4, the wall's box passed as open; the planner does not take a vertical exit from a standing jump, so the last
+# jump is written: walk 22.0, jump). The exit is waited for by the arrival in 07 (x 20, y 0.5, six units either way).
+at 44.50 34.40
+walk 43.12
+walk 43.55   # run-up
+walk 43.12   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 27.29 44.69
+snipe
+guard 2
+retreat 27.29 44.69
+heal
+walk 38.84   # run-up
+walk 38.41   # take-off
+hold left+cross for 5
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 27.30 44.70
+snipe
+guard 2
+retreat 27.30 44.70
+heal
+walk 36.22   # run-up
+walk 35.79   # take-off
+hold left+cross for 34
+hold left for 24
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 27.29 44.69
+snipe
+guard 2
+retreat 27.29 44.69
+heal
+walk 28.19   # run-up
+walk 27.76   # take-off
+hold left+cross for 20
+hold left for 30
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 19.75 20.85
+snipe
+guard 2
+retreat 19.75 20.85
+heal
+walk 20.85   # take-off
+hold left+cross for 8
+hold left for 13
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 4.81 18.68
+snipe
+guard 2
+retreat 4.81 18.68
+heal
+walk 18.37   # run-up
+walk 17.94   # take-off
+hold left+cross for 5
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 4.81 18.68
+snipe
+guard 2
+retreat 4.81 18.68
+heal
+walk 14.88   # run-up
+walk 15.31   # take-off
+hold right+cross for 24
+hold right for 6
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 17.40 18.61
+snipe
+guard 2
+retreat 17.40 18.61
+heal
+walk 17.44   # run-up
+walk 17.87   # take-off
+hold right+cross for 28
+hold right for 8
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 22.0
+hold cross for 30
+wait until expr abs(i32(HK_PLAYER_X) - 1310720) <= 327680 && abs(i32(HK_PLAYER_Y) - 32768) <= 393216 timeout 600
+wait until HK_GAME_MODE == 1 timeout 1800

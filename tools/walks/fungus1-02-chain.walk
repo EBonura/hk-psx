@@ -1,0 +1,128 @@
+# Fungus1_02 from its entry (x 45.5 y 61.4) down to the east gate into Fungus1_06 (arrival x 0.5 y 16.4).
+# Planned with hk-walkplan room on the disc (HK_WALKPLAN_MARGIN=0.4, sync poll), with the whole run from the Ancestral Mound before it as the pre fragment
+# (so the masks, SOUL and Geo are the chain's own), 2026-11-03. The exit is waited for by the next room's arrival.
+at 45.50 61.40
+walk 43.01
+walk 43.44   # run-up
+walk 43.01   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 25.25 45.69
+snipe
+guard 2
+retreat 25.25 45.69
+heal
+walk 37.75
+walk 38.18   # run-up
+walk 37.75   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 25.25 45.69
+snipe
+guard 2
+retreat 25.25 45.69
+heal
+walk 33.48   # run-up
+walk 33.05   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 25.25 45.69
+snipe
+guard 2
+retreat 25.25 45.69
+heal
+walk 27.24
+walk 27.67   # run-up
+walk 27.24   # take-off
+hold left+cross for 8
+hold left for 34
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 15.29 23.70
+snipe
+guard 2
+retreat 15.29 23.70
+heal
+walk 21.86   # run-up
+walk 21.43   # take-off
+hold left+cross for 24
+hold left for 28
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 13.36 16.64
+snipe
+guard 2
+retreat 13.36 16.64
+heal
+walk 14.67   # run-up
+walk 14.24   # take-off
+hold left+cross for 5
+hold left for 11
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 10.32 12.08
+snipe
+guard 2
+retreat 10.32 12.08
+heal
+walk 11.60   # run-up
+walk 12.03   # take-off
+hold right+cross for 5
+hold right for 92
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 24.00 25.77
+snipe
+guard 2
+retreat 24.00 25.77
+heal
+walk 25.72
+walk 25.29   # run-up
+walk 25.72   # take-off
+hold right+cross for 16
+hold right for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 29.27 45.70
+snipe
+guard 2
+retreat 29.27 45.70
+heal
+walk 31.81
+walk 31.38   # run-up
+walk 31.81   # take-off
+hold right+cross for 8
+hold right for 18
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 29.26 45.69
+snipe
+guard 2
+retreat 29.26 45.69
+heal
+walk 35.96
+walk 35.53   # run-up
+walk 35.96   # take-off
+hold right+cross for 12
+hold right for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 29.26 45.69
+snipe
+guard 2
+retreat 29.26 45.69
+heal
+walk 40.23   # run-up
+walk 40.66   # take-off
+hold right+cross for 12
+hold right for 19
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+hold right until expr abs(i32(HK_PLAYER_X) - 32768) <= 327680 && abs(i32(HK_PLAYER_Y) - 1074831) <= 196608 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,0 +1,163 @@
+# Crossroads_07 from the arrival at the bottom (x 23.0 y 4.39 once he has climbed out of the shaft) up the room's ledges to the one at y 37.6 and left
+# along the passage to the gate into Crossroads_11_alt (arrival x 119.5, y 12.4). Planned with hk-walkplan room (margin 0.7: its Climbers and Flies take
+# a mask from a narrow landing at 0.4) with the whole run from the Mound before it as the pre fragment, so the SOUL of the Mound's spell is there for the
+# heals. The ledge at y 37.6 has a Climber that does not leave it: land at its right end (x 21.4) and kill it (`fight 6`) before the passage.
+at 23.00 4.39
+walk 22.72
+walk 23.15   # run-up
+walk 22.72   # take-off
+hold left+cross for 16
+hold left for 25
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 4.75 17.66
+snipe
+guard 2
+retreat 4.75 17.66
+heal
+walk 17.48   # run-up
+walk 17.05   # take-off
+hold left+cross for 24
+hold left for 11
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 9.11 12.40
+snipe
+guard 2
+retreat 9.11 12.40
+heal
+walk 11.78   # run-up
+walk 12.21   # take-off
+hold right+cross for 28
+hold right for 21
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 16.03 21.39
+snipe
+guard 2
+retreat 16.03 21.39
+heal
+walk 18.56   # run-up
+walk 18.99   # take-off
+hold right+cross for 34
+hold right for 5
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 23.77 29.14
+snipe
+guard 2
+retreat 23.77 29.14
+heal
+walk 20.79
+walk 20.36   # run-up
+walk 20.79   # take-off
+hold right+cross for 34
+hold right for 5
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 23.83 29.06
+snipe
+guard 2
+retreat 23.83 29.06
+heal
+walk 25.83
+walk 25.40   # run-up
+walk 25.83   # take-off
+hold right+cross for 34
+hold right for 13
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 32.14 35.43
+snipe
+guard 2
+retreat 32.14 35.43
+heal
+walk 32.76   # run-up
+walk 32.33   # take-off
+hold left+cross for 24
+hold left for 8
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 23.83 29.05
+snipe
+guard 2
+retreat 23.83 29.05
+heal
+walk 27.60   # run-up
+walk 28.03   # take-off
+hold right+cross for 20
+hold right for 12
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 32.13 35.42
+snipe
+guard 2
+retreat 32.13 35.42
+heal
+walk 32.89   # run-up
+walk 32.46   # take-off
+hold left+cross for 28
+hold left for 14
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 23.83 29.05
+snipe
+guard 2
+retreat 23.83 29.05
+heal
+walk 26.37
+walk 26.80   # run-up
+walk 26.37   # take-off
+hold left+cross for 24
+hold left for 13
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 25.81   # run-up
+walk 25.38   # take-off
+hold left+cross for 20
+hold left for 10
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+wait 5
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+fight 6 15.2 21.6
+guard 2
+at 20.95 37.61
+walk 21.38   # run-up
+walk 20.95   # take-off
+hold left+cross for 12
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 16.06 21.42
+snipe
+guard 2
+retreat 16.06 21.42
+heal
+walk 16.68   # run-up
+walk 16.25   # take-off
+hold left+cross for 34
+hold left for 22
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.29 9.66
+snipe
+guard 2
+retreat 0.29 9.66
+heal
+walk 6.01
+walk 6.44   # run-up
+walk 6.01   # take-off
+hold left+cross for 12
+hold left for 18
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+fight 4 0.29 9.66
+snipe
+guard 2
+retreat 0.29 9.66
+heal
+walk 1.03
+hold left until expr abs(i32(HK_PLAYER_X) - 7831552) <= 327680 && abs(i32(HK_PLAYER_Y) - 812687) <= 196608 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
