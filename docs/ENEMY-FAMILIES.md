@@ -34,3 +34,9 @@ object rests on; the limitations written into the cook report.
   (`AudioPlaySimple`, raised as `Env::sound`).
 * The corpse is the object's own Death clip played in place (the original's `Corpse Plant Trap` plays the same clip
   and then hides itself); `no_corpse` in the control record.
+
+## Plant Trap against the original (2026-11-03)
+
+`tools/hkref/profiles/pt22.json` (fsmtrace of the original on Fungus1_22 with the Knight placed 1.9 units above the trap at `(29.386, 14.494)`; `HK_REFERENCE_BOXES=1` adds a `box` token with the root's own BoxCollider2D, world size, to every ENV row). Original, game time from the trigger: Ready 0 s, Snap 0.76 s, Retract 1.76 s, Cooldown 2.356 s, Idle again 2.856 s. The port: Snap 45 ticks (0.75 s) after Ready, Retract 60 (1.0 s) after Snap, Retract clip 36 ticks, Cooldown 30 ticks (0.5 s). The collider boxes the original puts on the object while it plays (width x height, world units) are 4.016x1.734, 1.5x3.922, 1.609x3.125, 1.047x3.125, 1.0x2.547 and then off at 2.02 s; the cooked `BOXES_PLANT_TRAP` frames are exactly those five (the sixth entry repeats one), and at rest the original has no live collider. Not compared: frames (the original run carries no screenshots in fsmtrace mode), the Ready Grass particles and growl (not presented).
+
+`walk-plant-trap-kill` (tools/walks/plant-trap-kill.walk, card greenpath-22-switch.mcd): the Knight jumps into the trigger, takes three snaps (5 to 2 masks) and kills the trap with four nail hits through `fight 4 27 33`, closed loop, no cheat, 1,504 ticks, the same twice.

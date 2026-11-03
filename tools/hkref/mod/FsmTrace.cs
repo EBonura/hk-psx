@@ -69,6 +69,7 @@ namespace HKReference
 
         // One ENV row per test frame: the knight, the camera and every tracked root (position, velocity), the
         // numbers the environment-reading actions saw. Replayed by the host harness.
+        private static readonly bool BoxesOn = Environment.GetEnvironmentVariable("HK_REFERENCE_BOXES") == "1";
         private static void Env(int frame)
         {
             if (rootObjects.Count == 0 || Time.frameCount == envFrame) return;
@@ -86,6 +87,14 @@ namespace HKReference
                 Rigidbody2D rb = root.GetComponent<Rigidbody2D>();
                 b.Append(';').Append(root.name).Append('#').Append(root.GetInstanceID().ToString(CultureInfo.InvariantCulture)).Append('@')
                     .Append(Show(root.transform.position)).Append(' ').Append(rb == null ? "0 0" : Show(rb.velocity));
+                // HK_REFERENCE_BOXES=1: the root's own BoxCollider2D (tk2d rewrites it with the playing frame), as a separate token
+                // `box Name enabled centre-x centre-y width height` in world units, so a replay that reads roots is unaffected.
+                BoxCollider2D box = BoxesOn ? root.GetComponent<BoxCollider2D>() : null;
+                if (box != null)
+                {
+                    Bounds bb = box.bounds;
+                    b.Append(";box ").Append(root.name).Append(' ').Append(box.enabled ? 1 : 0).Append(' ').Append(Show(bb.center)).Append(' ').Append(Show(bb.size));
+                }
             }
             writer.WriteLine(string.Join(",", new string[] { frame.ToString(CultureInfo.InvariantCulture), Steps.ToString(CultureInfo.InvariantCulture),
                 Time.frameCount.ToString(CultureInfo.InvariantCulture), "ENV", Q(""), Q(""), Q(b.ToString()), "", "" }));

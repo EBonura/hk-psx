@@ -1,0 +1,27 @@
+name walk-plant-trap-kill
+title the Plant Trap at Fungus1_22 (x 29.4, y 14.5) snaps at the Knight and is killed with the nail, closed loop, no cheat
+max_ticks 12000
+# Boots from the seeded card of walk-fungus1-22-gate (upper floor east of the gate, x 31.5, y 13.39). The trap's detector sits above its root
+# (original: the hero at +1.9 above it enters the trigger, Ready, then Snap 0.76 s later, Retract 1.0 s after that, Cooldown 0.6 s, Idle after 0.5 s;
+# its hurt box exists only in the Snap and Retract frames). 16 health, so four nail hits. The Knight stands at x 29.6, jumps to enter the
+# trigger, and swings through the Snap window; a round repeats until it is dead.
+card greenpath-22-switch.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+at 31.5 13.39
+wait 30
+hold left until x le 29.6 timeout 300
+hold left until expr i32(HK_PLAYER_FACING) < 0 timeout 20
+check trap-met HK_ENEMY_KILLS == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+loop trap-round until HK_ENEMY_KILLS ge 1 max 8 timeout 3600
+  walk 30.4
+  hold cross for 12
+  wait 20
+  fight 4 27 33
+  wait 60
+end
+wait 90
+check trap-dead HK_ENEMY_KILLS == 1 ; HK_ENEMY_HITS ge 4 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1

@@ -1,0 +1,8 @@
+{
+  "name": "pt22",
+  "port": { "disc": "~/Downloads/ps1 games/Hollow Knight (hk-psx).cue", "map": "build/hk-psx-normal.map", "polls": 1, "events": "0:left:2" },
+  "window": { "ticks": 700 },
+  "og": { "scene": "Fungus1_22", "gate": "bot1", "seed": 1, "timeout": 900,
+    "fsmtrace": "Plant Trap,Plant Trap (1),Plant Trap (2),Plant Trap (3),Plant Trap (4),Plant Trap (5),Plant Trap (6),Plant Trap (7),Plant Trap (8),Plant Trap (9)",
+    "fsmseek": "Plant Trap|0|1.9|200" }
+}
