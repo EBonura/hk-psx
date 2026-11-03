@@ -24,7 +24,7 @@ fn crawler() -> Crawler {
 
 #[test]
 fn every_admitted_instance_selects_its_own_checked_graph() {
-    assert_eq!(GRAPHS.len(), 10);
+    assert_eq!(GRAPHS.len(), 12);
     for &(scene, source, _, _) in GRAPHS {
         assert!(Crawler::new(scene as usize, source, 1).is_some());
     }
