@@ -80,3 +80,13 @@ planning aggregates (group sectors, prefix and first-window sectors, split base,
 lengths before anything is read. About 12 to 16 resident bytes a scene would remain. See hk-resident
 NOTES for the cost estimate; it is only worth doing if the resident table cost of the remaining
 scenes (about 0.25 KB a scene after this) threatens the 8,192-byte bar.
+
+## Rebasing a branch that adds an enemy family (the Shaker's gas attack is the first)
+
+`wire.rs` matches `ActorController` and `runner::Attack` exhaustively, so a new variant or a new
+`Attack::Gas {..}` stops compiling there until it has a tag: add the encode arm, add the decode arm
+(or a row in `SHAPES` for a plain payload), and add the variant to `controllers()` in
+`shared/hk-sim/tests/wire.rs`. A new field on `ActorSpec` (the family branch adds `state: u16`) goes
+into `encode_spec`/`decode_spec` in the same order. If an enemy type plays none of the Runner's
+sounds, say so once in `hk_sim::runner_audio_family`; the cook constant and the harnesses both read it.
+Nothing else per scene or per enemy changes: the cook packs whatever `data/regions.rs` carries.
