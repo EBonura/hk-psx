@@ -14,10 +14,39 @@ use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
 pub fn stream_checkpoint() {
     cd_stream::recover_lost_edge();
 }
+// The manifest with its atlas rows compacted to `AtlasRow` (host/hk-build/guest_manifest.rs); `atlas` expands a row.
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../data/scene_manifest.rs"
+    "/../data/scene_manifest_guest.rs"
 ));
+/// Atlas chunk `i` (manifest order) with the facts its 16-byte row leaves out put back: the owning scene, the raw
+/// length and the kind and count unpacked. The cook checked each of them for every row.
+pub const fn atlas(i: usize) -> AtlasDesc {
+    let row = ATLAS_ROWS[i];
+    let kind = (row.count_kind >> 15) as u8;
+    let count = (row.count_kind & 0x7fff) as usize;
+    AtlasDesc {
+        scene_index: atlas_scene(i),
+        stored_len: row.stored_len as usize,
+        stored_fnv: row.stored_fnv,
+        raw_len: count * if kind == 0 { 32768 } else { 32 },
+        raw_fnv: row.raw_fnv,
+        kind,
+        first: row.first as usize,
+        count,
+    }
+}
+/// The manifest scene that owns atlas chunk `i`.
+const fn atlas_scene(i: usize) -> usize {
+    let mut scene = 0;
+    while scene < SCENE_ATLAS_RANGES.len() {
+        if i < SCENE_ATLAS_RANGES[scene].1 as usize {
+            return scene;
+        }
+        scene += 1;
+    }
+    panic!("an atlas row outside every scene range")
+}
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/scene_coverage_manifest.rs"
@@ -71,7 +100,7 @@ const MOSSMAN_BANK:usize=5;
 // chunk sits on the disc is a separate question, answered by `member`.
 const CLIP_COUNT: usize = crate::ambience::CLIPS.len();
 const ATLAS_INDEX: usize = SCENE_COUNT + CLIP_COUNT;
-const FOCUS_INDEX: usize = ATLAS_INDEX + ATLASES.len();
+const FOCUS_INDEX: usize = ATLAS_INDEX + ATLAS_ROWS.len();
 const COVERAGE_INDEX: usize = FOCUS_INDEX + 1;
 const METADATA_INDEX: usize = COVERAGE_INDEX + COVERAGE_MANIFEST.len();
 const EFFECT_INDEX: usize = METADATA_INDEX + WORLD_META_MANIFEST.len();
@@ -249,7 +278,7 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
     } else if index < ATLAS_INDEX {
         (0, 8 + index - SCENE_COUNT)
     } else if index < FOCUS_INDEX {
-        let s = ATLASES[index - ATLAS_INDEX].scene_index;
+        let s = atlas_scene(index - ATLAS_INDEX);
         (1 + s, 3 + index - ATLAS_INDEX - SCENE_ATLAS_RANGES[s].0 as usize)
     } else if index < COVERAGE_INDEX {
         (0, 4)
@@ -324,8 +353,8 @@ fn group_of(index: usize) -> Option<(usize, usize)> {
 fn scene_pages(index: usize) -> usize {
     let (start, end) = SCENE_ATLAS_RANGES[index];
     let (start, end) = (start as usize, end as usize);
-    ATLASES[start..end]
-        .iter()
+    (start..end)
+        .map(atlas)
         .filter(|a| a.kind == 0)
         .map(|a| a.count)
         .sum()
@@ -433,7 +462,7 @@ fn atlas_fingerprint(scene: usize) -> u32 {
     let (start, end) = SCENE_ATLAS_RANGES[scene];
     let (start, end) = (start as usize, end as usize);
     let mut hash = 2166136261u32;
-    for a in &ATLASES[start..end] {
+    for a in (start..end).map(atlas) {
         for value in [
             a.kind as u32,
             a.first as u32,
@@ -546,7 +575,7 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
         let clip = &crate::ambience::CLIPS[index - SCENE_COUNT];
         (clip.byte_len, clip.checksum, SCENE_ARENA_BYTES)
     } else if index < FOCUS_INDEX {
-        let a = &ATLASES[index - ATLAS_INDEX];
+        let a = atlas(index - ATLAS_INDEX);
         (a.stored_len, a.stored_fnv, SCENE_ARENA_BYTES)
     } else if index < COVERAGE_INDEX {
         (
@@ -605,7 +634,7 @@ fn chunk_spec(index: usize) -> Option<(usize, u32, usize)> {
 pub const fn scene_clobbered(scene: usize) -> bool {
     let (mut i, end) = (SCENE_ATLAS_RANGES[scene].0 as usize, SCENE_ATLAS_RANGES[scene].1 as usize);
     while i < end {
-        let a = &ATLASES[i];
+        let a = atlas(i);
         let mut k = a.first;
         while k < a.first + a.count {
             // The page and palette layouts of hk_cache::residency (`page_xy`, `clut_xy`), as consts.
@@ -940,7 +969,7 @@ impl Cache {
             (0usize, 0usize, 0usize, 0usize, 0usize);
         for (scene, &(start, end)) in SCENE_ATLAS_RANGES.iter().enumerate() {
             let (start, end) = (start as usize, end as usize);
-            if start != previous || end <= start || end > ATLASES.len() {
+            if start != previous || end <= start || end > ATLAS_ROWS.len() {
                 return Err(LoadError::RoomMismatch);
             }
             if SCENE_GATE_LOAD {
@@ -951,7 +980,7 @@ impl Cache {
             if d.page_base != pages || d.palette_base != palettes {
                 return Err(LoadError::RoomMismatch);
             }
-            for a in &ATLASES[start..end] {
+            for a in (start..end).map(atlas) {
                 let (next, unit) = match a.kind {
                     0 => (&mut pages, 32768usize),
                     1 => (&mut palettes, 32usize),
@@ -978,7 +1007,7 @@ impl Cache {
             peak_palettes = peak_palettes.max(palettes);
             previous = end;
         }
-        if previous != ATLASES.len()
+        if previous != ATLAS_ROWS.len()
             || peak_pages != SCENE_TOTAL_PAGES
             || peak_palettes != SCENE_TOTAL_PALETTES
         {
@@ -1253,7 +1282,7 @@ impl Cache {
                     SCENE_MANIFEST[index].ram_offset,
                 )
             } else if (ATLAS_INDEX..FOCUS_INDEX).contains(&index) {
-                (ATLASES[index - ATLAS_INDEX].raw_len, 0)
+                (atlas(index - ATLAS_INDEX).raw_len, 0)
             } else if (COVERAGE_INDEX..METADATA_INDEX).contains(&index) {
                 (COVERAGE_MANIFEST[index - COVERAGE_INDEX].raw_len, 0)
             } else if (METADATA_INDEX..EFFECT_INDEX).contains(&index) {
@@ -2359,14 +2388,14 @@ impl Cache {
                 SCENE_ATLAS_RANGES[scene].1 as usize,
             )
         } else {
-            (0, ATLASES.len())
+            (0, ATLAS_ROWS.len())
         };
         if self.atlas_scene != scene {
             self.loaded_atlases = start;
             self.atlas_scene = scene;
         }
         while self.loaded_atlases < end {
-            let a = &ATLASES[self.loaded_atlases];
+            let a = atlas(self.loaded_atlases);
             let (end, input) = self.stage(ATLAS_INDEX + self.loaded_atlases, st, 0)?;
             let arena = unsafe {
                 core::slice::from_raw_parts_mut((&raw mut BUFFERS.words).cast::<u8>(), end)
@@ -2403,7 +2432,7 @@ impl Cache {
             if a.kind == 0 && a.first + a.count >= hk_cache::residency::STATIC_PAGES {
                 crate::game_map::lose();
             }
-            crate::vram_cache::upload_atlas(a, &arena[..a.raw_len]);
+            crate::vram_cache::upload_atlas(&a, &arena[..a.raw_len]);
             self.loaded_atlases += 1;
         }
         Ok(())
@@ -2413,7 +2442,7 @@ impl Cache {
             self.atlas_scene < SCENE_COUNT
                 && self.loaded_atlases == SCENE_ATLAS_RANGES[self.atlas_scene].1 as usize
         } else {
-            self.loaded_atlases == ATLASES.len()
+            self.loaded_atlases == ATLAS_ROWS.len()
         }
     }
     /// audio_probe.rs: read every chunk of scene group `scene` (modulo the
@@ -2637,7 +2666,7 @@ impl Cache {
             let (start, end) = SCENE_ATLAS_RANGES[index];
             let (start, end) = (start as usize, end as usize);
             let mut counts = [0; 2];
-            for a in &ATLASES[start..end] {
+            for a in (start..end).map(atlas) {
                 counts[a.kind as usize] += a.count;
             }
             if counts != [scene.page_count(), scene.palette_count()] {

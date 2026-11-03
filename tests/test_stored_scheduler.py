@@ -103,7 +103,7 @@ static mut HK_ROOM_CACHE_HITS:u32=0;
 static mut HK_ROOM_BYTES:u32=0;
 static mut STATUS:(u32,u32)=(0,0);
 fn mark(state:u32,error:u32){unsafe{STATUS=(state,error);}}
-const ATLASES:&[u8]=&[0;23];
+const ATLAS_ROWS:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{raw_len:64},CoverageDesc{raw_len:64}];
 struct WorldMetaDesc{raw_len:usize}
@@ -222,7 +222,8 @@ fn split_index(_:usize)->Option<usize>{None}
 fn head_len(scene:usize)->usize{SCENE_MANIFEST[scene].raw_len}
 fn open_gap(_:&SceneDesc,_:&SplitDesc){}
 struct AtlasDesc{kind:u8,count:usize}
-const ATLASES:&[AtlasDesc]=&[AtlasDesc{kind:0,count:2},AtlasDesc{kind:1,count:3},AtlasDesc{kind:0,count:1},AtlasDesc{kind:1,count:2}];
+const ATLAS_ROWS:&[AtlasDesc]=&[AtlasDesc{kind:0,count:2},AtlasDesc{kind:1,count:3},AtlasDesc{kind:0,count:1},AtlasDesc{kind:1,count:2}];
+fn atlas(i:usize)->AtlasDesc{let a=&ATLAS_ROWS[i];AtlasDesc{kind:a.kind,count:a.count}}
 struct Buffer{words:[u32;12]}
 static mut BUFFERS:Buffer=Buffer{words:[0;12]};
 static mut HK_SCENE_READ_ID:u32=0;
@@ -577,7 +578,7 @@ const SCENE_MANIFEST:&[SceneDesc]=&[SceneDesc{scene_id:0},SceneDesc{scene_id:46}
 fn tail_disarm(){}
 fn runner_family(_:usize)->Option<bool>{Some(false)}
 mod runner_audio{pub fn scene_is_mossman(scene:usize)->bool{scene==46}pub fn family_ready(_:bool)->bool{true}}
-const ATLASES:&[u8]=&[0;23];
+const ATLAS_ROWS:&[u8]=&[0;23];
 struct CoverageDesc{raw_len:usize}
 const COVERAGE_MANIFEST:&[CoverageDesc]=&[CoverageDesc{raw_len:64},CoverageDesc{raw_len:64}];
 struct WorldMetaDesc{raw_len:usize}
@@ -628,8 +629,8 @@ impl Cache{METHODS
 #[test]fn failure_after_any_atlas_or_scene_admission_requires_fresh_uploads(){
     // Failures can follow any atlas chunk, or scene admission after all atlas
     // chunks. Menu restoration overwrites their VRAM, so none may remain ready.
-    for scenes in 0..=2 {for atlases in 0..=ATLASES.len() {
-        if scenes!=0&&atlases!=ATLASES.len(){continue;}
+    for scenes in 0..=2 {for atlases in 0..=ATLAS_ROWS.len() {
+        if scenes!=0&&atlases!=ATLAS_ROWS.len(){continue;}
         for terminal in [cd_stream::Status::Idle,cd_stream::Status::Done,cd_stream::Status::Failed(42)] {
             let mut cache=Cache{loaded_scenes:scenes,loaded_atlases:atlases,
                 selected:if scenes==0{EMPTY}else{0},resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,effect_scene:0,ready:true,header:[11,22,33,44]};
