@@ -182,6 +182,8 @@ pub fn loaded_all(m: Mods) -> bool {
     m.and_not(resident().or(Mods::from_words(ALWAYS, 0))).is_empty()
 }
 /// The modules `scene`'s rooms name: the low word is a table, the ids above 31 a short list of (scene, bits) rows.
+/// One copy: the row scan unrolls, and every row was paid in each of the seven callers that had it inlined.
+#[inline(never)]
 pub fn scene_modules(scene: usize) -> Mods {
     let mut hi = 0;
     for &row in SCENE_MODULES_HI.iter() {
@@ -279,7 +281,8 @@ pub fn bytes(m: usize) -> Option<&'static [u8]> {
         )
     })
 }
-/// A resident data package as writable memory: a room's state block (`art_hornet`, `art_fsm_state`), zeroed by its install. Null-free or None.
+/// A resident data package as writable memory: a room's state block (`art_hornet`), zeroed by its install. Null-free or None.
+#[cfg(feature = "hornet")]
 #[inline(never)]
 pub fn data_mut(m: usize) -> Option<*mut u8> {
     if !is_resident(m) {
@@ -287,6 +290,12 @@ pub fn data_mut(m: usize) -> Option<*mut u8> {
     }
     let s = slots()[m];
     Some(core::ptr::with_exposed_provenance_mut::<u8>(pool() + s.offset as usize))
+}
+/// The family actors' room state block (`art_fsm_state`), zeroed by its install: None while the room's package is not resident.
+#[inline(never)]
+pub fn fsm_state_block() -> Option<*mut u8> {
+    let s = slots()[ART_FSM_STATE];
+    is_resident(ART_FSM_STATE).then(|| core::ptr::with_exposed_provenance_mut::<u8>(pool() + s.offset as usize))
 }
 /// The chunk that carries boot module `m` (the title's code), or None when the build links it resident.
 pub const fn boot_chunk(m: usize) -> Option<usize> {

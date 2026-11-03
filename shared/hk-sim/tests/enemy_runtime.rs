@@ -701,7 +701,7 @@ mod modules {
     pub const FSM_FAMILY_TREES: [psx_math::Mask64; 1] = [psx_math::Mask64::EMPTY];
     pub const CRAWLER: usize = 17;
     pub const ART_FSM_STATE: usize = 16;
-    pub fn data_mut(_m: usize) -> Option<*mut u8> {
+    pub fn fsm_state_block() -> Option<*mut u8> {
         None
     }
     pub const BALDUR: usize = 5;
