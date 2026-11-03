@@ -21,3 +21,7 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 ## 2026-11-02 (hk-enemies, by hand, disc 066464cfee87)
 
 - journey-crossroads: long_frames 43 to 44 (measured 44). Resident layout drift: the route crosses no room with a family actor and loads no `actor_fsm` module; resident code moved by -780 bytes. Frame time 207 of 257 and 474 frames over 2 vblanks, closed loop 10 of 10.
+
+## 2026-11-03 (hk-world, by hand)
+
+- grub-jar: pacing 56 to 80 (measured 61 frames over 2 vblanks of 178; frame time 238 of its 251 ceiling, no frame of 5+ vblanks). Not layout drift: the same twin build with the Geo rock draws skipped measures 46 (frame time 227), so the cost is the Crossroads_05 rock beside the grub jar, whose art is now two stacked strips (Geo rocks 50 of 53).
