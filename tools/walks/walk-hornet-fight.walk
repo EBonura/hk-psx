@@ -14,7 +14,10 @@ press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 include fungus1-04.walk
 wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
-repeat 4 press cross rest 45
+loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting holds the Knight: a press lands whenever its box is ready, not at a fixed phase
+press cross
+wait 45
+end
 wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
 include hornet-defs.walk
 check sealed HK_HORNET_ENCOUNTERS == 1 ; HK_ARENA_GATE_CLOSES == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0

@@ -15,6 +15,12 @@
 //!                  [--pre FILE] [--card FILE] [--fireball N] [--work DIR]
 //! ```
 //!
+//! `--card cold` plays no card and no Continue: the walk starts from a cold boot and `--pre` is the whole chain so far, so the
+//! plan sees the chain's own SOUL, masks, Geo and dead foes (one round replays the chain, a few minutes). `HK_WALKPLAN_FINE`
+//! (world units, for example 0.05) lets a room whose only way on is a fragile jump be planned: such a jump costs more, so
+//! it is taken only when no steadier way exists. `HK_WALKPLAN_SOURCES=x0,y0,x1,y1` prints the scene object that owns each
+//! collision edge touching the box.
+//!
 //! `PREV` and `NEXT` are scene names: the Knight arrives from `PREV` (its gate's spawn is where the run starts) and
 //! leaves by the gate that leads to `NEXT`. `--lib` is a directory with the disc and its `game.map` (the library disc
 //! works). Without `--card` a card is seeded in `SCENE` at the arrival spawn with `tools/seed_card.py` (the existing
@@ -447,16 +453,21 @@ pub fn run(args: &[String]) -> Result<(), String> {
             card
         }
     };
-    let header = [
-        format!("name {name}"),
-        "max_ticks 60000".to_string(),
-        format!("card {card}"),
-        "wait 300".to_string(),
-        "press cross".to_string(),
-        "wait 40".to_string(),
-        "press cross".to_string(),
-        "wait until HK_GAME_MODE == 1 timeout 1200".to_string(),
-    ];
+    // `--card cold`: the run starts from a cold boot and `--pre` is the whole chain so far (no card, no continue).
+    let header: Vec<String> = if card == "cold" {
+        vec![format!("name {name}"), "max_ticks 600000".to_string()]
+    } else {
+        vec![
+            format!("name {name}"),
+            "max_ticks 60000".to_string(),
+            format!("card {card}"),
+            "wait 300".to_string(),
+            "press cross".to_string(),
+            "wait 40".to_string(),
+            "press cross".to_string(),
+            "wait until HK_GAME_MODE == 1 timeout 1200".to_string(),
+        ]
+    };
     let pre: Vec<String> = match &o.pre {
         Some(file) => std::fs::read_to_string(file)
             .map_err(|e| format!("{}: {e}", file.display()))?
@@ -689,6 +700,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 ends.truncate(j + 1);
                 expect.truncate(j + 1);
                 hops.truncate(j + 1);
+                // The exit hop's landing is in the next room: a retry loop would wait for it in the wrong scene.
+                hops[j].2 = None;
                 exited = true;
                 stopped = true;
                 break;

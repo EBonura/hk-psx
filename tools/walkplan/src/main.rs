@@ -71,6 +71,17 @@ fn margin() -> i32 {
     })
 }
 
+/// The close-to-the-mark margin a fragile jump may still be planned at (`HK_WALKPLAN_FINE`, world units), if any.
+fn fine_margin() -> Option<i32> {
+    static FINE: std::sync::OnceLock<Option<i32>> = std::sync::OnceLock::new();
+    *FINE.get_or_init(|| {
+        std::env::var("HK_WALKPLAN_FINE").ok().and_then(|v| v.parse::<f64>().ok()).map(|u| (u * f64::from(ONE)).round() as i32)
+    })
+}
+
+/// Extra ticks of cost for a jump that is steady only within the fine margin.
+const FRAGILE_PENALTY: u32 = 600;
+
 thread_local! {
     /// A gate's trigger box (Q16): a state whose body overlaps it has reached the goal, whatever the goal point says.
     /// A vertical exit is taken by touching the box from below or above, not by standing at its middle.
@@ -157,7 +168,16 @@ fn load_edges(root: &Path, scene: &str, open: &[[f64; 4]]) -> Result<Vec<Edge>, 
         let file = region["path"].as_str().ok_or("region without a path")?;
         let bytes = std::fs::read(root.join(file)).map_err(|e| format!("{file}: {e}"))?;
         let blank = linked_edges(region);
+        let sources = region["edge_sources"].as_array();
         for (index, edge) in room_edges(&bytes).ok_or_else(|| format!("{file}: not an HKROOM02 pack"))?.into_iter().enumerate() {
+            // HK_WALKPLAN_SOURCES=x0,y0,x1,y1: the scene object that owns each edge touching the box (world units).
+            if let Some(b) = std::env::var("HK_WALKPLAN_SOURCES").ok().map(|v| v.split(',').filter_map(|n| n.parse::<f64>().ok()).collect::<Vec<_>>()).filter(|b| b.len() == 4) {
+                let (x0, y0, x1, y1) = (units(edge[0]), units(edge[1]), units(edge[2]), units(edge[3]));
+                if x0.max(x1) >= b[0] && x0.min(x1) <= b[2] && y0.max(y1) >= b[1] && y0.min(y1) <= b[3] {
+                    let source = sources.and_then(|s| s.get(index)).and_then(|v| v.as_str()).unwrap_or("?");
+                    eprintln!("source {source}: edge ({x0:.2}, {y0:.2}) -> ({x1:.2}, {y1:.2}) in {file}");
+                }
+            }
             if blank.contains(&index) {
                 blanked.push(edge);
             } else if !edges.contains(&edge) {
@@ -337,22 +357,32 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                     if (landed.x - player.x).abs() < ONE / 4 && (landed.y - player.y).abs() < ONE / 8 {
                         continue;
                     }
-                    let steady = !robust || [-margin(), margin()].into_iter().all(|shift| {
-                        let mut early = player;
-                        early.x += shift;
-                        // Off the mark there must still be floor under the take-off (a shifted state keeps its
-                        // grounded flag, so settle it one tick first).
-                        step(&mut early, edges, 0, false);
-                        if !early.grounded {
-                            return false;
-                        }
-                        simulate_jump(&early, edges, dir, held, steer).is_some_and(|(l, _)| {
-                            (l.y - landed.y).abs() < ONE / 3 && (l.x - landed.x).abs() < ONE
+                    // A jump that lands on the same floor from take-offs `shift` either side of the mark.
+                    let steady_within = |shift: i32| {
+                        [-shift, shift].into_iter().all(|shift| {
+                            let mut early = player;
+                            early.x += shift;
+                            // Off the mark there must still be floor under the take-off (a shifted state keeps its
+                            // grounded flag, so settle it one tick first).
+                            step(&mut early, edges, 0, false);
+                            if !early.grounded {
+                                return false;
+                            }
+                            simulate_jump(&early, edges, dir, held, steer).is_some_and(|(l, _)| {
+                                (l.y - landed.y).abs() < ONE / 3 && (l.x - landed.x).abs() < ONE
+                            })
                         })
-                    });
+                    };
+                    // `HK_WALKPLAN_FINE` (world units) lets a room whose only way on is a fragile jump be planned: such a
+                    // jump (steady only that close to its mark) costs `FRAGILE_PENALTY` ticks more, so a search never takes
+                    // one while a steadier way exists.
+                    let steady = !robust || steady_within(margin());
+                    let fragile = !steady && fine_margin().is_some_and(|fine| steady_within(fine));
+                    let steady = steady || fragile;
+                    let extra = if fragile { FRAGILE_PENALTY } else { 0 };
                     // The pad is only held until the landing: a longer hold would walk on along the floor.
                     if steady {
-                        found.push((landed, cost + ticks + 1, Act::Jump { dir, held: held.min(ticks), steer: steer.min(ticks), from_x: player.x }));
+                        found.push((landed, cost + ticks + 1 + extra, Act::Jump { dir, held: held.min(ticks), steer: steer.min(ticks), from_x: player.x }));
                     }
                 }
             }
