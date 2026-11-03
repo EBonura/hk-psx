@@ -11,6 +11,7 @@ use std::process::Command;
 mod brightness;
 mod budget_doc;
 mod card_check;
+mod cook_check;
 mod cook_store;
 mod disc;
 mod earned_focus;
@@ -2482,9 +2483,11 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|cook-check|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook (ignore every cache and receipt)] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune] [--repin] [--resume]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
+         cook-check  clone this checkout, recook everything in the clone with every cache ignored, and fail unless\n          \
+         data/ and .hkpsx/ are byte-identical to this checkout's (a full recook: take a cook slot; --keep keeps the clone)\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
          pgo       build, with the guest optimised by a profile of --tape replays (default: kings-climb\n          \
          and crossroads-gate), replayed on the emulator pinned in emulator.lock.json (built once\n          \
@@ -2613,6 +2616,15 @@ fn main() {
             usage();
         }
         if let Err(error) = card_check::run(&files) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "cook-check" {
+        // cook-check [--keep]: a full recook in a clone of this checkout, compared with this checkout's cooked state.
+        let keep = args.any(|a| a == "--keep");
+        if let Err(error) = cook_check::run(&root(), keep) {
             eprintln!("error: {error}");
             std::process::exit(1);
         }
