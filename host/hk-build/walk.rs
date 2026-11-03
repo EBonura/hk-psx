@@ -372,6 +372,11 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                     return Err(located("probe NAME WORD...".into()));
                 };
                 step(&mut body);
+                if sync {
+                    // A checkpoint on a synchronous step is taken where the previous step ended, not at the end of the frame
+                    // around it (psoxide-gate b957d915): otherwise every probe between two steps moves the chain by a poll.
+                    body.push_str("sync = \"poll\"\n");
+                }
                 let _ = writeln!(body, "checkpoint = \"{checkpoint}\"\ngolden = false\nno_matrix = true");
                 for probe in probes {
                     let cond = parse_cond(&[probe, "eq", "-1"], &words).map_err(located);
@@ -386,6 +391,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                     return Err(located("check NAME COND [; COND...]".into()));
                 };
                 step(&mut body);
+                if sync {
+                    body.push_str("sync = \"poll\"\n");
+                }
                 let _ = writeln!(body, "checkpoint = \"{checkpoint}\"\ngolden = false\nno_matrix = true");
                 for cond in conds.split(|t| *t == ";") {
                     let parsed = parse_cond(cond, &words).map_err(located)?;
@@ -1040,6 +1048,9 @@ mod tests {
         let marked = toml.matches("sync = \"poll\"").count();
         assert_eq!(marked, if from_env { 5 } else { 4 }, "{toml}");
         assert!(compile_text("name t\nsync sideways\n").unwrap_err().contains("sync"));
+        // A probe or check between two synchronous steps is taken where the previous step ended (it must not move the chain by a poll).
+        let toml = compile_text("name t\nsync poll\nprobe p x\ncheck c x ge 0\n").unwrap();
+        assert_eq!(toml.matches("sync = \"poll\"\ncheckpoint").count(), 2, "{toml}");
     }
 
     #[test]
