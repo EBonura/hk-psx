@@ -36,7 +36,7 @@ pub fn upload(boot: &[u8]) {
 pub fn apply(geo: &geo::World, state: &mut world::State, region: usize, view: usize) {
     for binding in geo::region_bindings(view) {
         if geo.rock_depleted(world::scene_of(view), binding.state as usize) {
-            for &draw in binding.off {
+            for &draw in binding.off() {
                 render::set_visible(draw as usize, false);
             }
         }
@@ -45,7 +45,7 @@ pub fn apply(geo: &geo::World, state: &mut world::State, region: usize, view: us
     let mut len = 0;
     for binding in geo::region_bindings(region) {
         if geo.rock_depleted(world::scene_of(region), binding.state as usize) {
-            for &edge in binding.edges {
+            for &edge in binding.edges() {
                 if !edges[..len].contains(&edge) {
                     assert!(len < edges.len());
                     edges[len] = edge;
@@ -55,6 +55,10 @@ pub fn apply(geo: &geo::World, state: &mut world::State, region: usize, view: us
         }
     }
     state.set_geo_edges(&edges[..len]);
+}
+/// The fourth corner of a rock art quad from its first three (TL, TR, BL).
+fn parallelogram(p: [[i32; 2]; 3]) -> [[i32; 2]; 4] {
+    [p[0], p[1], p[2], [p[1][0] + p[2][0] - p[0][0], p[1][1] + p[2][1] - p[0][1]]]
 }
 fn draw_art(index: usize, world: [[i32; 2]; 4], camera: (i32, i32)) -> bool {
     let vertices = world.map(|[x, y]| {
@@ -92,18 +96,15 @@ pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
     let scene = world::scene_of(region);
     let mut drawn = 0;
     for binding in geo::region_bindings(region) {
+        let d = &geo::GEO_DRAWS[binding.draw as usize];
         let (art, vertices, extra) = if geo.rock_depleted(scene, binding.state as usize) {
-            (binding.broken_art, binding.vertices, binding.broken_extra)
+            (d.broken_art, d.broken, d.broken_extra)
         } else {
-            (
-                binding.intact_art,
-                binding.intact_vertices,
-                binding.intact_extra,
-            )
+            (d.intact_art, d.intact, d.intact_extra)
         };
-        drawn += u32::from(draw_art(art as usize, vertices, camera));
+        drawn += u32::from(draw_art(art as usize, parallelogram(vertices), camera));
         for part in extra {
-            drawn += u32::from(draw_art(part.art as usize, part.vertices, camera));
+            drawn += u32::from(draw_art(part.art as usize, parallelogram(part.vertices), camera));
         }
     }
     for coin in geo

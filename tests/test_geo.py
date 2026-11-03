@@ -30,6 +30,28 @@ class GeoTests(unittest.TestCase):
         for t in textures:
             self.assertEqual(t['material'],1);self.assertLessEqual(t['u']+t['w'],256);self.assertLessEqual(t['v']+t['h'],256)
         self.assertEqual(sum(u['w']*u['h']*2 for u in uploads),len(blob))
+
+    def test_finalize_trims_borders_and_cuts_tall_rock_art_into_stacked_strips(self):
+        from geo import finalize,MAX_ROWS,STRIP_ROWS
+        # A rock sprite 33x32 whose opaque pixels cover columns 2..30 and rows 1..31 (30 rows: taller than MAX_ROWS), and a
+        # coin-sized entry the finalizer must leave alone (index below `coin_art`).
+        rock=Image.new('RGBA',(33,32),(0,0,0,0));rock.paste((200,50,50,255),(2,1,31,31))
+        coin=Image.new('RGBA',(6,6),(255,255,0,255))
+        art=[{'source':'coin','box':(0,0,1,1),'image':coin,'original_size':(6,6),'original_image':coin},
+             {'source':'rock','box':(0,0,3.3,3.2),'image':rock,'original_size':(33,32),'original_image':rock}]
+        out,parts=finalize(art,coin_art=1)
+        self.assertEqual(out[0]['image'].size,(6,6));self.assertEqual(out[0]['box'],(0,0,1,1))
+        self.assertGreater(len(out),2)
+        strips=[out[1]]+[out[i] for i in parts[1]]
+        self.assertEqual(sum(s['image'].height for s in strips),30);self.assertTrue(all(s['image'].width==29 for s in strips))
+        self.assertTrue(all(s['image'].height<=STRIP_ROWS for s in strips))
+        # Stacked exactly where the trimmed frame was: each strip starts where the one above ends.
+        for upper,lower in zip(strips,strips[1:]):self.assertAlmostEqual(upper['box'][1],lower['box'][3])
+        self.assertAlmostEqual(strips[0]['box'][3],3.2-3.2/32);self.assertAlmostEqual(strips[-1]['box'][1],3.2/32)
+        self.assertEqual(art[1]['image'].size,(33,32),'the input is not touched')
+    def test_placement_restarts_are_deterministic_and_find_what_the_ordered_tries_miss(self):
+        a=place_rectangles([('p',16,1,16)]+[(i,3+i%3,10+i%5,1) for i in range(40)],[(0,0,64,16),(0,16,64,16),(0,32,64,16),(0,48,64,16)])
+        self.assertEqual(a,place_rectangles([('p',16,1,16)]+[(i,3+i%3,10+i%5,1) for i in range(40)],[(0,0,64,16),(0,16,64,16),(0,32,64,16),(0,48,64,16)]))
     def test_fixed_point_invalid_values_rejected(self):
         for v in [float('nan'),float('inf'),40000]:
             with self.assertRaises(ValueError):q16(v)

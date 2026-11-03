@@ -85,7 +85,6 @@ pub struct RockSpec {
     pub final_payout: u8,
     pub hit_cooldown: u16,
     pub broken_frame: u16,
-    pub fling: Fling,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EnemySpec {
@@ -111,6 +110,13 @@ pub const FLING: [Fling; 2] = [
         spread: [0, 0],
     },
 ];
+/// The one fling profile every source rock carries (host/geo.py refuses a rock
+/// that differs), so the rock table spends no bytes on it.
+pub const ROCK_FLING: Fling = Fling {
+    speed: [23 * ONE, 30 * ONE],
+    angle: [80 * ONE, 100 * ONE],
+    spread: [ONE / 4, ONE / 4],
+};
 #[derive(Clone, Copy, Debug)]
 pub struct Coin {
     pub scene: u8,
@@ -374,7 +380,7 @@ impl World {
                 spec.source_id,
                 spec.scene,
                 [spec.x, spec.y],
-                spec.fling,
+                ROCK_FLING,
                 [count, 0, 0],
             ) {
                 self.deferred_events = self.deferred_events.saturating_add(1);
@@ -1101,6 +1107,20 @@ mod tests {
 
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/geo.rs"));
+
+#[cfg(not(test))]
+impl GeoDrawBinding {
+    /// Draw indices the rock hides once depleted.
+    pub fn off(&self) -> &'static [u16] {
+        let lists: &'static [u16] = self.lists;
+        &lists[..self.off_len as usize]
+    }
+    /// Local collider edges the rock disables once depleted.
+    pub fn edges(&self) -> &'static [u16] {
+        let lists: &'static [u16] = self.lists;
+        &lists[self.off_len as usize..]
+    }
+}
 
 /// Rocks bound into a catalogue region, or nothing. `GEO_BINDINGS` is sparse
 /// and sorted so the linked table grows with the bound rocks rather than with

@@ -3,7 +3,7 @@
 No room pack is modified. Retail sprites/reports are generated under ignored
 paths. The runtime owns deterministic physics approximations, not this cooker.
 """
-import hashlib,json,math,struct
+import hashlib,json,math,random,struct
 from pathlib import Path
 from PIL import Image
 from source import Source,ROOT
@@ -12,10 +12,16 @@ from breakables import _components,collider_polygons
 from focus import action_fields
 from cook import tk_sprite,FOCAL,CAM_Z
 from materials import quantize_alpha_coverage
-ART_CELL=32  # projected pixels per Geo art cell in the shared bank
+ART_CELL=36  # the widest/tallest projected rock art the bank takes (the Greenpath rocks project 33x31 to 35x36)
+# The reserved VRAM rectangles (VRAM_RECTS) are 16 and 27 rows tall, so a texture taller than MAX_ROWS is cut into horizontal
+# strips of at most STRIP_ROWS rows, drawn as one quad each (`finalize`): the frame's first strip stays its art, the rest are
+# the rock's extra parts.
+MAX_ROWS=27
+STRIP_ROWS=16
+RESTARTS=400  # shuffled placement attempts after the three ordered ones (`place_rectangles`)
+ALPHA_KEPT=64  # the alpha coverage quantizer's cut: pixels below it draw nothing
 # Distinct rock+coin texel bytes admitted before placement; the remainder of the
 # 8 KiB reservation covers the palette and fragment packing slack.
-ART_BUDGET=8*1024-640
 def payload_bytes(size):
     w,h=size;return (w+3)//4*2*h
 
@@ -71,7 +77,12 @@ def place_rectangles(items,rectangles=VRAM_RECTS):
         if any(x<ox+ow and x+w>ox and y<oy+oh and y+h>oy for ox,oy,ow,oh in rectangles[:i]):raise ValueError('Overlapping Geo rectangles')
     if len({k for k,w,h,a in items})!=len(items) or any(w<=0 or h<=0 or a<=0 for k,w,h,a in items):raise ValueError('invalid Geo allocations')
     if sum(w*h*2 for k,w,h,a in items)>MAX_VRAM_BYTES:raise ValueError('Geo VRAM exceeds8KiB')
-    orders=(lambda v:(-v[2],-v[1],str(v[0])),lambda v:(-v[1]*v[2],-v[2],str(v[0])),lambda v:(-v[1],-v[2],str(v[0])))
+    orders=[lambda v:(-v[2],-v[1],str(v[0])),lambda v:(-v[1]*v[2],-v[2],str(v[0])),lambda v:(-v[1],-v[2],str(v[0]))]
+    # The reservation is a handful of small rectangles and the heuristic orders above leave gaps a full bank needs: after
+    # them, `RESTARTS` deterministic shuffles of the same items (the same seeds in every cook, so the layout is stable).
+    for seed in range(RESTARTS):
+        shuffled={str(v[0]):i for i,v in enumerate(random.Random(seed).sample(items,len(items)))}
+        orders.append(lambda v,shuffled=shuffled:shuffled[str(v[0])])
     for order in orders:
         for mode in (0,1):
             free=list(rectangles);placed={}
@@ -113,14 +124,21 @@ def art_bank(images):
     # by using32px cells; projected current art is admitted at<=32 each axis.
     # The sheet only hosts the joint quantization and is sliced per image, so it
     # widens with the catalog; VRAM placement is bounded separately by VRAM_RECTS.
-    cell=ART_CELL;cell_h=ART_CELL;cols=8;rows=(len(images)+cols-1)//cols
-    oversize=[im.size for im in images if im.width>cell or im.height>cell_h]
-    if rows*cell_h>256 or oversize:raise ValueError(f'Geo art projected extent: {len(images)} images in {rows} rows of {cell_h} px (limit 256), oversize {oversize[:4]}')
-    sheet=Image.new('RGBA',(cols*cell,rows*cell_h))
-    for i,im in enumerate(images):sheet.paste(im,((i%cols)*cell,(i//cols)*cell_h))
+    # The joint quantizer takes one sheet of at most 256x256, so the images are shelf-packed (tallest first, left to
+    # right, every origin on the 4 px grid the Bayer matrix repeats on) instead of one per fixed cell.
+    oversize=[im.size for im in images if im.width>ART_CELL or im.height>ART_CELL]
+    if oversize:raise ValueError(f'Geo art projected extent: oversize {oversize[:4]} above {ART_CELL}')
+    place=[None]*len(images);x=y=shelf=0
+    for i in sorted(range(len(images)),key=lambda i:(-images[i].height,-images[i].width,i)):
+        w,h=images[i].size
+        if x+w>256:x=0;y+=(shelf+3)//4*4;shelf=0
+        if y+h>256:raise ValueError(f'Geo art sheet: {len(images)} images do not pack into 256x256')
+        place[i]=(x,y);x+=(w+3)//4*4;shelf=max(shelf,h)
+    sheet=Image.new('RGBA',(256,min(256,y+shelf)))
+    for i,im in enumerate(images):sheet.paste(im,place[i])
     sw,sh,pal,packed=quantize_alpha_coverage(sheet,128);payloads=[]
     for i,im in enumerate(images):
-        w,h=im.size;stride=(w+3)//4*2;pix=bytearray(stride*h);x0=(i%cols)*cell;y0=(i//cols)*cell_h
+        w,h=im.size;stride=(w+3)//4*2;pix=bytearray(stride*h);x0,y0=place[i]
         for y in range(h):
             for x in range(w):
                 b=packed[(y+y0)*(sw//2)+(x+x0)//2];v=(b>>(((x+x0)&1)*4))&15
@@ -174,7 +192,7 @@ def collect(source):
     if [c['value']for c in coins]!=[1,5,25]:raise ValueError('Geo denomination source changed')
     from quality import SCENE_FILES
     unsupported_rocks=[]
-    seen_art={(a['image'].size,a['image'].tobytes()) for a in art};art_bytes=sum(payload_bytes(size) for size,_ in seen_art)
+    coin_art=len(art)  # the coins' frames come first; only rock art is trimmed and cut
     for scene_id,name in enumerate(SCENE_FILES):
         sc=Scene(source,name);scene_objects.append(sc)
         for ident,(kind,t) in sc.objects.items():
@@ -200,23 +218,24 @@ def collect(source):
             intact_frame=clips[intact]['start']
             ai=clip_art(sc.file,by['tk2dSpriteAnimator'][1]['library'],contract['broken_clip'],(sx,sy))
             if clips[ai]['count']!=1:raise ValueError('Geo broken clip not static')
-            # The shared Geo art bank admits 32x32 projected cells; a larger rock is
-            # an explicit omission for now rather than a resampled sprite.
+            # The shared Geo art bank admits ART_CELL projected pixels each way; a larger rock is an explicit omission.
             oversize=[a['image'].size for a in art[art_mark:] if max(a['image'].size)>ART_CELL]
             if oversize:
                 del art[art_mark:];del clips[clip_mark:]
                 unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'rock art projects to {max(oversize)} pixels, above the {ART_CELL}x{ART_CELL} Geo art cell'})
                 continue
-            # Rock art shares one fixed VRAM reservation with the coins. Rocks are
-            # admitted in catalog order until the distinct-image budget is spent;
-            # later rocks are explicit omissions until Geo art streams per scene.
-            fresh=[(a['image'].size,a['image'].tobytes()) for a in art[art_mark:]]
-            added=sum(payload_bytes(size) for size,pixels in {s:None for s in fresh if s not in seen_art})
-            if art_bytes+added>ART_BUDGET:
+            # Rock art shares one fixed VRAM reservation with the coins. A rock is admitted when the bank built from
+            # everything admitted so far and this rock, finished the way the cook will finish it (`finalize`), still
+            # places in the reserved rectangles: the exact packed bytes, not an estimate (the old estimate counted
+            # every distinct source image before the joint palette merged identical texel planes, and refused rocks
+            # the bank could hold). Later rocks are explicit omissions until Geo art streams per scene.
+            try:art_bank([a['image'] for a in finalize(art,coin_art)[0]])
+            except ValueError as error:
                 del art[art_mark:];del clips[clip_mark:]
-                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'Geo art VRAM budget: {art_bytes+added} distinct bytes would exceed {ART_BUDGET}'})
+                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'Geo art VRAM budget: the bank no longer places with this rock ({str(error)[:90]})'})
                 continue
-            art_bytes+=added;seen_art.update(fresh)
+            def vertices_of(index,gid=gid,sc=sc,sx=sx,sy=sy,sp=sp):
+                box=art[index]['box'];return [sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(box[0],box[3]),(box[2],box[3]),(box[0],box[1]),(box[2],box[1])]]
             points=[p for poly in polys for p in poly];origin=sc.point(gid)
             # `state` is the rock's index within its own scene: the guest keys
             # rock state as scene*MAX_ROCKS_PER_SCENE+state and asserts
@@ -227,9 +246,17 @@ def collect(source):
             state=rock_state(rocks,scene_id)
             rocks.append(contract|{'source':f'{name}:{ident}','source_id':ident,'scene':scene_id,'state':state,'x':origin[0],'y':origin[1],
                 'polygons':polys,'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],
-                'draw_sources':[f'{name}:{by[k][0]}'for k in ('tk2dSprite','MeshRenderer')if k in by], 'collider_sources':colliders,'broken_frame':clips[ai]['start'], 'intact_frame':intact_frame, 'intact_vertices':[sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(art[intact_frame]['box'][0],art[intact_frame]['box'][3]),(art[intact_frame]['box'][2],art[intact_frame]['box'][3]),(art[intact_frame]['box'][0],art[intact_frame]['box'][1]),(art[intact_frame]['box'][2],art[intact_frame]['box'][1])]], 'fsm_source':f'{name}:{fid}', 'broken_vertices':[sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(art[-1]['box'][0],art[-1]['box'][3]),(art[-1]['box'][2],art[-1]['box'][3]),(art[-1]['box'][0],art[-1]['box'][1]),(art[-1]['box'][2],art[-1]['box'][1])]]})
+                'draw_sources':[f'{name}:{by[k][0]}'for k in ('tk2dSprite','MeshRenderer')if k in by], 'collider_sources':colliders,'broken_frame':clips[ai]['start'], 'intact_frame':intact_frame,
+                'fsm_source':f'{name}:{fid}','vertices_of':vertices_of,'intact_vertices':None,'broken_vertices':None})
     canonical_images(art)
-    for r in rocks:r['intact_extra']=[];r['broken_extra']=[]
+    # Trim, cut and place: the art the bank holds, then every rock's quads from its frames' final boxes.
+    final,parts=finalize(art,coin_art)
+    art[:]=final
+    for r in rocks:
+        vertices=r.pop('vertices_of')
+        r['intact_vertices']=vertices(r['intact_frame']);r['broken_vertices']=vertices(r['broken_frame'])
+        r['intact_extra']=[{'art':i,'vertices':vertices(i)} for i in parts.get(r['intact_frame'],[])]
+        r['broken_extra']=[{'art':i,'vertices':vertices(i)} for i in parts.get(r['broken_frame'],[])]
     return rocks,enemies,coins,art,clips,unsupported_rocks
 
 # game/src/geo.rs MAX_ROCKS_PER_SCENE.
@@ -240,6 +267,40 @@ def rock_state(rocks,scene_id):
     if state>=MAX_ROCKS_PER_SCENE:raise ValueError(f'scene {scene_id} admits more than {MAX_ROCKS_PER_SCENE} Geo rocks')
     return state
 
+def finalize(art,coin_art=0):
+    """The art the bank holds: (entries, {frame index: [indices of its extra strips]}), `art` untouched.
+
+    Every rock entry (those after the coins') is shrunk to the pixels the alpha coverage keeps, with its box shrunk
+    in step so the drawn texels keep their place (a transparent border cost bank bytes and drew nothing), and one
+    still taller than MAX_ROWS is cut into strips of at most STRIP_ROWS rows. The first strip is the entry itself;
+    the rest are appended after every entry, one quad each, stacked exactly where the whole frame was.
+    Canonical sizes first: one source drawn at several scales shares its largest pixels (`canonical_images`).
+    """
+    groups={}
+    for a in art:
+        w,h=a['image'].size;old=groups.get(a['source'],(0,0));groups[a['source']]=(max(w,old[0]),max(h,old[1]))
+    out=[];tails=[];parts={}
+    for index,a in enumerate(art):
+        image=a['original_image'].resize(groups[a['source']],Image.Resampling.LANCZOS) if 'original_image' in a else a['image']
+        box=a['box'];source=a['source']
+        if index>=coin_art:
+            keep=image.getchannel('A').point(lambda v:255 if v>=ALPHA_KEPT else 0).getbbox()
+            if keep and keep!=(0,0)+image.size:
+                x0,y0,x1,y1=box;w,h=image.size
+                box=(x0+(x1-x0)*keep[0]/w,y1-(y1-y0)*keep[3]/h,x0+(x1-x0)*keep[2]/w,y1-(y1-y0)*keep[1]/h)
+                image=image.crop(keep)
+        w,h=image.size
+        if index<coin_art or h<=MAX_ROWS:
+            out.append({**a,'image':image,'box':box});continue
+        count=-(-h//STRIP_ROWS);x0,y0,x1,y1=box;made=[]
+        for k in range(count):
+            r0,r1=k*h//count,(k+1)*h//count
+            strip={'source':f'{source}@{w}x{h}#strip{k}of{count}','box':(x0,y1-(y1-y0)*r1/h,x1,y1-(y1-y0)*r0/h),'image':image.crop((0,r0,w,r1)),'original_size':a['original_size']}
+            if k==0:out.append({**a,**strip})
+            else:tails.append(strip);made.append(len(art)+len(tails)-1)
+        parts[index]=made
+    return out+tails,parts
+
 def canonical_images(art):
     """Share source pixels at the maximum requested axes without shrinking any."""
     groups={};pixels={}
@@ -249,10 +310,17 @@ def canonical_images(art):
         pixels[key]=original;w,h=a['image'].size;old=groups.get(key,(0,0));groups[key]=(max(w,old[0]),max(h,old[1]))
     for a in art:a['image']=a.pop('original_image').resize(groups[a['source']],Image.Resampling.LANCZOS)
 
-def rust_parts(parts):return '&['+','.join('GeoPart{art:'+str(p['art'])+',vertices:['+','.join(rust_array([q16(v)for v in q])for q in p['vertices'])+']}'for p in parts)+']'
+def rust_parts(parts):return '&['+','.join('GeoPart{art:'+str(p['art'])+',vertices:'+rust_array(quad_of(p['vertices']))+'}'for p in parts)+']'
 
 def rust_array(values):return '['+','.join(str(v)for v in values)+']'
-def rust_fling(f):return 'Fling{'+','.join(k+':'+rust_array([q16(v)for v in f[k]])for k in ('speed','angle','spread'))+'}'
+# game/src/geo.rs ROCK_FLING: every source rock carries this one profile, so the table spends no bytes on it.
+ROCK_FLING_Q16=[[23*65536,30*65536],[80*65536,100*65536],[16384,16384]]
+def quad_of(quad):
+    """Three corners (TL, TR, BL) of a sprite quad; a rotated or scaled sprite rectangle is a parallelogram, so the guest
+    rebuilds BR as TR+BL-TL (geo_render::parallelogram). Refuse a quad where that is off by more than 2 Q16 units."""
+    q=[[q16(v)for v in p]for p in quad]
+    if any(abs(q[3][k]-(q[1][k]+q[2][k]-q[0][k]))>2 for k in (0,1)):raise ValueError(f'Geo rock art quad is not a parallelogram: {q}')
+    return q[:3]
 def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,hero_box,gravity):
     lines=['// Generated from read-only Windows source by host/geo.py.\n']
     lines.append('pub const HERO_BOX:[i32;4]='+rust_array([q16(v)for v in hero_box])+';')
@@ -262,9 +330,10 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,her
         lines.append('CoinSpec{value:'+str(c['value'])+',gravity:'+str(q16(gravity*c['rigidbody']['m_GravityScale']))+',body_offset:'+rust_array(offset)+',half:'+rust_array(half)+',pickup_offset:'+rust_array(offset)+',pickup_half:'+rust_array(half)+',bounce:'+str(q16(c['bounce']['bounceFactor']))+',threshold:'+str(q16(c['bounce']['speedThreshold']))+',friction:'+str(q16(c['material']['friction']))+'},')
     lines.append(']};\npub const GEO_ROCKS:&[RockSpec]=&[')
     for r in rocks:
+        if [[q16(v)for v in r['fling'][k]]for k in ('speed','angle','spread')]!=ROCK_FLING_Q16:raise ValueError('Geo rock fling differs from the guest geo::ROCK_FLING')
         polys='&['+','.join('&['+','.join(rust_array([q16(v)for v in p])for p in poly)+']'for poly in r['polygons'])+']'
         fields={k:r[k]for k in ('source_id','scene','state','hits','per_hit','final_payout','hit_cooldown','broken_frame')}
-        lines.append('RockSpec{'+','.join(f'{k}:{v}'for k,v in fields.items())+',x:'+str(q16(r['x']))+',y:'+str(q16(r['y']))+',bounds:'+rust_array([q16(v)for v in r['bounds']])+',polygons:'+polys+',fling:'+rust_fling(r['fling'])+'},')
+        lines.append('RockSpec{'+','.join(f'{k}:{v}'for k,v in fields.items())+',x:'+str(q16(r['x']))+',y:'+str(q16(r['y']))+',bounds:'+rust_array([q16(v)for v in r['bounds']])+',polygons:'+polys+'},')
     # Enemy payouts are not linked: every one of them rides in its own scene's
     # metadata bank, which host/pack_scenes.py fills from this cook's report.
     # Only `megaFlingGeo` survives the move, because the two fling profiles it
@@ -284,12 +353,20 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,her
     for u in uploads:lines.append('GeoUpload{'+','.join(f'{k}:{v}'for k,v in u.items())+'},')
     # A slot per catalogue region spent eight linked bytes on every view that
     # never sees a rock. The sparse sorted list grows with the bound rocks.
-    lines.append('];\npub struct GeoPart{pub art:u16,pub vertices:[[i32;2];4]}\npub struct GeoDrawBinding{pub state:u8,pub off:&\'static[u16],pub edges:&\'static[u16],pub broken_art:u16,pub vertices:[[i32;2];4],pub intact_art:u16,pub intact_vertices:[[i32;2];4],pub intact_extra:&\'static[GeoPart],pub broken_extra:&\'static[GeoPart]}\n/// Regions with at least one bound rock, sorted by catalogue region index.\npub const GEO_BINDINGS:&[(u16,&[GeoDrawBinding])]=&[')
+    # The art and quads of a rock are the same from every view that sees it, so they ride once per rock (GEO_DRAWS,
+    # in GEO_ROCKS order) and a view's binding only names its rock.
+    if len(rocks)>256:raise ValueError('geo draw index exceeds u8')
+    if any(len(b['off'])>255 for row in bindings for b in row):raise ValueError('geo binding off list exceeds u8')
+    lines.append('];\npub struct GeoPart{pub art:u16,pub vertices:[[i32;2];3]}\npub struct GeoDraw{pub broken_art:u16,pub intact_art:u16,pub broken:[[i32;2];3],pub intact:[[i32;2];3],pub intact_extra:&\'static[GeoPart],pub broken_extra:&\'static[GeoPart]}\npub const GEO_DRAWS:&[GeoDraw]=&[')
+    for r in rocks:lines.append('GeoDraw{broken_art:'+str(r['broken_frame'])+',intact_art:'+str(r['intact_frame'])+',broken:'+rust_array(quad_of(r['broken_vertices']))+',intact:'+rust_array(quad_of(r['intact_vertices']))+',intact_extra:'+rust_parts(r['intact_extra'])+',broken_extra:'+rust_parts(r['broken_extra'])+'},')
+    # A slot per catalogue region spent eight linked bytes on every view that
+    # never sees a rock. The sparse sorted list grows with the bound rocks.
+    lines.append('];\npub struct GeoDrawBinding{pub state:u8,pub draw:u8,pub off_len:u8,pub lists:&\'static[u16]}\n/// Regions with at least one bound rock, sorted by catalogue region index.\npub const GEO_BINDINGS:&[(u16,&[GeoDrawBinding])]=&[')
     for index,row in enumerate(bindings):
         if not row:continue
         if index>0xFFFF:raise ValueError('geo binding region index exceeds u16')
         lines.append(f'({index},&[')
-        for b in row:lines.append('GeoDrawBinding{state:'+str(b['state'])+',off:&'+rust_array(b['off'])+',edges:&'+rust_array(b['edges'])+',broken_art:'+str(b['broken_art'])+',vertices:['+','.join(rust_array([q16(v)for v in p])for p in b['vertices'])+'],intact_art:'+str(b['intact_art'])+',intact_vertices:['+','.join(rust_array([q16(v)for v in p])for p in b['intact_vertices'])+'],intact_extra:'+rust_parts(b['intact_extra'])+',broken_extra:'+rust_parts(b['broken_extra'])+'},')
+        for b in row:lines.append('GeoDrawBinding{state:'+str(b['state'])+',draw:'+str(b['draw'])+',off_len:'+str(len(b['off']))+',lists:&'+rust_array(b['off']+b['edges'])+'},')
         lines.append(']),')
     lines.append('];\n');return '\n'.join(lines)
 
@@ -297,12 +374,12 @@ def bind_regions(rocks,metadata):
     bindings=[]
     for region in metadata['regions']:
         scene=json.loads((ROOT/region.get('base_path',f'data/regions/region-{region["chunk_id"]:03}/room.hk')).with_name('scene.json').read_text());row=[]
-        for r in rocks:
+        for draw,r in enumerate(rocks):
             off=[i for i,d in enumerate(scene['draws'])if d['source']in r['draw_sources']]
             sources=region['edge_sources'];edges=[i for i,e in enumerate(sources)if (e if isinstance(e,str)else e.get('source'))in r['collider_sources']]
             b=region['interaction_bounds'];v=r['intact_vertices']+r['broken_vertices']+[p for k in ('intact_extra','broken_extra')for part in r[k]for p in part['vertices']]
             visible=region['scene_id']==r['scene'] and min(p[0]for p in v)<=b[2] and max(p[0]for p in v)>=b[0] and min(p[1]for p in v)<=b[3] and max(p[1]for p in v)>=b[1]
-            if off or edges or visible:row.append({'state':r['state'],'off':off,'edges':edges,'broken_art':r['broken_frame'],'vertices':r['broken_vertices'],'intact_art':r['intact_frame'],'intact_vertices':r['intact_vertices'],'intact_extra':r['intact_extra'],'broken_extra':r['broken_extra']})
+            if off or edges or visible:row.append({'state':r['state'],'draw':draw,'off':off,'edges':edges,'intact_extra':r['intact_extra'],'broken_extra':r['broken_extra']})
         if sum(max(1+len(b['intact_extra']),1+len(b['broken_extra']))for b in row)>16:raise ValueError('Geo rock draw budget')
         bindings.append(row)
     return bindings
