@@ -818,3 +818,27 @@ impl Runner {
         }
     }
 }
+
+/// The Mossman_Shaker's `Gas Hit Box` (a trigger PolygonCollider2D with DamageHero 1) at full scale: its seven points plus the
+/// collider's (0, 1.44) offset and the child's (0, -1.42) position, Q16, in the actor's frame as authored (facing left).
+const GAS_POLYGON: [[i32; 2]; 7] = [[-182559, 157479], [1475, 214480], [183672, 163632], [284184, 11905], [301355, -94436], [-296176, -93141], [-279846, 21562]];
+/// `Attack`'s `SetScale` 0.2 then `iTweenScaleTo` (1, 1, 1) over 0.4 s with easeOutCirc: the hit box's scale `age` ticks after it went on, Q16.
+pub fn gas_scale(age: u16) -> i32 {
+    let u = i32::from(age.min(24)) * ONE / 24;
+    let back = ONE - u;
+    let inside = ONE - psx_math::int32::mul_shr_i32(back, back, 16);
+    // sqrt(inside / ONE) in Q16.
+    let root = psx_math::WideU::mul(inside as u32, ONE as u32).isqrt() as i32;
+    ONE / 5 + psx_math::int32::mul_shr_i32(ONE - ONE / 5, root, 16)
+}
+/// The gas hit box's corners in the world for a Shaker at `at` facing `facing` (+1 right, -1 left, the authored side), `age` ticks into its attack.
+pub fn gas_polygon(age: u16, facing: i32, at: [i32; 2]) -> [[i32; 2]; 7] {
+    let scale = gas_scale(age);
+    let mirror = -facing.signum();
+    GAS_POLYGON.map(|[x, y]| {
+        [
+            at[0] + mirror * psx_math::int32::mul_shr_i32(x, scale, 16),
+            at[1] + psx_math::int32::mul_shr_i32(y, scale, 16),
+        ]
+    })
+}

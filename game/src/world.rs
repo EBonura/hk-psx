@@ -267,7 +267,10 @@ pub fn region_actors_indexed(
 /// Runner and no Zombie Shield, so no bank is needed to enter it.
 pub fn runner_family(scene_id: usize) -> Option<bool> {
     SCENE_ACTORS.get(scene_id)?.iter().find_map(|spec| match spec.controller {
-        hk_sim::ActorController::Runner { params, .. } => {
+        // The Shaker plays none of the Runner's sounds (its own footsteps are not in either bank): it needs no bank.
+        hk_sim::ActorController::Runner { params, .. }
+            if !matches!(params.attack, hk_sim::runner::Attack::Gas { .. }) =>
+        {
             Some(params.attack == hk_sim::runner::Attack::SwipeCalm)
         }
         hk_sim::ActorController::ZombieShield { .. } => Some(false),

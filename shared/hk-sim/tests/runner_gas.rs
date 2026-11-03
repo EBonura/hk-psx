@@ -70,3 +70,24 @@ fn the_gas_hit_box_is_on_only_in_the_attack_state_and_hits_do_not_touch_the_atta
     }
     assert!(on > 0 && on % 48 == 0 || on > 48, "the gas was on for {on} ticks");
 }
+
+#[test]
+fn the_gas_hit_box_grows_from_a_fifth_to_whole_in_twenty_four_ticks() {
+    use hk_sim::runner::{gas_polygon, gas_scale};
+    assert!((gas_scale(0) - ONE / 5).abs() <= 2, "{}", gas_scale(0));
+    assert!((gas_scale(24) - ONE).abs() <= 2, "{}", gas_scale(24));
+    assert_eq!(gas_scale(24), gas_scale(60), "the tween stops at one");
+    let mut last = 0;
+    for age in 0..=24 {
+        let s = gas_scale(age);
+        assert!(s >= last, "easeOutCirc only rises: {age} {s} {last}");
+        last = s;
+    }
+    // easeOutCirc is steep early: a quarter of the way in it is past half.
+    assert!(gas_scale(6) > ONE / 2);
+    // Facing left the cloud's widest point (+4.6) is on the right of the body, facing right it mirrors.
+    let left = gas_polygon(24, -1, [0, 0]);
+    let right = gas_polygon(24, 1, [0, 0]);
+    assert_eq!(left.iter().map(|p| p[0]).max(), right.iter().map(|p| -p[0]).max());
+    assert!(left.iter().any(|p| p[0] > 4 * ONE));
+}
