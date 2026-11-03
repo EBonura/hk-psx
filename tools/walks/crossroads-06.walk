@@ -143,7 +143,7 @@ wait until y between 30.24 30.54 timeout 240 # land at x 46.77
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
 walk 46.50
-walk 47.14   # run-up
+walk 46.95   # run-up (47.14 was 0.11 from the ledge edge at 47.25: one tick of walk is 0.28, so a phase shift overshot it)
 walk 46.50   # take-off
 hold left+cross for 34
 hold left for 36
