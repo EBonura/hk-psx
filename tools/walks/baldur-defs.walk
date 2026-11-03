@@ -6,5 +6,5 @@ def ry $roller_y
 def rfar $roller && $rx - i32(HK_PLAYER_X) > 5 * 65536 && $rx - i32(HK_PLAYER_X) < 25 * 65536 && abs($ry - i32(HK_PLAYER_Y)) <= 2 * 65536
 def rnear $roller && abs($rx - i32(HK_PLAYER_X)) <= 7 * 65536 && abs($ry - i32(HK_PLAYER_Y)) <= 2 * 65536
 # A cast is wanted: SOUL for it, no roller near (a cast owns the Knight for about 24 ticks), facing him, in control.
-def castable u32(HK_SOUL) >= 33 && !$rnear && i32(HK_PLAYER_FACING) < 0 && u32(HK_WALK_READY) == 1
-def dead u32(HK_ENEMY_KILLS) >= 1
+def castable u32(HK_SOUL) >= 66 && !$rnear && i32(HK_PLAYER_FACING) < 0 && u32(HK_WALK_READY) == 1
+def dead u32(HK_BLOCKERS_DEAD) != 0

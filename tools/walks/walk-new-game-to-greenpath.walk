@@ -38,7 +38,12 @@ include crossroads-07-up.walk
 wait until HK_WALK_READY == 1 timeout 300
 include baldur-defs.walk
 include crossroads-11-alt.walk
-include baldur-round.walk times 220
+loop baldur until expr u32(HK_BLOCKERS_DEAD) != 0 max 400 timeout 9000
+include baldur-round.walk
+end
+heal
+heal
+wait until HK_WALK_READY == 1 timeout 300
 check baldur-dead HK_BLOCKERS_DEAD >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
 include crossroads-11-alt-west-chain.walk
 include fungus1-01-chain.walk

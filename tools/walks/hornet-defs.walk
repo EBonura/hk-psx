@@ -29,4 +29,7 @@ def dash_end ($hdx < 0 ? $hx + 373555 : $hx - 373555)
 def throw_near $hlive && $hs == 35 && $adx < 622592
 # Focus: masks missing, SOUL for it (or one under way), on the ground, and no hit box can reach him for the next stretch: the Knight is
 # still invulnerable from a hit and she is not near, or she is throwing from beyond the needle's reach (the throw is 100 ticks in which she stays put).
-def hheal $focus && !$g_dash && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504)
+def hheal $focus && !$g_dash && !$dash_coming && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504 || (u32(HK_HEALTH) <= 2 && $adx > 327680 && $hcalm && !$dash_coming))
+
+# Vengeful Spirit at her when SOUL is spare (more than a Focus needs), she is calm and 5 to 12 units off at his height, and he faces her: a cast owns him for about 24 ticks.
+def hcast u32(HK_SOUL) >= 66 && u32(HK_WALK_READY) == 1 && $hlive && $level && $adx > 327680 && $adx < 786432 && $hcalm && !$dash_coming && (($hdx > 0 && i32(HK_PLAYER_FACING) > 0) || ($hdx <= 0 && i32(HK_PLAYER_FACING) < 0))

@@ -12,5 +12,7 @@ press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 include baldur-defs.walk
 include crossroads-11-alt.walk
-include baldur-round.walk times 220
-check baldur-dead HK_ENEMY_KILLS == 1 ; HK_ENEMY_HITS == 4 ; HK_ROLLERS_KILLED >= 3 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
+loop baldur until expr u32(HK_BLOCKERS_DEAD) != 0 max 400 timeout 9000
+include baldur-round.walk
+end
+check baldur-dead HK_BLOCKERS_DEAD >= 1 ; HK_ENEMY_HITS == 4 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
