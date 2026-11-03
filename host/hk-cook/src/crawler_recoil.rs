@@ -63,14 +63,14 @@ pub fn bind_generated_specs(root: &Path) -> Result<()> {
             }
             let speed = f64_of(recoil, "recoilSpeedBase")?;
             let duration = f64_of(recoil, "recoilDuration")?;
-            // This increment changes the ten currently admitted Crawlers only.
+            // This increment changes the twelve currently admitted Crawlers only (Fungus1_20_v02's two joined the ten).
             if speed != 15.0 || (duration - 0.15000000596046448).abs() > 1e-12 {
                 return Err(format!("{sid}: Crawler recoil contract differs"));
             }
             scenes.insert(scene_id);
         }
     }
-    if checked.len() != 10 {
+    if checked.len() != 12 {
         return Err("admitted Crawler placement set differs".into());
     }
     let steps = fixed_steps(0.15000000596046448)?;
