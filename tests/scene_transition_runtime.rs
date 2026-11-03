@@ -192,7 +192,6 @@ mod vram_cache {
         }
     }
 }
-mod presentation { pub fn watch_reset() {} pub fn fallback_due() -> bool { false } pub fn force_flip() {} }
 #[path = "../game/src/scene_transition.rs"] mod scene_transition;
 
 #[test]

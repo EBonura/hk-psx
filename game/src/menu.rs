@@ -600,7 +600,6 @@ fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
     // psx-rt apply the flip, once the GPU has drawn everything before it.
     gpu::arm_draw_done();
     gpu::signal_draw_done();
-    crate::presentation::watch_reset();
     psx_rt::interrupts::queue_display_control_at_vblank(fb.begin_deferred_swap());
     let mut waited = 0u32;
     while psx_rt::interrupts::is_display_control_queued() {
@@ -608,9 +607,7 @@ fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
         // Process each real sample in order, even if a frame spans several blanks.
         sample(poll_bits());
         waited += 1;
-        if waited >= crate::presentation::FLIP_TIMEOUT_VBLANKS
-            || crate::presentation::fallback_due()
-        {
+        if waited >= crate::presentation::FLIP_TIMEOUT_VBLANKS {
             crate::presentation::force_flip();
         }
     }

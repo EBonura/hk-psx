@@ -43,13 +43,9 @@ pub fn load(
         // it (the GPU has nothing left to draw here) before queueing.
         psx_gpu::arm_draw_done();
         psx_gpu::signal_draw_done();
-        crate::presentation::watch_reset();
         psx_rt::interrupts::queue_gp1_at_vblank(psx_hw::gpu::gp1::display_enable(false));
         while psx_rt::interrupts::gp1_queue_pending() {
             crate::input::checkpoint();
-            if crate::presentation::fallback_due() {
-                crate::presentation::force_flip();
-            }
         }
         crate::gate_probe::note(22, psx_rt::interrupts::vblank_count());
         mark_black(psx_rt::interrupts::vblank_count());
@@ -80,13 +76,9 @@ pub fn load(
         vram.admit_scene(region, cache.atlases_ready());
         psx_gpu::arm_draw_done();
         psx_gpu::signal_draw_done();
-        crate::presentation::watch_reset();
         psx_rt::interrupts::queue_gp1_at_vblank(psx_hw::gpu::gp1::display_enable(true));
         while psx_rt::interrupts::gp1_queue_pending() {
             crate::input::checkpoint();
-            if crate::presentation::fallback_due() {
-                crate::presentation::force_flip();
-            }
         }
     }
     crate::disc::end_load();

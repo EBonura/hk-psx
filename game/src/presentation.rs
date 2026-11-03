@@ -101,7 +101,6 @@ fn service() {
                 HK_FRAME_VBLANKS = now.wrapping_sub(QUEUED_AT);
                 QUEUED_AT = now;
             }
-            watch_reset();
             psx_rt::interrupts::queue_display_control_at_vblank(display);
             unsafe {
                 crate::render::HK_FRAME_FLIP_LINES = crate::render::frame_lines();
@@ -130,54 +129,13 @@ static mut QUEUED_AT: u32 = 0;
 #[cfg(not(test))]
 #[no_mangle]
 pub static mut HK_FRAME_VBLANKS: u32 = 0;
-/// The queued flip's bounded fallback (psx-io's `DrawDoneWatch`): DMA 2 idle
-/// and GPUSTAT bits 26 and 28 up across two VBlank counts. It is polled only
-/// while a flip is queued and psx-rt has not applied it, so it costs nothing
-/// when bit 24 rises (a PS1), and `HK_FLIP_FALLBACKS` stays 0 there.
-#[cfg(not(test))]
-static mut WATCH: psx_io::gpu::DrawDoneWatch = psx_io::gpu::DrawDoneWatch::new();
-/// Flips the fallback wrote because GPUSTAT bit 24 never rose; 0 on a PS1 and
-/// in the emulator.
-#[cfg(not(test))]
-#[no_mangle]
-pub static mut HK_FLIP_FALLBACKS: u32 = 0;
-#[cfg(not(test))]
-static mut FALLBACK_DUE: bool = false;
-/// A new wait starts: forget any quiet the watch saw for the one before.
-#[cfg(not(test))]
-#[inline(never)]
-pub fn watch_reset() {
-    unsafe {
-        (*(&raw mut WATCH)).reset();
-    }
-}
-/// The frame is done by the watch's reckoning although bit 24 never rose; the
-/// caller writes the flip itself with [`force_flip`].
-#[cfg(not(test))]
-#[inline(never)]
-pub fn fallback_due() -> bool {
-    if !psx_rt::interrupts::is_display_control_queued() {
-        return false;
-    }
-    let due = unsafe { (*(&raw mut WATCH)).poll(psx_rt::interrupts::vblank_count()) };
-    if due {
-        unsafe {
-            (*(&raw mut WATCH)).fired();
-            HK_FLIP_FALLBACKS = HK_FLIP_FALLBACKS.wrapping_add(1);
-            FALLBACK_DUE = true;
-        }
-    }
-    due
-}
-/// The main loop's queued flip has waited FLIP_TIMEOUT_VBLANKS for its GPU, or
-/// the watch says the GPU finished without raising bit 24.
+/// The main loop's queued flip has waited FLIP_TIMEOUT_VBLANKS for its GPU.
 #[cfg(not(test))]
 pub fn flip_overdue() -> bool {
     queued()
         && psx_rt::interrupts::is_display_control_queued()
-        && (psx_rt::interrupts::vblank_count().wrapping_sub(unsafe { QUEUED_AT })
+        && psx_rt::interrupts::vblank_count().wrapping_sub(unsafe { QUEUED_AT })
             >= FLIP_TIMEOUT_VBLANKS
-            || fallback_due())
 }
 /// Take the queued display word back from psx-rt and write it now. Racing the
 /// VBlank handler is harmless: it writes the same idempotent GP1 word.
@@ -187,11 +145,7 @@ pub fn force_flip() {
     if word != 0 {
         psx_io::gpu::write_display_control(word);
         unsafe {
-            if FALLBACK_DUE {
-                FALLBACK_DUE = false;
-            } else {
-                HK_FLIP_TIMEOUTS = HK_FLIP_TIMEOUTS.wrapping_add(1);
-            }
+            HK_FLIP_TIMEOUTS = HK_FLIP_TIMEOUTS.wrapping_add(1);
         }
     }
 }
