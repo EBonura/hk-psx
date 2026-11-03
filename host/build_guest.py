@@ -102,6 +102,9 @@ def module_tables():
         for tree in ('hornet3','hornet_corpse3'):
             data=(ROOT/'data'/f'{tree}.hkf3').read_bytes();blob+=data+bytes(-len(data)%4)
         art['art_hornet']=bytes(blob)
+    # The room state block of the family actors (host/code_modules.py `art_fsm_state`): zeroed bytes, one block for the widest room.
+    import re
+    art['art_fsm_state']=bytes(int(re.search(r'pub const FSM_STATE_BYTES: usize = (\d+);',regions_rs)[1]))
     # Compact actor art banks: the head of each bank is its scene's data package, the rest is linked (data/actor_banks.rs).
     import actor_bank
     from quality import SCENE_TABLE
