@@ -20,6 +20,7 @@ mod region_cache;
 mod repin;
 mod routes;
 mod scene_gate;
+mod scene_specs;
 mod verdicts;
 mod walk;
 
@@ -743,7 +744,14 @@ fn asset_outputs(root: &Path) -> Result<BTreeMap<String, String>> {
                     // player it carries) after the cookers have run and the cache is
                     // stamped, so they are not cooker outputs: counting them made every
                     // rebuild after a first one recook everything.
-                    n.ends_with(".tmp") || matches!(&*n, "boot-art.hk" | "boot_art.rs" | "intro.exe")
+                    // The scene spec chunks are cut from regions.rs after the caches are stamped
+                    // (scene_specs.rs), on every build.
+                    n.ends_with(".tmp")
+                        || n.ends_with(".hkspec")
+                        || matches!(
+                            &*n,
+                            "boot-art.hk" | "boot_art.rs" | "intro.exe" | "scene_specs.rs" | "regions_guest.rs"
+                        )
                 })
             {
                 out.insert(
@@ -934,6 +942,7 @@ fn selected_library(options: &Options) -> PathBuf {
 /// Pack the disc from the guest build in `work` (its patched EXE, `modules.json`
 /// and the cooked chunks): WORLD.PAK in read order and the XA song file.
 fn package_disc(root: &Path, work: &Path, library: &Path, intro: Option<&disc::Intro>) -> Result<()> {
+    scene_specs::verify(root)?;
     let songs = disc::Songs {
         xa: vec![root.join("data/music.xa")],
         cdda: Vec::new(),
@@ -1053,6 +1062,9 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // Likewise the room-module tables (data/modules.rs, data/props_art.rs),
     // which build_guest.py otherwise writes only when it links the guest.
     python_step_module(root, "build_guest", "module_tables")?;
+    // The scene spec chunks, cut from the final regions.rs (every bind has run by now).
+    scene_specs::pack(root)?;
+    scene_specs::test(root)?;
     // The host suite is cheap and nothing else ran it, so a cooker regression
     // used to survive whole builds: adding a required constant to
     // `generated_params` broke a fixture and nine builds shipped before anyone
@@ -2421,7 +2433,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|scene-specs|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune] [--repin] [--resume]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2453,7 +2465,7 @@ fn usage() -> ! {
          disc built with guest features, the replay gates' route-input one, or --no-intro, has not)\n\
          store status|key|restore [--force]|publish [--label L]|dedupe|gc [--keep N] [--apply]|verify|phys DIR...  the shared cook store\n          \
          (HK_COOK_STORE=DIR; docs/COOK-STORE.md): restore exits 3 when it holds no snapshot for this checkout\n\
-         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe"
+         scene-specs cut the ActorSpec statics out of data/regions.rs and pack them (data/scene-specs, data/scene_specs.rs,\n          data/regions_guest.rs; a build does this itself, after the asset stage)\n         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe"
     );
     std::process::exit(2)
 }
@@ -2767,7 +2779,7 @@ fn main() {
                 xa: vec![root.join("data/music.xa")],
                 cdda: options.cdda.clone(),
             };
-            intro_stage(&root, intro_plan(&options, shipping_guest())).and_then(|stage| {
+            scene_specs::verify(&root).and_then(|()| intro_stage(&root, intro_plan(&options, shipping_guest()))).and_then(|stage| {
                 disc::package(
                     &root,
                     &work.join("hk-psx-patched.exe"),
@@ -2778,6 +2790,8 @@ fn main() {
                 )
             })
         }
+        // Cut the spec statics out of data/regions.rs and pack them (a build does this itself).
+        "scene-specs" => scene_specs::pack(&root),
         "intro-cook" => {
             if options.recook {
                 let _ = std::fs::remove_dir_all(intro::dir(&root));

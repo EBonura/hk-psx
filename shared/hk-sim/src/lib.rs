@@ -38,6 +38,7 @@ pub mod gruzzer;
 pub mod hard_landing;
 pub mod hatcher;
 pub mod waves;
+pub mod wire;
 #[cfg(feature = "boss")]
 pub mod hornet;
 #[cfg(feature = "boss")]

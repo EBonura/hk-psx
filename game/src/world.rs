@@ -244,7 +244,7 @@ pub fn region_grass(region: &Region) -> impl Iterator<Item = Patch> {
 pub fn region_actors(
     region: &Region,
 ) -> impl Iterator<Item = (hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
-    let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
+    let specs: &'static [hk_sim::ActorSpec] = scene_specs(region.scene);
     bank_region(region)
         .into_iter()
         .flat_map(|bank| bank.objects().flatten())
@@ -256,7 +256,7 @@ pub fn region_actors(
 pub fn region_actors_indexed(
     region: &Region,
 ) -> impl Iterator<Item = (usize, hk_sim::ActorPlacement, &'static hk_sim::ActorSpec)> {
-    let specs: &'static [hk_sim::ActorSpec] = SCENE_ACTORS[region.scene];
+    let specs: &'static [hk_sim::ActorSpec] = scene_specs(region.scene);
     bank_region(region)
         .into_iter()
         .flat_map(|bank| (0..bank.object_count()).filter_map(move |i| Some((i, bank.object(i)?))))
@@ -265,6 +265,12 @@ pub fn region_actors_indexed(
 }
 /// The runner audio family the actors of scene `scene_id` play (true: Mossman), None when it places no
 /// Runner and no Zombie Shield, so no bank is needed to enter it.
+#[cfg(not(test))]
+pub fn runner_family(scene_id: usize) -> Option<bool> {
+    // From the cook: the next scene's bank is wanted before its specs are read.
+    crate::spec_pool::runner_family(scene_id)
+}
+#[cfg(test)]
 pub fn runner_family(scene_id: usize) -> Option<bool> {
     SCENE_ACTORS.get(scene_id)?.iter().find_map(|spec| match spec.controller {
         hk_sim::ActorController::Runner { params, .. } => {
@@ -284,7 +290,7 @@ pub fn region_actor(
     (o.kind() == KIND_ACTOR && o.flags() & 64 != 0).then(|| {
         (
             actor_placement(&o),
-            &SCENE_ACTORS[region.scene][o.extra(0) as usize],
+            &scene_specs(region.scene)[o.extra(0) as usize],
         )
     })
 }
@@ -615,6 +621,11 @@ pub struct Region {
 }
 /// The scene the False Knight is placed in, for carrying an HKS4 save's won
 /// arena into the SceneData store.
+#[cfg(not(test))]
+pub fn false_knight_scene() -> Option<usize> {
+    crate::spec_pool::false_knight_scene()
+}
+#[cfg(test)]
 pub fn false_knight_scene() -> Option<usize> {
     SCENE_ACTORS.iter().position(|specs| {
         specs
@@ -774,7 +785,23 @@ pub struct Gate {
     /// collider exists (top gates, 3 s).
     pub delay_ticks: u16,
 }
+// The guest links data/regions_guest.rs: regions.rs without its spec statics, which travel in the scene's
+// spec chunk (spec_pool.rs). The native harnesses keep the full file and read the statics directly.
+#[cfg(not(test))]
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions_guest.rs"));
+#[cfg(test)]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/regions.rs"));
+/// The enemy types of scene `scene` (a catalogue scene id), in the order its placements index them.
+#[cfg(not(test))]
+#[inline(always)]
+fn scene_specs(scene: usize) -> &'static [hk_sim::ActorSpec] {
+    crate::spec_pool::specs(scene)
+}
+#[cfg(test)]
+#[inline(always)]
+fn scene_specs(scene: usize) -> &'static [hk_sim::ActorSpec] {
+    SCENE_ACTORS[scene]
+}
 #[cfg(not(test))]
 const _: () = assert!(
     SCENES == crate::disc::SCENE_COUNT,

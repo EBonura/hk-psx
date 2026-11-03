@@ -54,6 +54,7 @@ const _: () = assert!(enemies::MAX_VISIBLE + hk_cache::RESERVED_SLOTS <= hk_cach
 mod hud;
 mod reveal_masks;
 mod secret_breaks;
+mod spec_pool;
 mod world;
 /// Offsets into the boot art chunk (host/build_guest.py `boot_art`).
 mod boot_art {
