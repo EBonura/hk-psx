@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |797,180|
-| Code-to-data alignment |4|
-| Linked data, including menu and HUD |271,080|
+| Linked code |801,656|
+| Code-to-data alignment |8|
+| Linked data, including menu and HUD |246,392|
 | BSS, including shared scene arena and runtime pools |795,724|
-| Total static span |1,863,996|
+| Total static span |1,843,788|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |118,212|
+| Unallocated gap before reserved stack |138,420|
 | Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |9,668|
+| Free RAM below the module pool |29,876|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d713c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d224c`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -649,3 +649,5 @@ The 2026-11-02 Fungus1_31 and Fungus1_32 admission (49 views, two scenes) took t
 The 2026-11-02 Toll Machine (docs/WORLD_LINKS.md "Toll Machines"; game/src/toll.rs, the `toll` room module carried by Fungus1_31 only, a 2,708 byte image) took the free RAM below the module pool from 9,956 to 9,780 (-176: linked data +164 for `data/toll.rs` and the box's strings, the rest the resident hooks in `dialogue.rs`, `frame::interact` and `State::toll_paid`; the box and its drawing are in the module, and `State::hit_object`'s flag 32 test and `queue_lever` cost almost nothing). Fungus1_31's room carries it with the Moss Walker, FSM logic and debris modules (a 17,864 byte code chunk) and fits the pool with room to spare; the tightest room stays the same one at +804. A second scene with a machine adds one `Machine` row (28 bytes) and carries the same module.
 
 The 2026-11-02 enemy-family pipeline and the first family (docs/ENEMY-FAMILIES.md; the Plant Trap, eight placements in three scenes) took the free RAM below the module pool from 9,780 to 11,076: linked code 791,364 to 790,584 (-780), linked data 280,840 to 280,296 (-544), alignment 60 to 72. The family code is a room module (`actor_fsm`, 3,476 bytes of code and 513 of data, carried by the scenes that place a family actor) and the shared action code gained the particle family in `fsm3_world` (+480), so the pipeline's resident cost is one out-of-line gate (`Actor::fsm_ready`, 80 bytes) and the hooks' call sites: spawn, advance, death, bounds and draw are `#[inline(never)]` functions in the module, which took the resident cost from +1,932 bytes (the hooks inlined at five sites) to -392. The data saving is engine-wide: `ActorSpec::corpse` is `Option<&'static CorpseSpec>` instead of the 48-byte spec inline, so the spec went from 152 to 104 bytes (plus a pointer) and the linker merges equal corpse constants (60 distinct for 88 actors); that returned 1,696 bytes of linked data against 1,264 bytes the six Plant Trap specs and their tables cost. A later family adds its specs and its module bytes, nothing resident.
+
+The 2026-11-03 per-scene tables pass (hk-resident, docs/SCENE-SPECS.md) took the linked data from 271,080 to 246,392 bytes and linked code from 797,180 to 801,656 (+4,476), so 29,876 bytes are free below the module pool (9,668 before). Every scene's `ActorSpec`s and `CorpseSpec`s (15,760 bytes: 112 specs in 36 distinct arrays, 61 corpse records and the slice table) left the image for a one-sector chunk of the scene's disc group, decoded at the gate into a pool of the widest scene's 13 specs and 4 corpses (equal corpses share a record); the atlas inventory went from 708 rows of 32 bytes to 16 (the owning scene, the raw length and the unpacked kind and count are derived and checked by the cook). The decoder is about 4.4 KB of resident code; the pool and the other new statics are 1.8 KB. Each scene now costs about 0.25 KB of resident tables (its atlas rows and descriptors) where it cost 0.8 to 1 KB.
