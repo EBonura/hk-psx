@@ -40,7 +40,7 @@ mod input{pub fn poll_bits()->u16{super::poll_port1().buttons.bits()}}
 // after the last arm has raised it, so every present must arm, then signal.
 pub fn arm_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();t.armed=true;t.signalled=false;});}
 pub fn signal_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.armed,"GP0(1Fh) without an arm");t.armed=false;t.signalled=true;});}
-mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic!("the menu's flip timed out");}}
+mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic!("the menu's flip timed out");}pub fn watch_reset(){}pub fn fallback_due()->bool{false}}
 pub mod interrupts{
  pub fn queue_display_control_at_vblank(_:u32){super::TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.signalled,"flip queued with no GP0(1Fh) after the arm: it would never apply");t.signalled=false;t.pending=true;});}
  pub fn is_display_control_queued()->bool{super::TRACE.with(|t|t.borrow().pending)}
