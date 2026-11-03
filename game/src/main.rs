@@ -809,7 +809,40 @@ fn strike_geo(geo: &mut geo::World, scene: usize, nail: &Nail, player: &Player) 
     for (dst, p) in polygon.iter_mut().zip(source) {
         *dst = [player.x - p[0] * player.facing, player.y + p[1]];
     }
-    geo.strike(scene, geo::GEO_ROCKS, &polygon[..source.len()])
+    geo.strike(scene, &polygon[..source.len()], |each| {
+        // The scene's rocks, read from its admitted bank one at a time.
+        for rock in world::geo_rocks(scene) {
+            let mut points = [[0; 2]; 32];
+            let mut lens = [0u8; 4];
+            let (mut count, mut shapes) = (0, 0);
+            for shape in rock.polygons().flatten().take(4) {
+                let first = count;
+                for point in shape.points().flatten() {
+                    if count < points.len() {
+                        points[count] = point;
+                        count += 1;
+                    }
+                }
+                lens[shapes] = (count - first) as u8;
+                shapes += 1;
+            }
+            let packed = rock.extra(2) as u32;
+            each(&geo::RockSpec {
+                source_id: rock.source_id(),
+                scene: scene as u8,
+                state: rock.state_id() as u8,
+                x: rock.extra(0),
+                y: rock.extra(1),
+                bounds: rock.bounds(),
+                points: &points[..count],
+                lens,
+                hits: packed as u8,
+                per_hit: (packed >> 8) as u8,
+                final_payout: (packed >> 16) as u8,
+                hit_cooldown: u16::from((packed >> 24) as u8),
+            });
+        }
+    })
 }
 /// Boundary backpressure is reported separately from visual-frame cadence.
 #[no_mangle]

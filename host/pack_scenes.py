@@ -36,7 +36,7 @@ GEO_REPORT=ROOT/'.hkpsx/geo-provenance.json'
 def sha(data):return hashlib.sha256(data).hexdigest()
 
 def geo_enemies():
-    """Enemy Geo payouts per scene id, out of host/geo.py's report.
+    """Enemy Geo payouts per scene id, and the rocks' bank rows, out of host/geo.py's report.
 
     These used to link as one flat GEO_ENEMIES table covering every scene at
     once. Each scene's bank carries its own now, and this is the only place the
@@ -49,7 +49,7 @@ def geo_enemies():
     if report['format']!='HKGEO01':raise ValueError('the Geo report format changed')
     per_scene={}
     for enemy in report['enemies']:per_scene.setdefault(enemy['scene'],[]).append(enemy)
-    return per_scene
+    return per_scene,report['bank']
 
 def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
     """Cook the checked HKWMTA01 banks that belong to each packed scene.
@@ -74,7 +74,7 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         source_scenes=[{'scene_id':scene,'scene_name':f'Scene {scene}','file':f'scene-{scene}'}
                        for scene in sorted({row['scene_id'] for row in meta['regions']})]
     scene_raw_fnv=scene_raw_fnv or {}
-    enemies=geo_enemies()
+    enemies,geo_bank=geo_enemies()
     # Each view's scenery packet budget (host/scenery_geometry.py generate(), run just before this pack) rides in its
     # statics object, so the guest links no per-view table for it.
     budgets=json.loads((ROOT/'.hkpsx/scenery-geometry-budgets.json').read_text())['regions'] if any('statics' in r for r in meta.get('regions',[])) else []
@@ -91,6 +91,8 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         source_scene['reveal_controllers']=len(controllers)
         source_scene['reveal_mask_controllers']=controllers
         source_scene['geo_enemies']=enemies.get(scene['scene_id'],[])
+        source_scene['geo_rocks']=geo_bank['rocks'].get(str(scene['scene_id']),[])
+        for row in rows:row['geo_views']=geo_bank['views'].get(str(row['chunk_id']),[])
         raw,descriptor=encode_scene(source_scene,rows)
         stored=compressed(raw)
         path=output_dir/f"scene_{scene['scene_id']}"

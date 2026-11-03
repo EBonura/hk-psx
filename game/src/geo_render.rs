@@ -1,5 +1,6 @@
 //! Geo art is uploaded once into proven VRAM gaps, outside the scene cache.
 use crate::{geo, render, world};
+use hk_format::world_meta::{KIND_GEO_ART, KIND_GEO_VIEW};
 use psx_math::Wide;
 use psx_gpu::{
     material::{BlendMode, TextureMaterial},
@@ -34,18 +35,22 @@ pub fn upload(boot: &[u8]) {
 /// (its cooked rock draws); they differ while the camera is outside the
 /// Knight's view's range.
 pub fn apply(geo: &geo::World, state: &mut world::State, region: usize, view: usize) {
-    for binding in geo::region_bindings(view) {
-        if geo.rock_depleted(world::scene_of(view), binding.state as usize) {
-            for &draw in binding.off() {
+    for object in world::geo_view_objects(view).filter(|o| o.kind() == KIND_GEO_VIEW) {
+        if geo.rock_depleted(world::scene_of(view), object.state_id() as usize) {
+            let mut list = object.indices(0);
+            let hidden = list.next().unwrap_or(0) as usize;
+            for draw in list.take(hidden) {
                 render::set_visible(draw as usize, false);
             }
         }
     }
     let mut edges = [0u16; 32];
     let mut len = 0;
-    for binding in geo::region_bindings(region) {
-        if geo.rock_depleted(world::scene_of(region), binding.state as usize) {
-            for &edge in binding.edges() {
+    for object in world::geo_view_objects(region).filter(|o| o.kind() == KIND_GEO_VIEW) {
+        if geo.rock_depleted(world::scene_of(region), object.state_id() as usize) {
+            let mut list = object.indices(0);
+            let hidden = list.next().unwrap_or(0) as usize;
+            for edge in list.skip(hidden) {
                 if !edges[..len].contains(&edge) {
                     assert!(len < edges.len());
                     edges[len] = edge;
@@ -95,17 +100,16 @@ fn draw_art(index: usize, world: [[i32; 2]; 4], camera: (i32, i32)) -> bool {
 pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
     let scene = world::scene_of(region);
     let mut drawn = 0;
-    for binding in geo::region_bindings(region) {
-        let d = &geo::GEO_DRAWS[binding.draw as usize];
-        let (art, vertices, extra) = if geo.rock_depleted(scene, binding.state as usize) {
-            (d.broken_art, d.broken, d.broken_extra)
-        } else {
-            (d.intact_art, d.intact, d.intact_extra)
-        };
-        drawn += u32::from(draw_art(art as usize, parallelogram(vertices), camera));
-        for part in extra {
-            drawn += u32::from(draw_art(part.art as usize, parallelogram(part.vertices), camera));
+    for object in world::geo_view_objects(region).filter(|o| o.kind() == KIND_GEO_ART) {
+        let id = object.state_id();
+        // Tag 0 art shows once the rock is broken, tag 1 while it is whole.
+        if geo.rock_depleted(scene, (id & 0xFF) as usize) != (id >> 8 == 0) {
+            continue;
         }
+        let Some(corners) = world::geo_art_corners(&object) else {
+            continue;
+        };
+        drawn += u32::from(draw_art(object.flags() as usize, parallelogram(corners), camera));
     }
     for coin in geo
         .coins()
@@ -115,7 +119,7 @@ pub fn draw(geo: &geo::World, region: usize, camera: (i32, i32)) -> u32 {
         let index = clip.start as usize
             // age * fps / 60 stays below 2^32 for any fps up to 60.
             + (hk_sim::fixed::mul_div_floor(coin.age, u32::from(clip.fps), 60) % u32::from(clip.count)) as usize;
-        let b = geo::GEO_ART[index].bounds;
+        let b = geo::GEO_COIN_BOUNDS[index];
         let world = [
             [b[0] + coin.x, b[3] + coin.y],
             [b[2] + coin.x, b[3] + coin.y],

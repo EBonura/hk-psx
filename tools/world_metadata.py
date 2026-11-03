@@ -29,7 +29,7 @@ MAX_FADE_TICKS = 1023  # ten flag bits
 LEVER_FLAG = 16  # a switch breakable (host/world_links.py)
 TOLL_FLAG = 32  # a Toll Machine's bit: a lever the nail leaves alone (game/src/toll.rs sets it)
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21, "geo_rock": 22, "geo_art": 23, "geo_view": 24}
 MAX_REVEAL_CONTROLLERS = 16
 
 
@@ -348,6 +348,16 @@ def encode_scene(scene, rows):
             add_object("remote_art", {"source": f"remote_art:{row['chunk_id']}"},
                        base * BREAKABLES_PER_SCENE, int(inverted), row["activation_bounds"], None,
                        (first | len(stream) << 16, 0, 0))
+        # Geo rocks this view draws or that hide draws and colliders here once broken.
+        for view in row.get("geo_views", []):
+            state = bounded(view["state"], 256, "geo view state")
+            for tag, art, quad in view["arts"]:
+                add_object("geo_art", {"source": view["source"], "quad": [quad]}, state | bounded(tag, 2, "geo art tag") << 8,
+                           bounded(art, 65536, "geo art frame"), row["activation_bounds"], "quad")
+            if view["off"] or view["edges"]:
+                stream = [len(view["off"])] + list(view["off"]) + list(view["edges"])
+                add_object("geo_view", {"source": view["source"]}, state, 0, row["activation_bounds"], None,
+                           (index_list(stream, 65536, "geo view list"), 0, 0))
         for record in row.get("grass", []):
             state = bounded(record["state_index"], GRASS_PER_SCENE, "grass state")
             if stable_grass.setdefault(state, record["source"]) != record["source"]:
@@ -487,6 +497,17 @@ def encode_scene(scene, rows):
                 add_object("geo_enemy", enemy, drops[0] | (drops[1] << 16),
                            1 if enemy["mega"] else 0, row["activation_bounds"], None,
                            (q(enemy["effect_origin"]["x"]), q(enemy["effect_origin"]["y"]), drops[2]))
+            # Geo rocks are scene-level like the payouts: the strike test, the persistent
+            # state key and the payout counts. Their art and what a broken one hides ride
+            # in the regions that draw them (geo_art, geo_view below). `state` is the
+            # rock's scene-local state index, the same one the save record keys.
+            for rock in scene.get("geo_rocks", []):
+                counts = [bounded(rock[k], 256, "geo rock " + k) for k in ("hits", "per_hit", "final_payout", "hit_cooldown")]
+                if not 1 <= len(rock["polygons"]) <= 4 or sum(len(p) for p in rock["polygons"]) > 32:
+                    raise ValueError("geo rock collision polygons outside 1..4 shapes and 32 points")
+                add_object("geo_rock", rock, bounded(rock["state"], 256, "geo rock state"), 0, rock["bounds"], "polygons",
+                           (q(rock["x"]), q(rock["y"]),
+                            counts[0] | counts[1] << 8 | counts[2] << 16 | counts[3] << 24))
             # The scene's reveal-mask controllers, in the order the per-region
             # KIND_REVEAL_BINDINGS pairs index them. `state` is that index, the
             # object's bounds are the trigger's own AABB so the guest's per-tick

@@ -29,7 +29,7 @@ pub const BREAKABLES_PER_SCENE: usize = 128;
 pub const GRASS_PER_SCENE: usize = 1024;
 use hk_format::world_meta::{
     self as meta, KIND_ACTOR, KIND_BENCH, KIND_BREAKABLE, KIND_CAMERA_LOCK, KIND_GATE,
-    KIND_FRAGMENT, KIND_FRAGMENT_FRAMES, KIND_GEO_ENEMY, KIND_GRASS, KIND_MASK_FADE, KIND_NPC,
+    KIND_FRAGMENT, KIND_FRAGMENT_FRAMES, KIND_GEO_ART, KIND_GEO_ENEMY, KIND_GEO_ROCK, KIND_GEO_VIEW, KIND_GRASS, KIND_MASK_FADE, KIND_NPC,
     KIND_POGO, KIND_REGION_STATICS, KIND_REMOTE_ART, KIND_REMOTE_MASK, KIND_REVEAL_BINDINGS,
     KIND_REVEAL_MASK, KIND_SHROOM,
 };
@@ -2383,6 +2383,47 @@ pub fn geo_enemy(scene: usize, source: u32) -> Option<GeoEnemy> {
         offset: [object.extra(0), object.extra(1)],
         mega: object.flags() & 1 != 0,
     })
+}
+/// The Geo rocks of `scene`, as the first region of its admitted bank holds them (`KIND_GEO_ROCK`). Empty while another
+/// scene's bank is the admitted one, which is the swing's answer for a scene it is not in.
+pub fn geo_rocks(scene: usize) -> impl Iterator<Item = meta::Object<'static>> {
+    admitted_bank()
+        .filter(move |bank| bank.scene_id() as usize == scene)
+        .into_iter()
+        .flat_map(|bank| {
+            bank.region(0)
+                .into_iter()
+                .flat_map(|region| region.objects().flatten().filter(|o| o.kind() == KIND_GEO_ROCK))
+        })
+}
+/// The Geo objects (`KIND_GEO_ART`, `KIND_GEO_VIEW`) of catalogue region `region_id`, or nothing while its scene's bank is
+/// not the admitted one.
+pub fn geo_view_objects(region_id: usize) -> impl Iterator<Item = meta::Object<'static>> {
+    let scene = scene_of(region_id);
+    admitted_bank()
+        .filter(move |bank| bank.scene_id() as usize == scene)
+        .and_then(|bank| bank.region_by_global_id(region_id as u32 + 1))
+        .into_iter()
+        .flat_map(|region| {
+            region
+                .objects()
+                .flatten()
+                .filter(|o| o.kind() == KIND_GEO_ART || o.kind() == KIND_GEO_VIEW)
+        })
+}
+/// The three corners (top left, top right, bottom left) a `KIND_GEO_ART` object's polygon holds.
+pub fn geo_art_corners(object: &meta::Object) -> Option<[[i32; 2]; 3]> {
+    let polygon = object.polygons().next()?.ok()?;
+    let mut corners = [[0; 2]; 3];
+    let mut count = 0;
+    for point in polygon.points() {
+        let point = point.ok()?;
+        if count < 3 {
+            corners[count] = point;
+        }
+        count += 1;
+    }
+    (count == 3).then_some(corners)
 }
 /// Every admitted gate of a scene, read from the first region of that scene's
 /// metadata bank. Empty while another scene's bank is the admitted one, which

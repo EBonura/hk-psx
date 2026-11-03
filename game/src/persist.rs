@@ -423,7 +423,7 @@ pub fn apply(
         state.restore_broken(scene * crate::world::BREAKABLES_PER_SCENE + local);
     }
     for (scene, local, left) in s.all(Kind::GeoRock) {
-        geo.restore_rock(crate::geo::GEO_ROCKS, scene, local, left);
+        geo.restore_rock(scene, local, left);
     }
     restore_cocoon(life);
 }

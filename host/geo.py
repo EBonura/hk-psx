@@ -310,37 +310,35 @@ def canonical_images(art):
         pixels[key]=original;w,h=a['image'].size;old=groups.get(key,(0,0));groups[key]=(max(w,old[0]),max(h,old[1]))
     for a in art:a['image']=a.pop('original_image').resize(groups[a['source']],Image.Resampling.LANCZOS)
 
-def rust_parts(parts):return '&['+','.join('GeoPart{art:'+str(p['art'])+',vertices:'+rust_array(quad_of(p['vertices']))+'}'for p in parts)+']'
 
 def rust_array(values):return '['+','.join(str(v)for v in values)+']'
 # game/src/geo.rs ROCK_FLING: every source rock carries this one profile, so the table spends no bytes on it.
 ROCK_FLING_Q16=[[23*65536,30*65536],[80*65536,100*65536],[16384,16384]]
-def quad_of(quad):
-    """Three corners (TL, TR, BL) of a sprite quad; a rotated or scaled sprite rectangle is a parallelogram, so the guest
-    rebuilds BR as TR+BL-TL (geo_render::parallelogram). Refuse a quad where that is off by more than 2 Q16 units."""
+def corners(quad):
+    """Three corners (TL, TR, BL) of a sprite quad in world units; a rotated or scaled sprite rectangle is a parallelogram, so the
+    guest rebuilds BR as TR+BL-TL (geo_render::parallelogram). Refuse a quad where that is off by more than 2 Q16 units."""
     q=[[q16(v)for v in p]for p in quad]
     if any(abs(q[3][k]-(q[1][k]+q[2][k]-q[0][k]))>2 for k in (0,1)):raise ValueError(f'Geo rock art quad is not a parallelogram: {q}')
-    return q[:3]
-def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,hero_box,gravity):
+    return [list(p)for p in quad[:3]]
+def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,hero_box,gravity):
+    # Rocks are not linked: each rides in its own scene's metadata bank (`bank_rows`, filled by host/pack_scenes.py),
+    # and so do the enemy payouts. Only what a bank cannot hold lives here: the coin parameters, the art bank's texture
+    # entries (uploaded at startup, whatever the scene) and the coin frames' boxes.
+    for r in rocks:
+        if [[q16(v)for v in r['fling'][k]]for k in ('speed','angle','spread')]!=ROCK_FLING_Q16:raise ValueError('Geo rock fling differs from the guest geo::ROCK_FLING')
     lines=['// Generated from read-only Windows source by host/geo.py.\n']
     lines.append('pub const HERO_BOX:[i32;4]='+rust_array([q16(v)for v in hero_box])+';')
     lines.append('pub const GEO_PARAMS:Params=Params{pickup_ticks:15,wallet_max:9999999,coins:[')
     for c in coins:
         scale=c['scale'];b=c['body'];offset=[q16(b['m_Offset'][k]*scale)for k in 'xy'];half=[q16(b['m_Size'][k]*scale/2)for k in 'xy']
         lines.append('CoinSpec{value:'+str(c['value'])+',gravity:'+str(q16(gravity*c['rigidbody']['m_GravityScale']))+',body_offset:'+rust_array(offset)+',half:'+rust_array(half)+',pickup_offset:'+rust_array(offset)+',pickup_half:'+rust_array(half)+',bounce:'+str(q16(c['bounce']['bounceFactor']))+',threshold:'+str(q16(c['bounce']['speedThreshold']))+',friction:'+str(q16(c['material']['friction']))+'},')
-    lines.append(']};\npub const GEO_ROCKS:&[RockSpec]=&[')
-    for r in rocks:
-        if [[q16(v)for v in r['fling'][k]]for k in ('speed','angle','spread')]!=ROCK_FLING_Q16:raise ValueError('Geo rock fling differs from the guest geo::ROCK_FLING')
-        polys='&['+','.join('&['+','.join(rust_array([q16(v)for v in p])for p in poly)+']'for poly in r['polygons'])+']'
-        fields={k:r[k]for k in ('source_id','scene','state','hits','per_hit','final_payout','hit_cooldown','broken_frame')}
-        lines.append('RockSpec{'+','.join(f'{k}:{v}'for k,v in fields.items())+',x:'+str(q16(r['x']))+',y:'+str(q16(r['y']))+',bounds:'+rust_array([q16(v)for v in r['bounds']])+',polygons:'+polys+'},')
-    # Enemy payouts are not linked: every one of them rides in its own scene's
-    # metadata bank, which host/pack_scenes.py fills from this cook's report.
-    # Only `megaFlingGeo` survives the move, because the two fling profiles it
-    # chooses between are the guest's own `geo::FLING` pair.
-    lines.append('];\n#[derive(Clone,Copy)] pub struct GeoArt{pub u:u8,pub v:u8,pub w:u8,pub h:u8,pub clut:u16,pub tpage:u16,pub bounds:[i32;4]}\npub const GEO_ART:&[GeoArt]=&[')
+    coin_frames=max(clips[c['clips'][name]]['start']+clips[c['clips'][name]]['count']for c in coins for name in ('idleAnim','airAnim'))
+    lines.append(']};\n#[derive(Clone,Copy)] pub struct GeoArt{pub u:u8,pub v:u8,pub w:u8,pub h:u8,pub clut:u16,pub tpage:u16}\npub const GEO_ART:&[GeoArt]=&[')
     for a,tid in zip(art,mapping):
-        t=textures[tid];lines.append('GeoArt{'+','.join(f'{k}:{t[k]}'for k in ('u','v','w','h','clut','tpage'))+',bounds:'+rust_array([q16(v)for v in a['box']])+'},')
+        t=textures[tid];lines.append('GeoArt{'+','.join(f'{k}:{t[k]}'for k in ('u','v','w','h','clut','tpage'))+'},')
+    # Only coins are drawn from their art box; a rock's quad is its own, in its scene's bank.
+    lines.append('];\npub const GEO_COIN_BOUNDS:&[[i32;4]]=&[')
+    for a in art[:coin_frames]:lines.append(rust_array([q16(v)for v in a['box']])+',')
     lines.append('];\n#[derive(Clone,Copy)] pub struct GeoClip{pub start:u16,pub count:u16,pub fps:u16}\npub const GEO_COIN_CLIPS:[[GeoClip;2];3]=[')
     for c in coins:
         vals=[]
@@ -351,24 +349,27 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,her
         lines.append('['+','.join(vals)+'],')
     lines.append('];\n#[derive(Clone,Copy)] pub struct GeoUpload{pub offset:usize,pub x:u16,pub y:u16,pub w:u16,pub h:u16}\npub const GEO_UPLOADS:&[GeoUpload]=&[')
     for u in uploads:lines.append('GeoUpload{'+','.join(f'{k}:{v}'for k,v in u.items())+'},')
-    # A slot per catalogue region spent eight linked bytes on every view that
-    # never sees a rock. The sparse sorted list grows with the bound rocks.
-    # The art and quads of a rock are the same from every view that sees it, so they ride once per rock (GEO_DRAWS,
-    # in GEO_ROCKS order) and a view's binding only names its rock.
-    if len(rocks)>256:raise ValueError('geo draw index exceeds u8')
-    if any(len(b['off'])>255 for row in bindings for b in row):raise ValueError('geo binding off list exceeds u8')
-    lines.append('];\npub struct GeoPart{pub art:u16,pub vertices:[[i32;2];3]}\npub struct GeoDraw{pub broken_art:u16,pub intact_art:u16,pub broken:[[i32;2];3],pub intact:[[i32;2];3],pub intact_extra:&\'static[GeoPart],pub broken_extra:&\'static[GeoPart]}\npub const GEO_DRAWS:&[GeoDraw]=&[')
-    for r in rocks:lines.append('GeoDraw{broken_art:'+str(r['broken_frame'])+',intact_art:'+str(r['intact_frame'])+',broken:'+rust_array(quad_of(r['broken_vertices']))+',intact:'+rust_array(quad_of(r['intact_vertices']))+',intact_extra:'+rust_parts(r['intact_extra'])+',broken_extra:'+rust_parts(r['broken_extra'])+'},')
-    # A slot per catalogue region spent eight linked bytes on every view that
-    # never sees a rock. The sparse sorted list grows with the bound rocks.
-    lines.append('];\npub struct GeoDrawBinding{pub state:u8,pub draw:u8,pub off_len:u8,pub lists:&\'static[u16]}\n/// Regions with at least one bound rock, sorted by catalogue region index.\npub const GEO_BINDINGS:&[(u16,&[GeoDrawBinding])]=&[')
-    for index,row in enumerate(bindings):
-        if not row:continue
-        if index>0xFFFF:raise ValueError('geo binding region index exceeds u16')
-        lines.append(f'({index},&[')
-        for b in row:lines.append('GeoDrawBinding{state:'+str(b['state'])+',draw:'+str(b['draw'])+',off_len:'+str(len(b['off']))+',lists:&'+rust_array(b['off']+b['edges'])+'},')
-        lines.append(']),')
     lines.append('];\n');return '\n'.join(lines)
+
+def bank_rows(rocks,bindings,metadata):
+    """What the scene metadata banks carry for Geo rocks (tools/world_metadata.py KIND_GEO_*).
+
+    `rocks` by scene id (collision, state key and payout counts), and `views` by region chunk id: for each rock a region
+    draws or hides things for, its art quads (tag 0 while broken, 1 while whole) and the draw and edge indices a broken
+    rock removes there. Coordinates stay in world units; the encoder fixes them to Q16."""
+    by_scene={}
+    for r in rocks:
+        by_scene.setdefault(r['scene'],[]).append({k:r[k]for k in ('source','state','x','y','bounds','polygons','hits','per_hit','final_payout','hit_cooldown')})
+    for rows in by_scene.values():rows.sort(key=lambda row:row['state'])
+    views={}
+    for region,row in zip(metadata['regions'],bindings):
+        out=[]
+        for b in row:
+            r=rocks[b['draw']];arts=[(0,r['broken_frame'],corners(r['broken_vertices'])),(1,r['intact_frame'],corners(r['intact_vertices']))]
+            arts+=[(0,p['art'],corners(p['vertices']))for p in r['broken_extra']]+[(1,p['art'],corners(p['vertices']))for p in r['intact_extra']]
+            out.append({'source':r['source'],'state':b['state'],'arts':arts,'off':b['off'],'edges':b['edges']})
+        if out:views[str(region['chunk_id'])]=out
+    return {'rocks':{str(k):v for k,v in by_scene.items()},'views':views}
 
 def bind_regions(rocks,metadata):
     bindings=[]
@@ -416,9 +417,9 @@ def cook():
         hero.append(([t['m_Offset'][k]+sign*t['m_Size'][k]/2 for sign in (-1,1)for k in 'xy'],source.sid(o)))
     if len(hero)!=1:raise ValueError('HeroBox source is ambiguous')
     physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='Physics2DSettings');gravity=source.read(physics)['m_Gravity']['y']
-    rust=generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,bindings,hero[0][0],gravity)
+    rust=generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,hero[0][0],gravity)
     out=ROOT/'data';out.mkdir(exist_ok=True);(out/'geo.hk').write_bytes(blob);(out/'geo.rs').write_text(rust)
-    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'unsupported_rocks':unsupported_rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'textures':textures,'uploads':uploads,'bindings':bindings,'hero_box':hero,'gravity':gravity,
+    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'unsupported_rocks':unsupported_rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'textures':textures,'uploads':uploads,'bindings':bindings,'bank':bank_rows(rocks,bindings,metadata),'hero_box':hero,'gravity':gravity,
         'vram_bytes':len(blob),'vram_limit':MAX_VRAM_BYTES,'permitted_rectangles':VRAM_RECTS,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(rust.encode()).hexdigest(),
         'source_files':{str(Path(n).relative_to(source.directory)):hashlib.sha256(Path(n).read_bytes()).hexdigest()for n in sorted({str(source.directory/name)for name in source.files}|{str(source.directory/'Managed/Assembly-CSharp.dll'),str(source.directory/'Managed/PlayMaker.dll')}|{str(p)for name in source.files for p in source.directory.glob(name+'*')if p.is_file()})if Path(n).is_file()},
         'limitations':['Source colors quantized jointly to15 visible colors; source alpha approximated by ordered0/half/full coverage.', 'Coin images sampled at current camera projection; no scenery/room changes or gameplay disc reads.', 'GeoControl Get clip is unused in the observed collection handler and is not cooked.', 'Rock gleam, hit jitter, debris and acid reactions are recorded as incomplete runtime effects.']}

@@ -5,7 +5,9 @@ const SHAPE:&[[i32;2]]=&[[-ONE,-ONE],[ONE,-ONE],[ONE,ONE],[-ONE,ONE]];
 const FLING:Fling=Fling{speed:[0,0],angle:[90*ONE,90*ONE],spread:[0,0]};
 const COIN:CoinSpec=CoinSpec{value:1,gravity:0,body_offset:[0,0],half:[ONE/4;2],pickup_offset:[0,0],pickup_half:[ONE/4;2],bounce:45875,threshold:ONE,friction:13107};
 const P:Params=Params{coins:[COIN,CoinSpec{value:5,..COIN},CoinSpec{value:25,..COIN}],pickup_ticks:15,wallet_max:9_999_999};
-const ROCK:RockSpec=RockSpec{source_id:12844,scene:0,state:0,x:0,y:0,bounds:[-ONE,-ONE,ONE,ONE],polygons:&[SHAPE],hits:5,per_hit:2,final_payout:5,hit_cooldown:2,broken_frame:0};
+const ROCK:RockSpec=RockSpec{source_id:12844,scene:0,state:0,x:0,y:0,bounds:[-ONE,-ONE,ONE,ONE],points:SHAPE,lens:[4,0,0,0],hits:5,per_hit:2,final_payout:5,hit_cooldown:2};
+trait Rocks {fn rocks(&mut self,scene:usize,rocks:&[RockSpec],polygon:&[[i32;2]])->Strike;}
+impl Rocks for World {fn rocks(&mut self,scene:usize,rocks:&[RockSpec],polygon:&[[i32;2]])->Strike {self.strike(scene,polygon,|each|for r in rocks {each(r)})}}
 const FAR:[i32;4]=[100*ONE,100*ONE,101*ONE,101*ONE];
 const NEAR:[i32;4]=[-ONE,-ONE,ONE,ONE];
 const COVER:[i32;4]=[-100*ONE,-100*ONE,100*ONE,100*ONE];
@@ -15,28 +17,28 @@ fn ticks(w:&mut World,n:usize,hero:[i32;4])->Tick {let mut last=Tick::default();
  for spec in [ROCK,RockSpec{hits:4,per_hit:3,final_payout:6,..ROCK}]{
   let mut w=World::new();let mut total=0;
   for hit in 0..spec.hits {
-   w.begin_attack();let e=w.strike(0,&[spec],SHAPE);assert_eq!(e.hits,1);total+=e.payout;
-   for _ in 0..6 {assert_eq!(w.strike(0,&[spec],SHAPE),Strike::default());}
+   w.begin_attack();let e=w.rocks(0,&[spec],SHAPE);assert_eq!(e.hits,1);total+=e.payout;
+   for _ in 0..6 {assert_eq!(w.rocks(0,&[spec],SHAPE),Strike::default());}
    assert_eq!(w.hits_remaining(0,0),Some(spec.hits-hit-1));ticks(&mut w,2,FAR);
   }
   assert_eq!(total,spec.hits as u32*spec.per_hit as u32+spec.final_payout as u32);
   assert_eq!(w.spawned_value,total);assert_eq!(w.wallet(),0);assert!(w.rock_depleted(0,0));
-  w.begin_attack();assert_eq!(w.strike(0,&[spec],SHAPE),Strike::default());
+  w.begin_attack();assert_eq!(w.rocks(0,&[spec],SHAPE),Strike::default());
   w.death();w.leave_scene(0,P);assert!(w.rock_depleted(0,0));
  }
 }
 #[test]fn cooldown_reentry_and_overlapping_region_copies_do_not_reset_rock(){
- let mut w=World::new();w.begin_attack();assert_eq!(w.strike(0,&[ROCK,ROCK],SHAPE).hits,1);
- w.begin_attack();assert_eq!(w.strike(0,&[ROCK],SHAPE).hits,0);
- ticks(&mut w,2,FAR);assert_eq!(w.strike(0,&[ROCK],SHAPE).hits,1);
+ let mut w=World::new();w.begin_attack();assert_eq!(w.rocks(0,&[ROCK,ROCK],SHAPE).hits,1);
+ w.begin_attack();assert_eq!(w.rocks(0,&[ROCK],SHAPE).hits,0);
+ ticks(&mut w,2,FAR);assert_eq!(w.rocks(0,&[ROCK],SHAPE).hits,1);
  assert_eq!(w.hits_remaining(0,0),Some(3));w.leave_scene(0,P);
- ticks(&mut w,2,FAR);w.begin_attack();assert_eq!(w.strike(0,&[ROCK],SHAPE).hits,1);
+ ticks(&mut w,2,FAR);w.begin_attack();assert_eq!(w.rocks(0,&[ROCK],SHAPE).hits,1);
  assert_eq!(w.hits_remaining(0,0),Some(2));
 }
 #[test]fn exact_rock_polygon_excludes_points_inside_only_bounding_box(){
  const NARROW:&[[i32;2]]=&[[0,0],[ONE,0],[0,ONE]];
- let r=RockSpec{polygons:&[NARROW],..ROCK};let poly=[[ONE*3/4,ONE*3/4],[ONE,ONE*3/4],[ONE,ONE]];
- let mut w=World::new();w.begin_attack();assert_eq!(w.strike(0,&[r],&poly).hits,0);
+ let r=RockSpec{points:NARROW,..ROCK};let poly=[[ONE*3/4,ONE*3/4],[ONE,ONE*3/4],[ONE,ONE]];
+ let mut w=World::new();w.begin_attack();assert_eq!(w.rocks(0,&[r],&poly).hits,0);
  assert_eq!(w.hits_remaining(0,0),None);
 }
 #[test]fn pickup_uses_post_lock_trigger_entry_not_stay_and_never_credits_twice(){
@@ -138,4 +140,9 @@ fn ticks(w:&mut World,n:usize,hero:[i32;4])->Tick {let mut last=Tick::default();
  // With no rock left, Geo waits in the pending queue as before.
  assert!(w.spawn_chest(0,9,[0,0],FLING,[10,0,0]));
  ticks(&mut w,1,FAR);assert_eq!((rocks(&w),w.pending_value(P)),(0,3));
+}
+#[test]fn a_rock_restored_before_its_bank_is_admitted_takes_its_identity_and_clamped_hits_from_the_first_swing(){
+ let mut w=World::new();assert!(w.restore_rock(0,0,3));assert_eq!(w.hits_remaining(0,0),Some(3));
+ w.begin_attack();assert_eq!(w.rocks(0,&[ROCK],SHAPE).hits,1);assert_eq!(w.hits_remaining(0,0),Some(2));
+ let mut over=World::new();assert!(over.restore_rock(0,0,99));over.begin_attack();assert_eq!(over.rocks(0,&[ROCK],SHAPE).hits,1);assert_eq!(over.hits_remaining(0,0),Some(ROCK.hits-1));
 }

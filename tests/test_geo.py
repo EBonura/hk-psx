@@ -100,4 +100,24 @@ class GeoTests(unittest.TestCase):
         guest=rustsrc.const_int(Path(__file__).resolve().parents[1]/'game/src/geo.rs','MAX_ROCKS_PER_SCENE')
         self.assertEqual(guest,MAX_ROCKS_PER_SCENE)
 
+    def test_rocks_ride_in_the_scene_bank_a_rock_object_in_the_first_region_and_art_and_hides_in_the_regions_that_draw_it(self):
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
+        import world_metadata as wm
+        box=[0.0,0.0,30.0,20.0]
+        def region(chunk,views):return {'chunk_id':chunk,'activation_bounds':box,'camera_bounds':box,'geo_views':views,'draws':9,'edges':9,
+                                       'statics':{'packet_budget':0,'particle_bank':-1,'grass_impact':-1}}
+        quad=[[1.0,2.0],[3.0,2.0],[1.0,1.0]]
+        view={'source':'level4:77','state':2,'arts':[(0,10,quad),(1,11,quad),(1,12,quad)],'off':[4,5],'edges':[6]}
+        rock={'source':'level4:77','state':2,'x':2.0,'y':1.5,'bounds':[1.0,1.0,3.0,2.0],'polygons':[[[1.0,1.0],[3.0,1.0],[3.0,2.0]]],'hits':5,'per_hit':2,'final_payout':5,'hit_cooldown':6}
+        scene={'scene_id':3,'file':'level4','scene_name':'Crossroads_05','raw_fnv':7,'geo_rocks':[rock]}
+        bank=wm.encode_scene(scene,[region(1,[]),region(2,[view])])[0]
+        offset,count,stride=struct.unpack_from('<3I',bank,64+12)
+        objects=[struct.unpack_from('<IIHH4i2I3i',bank,offset+n*stride)for n in range(count)]
+        rocks=[o for o in objects if o[2]==wm.KINDS['geo_rock']];arts=[o for o in objects if o[2]==wm.KINDS['geo_art']];views=[o for o in objects if o[2]==wm.KINDS['geo_view']]
+        self.assertEqual([(o[0],o[1]) for o in rocks],[(77,2)]);self.assertEqual(rocks[0][-1],5|2<<8|5<<16|6<<24)
+        self.assertEqual(sorted((o[1]>>8,o[1]&255,o[3])for o in arts),[(0,2,10),(1,2,11),(1,2,12)])
+        self.assertEqual(len(views),1);self.assertEqual(views[0][1],2)
+        self.assertLess(objects.index(rocks[0]),objects.index(views[0]),'the rock sits in the first region, ahead of the second region')
+        with self.assertRaises(ValueError):wm.encode_scene(dict(scene,geo_rocks=[dict(rock,hits=256)]),[region(1,[])])
+
 if __name__=='__main__':unittest.main()

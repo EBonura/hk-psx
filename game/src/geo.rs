@@ -72,19 +72,33 @@ pub struct Params {
     pub wallet_max: u32,
 }
 #[derive(Clone, Copy, Debug)]
-pub struct RockSpec {
+pub struct RockSpec<'a> {
     pub source_id: u32,
     pub scene: u8,
     pub state: u8,
     pub x: i32,
     pub y: i32,
     pub bounds: [i32; 4],
-    pub polygons: &'static [&'static [[i32; 2]]],
+    /// The collision polygons, one after another; `lens[k]` is the point count of the k-th (0 ends the list).
+    pub points: &'a [[i32; 2]],
+    pub lens: [u8; 4],
     pub hits: u8,
     pub per_hit: u8,
     pub final_payout: u8,
     pub hit_cooldown: u16,
-    pub broken_frame: u16,
+}
+impl RockSpec<'_> {
+    fn overlaps(&self, polygon: &[[i32; 2]]) -> bool {
+        let mut at = 0;
+        for &len in self.lens.iter().take_while(|&&l| l != 0) {
+            let end = at + len as usize;
+            if self.points.get(at..end).is_some_and(|p| polygons_overlap(polygon, p)) {
+                return true;
+            }
+            at = end;
+        }
+        false
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EnemySpec {
@@ -298,21 +312,10 @@ impl World {
             )
         })
     }
-    /// Save Game restore of one rock. False for a rock this build does not
-    /// cook, or a full pool, either of which leaves the rock as authored.
-    pub fn restore_rock(
-        &mut self,
-        rocks: &[RockSpec],
-        scene: usize,
-        state: usize,
-        left: u8,
-    ) -> bool {
-        let Some(spec) = rocks
-            .iter()
-            .find(|r| r.scene as usize == scene && r.state as usize == state)
-        else {
-            return false;
-        };
+    /// Save Game restore of one rock, before its scene's bank is admitted: the rock's source id and hit count come
+    /// from that bank when a swing first reaches it (`strike`). False when the pool is full, which leaves the rock as
+    /// authored.
+    pub fn restore_rock(&mut self, scene: usize, state: usize, left: u8) -> bool {
         let key = scene * MAX_ROCKS_PER_SCENE + state;
         let slot = self
             .rocks
@@ -323,9 +326,9 @@ impl World {
             return false;
         };
         self.rocks[slot] = Some(Rock {
-            source: spec.source_id,
+            source: 0,
             key,
-            left: left.min(spec.hits),
+            left,
             cooldown: 0,
             swing: 0,
         });
@@ -335,13 +338,19 @@ impl World {
     /// token per attack, never per rendered frame. Repeated room copies share
     /// source/state identities, so overlaps cannot mint duplicate payouts.
     #[inline(never)]
-    pub fn strike(&mut self, scene: usize, rocks: &[RockSpec], polygon: &[[i32; 2]]) -> Strike {
+    pub fn strike(
+        &mut self,
+        scene: usize,
+        polygon: &[[i32; 2]],
+        rocks: impl FnOnce(&mut dyn FnMut(&RockSpec<'_>)),
+    ) -> Strike {
         checkpoint();
         let mut event = Strike::default();
         if self.swing == 0 || !(3..=16).contains(&polygon.len()) {
             return event;
         }
-        for spec in rocks.iter().filter(|r| r.scene as usize == scene) {
+        // `rocks` hands over the scene's rocks one at a time (its bank, in the guest).
+        rocks(&mut |spec| {
             checkpoint();
             assert!((spec.state as usize) < MAX_ROCKS_PER_SCENE && spec.hits > 0);
             let Some(key) = scene
@@ -349,24 +358,27 @@ impl World {
                 .and_then(|v| v.checked_add(spec.state as usize))
             else {
                 self.deferred_events += 1;
-                continue;
+                return;
             };
-            if !polygon_hits_box(polygon, spec.bounds)
-                || !spec.polygons.iter().any(|p| polygons_overlap(polygon, p))
-            {
-                continue;
+            if !polygon_hits_box(polygon, spec.bounds) || !spec.overlaps(polygon) {
+                return;
             }
             let existing = self.rocks.iter().flatten().find(|r| r.key == key).copied();
-            let state = existing.unwrap_or(Rock {
+            let mut state = existing.unwrap_or(Rock {
                 source: spec.source_id,
                 key,
                 left: spec.hits,
                 cooldown: 0,
                 swing: 0,
             });
+            if state.source == 0 {
+                // Restored from a save before the bank was admitted.
+                state.source = spec.source_id;
+                state.left = state.left.min(spec.hits);
+            }
             assert_eq!(state.source, spec.source_id, "Geo rock state alias");
             if state.left == 0 || state.cooldown != 0 || state.swing == self.swing {
-                continue;
+                return;
             }
             // Source Hit always emits per-hit coins, including its final hit.
             // Destroy then emits the additional authored final payout.
@@ -384,7 +396,7 @@ impl World {
                 [count, 0, 0],
             ) {
                 self.deferred_events = self.deferred_events.saturating_add(1);
-                continue;
+                return;
             }
             let left = state.left - 1;
             let slot = self
@@ -394,7 +406,7 @@ impl World {
                 .or_else(|| self.rocks.iter().position(Option::is_none));
             let Some(slot) = slot else {
                 self.deferred_events += 1;
-                continue;
+                return;
             };
             self.rocks[slot] = Some(Rock {
                 left,
@@ -410,7 +422,7 @@ impl World {
                 self.depleted_rocks += 1;
             }
             self.hit_events += 1;
-        }
+        });
         event
     }
     /// Called by EnemyWorld's explicit one-time death event. The ledger also
@@ -1108,30 +1120,3 @@ mod tests {
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/geo.rs"));
 
-#[cfg(not(test))]
-impl GeoDrawBinding {
-    /// Draw indices the rock hides once depleted.
-    pub fn off(&self) -> &'static [u16] {
-        let lists: &'static [u16] = self.lists;
-        &lists[..self.off_len as usize]
-    }
-    /// Local collider edges the rock disables once depleted.
-    pub fn edges(&self) -> &'static [u16] {
-        let lists: &'static [u16] = self.lists;
-        &lists[self.off_len as usize..]
-    }
-}
-
-/// Rocks bound into a catalogue region, or nothing. `GEO_BINDINGS` is sparse
-/// and sorted so the linked table grows with the bound rocks rather than with
-/// every view the catalogue admits.
-#[cfg(not(test))]
-pub fn region_bindings(region: usize) -> &'static [GeoDrawBinding] {
-    let Ok(key) = u16::try_from(region) else {
-        return &[];
-    };
-    match GEO_BINDINGS.binary_search_by_key(&key, |&(r, _)| r) {
-        Ok(at) => GEO_BINDINGS[at].1,
-        Err(_) => &[],
-    }
-}

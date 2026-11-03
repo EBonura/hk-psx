@@ -109,6 +109,21 @@ pub const KIND_FRAGMENT: u16 = 20;
 /// animation bank) pairs, so an even count. A fragment with no pair here is
 /// simulated but not drawn in this region.
 pub const KIND_FRAGMENT_FRAMES: u16 = 21;
+/// A scene's Geo rock (host/geo.py), in the bank's first region: the rock's
+/// source id, its scene-local rock `state`, its bounds, its collision polygons
+/// (a nail swing must overlap one) and the payload words x, y and
+/// hits | per_hit << 8 | final_payout << 16 | hit_cooldown << 24.
+pub const KIND_GEO_ROCK: u16 = 22;
+/// One art quad of a Geo rock in a region that draws it. `state` is the rock's
+/// state | tag << 8 (tag 0: drawn once the rock is broken, 1: while it is
+/// whole), `flags` the frame in the Geo art bank, and the one polygon three of
+/// the quad's corners (top left, top right, bottom left; the fourth follows
+/// from the parallelogram).
+pub const KIND_GEO_ART: u16 = 23;
+/// What a Geo rock does to a region once broken. `state` is the rock's state,
+/// payload word 0 spans a u16 list: the count of draw indices it hides, those
+/// draw indices, then the collider edge indices it removes.
+pub const KIND_GEO_VIEW: u16 = 24;
 /// The most points a fragment's polygon may carry.
 pub const FRAGMENT_MAX_POINTS: usize = 8;
 
@@ -274,6 +289,7 @@ impl<'a> WorldMeta<'a> {
                 | KIND_REVEAL_BINDINGS
                 | KIND_SECRET
                 | KIND_REMOTE_ART
+                | KIND_GEO_VIEW
                 | KIND_FRAGMENT_FRAMES => &[0],
                 _ => &[],
             };
