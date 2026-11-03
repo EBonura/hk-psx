@@ -2956,7 +2956,7 @@ impl Actor {
     #[inline(never)]
     fn spawn_fsm_actor(family: u8, seed: u32, state: u16) -> Runtime {
         // The tree's memory is this placement's slice of the room's state block; without the block the object stays a still prop.
-        let Some(block) = crate::modules::data_mut(crate::modules::ART_FSM_STATE) else {
+        let Some(block) = crate::modules::fsm_state_block() else {
             return Runtime::Static { animation_tick: 0 };
         };
         // SAFETY: the cook gave every placement of the scene its own word-aligned slice of the block, sized for its family.
