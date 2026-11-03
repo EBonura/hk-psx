@@ -140,6 +140,8 @@ pub enum Walker {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Swipe {
     Ready,
+    /// Gas: the `Attack Delay` wait (WaitRandom), the Walker still walking.
+    Delay,
     Anticipate,
     Lunge,
     Cooldown,
@@ -156,6 +158,8 @@ pub enum TurnCause {
 pub enum Wait {
     Walking,
     Paused,
+    /// Gas: `Attack Delay`'s WaitRandom, drawn in `[0, delay]` ticks.
+    Delay,
 }
 impl Wait {
     /// Authored level37 Runner Random.Range argument order, quantized to
@@ -164,6 +168,7 @@ impl Wait {
         match self {
             Self::Walking => [240, 90],
             Self::Paused => [150, 90],
+            Self::Delay => [0, 0],
         }
     }
 }
@@ -184,6 +189,17 @@ pub enum Attack {
     /// Selected Mossman Runner Zombie Swipe: no Ready TOOK DAMAGE event;
     /// its Walker has no alertRange, while its attack still uses Attack Range.
     SwipeCalm,
+    /// Fungus Zombie Attack (Mossman_Shaker): Ready on sight and alert range, `Attack Delay` (a random wait while the
+    /// Walker keeps walking), `Attack Antic` (StopWalker, the Attack clip, a wait), `Attack` (the gas hit box on and
+    /// grown by an iTween, a wait), `CD` (hit box off, a wait), `Idle Pause` (Idle clip, a wait), `Reset` (StartWalker).
+    /// The FSM has no TOOK DAMAGE and no RECOIL HORIZONTAL transition, only the global ZERO HP.
+    Gas {
+        delay: u16,
+        antic_ticks: u16,
+        attack_ticks: u16,
+        cd_ticks: u16,
+        idle_ticks: u16,
+    },
 }
 /// Per-variant Walker fields and the FSM `Lunge Speed`: the Zombie Swipe FSM
 /// is otherwise identical across Runner, Barger and Hornhead placements.
@@ -229,6 +245,7 @@ impl Params {
         match wait {
             Wait::Walking => self.walking_wait,
             Wait::Paused => self.paused_wait,
+            Wait::Delay => [0, 0],
         }
     }
 }
@@ -333,6 +350,10 @@ pub struct Runner {
     params: Params,
     /// Leap: chosen jump x velocity; Swipe: unused.
     jump_x: i32,
+    /// Gas: ticks since the gas hit box went on (read through `gas_age`).
+    gas_age: u16,
+    /// Gas: the attack's own timer (the Walker's `wait` keeps counting through `Attack Delay`).
+    gas_wait: u16,
 }
 impl Default for Runner {
     fn default() -> Self {
@@ -363,6 +384,8 @@ impl Runner {
             animation: None,
             serial: 0,
             jump_x: 0,
+            gas_age: 0,
+            gas_wait: 0,
         }
     }
     pub fn walker(&self) -> Walker {
@@ -376,6 +399,10 @@ impl Runner {
     }
     pub fn attack_kind(&self) -> Attack {
         self.params.attack
+    }
+    /// Gas: ticks since the gas hit box went on while it is on, else None.
+    pub fn gas_age(&self) -> Option<u16> {
+        (matches!(self.params.attack, Attack::Gas { .. }) && self.swipe == Swipe::Lunge).then_some(self.gas_age)
     }
     pub fn swipe(&self) -> Swipe {
         self.swipe
@@ -435,7 +462,15 @@ impl Runner {
         self.play(Clip::Turn, out);
         out.push(Action::Turn(cause));
     }
-    fn attack(&mut self, hero_x: i32, actor_x: i32, out: &mut Actions) {
+    fn attack(&mut self, hero_x: i32, actor_x: i32, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
+        if let Attack::Gas { delay, .. } = self.params.attack {
+            // ATTACK ALERT -> Attack Delay: the Walker is not stopped and the facing is not turned toward the hero.
+            self.swipe = Swipe::Delay;
+            let value = choose(Wait::Delay, [delay, 0]);
+            assert!(value <= delay, "Gas delay outside its endpoints");
+            self.gas_wait = value;
+            return;
+        }
         self.walker = Walker::StoppedForAttack;
         out.push(Action::AudioStop);
         self.facing = if hero_x > actor_x { 1 } else { -1 };
@@ -478,7 +513,7 @@ impl Runner {
         self.walker_callback(senses, choose, out);
         self.turn_cooldown = 0;
         self.swipe = Swipe::Ready;
-        self.check_ready(senses, out);
+        self.check_ready(senses, choose, out);
         // Source Reset does not stop Charge Dust. Do not invent that event.
     }
     /// An accepted nonlethal HealthManager TOOK DAMAGE event. Ready attacks
@@ -487,7 +522,7 @@ impl Runner {
     pub fn took_damage(&mut self, hero_x: i32, actor_x: i32) -> Actions {
         let mut out = Actions::new();
         if self.swipe == Swipe::Ready && self.params.attack == Attack::Swipe {
-            self.attack(hero_x, actor_x, &mut out);
+            self.attack(hero_x, actor_x, &mut |_, [_, lo]| lo, &mut out);
         }
         out
     }
@@ -556,6 +591,70 @@ impl Runner {
             return out;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
+        if let Attack::Gas {
+            antic_ticks,
+            attack_ticks,
+            cd_ticks,
+            idle_ticks,
+            ..
+        } = self.params.attack
+        {
+            match self.swipe {
+                Swipe::Ready => self.check_ready(senses, &mut choose, &mut out),
+                Swipe::Delay => {
+                    self.gas_wait = self.gas_wait.saturating_sub(1);
+                    if self.gas_wait == 0 {
+                        // Attack Antic: SetVelocity2d 0, StopWalker, the Attack clip, a wait.
+                        self.walker = Walker::StoppedForAttack;
+                        out.push(Action::AudioStop);
+                        Self::vx(&mut out, 0);
+                        self.swipe = Swipe::Anticipate;
+                        self.gas_wait = antic_ticks;
+                        self.play(Clip::Anticipate, &mut out);
+                    }
+                }
+                Swipe::Anticipate => {
+                    self.gas_wait = self.gas_wait.saturating_sub(1);
+                    if self.gas_wait == 0 {
+                        // Attack: the children on, the gas hit box on at scale .2 and growing.
+                        self.swipe = Swipe::Lunge;
+                        self.gas_wait = attack_ticks;
+                        self.gas_age = 0;
+                    }
+                }
+                Swipe::Lunge => {
+                    self.gas_age = self.gas_age.saturating_add(1);
+                    self.gas_wait = self.gas_wait.saturating_sub(1);
+                    if self.gas_wait == 0 {
+                        // CD: the hit box off.
+                        self.swipe = Swipe::Cooldown;
+                        self.gas_wait = cd_ticks;
+                    }
+                }
+                Swipe::Cooldown => {
+                    self.gas_wait = self.gas_wait.saturating_sub(1);
+                    if self.gas_wait == 0 {
+                        self.swipe = Swipe::Idle;
+                        self.gas_wait = idle_ticks;
+                        self.play(Clip::Idle, &mut out);
+                    }
+                }
+                Swipe::Idle => {
+                    self.gas_wait = self.gas_wait.saturating_sub(1);
+                    if self.gas_wait == 0 {
+                        // Reset: StartWalker, then Ready checks at once.
+                        if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
+                            self.walk(&mut choose, &mut out);
+                        }
+                        self.turn_cooldown = 0;
+                        self.swipe = Swipe::Ready;
+                        self.check_ready(senses, &mut choose, &mut out);
+                    }
+                }
+                _ => {}
+            }
+            return out;
+        }
         if let Attack::Leap {
             jump_speed_y,
             idle_ticks,
@@ -597,10 +696,10 @@ impl Runner {
                         }
                         self.turn_cooldown = 0;
                         self.swipe = Swipe::Ready;
-                        self.check_ready(senses, &mut out);
+                        self.check_ready(senses, &mut choose, &mut out);
                     }
                 }
-                Swipe::Ready => self.check_ready(senses, &mut out),
+                Swipe::Ready => self.check_ready(senses, &mut choose, &mut out),
                 _ => {}
             }
             return out;
@@ -634,17 +733,17 @@ impl Runner {
                 }
             }
             Swipe::Ready => {
-                self.check_ready(senses, &mut out);
+                self.check_ready(senses, &mut choose, &mut out);
             }
             _ => {}
         }
         out
     }
-    fn check_ready(&mut self, senses: Senses, out: &mut Actions) {
+    fn check_ready(&mut self, senses: Senses, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
         // GetCanSeeHero and CheckAlertRange both Apply on OnEnter, not only
         // OnUpdate. Coward=false Reset therefore need not spend a tick in Ready.
         if senses.in_alert_range && senses.can_see_hero {
-            self.attack(senses.hero_x, senses.actor_x, out);
+            self.attack(senses.hero_x, senses.actor_x, choose, out);
         }
     }
     fn walker_callback(
