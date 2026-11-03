@@ -33,10 +33,10 @@ pub struct Family {
     /// The clip the corpse plays (255: none) and the clip the object rests on before its tree first plays one.
     pub death_slot: u8,
     pub rest_slot: u8,
+    /// Bytes of tree memory one placement needs (the bank's runtime block, a whole number of words).
+    pub runtime: u16,
 }
 include!("../../../data/enemy_families.rs");
-
-const MEM_WORDS: usize = MAX_RUNTIME.div_ceil(4);
 
 fn family(id: u8) -> &'static Family {
     &FAMILIES[id as usize]
@@ -52,26 +52,35 @@ pub type Play = Option<(u8, u32)>;
 /// One placement's trees.
 #[derive(Clone, Copy)]
 pub struct FsmActor {
-    mem: [u32; MEM_WORDS],
+    /// The tree's memory: `Family::runtime` bytes in the room's state block (a pool data package, `art_fsm_state`), at the
+    /// offset the cook gave the placement. Null only in a value that was never built by `new`.
+    /// The address as two words, so the actor stays 4-aligned on a 64-bit host (the guest's high word is zero).
+    mem: [u32; 2],
     anim_left: u16,
     family: u8,
     /// The hero was inside the trigger box last tick.
     inside: bool,
 }
-const _: () = assert!(core::mem::size_of::<FsmActor>() <= 72, "an FsmActor must fit the Runtime enum's 92 bytes");
+const _: () = assert!(core::mem::size_of::<FsmActor>() <= 16, "an FsmActor must stay a handle: its tree memory is the room's state block");
 
 impl FsmActor {
     /// The tree spawned already running: its start states entered where the object stands. The first clip the
     /// tree plays, if it plays one on entry, is returned.
     #[inline(never)]
-    pub fn new(family: u8, seed: u32) -> (Self, Play) {
-        let mut me = Self { mem: [0; MEM_WORDS], anim_left: 0xffff, family, inside: false };
+    ///
+    /// # Safety
+    /// `mem` is `Family::runtime` bytes of writable, 4-aligned memory that nothing else uses while the actor lives.
+    pub unsafe fn new(family: u8, seed: u32, mem: *mut u32) -> (Self, Play) {
+        let mut me = Self { mem: [mem as usize as u32, ((mem as usize as u64) >> 32) as u32], anim_left: 0xffff, family, inside: false };
         let mut env = me.env(0);
-        // SAFETY: `mem` is at least the bank's runtime size (MAX_RUNTIME), 4-aligned.
-        let mut tree = unsafe { Tree::init(bank(family), me.mem.as_mut_ptr().cast(), &mut env, seed) };
+        // SAFETY: the caller gave `mem` the bank's runtime size, 4-aligned.
+        let mut tree = unsafe { Tree::init(bank(family), me.block(), &mut env, seed) };
         tree.step(PH_ENTER);
         let play = me.harvest(&env);
         (me, play)
+    }
+    fn block(&self) -> *mut u8 {
+        (self.mem[0] as usize | ((self.mem[1] as usize) << 16 << 16)) as *mut u8
     }
     fn env(&self, trigger: u8) -> Env {
         let mut env = Env::new();
@@ -98,7 +107,7 @@ impl FsmActor {
         }
         let mut env = self.env(u8::from(entered) | u8::from(inside) << 1 | u8::from(left) << 2);
         // SAFETY: `mem` was laid out for this bank by `new`.
-        let mut tree = unsafe { Tree::attach(bank(self.family), self.mem.as_mut_ptr().cast(), &mut env) };
+        let mut tree = unsafe { Tree::attach(bank(self.family), self.block(), &mut env) };
         tree.step(PH_UPDATE);
         self.harvest(&env)
     }
@@ -106,7 +115,7 @@ impl FsmActor {
     #[inline(never)]
     pub fn die(&mut self) {
         // SAFETY: as above.
-        let block = unsafe { Block::new(bank(self.family), self.mem.as_mut_ptr().cast()) };
+        let block = unsafe { Block::new(bank(self.family), self.block()) };
         for f in 0..bank(self.family).fsm_count() {
             block.kill(f);
         }
@@ -168,4 +177,10 @@ pub fn turned(b: [i32; 4], quarter: i32) -> [i32; 4] {
     };
     let (p, q) = (turn(b[0], b[1]), turn(b[2], b[3]));
     [p[0].min(q[0]), p[1].min(q[1]), p[0].max(q[0]), p[1].max(q[1])]
+}
+
+/// Bytes of tree memory one placement of `id` needs.
+#[inline(never)]
+pub fn runtime_bytes(id: u8) -> usize {
+    family(id).runtime as usize
 }

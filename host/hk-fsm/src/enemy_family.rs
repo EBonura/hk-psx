@@ -38,6 +38,8 @@ struct Row {
     fsms: Vec<FsmRow>,
     rest: String,
     clips: Vec<String>,
+    /// The bank's runtime block in bytes, pinned in the manifest so the Python cook can lay out the room's state block without parsing banks.
+    runtime: usize,
 }
 
 fn manifest(root: &std::path::Path) -> Result<Vec<Row>> {
@@ -68,6 +70,7 @@ fn manifest(root: &std::path::Path) -> Result<Vec<Row>> {
             fsms,
             rest: row["rest"].as_str().ok_or("rest")?.to_owned(),
             clips: strings("clips")?,
+            runtime: row["runtime"].as_u64().ok_or("runtime")? as usize,
         });
     }
     for (i, r) in rows.iter().enumerate() {
@@ -298,6 +301,9 @@ pub fn cook_families(root: &std::path::Path) -> Result<()> {
             .ok_or("scene of the first placement")?;
         let lib = library(lib_scene, row)?;
         let runtime = Bank::parse(&bank.bank).map_err(|e| format!("{e:?}"))?.runtime_bytes();
+        if runtime != row.runtime {
+            return Err(format!("{}: the cooked runtime block is {runtime} bytes, host/enemy_families.json pins {}", row.name, row.runtime).into());
+        }
         // Which clip a string of the tree names, and how long the finite ones the animation actions wait for are.
         let mut slots = Vec::new();
         let mut env_clips = Vec::new();
@@ -352,7 +358,7 @@ pub fn cook_families(root: &std::path::Path) -> Result<()> {
         writeln!(
             families,
             "    Family {{ name: \"{}\", bank: &BANK_{up}, clips: &CLIPS_{up}, boxes: &BOXES_{up}, slots: &SLOTS_{up}, \
-             env_clips: {env:?}, death_slot: {death}, rest_slot: {rest} }},",
+             env_clips: {env:?}, death_slot: {death}, rest_slot: {rest}, runtime: RUNTIME_{up} as u16 }},",
             row.name
         )?;
         runtimes.push(runtime);

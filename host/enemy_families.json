@@ -44,7 +44,8 @@
       "limitations": [
         "Dropped as inert plumbing: damages_enemy (see host/enemy_families.json).",
         "The Ready Grass particles and the ready growl are not presented."
-      ]
+      ],
+      "runtime": 32
     }
   ]
 }

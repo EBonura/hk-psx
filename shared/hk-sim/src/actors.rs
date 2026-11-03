@@ -263,6 +263,8 @@ pub struct ActorPlacement {
     /// `ActorSpec::bounds` is the collider in this pose, so the runtime rotates
     /// the box by the turns taken since, not by the absolute rotation.
     pub rotation_q16: i32,
+    /// Where a family actor's tree memory starts in the room's state block (`art_fsm_state`), in bytes; 0 for every other actor.
+    pub state: u16,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct EnemyParams {
