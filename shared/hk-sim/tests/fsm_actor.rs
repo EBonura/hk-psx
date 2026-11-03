@@ -8,7 +8,9 @@ const RETRACT: u8 = 0;
 
 /// Plays (tick, clip) over `ticks` ticks of a hero that is inside the trigger from tick 10 to tick 12.
 fn timeline(ticks: u32, inside: impl Fn(u32) -> bool) -> Vec<(u32, u8, u32)> {
-    let (mut trap, first) = FsmActor::new(0, 1);
+    let mut block = vec![0u32; fa::runtime_bytes(0) / 4];
+    // SAFETY: the block is the family's runtime size and outlives the actor.
+    let (mut trap, first) = unsafe { FsmActor::new(0, 1, block.as_mut_ptr()) };
     assert_eq!(first, None, "the tree plays nothing on entry: the object rests on its last Retract frame");
     let mut out = Vec::new();
     for t in 0..ticks {
@@ -70,7 +72,9 @@ fn a_hero_standing_in_the_trigger_does_not_restart_a_snap_in_progress() {
 
 #[test]
 fn dying_stops_the_tree() {
-    let (mut trap, _) = FsmActor::new(0, 1);
+    let mut block = vec![0u32; fa::runtime_bytes(0) / 4];
+    // SAFETY: as above.
+    let (mut trap, _) = unsafe { FsmActor::new(0, 1, block.as_mut_ptr()) };
     trap.die();
     for t in 0..300 {
         assert_eq!(trap.tick(t > 5), None);

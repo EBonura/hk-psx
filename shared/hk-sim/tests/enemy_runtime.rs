@@ -700,6 +700,10 @@ mod modules {
     pub const ACTOR_FSM: usize = 15;
     pub const FSM_FAMILY_TREES: [psx_math::Mask64; 1] = [psx_math::Mask64::EMPTY];
     pub const CRAWLER: usize = 17;
+    pub const ART_FSM_STATE: usize = 16;
+    pub fn data_mut(_m: usize) -> Option<*mut u8> {
+        None
+    }
     pub const BALDUR: usize = 5;
     pub const ASPID: usize = 6;
     pub const HATCHER: usize = 7;
@@ -764,6 +768,7 @@ const PLACEMENT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
     start_alert: false,
     start_right: false,
     rotation_q16: 0,
+    state: 0,
 };
 const SPEC: ActorSpec = ActorSpec {
     controller: ActorController::Crawler { recoil_steps: 8 },
@@ -3170,6 +3175,7 @@ const fn arena_member(source_id: u32, x: i32) -> (hk_sim::ActorPlacement, &'stat
             start_alert: false,
             start_right: false,
             rotation_q16: 0,
+            state: 0,
         },
         &SPEC,
     )
