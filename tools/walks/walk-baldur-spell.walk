@@ -1,6 +1,7 @@
 name walk-baldur-spell
 title Elder Baldur killed with Vengeful Spirit and the nail, closed loop, from the seeded card east of him in Crossroads_11_alt (SOUL 0, no cheat)
 max_ticks 40000
+sync poll
 # crossroads-11-alt-east.mcd is a seeded record (docs/ROUTES.md) at the arrival gate with Vengeful Spirit (fireballLevel 1). A card does not save SOUL,
 # so this starts at the worst case, SOUL 0: the Knight earns the casts from the Rollers Baldur spits (11 SOUL a nail hit). A run that comes out of the
 # Mound arrives with 99 SOUL and needs one fewer roller.

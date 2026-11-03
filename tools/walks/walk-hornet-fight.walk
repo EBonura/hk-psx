@@ -1,6 +1,7 @@
 name walk-hornet-fight
 title Hornet beaten fairly, closed loop, from the seeded card at the Fungus1_04 entrance (SOUL 0, no cheat), then the Cloak
 max_ticks 40000
+sync poll
 # hornet-04-entry.mcd is a seeded record (docs/ROUTES.md): Fungus1_04 at the gate Fungus1_21 leads in by (x 94.5, y 32.4), Vengeful Spirit owned
 # (the walk casts none: SOUL goes to Focus). A card keeps no SOUL (the original zeroes it on a load too), so the fight starts at 0.
 # The fight is one round of reactions (hornet-round.walk, on the raw words of hornet-defs.walk) in a gate loop until she is dying: no cheat,
