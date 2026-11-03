@@ -743,8 +743,21 @@ fn cook_store_restore(root: &Path) {
                 r.replaced,
                 r.pruned
             );
+        } else if !cook_store::lane_has_receipts(root) {
+            // Cook receipts judge themselves (docs/COOK-CACHE.md), so the newest snapshot that has them is a
+            // safe place to start from whatever its key: the cook keeps what still holds.
+            match store.newest_with_receipts()? {
+                Some(near) => {
+                    let r = cook_store::restore(root, &store, &near)?;
+                    println!(
+                        "Cook store: no snapshot for {short}; restored the newest one with cook receipts, {}: {} files, {:.2} GB; the cook keeps what its receipts still vouch for.",
+                        &near[..16], r.files, r.bytes as f64 / 1e9
+                    );
+                }
+                None => println!("Cook store: no snapshot for {short}; this build cooks and publishes one."),
+            }
         } else {
-            println!("Cook store: no snapshot for {short}; this build cooks and publishes one.");
+            println!("Cook store: no snapshot for {short}; this lane keeps its own receipts and cooks what changed.");
         }
         Ok(())
     })();

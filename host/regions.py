@@ -341,6 +341,22 @@ def scene_metadata(sc, info):
     return result
 
 
+def previous_headroom(regions):
+    """{scene id: least packet headroom of its views in the last cook}, empty when there is no record."""
+    try:
+        budgets=json.loads((ROOT/'.hkpsx/scenery-geometry-budgets.json').read_text())
+        limit=budgets['capacity']-budgets['actor_reserve']
+        scene_of={index+1:region['scene_id'] for index,region in enumerate(regions)}
+        tight={}
+        for row in budgets['regions']:
+            scene=scene_of.get(row['chunk_id'])
+            if scene is not None:
+                tight[scene]=min(tight.get(scene,1<<30),limit-row['mandatory_packets'])
+        return tight
+    except (OSError,ValueError,KeyError):
+        return {}
+
+
 def precook_parallel(regions, out, retail, limit=None):
     """Bring every region unit up to date with one worker process per (scene, part) that has a miss.
 
@@ -358,7 +374,10 @@ def precook_parallel(regions, out, retail, limit=None):
     # Region 1 writes the shared knight/gameplay files: cook its scenery first
     # so the other workers never race it, then the rest in parallel.
     head=(regions[0]['scene_id'],'scenery')
-    order=sorted(misses,key=lambda job:(job!=head,-misses[job]))
+    # Scenes whose views had the least packet headroom last time cook first, so a view that has gone over the
+    # budget stops the run early (the worker checks every view as it cooks it).
+    tight=previous_headroom(regions)
+    order=sorted(misses,key=lambda job:(job!=head,job[1]!='scenery',tight.get(job[0],1<<30),-misses[job]))
     workers=max(1,min(len(order),(os.cpu_count() or 4)-2,8,
                       int(os.environ.get('CARGO_BUILD_JOBS','8'))))
     if os.environ.get('HK_COOK_SERIAL'):workers=1

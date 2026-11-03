@@ -208,7 +208,8 @@ class DepcacheTests(unittest.TestCase):
             from pathlib import Path
 
             def read():
-                return open(Path(__file__).resolve().parents[1] / 'data/numbers.txt').read()
+                with open(Path(__file__).resolve().parents[1] / 'data/numbers.txt') as stream:
+                    return stream.read()
         """)
         self.tree.forget('reader')
 
@@ -236,6 +237,27 @@ class DepcacheTests(unittest.TestCase):
             writer.write()
         record = self.tree.record(entry)
         self.tree.write('data/made.txt', 'edited by hand')
+        self.assertEqual(self.stale(record), [])
+
+    def test_a_file_replaced_by_rename_is_an_output_too(self):
+        self.tree.write('data/report.json', '{"v": 1}')
+        self.tree.write('host/updater.py', """
+            from pathlib import Path
+
+            def update():
+                path = Path(__file__).resolve().parents[1] / 'data/report.json'
+                text = path.read_text()
+                temp = path.with_suffix('.tmp')
+                temp.write_text(text + ' ')
+                temp.replace(path)
+        """)
+        self.tree.forget('updater')
+
+        def entry():
+            import updater
+            updater.update()
+        record = self.tree.record(entry)
+        self.assertNotIn('data/report.json', record['files'])
         self.assertEqual(self.stale(record), [])
 
     def test_a_deleted_or_renamed_module_makes_it_stale(self):
@@ -320,7 +342,8 @@ class DepcacheTests(unittest.TestCase):
         (retail_dir / 'level0').write_bytes(b'scene')
         self.tree.write('host/retail_reader.py', """
             def read(path):
-                return open(path, 'rb').read()
+                with open(path, 'rb') as stream:
+                    return stream.read()
         """)
         self.tree.forget('retail_reader')
         retail = depcache.Retail(str(retail_dir), {'level0': 'aaa'})

@@ -74,6 +74,15 @@ const WRITTEN_AFTER_CACHES: &[&str] = &["boot-art.hk", "boot_art.rs", "intro.exe
 /// An object younger than this is never collected (a publish writes objects before its manifest).
 const GC_GRACE_SECONDS: u64 = 3600;
 
+/// Files that mark a snapshot (or a lane) as holding cook receipts.
+const RECEIPT_PROBE: &str = "data/regions/region-001/scenery-cache.json";
+const STAGE_RECORD: &str = ".hkpsx/stagecache/regions.json";
+
+/// True when this checkout already has cook receipts of its own (its incremental state is not replaced).
+pub fn lane_has_receipts(root: &Path) -> bool {
+    root.join(RECEIPT_PROBE).is_file() && root.join(STAGE_RECORD).is_file()
+}
+
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A store directory.
@@ -139,6 +148,19 @@ impl Store {
             return Err(format!("{} is not a version 1 manifest for {key}", path.display()).into());
         }
         Ok(value)
+    }
+
+    /// The newest snapshot that carries cook receipts (host/depcache.py): one region receipt and the region stage
+    /// record. Receipts judge themselves, so such a snapshot is a safe starting point for any checkout, whatever
+    /// its key: the cook finds fresh what still holds and cooks the rest.
+    pub fn newest_with_receipts(&self) -> Result<Option<String>> {
+        Ok(self
+            .manifests()?
+            .into_iter()
+            .find(|(_, m)| {
+                m["files"].get(RECEIPT_PROBE).is_some() && m["files"].get(STAGE_RECORD).is_some()
+            })
+            .map(|(key, _)| key))
     }
 
     /// Every snapshot, newest first: (key, manifest).
@@ -868,6 +890,25 @@ mod tests {
                 .arg("u+w")
                 .arg(dir)
                 .status();
+            std::fs::remove_dir_all(dir).expect("clean");
+        }
+    }
+
+    #[test]
+    fn the_nearest_snapshot_is_the_newest_that_carries_cook_receipts() {
+        let store_dir = scratch("nearest-store");
+        let store = Store::at(&store_dir);
+        let old = lane("nearest-old");
+        write(&old, RECEIPT_PROBE, b"{}");
+        write(&old, STAGE_RECORD, b"{}");
+        publish(&old, &store, "with-receipts", "receipts").expect("publish");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let newer = lane("nearest-newer");
+        publish(&newer, &store, "without", "plain").expect("publish");
+        assert_eq!(store.newest_with_receipts().expect("scan"), Some("with-receipts".to_string()));
+        assert!(lane_has_receipts(&old) && !lane_has_receipts(&newer));
+        for dir in [&old, &newer, &store_dir] {
+            let _ = std::process::Command::new("chmod").arg("-R").arg("u+w").arg(dir).status();
             std::fs::remove_dir_all(dir).expect("clean");
         }
     }

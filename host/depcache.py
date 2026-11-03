@@ -278,6 +278,15 @@ class Tracker:
                 self.written.add(full)
             else:
                 self._note_read(full)
+        elif event in ('os.rename', 'shutil.copyfile', 'shutil.copymode', 'shutil.copystat', 'shutil.move'):
+            # A file put in place by a rename or copy is written by this process (the atomic-write idiom).
+            target = args[1] if len(args) > 1 else None
+            if isinstance(target, (str, os.PathLike)):
+                self.written.add(os.path.abspath(os.fspath(target)))
+        elif event in ('os.remove', 'os.unlink', 'os.truncate'):
+            target = args[0] if args else None
+            if isinstance(target, (str, os.PathLike)):
+                self.written.add(os.path.abspath(os.fspath(target)))
         elif event in ('os.listdir', 'os.scandir'):
             path = args[0] if args else None
             if path is None:
