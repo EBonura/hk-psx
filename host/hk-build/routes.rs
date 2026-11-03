@@ -789,7 +789,7 @@ mod tests {
         let routes = load(&root).unwrap();
         assert!(routes.len() > 40, "{} routes", routes.len());
         let journey: Vec<_> = routes.iter().filter(|r| r.journey.is_some()).map(|r| r.name.as_str()).collect();
-        assert_eq!(journey, ["journey-kings", "journey-crossroads", "journey-false-knight", "journey-reload"]);
+        assert_eq!(journey, ["journey-kings", "journey-crossroads"]);
     }
 
     /// The journey routes whose open-loop tape never reaches the pins (the chained cards make it

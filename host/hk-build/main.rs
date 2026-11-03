@@ -1075,11 +1075,17 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     // ran them, so it shipped. These path-include the guest modules (and so
     // their generated data), so they are the only check that the guest's own
     // logic still holds before its link.
-    run(
-        "cargo",
-        &["test", "-q", "--manifest-path", "shared/hk-sim/Cargo.toml"],
-        root,
-    )?;
+    // The format and cache crates and the host tool workspace (hk-cook, this driver) carry their own
+    // suites too. Nothing ran them either, so a stale ledger table (hk-cook's catalog test) and a
+    // journey list that two retirements had outdated both sat red on main.
+    for manifest in [
+        "shared/hk-sim/Cargo.toml",
+        "shared/hk-format/Cargo.toml",
+        "shared/hk-cache/Cargo.toml",
+        "host/Cargo.toml",
+    ] {
+        run("cargo", &["test", "-q", "--manifest-path", manifest], root)?;
+    }
     let telemetry: &[&str] = if options.telemetry {
         &["--telemetry"]
     } else {
