@@ -123,6 +123,8 @@ mod initially_inactive_tests {
         assert!(actions.iter().any(|a| matches!(a, Action::AudioPlay)));
     }
 }
+/// `gas_wait` until `Attack Delay`'s WaitRandom has been drawn.
+const GAS_DRAW: u16 = u16::MAX;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Animation {
     pub clip: Clip,
@@ -192,7 +194,8 @@ pub enum Attack {
     /// Fungus Zombie Attack (Mossman_Shaker): Ready on sight and alert range, `Attack Delay` (a random wait while the
     /// Walker keeps walking), `Attack Antic` (StopWalker, the Attack clip, a wait), `Attack` (the gas hit box on and
     /// grown by an iTween, a wait), `CD` (hit box off, a wait), `Idle Pause` (Idle clip, a wait), `Reset` (StartWalker).
-    /// The FSM has no TOOK DAMAGE and no RECOIL HORIZONTAL transition, only the global ZERO HP.
+    /// The FSM has no TOOK DAMAGE and no RECOIL HORIZONTAL transition, only the global ZERO HP. The Walker's footsteps are
+    /// its own clip, in neither Runner audio bank: the controller emits none of the Walker's audio for it.
     Gas {
         delay: u16,
         antic_ticks: u16,
@@ -350,9 +353,9 @@ pub struct Runner {
     params: Params,
     /// Leap: chosen jump x velocity; Swipe: unused.
     jump_x: i32,
-    /// Gas: ticks since the gas hit box went on (read through `gas_age`).
+    /// Gas: ticks since the gas hit box went on (read through `gas_age`), and the attack's own timer (the Walker's
+    /// `wait` keeps counting through `Attack Delay`; `GAS_DRAW` until the delay's draw is made).
     gas_age: u16,
-    /// Gas: the attack's own timer (the Walker's `wait` keeps counting through `Attack Delay`).
     gas_wait: u16,
 }
 impl Default for Runner {
@@ -402,7 +405,7 @@ impl Runner {
     }
     /// Gas: ticks since the gas hit box went on while it is on, else None.
     pub fn gas_age(&self) -> Option<u16> {
-        (matches!(self.params.attack, Attack::Gas { .. }) && self.swipe == Swipe::Lunge).then_some(self.gas_age)
+        (self.swipe == Swipe::Lunge && matches!(self.params.attack, Attack::Gas { .. })).then_some(self.gas_age)
     }
     pub fn swipe(&self) -> Swipe {
         self.swipe
@@ -415,6 +418,9 @@ impl Runner {
     }
     pub fn turn_cooldown(&self) -> u16 {
         self.turn_cooldown
+    }
+    fn is_gas(&self) -> bool {
+        matches!(self.params.attack, Attack::Gas { .. })
     }
     fn play(&mut self, clip: Clip, out: &mut Actions) {
         self.serial = self.serial.wrapping_add(1);
@@ -444,12 +450,16 @@ impl Runner {
         self.walker = Walker::Walking;
         self.play(Clip::Walk, out);
         self.wait = self.sample(Wait::Walking, choose);
-        out.push(Action::AudioPlay);
+        if !self.is_gas() {
+            out.push(Action::AudioPlay);
+        }
         Self::vx(out, self.facing() * self.params.walk_speed);
     }
     fn pause(&mut self, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
         self.walker = Walker::Paused;
-        out.push(Action::AudioStop);
+        if !self.is_gas() {
+            out.push(Action::AudioStop);
+        }
         self.play(Clip::Idle, out);
         Self::vx(out, 0);
         self.wait = self.sample(Wait::Paused, choose);
@@ -462,13 +472,12 @@ impl Runner {
         self.play(Clip::Turn, out);
         out.push(Action::Turn(cause));
     }
-    fn attack(&mut self, hero_x: i32, actor_x: i32, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
-        if let Attack::Gas { delay, .. } = self.params.attack {
-            // ATTACK ALERT -> Attack Delay: the Walker is not stopped and the facing is not turned toward the hero.
+    fn attack(&mut self, hero_x: i32, actor_x: i32, out: &mut Actions) {
+        if self.is_gas() {
+            // ATTACK ALERT -> Attack Delay: the Walker is not stopped, the facing is not turned toward the hero, and the
+            // WaitRandom is drawn on the delay's first step.
             self.swipe = Swipe::Delay;
-            let value = choose(Wait::Delay, [delay, 0]);
-            assert!(value <= delay, "Gas delay outside its endpoints");
-            self.gas_wait = value;
+            self.gas_wait = GAS_DRAW;
             return;
         }
         self.walker = Walker::StoppedForAttack;
@@ -513,7 +522,7 @@ impl Runner {
         self.walker_callback(senses, choose, out);
         self.turn_cooldown = 0;
         self.swipe = Swipe::Ready;
-        self.check_ready(senses, choose, out);
+        self.check_ready(senses, out);
         // Source Reset does not stop Charge Dust. Do not invent that event.
     }
     /// An accepted nonlethal HealthManager TOOK DAMAGE event. Ready attacks
@@ -522,7 +531,7 @@ impl Runner {
     pub fn took_damage(&mut self, hero_x: i32, actor_x: i32) -> Actions {
         let mut out = Actions::new();
         if self.swipe == Swipe::Ready && self.params.attack == Attack::Swipe {
-            self.attack(hero_x, actor_x, &mut |_, [_, lo]| lo, &mut out);
+            self.attack(hero_x, actor_x, &mut out);
         }
         out
     }
@@ -591,67 +600,20 @@ impl Runner {
             return out;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
-        if let Attack::Gas {
-            antic_ticks,
-            attack_ticks,
-            cd_ticks,
-            idle_ticks,
-            ..
-        } = self.params.attack
-        {
-            match self.swipe {
-                Swipe::Ready => self.check_ready(senses, &mut choose, &mut out),
-                Swipe::Delay => {
-                    self.gas_wait = self.gas_wait.saturating_sub(1);
-                    if self.gas_wait == 0 {
-                        // Attack Antic: SetVelocity2d 0, StopWalker, the Attack clip, a wait.
-                        self.walker = Walker::StoppedForAttack;
-                        out.push(Action::AudioStop);
-                        Self::vx(&mut out, 0);
-                        self.swipe = Swipe::Anticipate;
-                        self.gas_wait = antic_ticks;
-                        self.play(Clip::Anticipate, &mut out);
-                    }
+        if let Attack::Gas { delay, .. } = self.params.attack {
+            if self.swipe == Swipe::Delay && self.gas_wait == GAS_DRAW {
+                self.gas_wait = choose(Wait::Delay, [delay, 0]).min(delay);
+            }
+            // Reset (StartWalker, then the Ready checks at once) is the one step that needs the Walker's draws.
+            if self.step_gas(&mut out) {
+                if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
+                    self.walk(&mut choose, &mut out);
                 }
-                Swipe::Anticipate => {
-                    self.gas_wait = self.gas_wait.saturating_sub(1);
-                    if self.gas_wait == 0 {
-                        // Attack: the children on, the gas hit box on at scale .2 and growing.
-                        self.swipe = Swipe::Lunge;
-                        self.gas_wait = attack_ticks;
-                        self.gas_age = 0;
-                    }
-                }
-                Swipe::Lunge => {
-                    self.gas_age = self.gas_age.saturating_add(1);
-                    self.gas_wait = self.gas_wait.saturating_sub(1);
-                    if self.gas_wait == 0 {
-                        // CD: the hit box off.
-                        self.swipe = Swipe::Cooldown;
-                        self.gas_wait = cd_ticks;
-                    }
-                }
-                Swipe::Cooldown => {
-                    self.gas_wait = self.gas_wait.saturating_sub(1);
-                    if self.gas_wait == 0 {
-                        self.swipe = Swipe::Idle;
-                        self.gas_wait = idle_ticks;
-                        self.play(Clip::Idle, &mut out);
-                    }
-                }
-                Swipe::Idle => {
-                    self.gas_wait = self.gas_wait.saturating_sub(1);
-                    if self.gas_wait == 0 {
-                        // Reset: StartWalker, then Ready checks at once.
-                        if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
-                            self.walk(&mut choose, &mut out);
-                        }
-                        self.turn_cooldown = 0;
-                        self.swipe = Swipe::Ready;
-                        self.check_ready(senses, &mut choose, &mut out);
-                    }
-                }
-                _ => {}
+                self.turn_cooldown = 0;
+                self.swipe = Swipe::Ready;
+                self.check_ready(senses, &mut out);
+            } else if self.swipe == Swipe::Ready {
+                self.check_ready(senses, &mut out);
             }
             return out;
         }
@@ -696,10 +658,10 @@ impl Runner {
                         }
                         self.turn_cooldown = 0;
                         self.swipe = Swipe::Ready;
-                        self.check_ready(senses, &mut choose, &mut out);
+                        self.check_ready(senses, &mut out);
                     }
                 }
-                Swipe::Ready => self.check_ready(senses, &mut choose, &mut out),
+                Swipe::Ready => self.check_ready(senses, &mut out),
                 _ => {}
             }
             return out;
@@ -733,17 +695,63 @@ impl Runner {
                 }
             }
             Swipe::Ready => {
-                self.check_ready(senses, &mut choose, &mut out);
+                self.check_ready(senses, &mut out);
             }
             _ => {}
         }
         out
     }
-    fn check_ready(&mut self, senses: Senses, choose: &mut impl FnMut(Wait, [u16; 2]) -> u16, out: &mut Actions) {
+    /// One tick of the gas attack's timers. True when `Reset` is due (the caller restarts the Walker and checks Ready).
+    #[inline(never)]
+    fn step_gas(&mut self, out: &mut Actions) -> bool {
+        let Attack::Gas { antic_ticks, attack_ticks, cd_ticks, idle_ticks, .. } = self.params.attack else {
+            return false;
+        };
+        if matches!(self.swipe, Swipe::Ready | Swipe::Dead) {
+            return false;
+        }
+        self.gas_wait = self.gas_wait.saturating_sub(1);
+        if self.swipe == Swipe::Lunge {
+            self.gas_age = self.gas_age.saturating_add(1);
+        }
+        if self.gas_wait != 0 {
+            return false;
+        }
+        match self.swipe {
+            Swipe::Delay => {
+                // Attack Antic: SetVelocity2d 0, StopWalker, the Attack clip, a wait.
+                self.walker = Walker::StoppedForAttack;
+                Self::vx(out, 0);
+                self.swipe = Swipe::Anticipate;
+                self.gas_wait = antic_ticks;
+                self.play(Clip::Anticipate, out);
+            }
+            Swipe::Anticipate => {
+                // Attack: the gas hit box on at scale .2 and growing.
+                self.swipe = Swipe::Lunge;
+                self.gas_wait = attack_ticks;
+                self.gas_age = 0;
+            }
+            Swipe::Lunge => {
+                // CD: the hit box off.
+                self.swipe = Swipe::Cooldown;
+                self.gas_wait = cd_ticks;
+            }
+            Swipe::Cooldown => {
+                self.swipe = Swipe::Idle;
+                self.gas_wait = idle_ticks;
+                self.play(Clip::Idle, out);
+            }
+            Swipe::Idle => return true,
+            _ => {}
+        }
+        false
+    }
+    fn check_ready(&mut self, senses: Senses, out: &mut Actions) {
         // GetCanSeeHero and CheckAlertRange both Apply on OnEnter, not only
         // OnUpdate. Coward=false Reset therefore need not spend a tick in Ready.
         if senses.in_alert_range && senses.can_see_hero {
-            self.attack(senses.hero_x, senses.actor_x, choose, out);
+            self.attack(senses.hero_x, senses.actor_x, out);
         }
     }
     fn walker_callback(
@@ -822,23 +830,23 @@ impl Runner {
 /// The Mossman_Shaker's `Gas Hit Box` (a trigger PolygonCollider2D with DamageHero 1) at full scale: its seven points plus the
 /// collider's (0, 1.44) offset and the child's (0, -1.42) position, Q16, in the actor's frame as authored (facing left).
 const GAS_POLYGON: [[i32; 2]; 7] = [[-182559, 157479], [1475, 214480], [183672, 163632], [284184, 11905], [301355, -94436], [-296176, -93141], [-279846, 21562]];
-/// `Attack`'s `SetScale` 0.2 then `iTweenScaleTo` (1, 1, 1) over 0.4 s with easeOutCirc: the hit box's scale `age` ticks after it went on, Q16.
+/// `Attack`'s `SetScale` 0.2 then `iTweenScaleTo` (1, 1, 1) over 0.4 s with easeOutCirc, per tick since the hit box went on: the
+/// scale less 0.2, Q16 (`0.2 + 0.8 * sqrt(1 - (1 - t) ^ 2)`, t = tick / 24).
+const GAS_GROWTH: [u16; 25] = GAS_GROWTH_TABLE;
+const GAS_GROWTH_TABLE: [u16; 25] = [0, 14976, 20953, 25382, 28981, 32032, 34678, 37008, 39078, 40927, 42584, 44071, 45405, 46598, 47661, 48603, 49430, 50149, 50764, 51278, 51695, 52018, 52246, 52383, 52429];
+/// The hit box's scale `age` ticks after it went on, Q16.
 pub fn gas_scale(age: u16) -> i32 {
-    let u = i32::from(age.min(24)) * ONE / 24;
-    let back = ONE - u;
-    let inside = ONE - psx_math::int32::mul_shr_i32(back, back, 16);
-    // sqrt(inside / ONE) in Q16.
-    let root = psx_math::WideU::mul(inside as u32, ONE as u32).isqrt() as i32;
-    ONE / 5 + psx_math::int32::mul_shr_i32(ONE - ONE / 5, root, 16)
+    ONE / 5 + i32::from(GAS_GROWTH[usize::from(age.min(24))])
 }
 /// The gas hit box's corners in the world for a Shaker at `at` facing `facing` (+1 right, -1 left, the authored side), `age` ticks into its attack.
+#[inline(never)]
 pub fn gas_polygon(age: u16, facing: i32, at: [i32; 2]) -> [[i32; 2]; 7] {
     let scale = gas_scale(age);
     let mirror = -facing.signum();
-    GAS_POLYGON.map(|[x, y]| {
-        [
-            at[0] + mirror * psx_math::int32::mul_shr_i32(x, scale, 16),
-            at[1] + psx_math::int32::mul_shr_i32(y, scale, 16),
-        ]
-    })
+    let mut out = [[0; 2]; 7];
+    for (o, p) in out.iter_mut().zip(GAS_POLYGON.iter()) {
+        o[0] = at[0] + mirror * psx_math::int32::mul_shr_i32(p[0], scale, 16);
+        o[1] = at[1] + psx_math::int32::mul_shr_i32(p[1], scale, 16);
+    }
+    out
 }
