@@ -878,9 +878,6 @@ fn publish_walk_senses(game: &frame::Game) {
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
     psx_rt::interrupts::install_vblank_counter();
-    // The SDK caps presentation at 30 fps by default. Keep the flip rate this game had before
-    // the repin (its renderer paces itself, and a frame done in one VBlank flips in one).
-    psx_rt::interrupts::set_min_flip_vblanks(psx_tick::PresentCap::UNCAPPED.min_vblanks());
     let mut fb = FrameBuffer::new(320, 240);
     // The renderer's working storage lives for the whole program in this
     // frame, inside the 48 KiB stack reservation (measured peak about 32 KiB,

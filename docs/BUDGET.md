@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |802,108|
-| Code-to-data alignment |68|
-| Linked data, including menu and HUD |246,440|
-| BSS, including shared scene arena and runtime pools |795,724|
-| Total static span |1,844,348|
+| Linked code |810,704|
+| Code-to-data alignment |48|
+| Linked data, including menu and HUD |246,552|
+| BSS, including shared scene arena and runtime pools |795,764|
+| Total static span |1,853,076|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |137,860|
-| Room module pool, inside that gap |108,544|
-| Free RAM below the module pool |29,316|
+| Unallocated gap before reserved stack |129,132|
+| Room module pool, inside that gap |110,592|
+| Free RAM below the module pool |18,540|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d247c`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d4694`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -651,3 +651,5 @@ The 2026-11-02 Toll Machine (docs/WORLD_LINKS.md "Toll Machines"; game/src/toll.
 The 2026-11-02 enemy-family pipeline and the first family (docs/ENEMY-FAMILIES.md; the Plant Trap, eight placements in three scenes) took the free RAM below the module pool from 9,780 to 11,076: linked code 791,364 to 790,584 (-780), linked data 280,840 to 280,296 (-544), alignment 60 to 72. The family code is a room module (`actor_fsm`, 3,476 bytes of code and 513 of data, carried by the scenes that place a family actor) and the shared action code gained the particle family in `fsm3_world` (+480), so the pipeline's resident cost is one out-of-line gate (`Actor::fsm_ready`, 80 bytes) and the hooks' call sites: spawn, advance, death, bounds and draw are `#[inline(never)]` functions in the module, which took the resident cost from +1,932 bytes (the hooks inlined at five sites) to -392. The data saving is engine-wide: `ActorSpec::corpse` is `Option<&'static CorpseSpec>` instead of the 48-byte spec inline, so the spec went from 152 to 104 bytes (plus a pointer) and the linker merges equal corpse constants (60 distinct for 88 actors); that returned 1,696 bytes of linked data against 1,264 bytes the six Plant Trap specs and their tables cost. A later family adds its specs and its module bytes, nothing resident.
 
 The 2026-11-06 resident tables landing (docs/SCENE-SPECS.md): the 112 `ActorSpec` records and the `CorpseSpec` records leave the resident image and ride one extra sector in front of each scene's chunk (the widest is 1,084 bytes), decoded at admission into a small pool sized for the outgoing and the incoming scene (13 specs and 4 corpses); the atlas inventory of 708 rows shrinks from 32 to 16 bytes a row, the scene, the raw length and the unpacked kind and count being derived and checked by the cook for every row. Measured on the shipping disc against main 1954aa7: linked code 797,632 to 802,108 bytes (+4,476, the decoders and the pool), linked data 271,128 to 246,440 (-24,688), BSS 795,724 unchanged, so free RAM below the module pool went from 9,108 to 29,316 (+20,208; the pool stays 108,544). The bar for HK landings is 8,192, which leaves 21,124 of room for the next scenes.
+
+The 2026-11-06 repin to SDK main c75f63928 (every SDK reference on one commit) moved the free RAM below the module pool from 29,316 to 18,540: linked code 802,108 to 810,704 (psx-rt's entry state, diagnostics and cache code, the presentation cap and the renamed calls), linked data 246,440 to 246,552, BSS 795,724 to 795,764, and the room module pool 108,544 to 110,592 (+2,048: the same module sources compile larger, the worst room needed 105,768 of the 104,448 the old pool left after the fence).

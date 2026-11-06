@@ -491,9 +491,6 @@ fn main() {
     // SAFETY: as above.
     unsafe { runtime::quiesce() };
     interrupts::install_vblank_counter();
-    // The poem and the movies count frames: this program is its own image with its own presentation
-    // cap (30 fps by default on SDK main), and the movies' and the poem's pacing assumes 60.
-    interrupts::set_min_flip_vblanks(psx_tick::PresentCap::UNCAPPED.min_vblanks());
     let peripherals = Peripherals::take().expect("the intro takes the peripherals once");
     // The player and the poem take the drive, the MDEC and the GPU's channel over themselves, as their
     // docs say; the display is set up here.
