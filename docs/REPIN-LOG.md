@@ -27,3 +27,9 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 - grub-jar: pacing 56 to 80 (measured 61 frames over 2 vblanks of 178; frame time 238 of its 251 ceiling, no frame of 5+ vblanks). Not layout drift: the same twin build with the Geo rock draws skipped measures 46 (frame time 227), so the cost is the Crossroads_05 rock beside the grub jar, whose art is now two stacked strips (Geo rocks 50 of 53).
 
 - grub-jar: pacing back from 80 to 56. The 80 was set for 61 frames over 2 vblanks while the rocks' art was linked; with the rocks in the scene banks the route measures 42 (frame time 224 of 251, 189 frames), so the old limit holds and a limit follows the measure.
+
+## 2026-11-06 (hk-resident, by hand, twin disc a20f2390ee2f)
+
+- secret-c04: pacing 29 to 33 (measured 30; main 1954aa7 measures 27). `--repin` offered 41 and was cut back to the measurement plus 10 percent so the pin keeps its edge.
+- secret-c37: frame_time 438 to 447 (measured 442; main 1954aa7 measures 436 of 438). Same cut-back from the offered 465.
+- Cause for both: layout drift from the scene spec chunks (resident code +4,476 bytes) and the one extra sector each scene load reads. Both routes begin in a freshly loaded scene, and frame time and long frames are where a load's extra sector shows (about 1 percent). No gate, hit or fault changed.
