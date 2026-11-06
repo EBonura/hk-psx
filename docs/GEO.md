@@ -94,12 +94,12 @@ no longer fit after the other 50. The design that was proposed (coin art in a fi
 the rest) was built as far as the host trial and measured; it does not fit. Numbers (host/geo.py as of the trial, branch `hk-world-geo-bank-wip`):
 
 * Coin art alone: 46 distinct textures and a 16-halfword palette, 3,684 B. That leaves 2,652 B of the 6,336 B for rocks.
-* Per scene, the rocks' own bank (palette plus distinct textures): 620 to 814 B for most scenes, 1,356 B for seven (Tutorial_01's neighbours with four
-  or five rocks, Crossroads_05 and 07's, Fungus1_01), 2,138 B for Fungus1_31 (three tall rocks). Fungus1_21's three rocks: 1,076 B (four textures: a 35x36
+* Per scene, the rocks' own bank (palette plus distinct textures): 620 to 814 B for most scenes, 1,356 B for six (scene ids 0, 13, 16, 33, 43 and 44, two to five rocks each),
+  2,138 B for Fungus1_31 (three tall rocks). Fungus1_21's three rocks: 1,076 B (four textures: a 35x36
   rock cut in three 12-row strips and a 35x12 piece).
 * Fixed coin region searched over 419 placements (MaxRects with 400 shuffles, coins kept out of the tall 32x27 sliver): the rock region left is 1,478 to
   1,988 halfwords in pieces, the largest the whole tall sliver (864 halfwords). Fungus1_21's bank places in every one of them. Seven of the 30
-  scenes that hold rocks never do (Fungus1_31 and six scenes with four or five rocks): the rocks are 7 to 9 halfwords wide and 12 to 22 rows tall, a
+  scenes that hold rocks never do (Fungus1_31 and those six): the rocks are 7 to 9 halfwords wide and 12 to 22 rows tall, a
   coin layout cannot leave them room, and the best of the 419 layouts has the same seven failures as the first. So a per-scene rock bank beside a
   fixed coin region would lose rocks that are cooked today.
 * The global bank does not fit by plain arithmetic, whatever the packing: the coins and all 53 rocks are 59 distinct textures, 6,722 B, in 6,336 B of
