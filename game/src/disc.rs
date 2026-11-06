@@ -2299,7 +2299,10 @@ impl Cache {
         // Admission already ran the complete checked parse and the legacy
         // differential; re-validating every section on each spatial lookup
         // cost several VBlanks per tick and overflowed the input queue.
-        self.metadata_view = Some(unsafe { WorldMeta::validated_view(bytes) });
+        let view = unsafe { WorldMeta::validated_view(bytes) };
+        // The scene's rock art goes to VRAM with its bank (the coins' art stays from boot).
+        crate::geo_render::upload_scene(&view);
+        self.metadata_view = Some(view);
         Ok(())
     }
     /// Every path that stops the bank bytes being the admitted ones.

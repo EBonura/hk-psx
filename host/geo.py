@@ -70,8 +70,38 @@ def fsm_contract(fsm):
             'fling':flings[0],'broken_clip':value(broken[0]['clipName']),'hit_cooldown':max(1,round(variables['Recoil Time']*60)),
             'variables':variables,'states':list(states)}
 
-def place_rectangles(items,rectangles=VRAM_RECTS):
-    """Bounded deterministic MaxRects search; CLUT X remains16-word aligned."""
+def free_rectangles(rectangles,placed):
+    """The maximal empty rectangles of `rectangles` once the `placed` ones (x,y,w,h) are taken; they may overlap."""
+    out=[]
+    for rx,ry,rw,rh in rectangles:
+        occ=[[False]*rw for _ in range(rh)]
+        for x,y,w,h in placed:
+            for yy in range(max(y,ry),min(y+h,ry+rh)):
+                for xx in range(max(x,rx),min(x+w,rx+rw)):occ[yy-ry][xx-rx]=True
+        def empty(x0,y0,w,h):return all(not occ[yy][xx]for yy in range(y0,y0+h)for xx in range(x0,x0+w))
+        found=set()
+        for y0 in range(rh):
+            for x0 in range(rw):
+                width=rw-x0
+                for y1 in range(y0,rh):
+                    w=0
+                    while w<width and not occ[y1][x0+w]:w+=1
+                    width=w
+                    if not w:break
+                    found.add((x0,y0,w,y1-y0+1))
+        for x0,y0,w,h in sorted(found):
+            if (x0>0 and empty(x0-1,y0,1,h)) or (y0>0 and empty(x0,y0-1,w,1)) or (x0+w<rw and empty(x0+w,y0,1,h)) or (y0+h<rh and empty(x0,y0+h,w,1)):continue
+            out.append((rx+x0,ry+y0,w,h))
+    return out
+
+def place_rectangles(items,rectangles=VRAM_RECTS,free=None):
+    """The first placement `placements` finds, else an error."""
+    for placed in placements(items,rectangles,free):return placed
+    raise ValueError('Geo textures do not fit reserved VRAM fragments: '+str(sum(w*h*2 for k,w,h,a in items))+' bytes '+str([(w,h)for k,w,h,a in items]))
+
+def placements(items,rectangles=VRAM_RECTS,free=None):
+    """Bounded deterministic MaxRects search, every complete placement it finds in turn; CLUT X remains16-word aligned.
+    `free` starts the search from those (possibly overlapping) empty rectangles instead of `rectangles`."""
     for i,(x,y,w,h)in enumerate(rectangles):
         if not(0<=x<x+w<=1024 and 0<=y<y+h<=512):raise ValueError('Geo rectangle outside VRAM')
         if any(x<ox+ow and x+w>ox and y<oy+oh and y+h>oy for ox,oy,ow,oh in rectangles[:i]):raise ValueError('Overlapping Geo rectangles')
@@ -85,10 +115,10 @@ def place_rectangles(items,rectangles=VRAM_RECTS):
         orders.append(lambda v,shuffled=shuffled:shuffled[str(v[0])])
     for order in orders:
         for mode in (0,1):
-            free=list(rectangles);placed={}
+            free_now=list(rectangles if free is None else free);placed={}
             for key,w,h,alignment in sorted(items,key=order):
                 candidates=[]
-                for rx,ry,rw,rh in free:
+                for rx,ry,rw,rh in free_now:
                     x=(rx+alignment-1)//alignment*alignment
                     if x+w>rx+rw or h>rh:continue
                     dw=rx+rw-x-w;dh=rh-h
@@ -96,18 +126,21 @@ def place_rectangles(items,rectangles=VRAM_RECTS):
                     candidates.append((*score,ry,x))
                 if not candidates:break
                 *_,y,x=min(candidates);placed[key]=(x,y,w,h);new=[]
-                for rx,ry,rw,rh in free:
+                for rx,ry,rw,rh in free_now:
                     if x>=rx+rw or x+w<=rx or y>=ry+rh or y+h<=ry:new.append((rx,ry,rw,rh));continue
                     if x>rx:new.append((rx,ry,x-rx,rh))
                     if x+w<rx+rw:new.append((x+w,ry,rx+rw-x-w,rh))
                     if y>ry:new.append((rx,ry,rw,y-ry))
                     if y+h<ry+rh:new.append((rx,y+h,rw,ry+rh-y-h))
-                free=[r for r in sorted(set(new))if not any(r!=o and o[0]<=r[0] and o[1]<=r[1] and o[0]+o[2]>=r[0]+r[2] and o[1]+o[3]>=r[1]+r[3]for o in new)]
-            if len(placed)==len(items):return placed
-    raise ValueError('Geo textures do not fit reserved VRAM fragments: '+str(sum(w*h*2 for k,w,h,a in items))+' bytes '+str([(w,h)for k,w,h,a in items]))
+                free_now=[r for r in sorted(set(new))if not any(r!=o and o[0]<=r[0] and o[1]<=r[1] and o[0]+o[2]>=r[0]+r[2] and o[1]+o[3]>=r[1]+r[3]for o in new)]
+            if len(placed)==len(items):yield placed
 
-def art_bank(images):
-    """Joint sourceRGB palette; per-image source alpha uses existing coverage policy."""
+def art_bank(images,rectangles=VRAM_RECTS,free=None,score=None):
+    """Joint sourceRGB palette; per-image source alpha uses existing coverage policy: `art_pack`, then `art_place`."""
+    return art_place(art_pack(images),rectangles,free,score)
+
+def art_pack(images):
+    """Quantize `images` jointly: (palette, [(size, 4bpp payload)] of the distinct texel planes, each image's index into them, the sheet)."""
     if not images:raise ValueError('empty Geo art')
     # Rock prefabs repeat across scenes: quantize each distinct source image once
     # and expand the per-frame mapping afterwards, so the 256x256 joint sheet is
@@ -115,13 +148,11 @@ def art_bank(images):
     signatures=[(im.size,im.tobytes()) for im in images];first={}
     for index,signature in enumerate(signatures):first.setdefault(signature,index)
     if len(first)!=len(images):
-        blob,uploads,textures,distinct_mapping,sheet=art_bank([images[i] for i in first.values()])
+        pal,unique,distinct_mapping,sheet=art_pack([images[i] for i in first.values()])
         position={signature:slot for slot,signature in enumerate(first)}
-        return blob,uploads,textures,[distinct_mapping[position[s]] for s in signatures],sheet
+        return pal,unique,[distinct_mapping[position[s]] for s in signatures],sheet
     # A single palette avoids wasting47 independently quantized CLUTs. Every
     # sprite starts on a4px grid, preserving the established Bayer alpha phase.
-    # Coin and rock art can share a palette through a taller narrow RGB sample
-    # by using32px cells; projected current art is admitted at<=32 each axis.
     # The sheet only hosts the joint quantization and is sliced per image, so it
     # widens with the catalog; VRAM placement is bounded separately by VRAM_RECTS.
     # The joint quantizer takes one sheet of at most 256x256, so the images are shelf-packed (tallest first, left to
@@ -150,14 +181,29 @@ def art_bank(images):
         key=(im.size,p)
         if key not in keys:keys[key]=len(unique);unique.append((im.size,p))
         mapping.append(keys[key])
+    return pal,unique,mapping,sheet
+
+def art_place(pack,rectangles=VRAM_RECTS,free=None,score=None):
+    """Place a packed bank: (blob, uploads, textures, mapping, sheet). With `score`, the placement it rates highest of
+    all those found (a fixed region that leaves the most room for what follows), else the first that suits a texture page."""
+    pal,unique,mapping,sheet=pack
     items=[('palette',16,1,16)]+[(i,(size[0]+3)//4,size[1],1)for i,(size,p)in enumerate(unique)]
-    locations=place_rectangles(items);blob=bytearray();uploads=[];textures=[]
+    best=None
+    for locations in placements(items,rectangles,free):
+        px,py,_,_=locations['palette']
+        # The page rule: a texture may not wrap a 256x256 texture page.
+        if any((x-x//64*64)*4+size[0]>256 or y-y//256*256+size[1]>256 for i,(size,p)in enumerate(unique)for x,y,_,_ in (locations[i],)):continue
+        if score is None:best=locations;break
+        rating=score(locations)
+        if best is None or rating>best[0]:best=(rating,locations)
+    if best is None:raise ValueError('Geo textures do not fit reserved VRAM fragments: '+str(sum(w*h*2 for k,w,h,a in items))+' bytes '+str([(w,h)for k,w,h,a in items]))
+    locations=best if score is None else best[1]
+    blob=bytearray();uploads=[];textures=[]
     def upload(key,payload):
         x,y,w,h=locations[key];off=len(blob);blob.extend(payload);uploads.append({'offset':off,'x':x,'y':y,'w':w,'h':h})
     upload('palette',pal)
     for i,(size,p)in enumerate(unique):
         upload(i,p);x,y,w,h=locations[i];px,py,_,_=locations['palette'];base_x=x//64*64;base_y=y//256*256
-        if (x-base_x)*4+size[0]>256 or y-base_y+size[1]>256:raise ValueError('Geo texture page wrap')
         textures.append({'x':x,'y':y,'w':size[0],'h':size[1],'u':(x-base_x)*4,'v':y-base_y,
             'clut':(py<<6)|(px//16),'tpage':(base_x//64)|((base_y//256)<<4),'material':1})
     if len(blob)>MAX_VRAM_BYTES:raise ValueError('Geo bank byte budget')
@@ -191,8 +237,9 @@ def collect(source):
     coins.sort(key=lambda c:c['type'])
     if [c['value']for c in coins]!=[1,5,25]:raise ValueError('Geo denomination source changed')
     from quality import SCENE_FILES
-    unsupported_rocks=[]
+    unsupported_rocks=[];scene_ranges={}
     coin_art=len(art)  # the coins' frames come first; only rock art is trimmed and cut
+    coin_bank=coin_region([a['image'] for a in finalize(art,coin_art)[0]]);rock_free=coin_bank[5]
     for scene_id,name in enumerate(SCENE_FILES):
         sc=Scene(source,name);scene_objects.append(sc)
         for ident,(kind,t) in sc.objects.items():
@@ -224,15 +271,15 @@ def collect(source):
                 del art[art_mark:];del clips[clip_mark:]
                 unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'rock art projects to {max(oversize)} pixels, above the {ART_CELL}x{ART_CELL} Geo art cell'})
                 continue
-            # Rock art shares one fixed VRAM reservation with the coins. A rock is admitted when the bank built from
-            # everything admitted so far and this rock, finished the way the cook will finish it (`finalize`), still
-            # places in the reserved rectangles: the exact packed bytes, not an estimate (the old estimate counted
-            # every distinct source image before the joint palette merged identical texel planes, and refused rocks
-            # the bank could hold). Later rocks are explicit omissions until Geo art streams per scene.
-            try:art_bank([a['image'] for a in finalize(art,coin_art)[0]])
+            # A scene's rock art is a bank of its own, uploaded when the scene is admitted into the part of the Geo
+            # reservation the coins leave (`coin_region`). A rock is admitted when the bank built from this scene's
+            # admitted rocks and this one, finished the way the cook will finish it (`finalize`), still places in that
+            # part: the exact packed bytes, not an estimate. Rocks of other scenes never compete for the space.
+            scene_ranges.setdefault(scene_id,[]).append((art_mark,len(art)))
+            try:scene_bank(art,coin_art,scene_ranges[scene_id],rock_free)
             except ValueError as error:
-                del art[art_mark:];del clips[clip_mark:]
-                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'Geo art VRAM budget: the bank no longer places with this rock ({str(error)[:90]})'})
+                scene_ranges[scene_id].pop();del art[art_mark:];del clips[clip_mark:]
+                unsupported_rocks.append({'source':f'{name}:{ident}','scene':scene_id,'reason':f'Geo art VRAM budget: the scene bank no longer places with this rock ({str(error)[:90]})'})
                 continue
             def vertices_of(index,gid=gid,sc=sc,sx=sx,sy=sy,sp=sp):
                 box=art[index]['box'];return [sc.point(gid,xx/sx*sp['_scale']['x'],yy/sy*sp['_scale']['y'])[:2] for xx,yy in [(box[0],box[3]),(box[2],box[3]),(box[0],box[1]),(box[2],box[1])]]
@@ -248,6 +295,7 @@ def collect(source):
                 'polygons':polys,'bounds':[min(p[0]for p in points),min(p[1]for p in points),max(p[0]for p in points),max(p[1]for p in points)],
                 'draw_sources':[f'{name}:{by[k][0]}'for k in ('tk2dSprite','MeshRenderer')if k in by], 'collider_sources':colliders,'broken_frame':clips[ai]['start'], 'intact_frame':intact_frame,
                 'fsm_source':f'{name}:{fid}','vertices_of':vertices_of,'intact_vertices':None,'broken_vertices':None})
+    banks={scene:scene_bank(art,coin_art,ranges,rock_free) for scene,ranges in sorted(scene_ranges.items()) if ranges}
     canonical_images(art)
     # Trim, cut and place: the art the bank holds, then every rock's quads from its frames' final boxes.
     final,parts=finalize(art,coin_art)
@@ -257,7 +305,7 @@ def collect(source):
         r['intact_vertices']=vertices(r['intact_frame']);r['broken_vertices']=vertices(r['broken_frame'])
         r['intact_extra']=[{'art':i,'vertices':vertices(i)} for i in parts.get(r['intact_frame'],[])]
         r['broken_extra']=[{'art':i,'vertices':vertices(i)} for i in parts.get(r['broken_frame'],[])]
-    return rocks,enemies,coins,art,clips,unsupported_rocks
+    return rocks,enemies,coins,art,clips,unsupported_rocks,banks,coin_bank
 
 # game/src/geo.rs MAX_ROCKS_PER_SCENE.
 MAX_ROCKS_PER_SCENE=16
@@ -266,6 +314,25 @@ def rock_state(rocks,scene_id):
     state=sum(r['scene']==scene_id for r in rocks)
     if state>=MAX_ROCKS_PER_SCENE:raise ValueError(f'scene {scene_id} admits more than {MAX_ROCKS_PER_SCENE} Geo rocks')
     return state
+
+COIN_RECTS=tuple(r for r in VRAM_RECTS if r!=(352,485,32,27))  # the coins keep clear of the tall sliver, where the taller rocks go
+
+def coin_region(images):
+    """The coins' art bank, placed once for every scene: (blob, uploads, textures, mapping, sheet, empty rectangles left for rocks).
+    Of all placements in COIN_RECTS the one that leaves the largest empty rectangle (then the most area in whole) wins."""
+    def area(r):return r[2]*r[3]
+    def left(locations):
+        free=free_rectangles(VRAM_RECTS,list(locations.values()))
+        return (max(map(area,free)),sum(map(area,free)),-len(free))
+    bank=art_bank(images,COIN_RECTS,score=left)
+    return (*bank,free_rectangles(VRAM_RECTS,[(u['x'],u['y'],u['w'],u['h'])for u in bank[1]]))
+
+def scene_bank(art,coin_art,ranges,free):
+    """One scene's rock bank from the `ranges` of `art` its rocks hold: (blob, uploads, textures, mapping, sheet, entries), where entry
+    k of `entries` is the art index (as `finalize` numbers them, strips included) texture `mapping[k]` is for."""
+    final,parts=finalize(art,coin_art)
+    entries=sorted({i for a,b in ranges for i in range(a,b)}|{j for a,b in ranges for i in range(a,b) for j in parts.get(i,[])})
+    return (*art_bank([final[i]['image']for i in entries],VRAM_RECTS,free),entries)
 
 def finalize(art,coin_art=0):
     """The art the bank holds: (entries, {frame index: [indices of its extra strips]}), `art` untouched.
@@ -351,13 +418,22 @@ def generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,hero_box,gra
     for u in uploads:lines.append('GeoUpload{'+','.join(f'{k}:{v}'for k,v in u.items())+'},')
     lines.append('];\n');return '\n'.join(lines)
 
-def bank_rows(rocks,bindings,metadata):
+def scene_art(banks):
+    """Per scene: ({art index: where the bank put it}, [the rectangles to upload when the scene's bank is admitted])."""
+    out={}
+    for scene,(blob,uploads,textures,mapping,sheet,entries) in banks.items():
+        where={entry:{k:textures[mapping[n]][k]for k in ('u','v','w','h','clut','tpage')}for n,entry in enumerate(entries)}
+        rows=[{'x':u['x'],'y':u['y'],'w':u['w'],'h':u['h'],'words':list(struct.unpack(f'<{u["w"]*u["h"]}H',blob[u['offset']:u['offset']+u['w']*u['h']*2]))}for u in uploads]
+        out[scene]=(where,rows)
+    return out
+
+def bank_rows(rocks,bindings,metadata,banks):
     """What the scene metadata banks carry for Geo rocks (tools/world_metadata.py KIND_GEO_*).
 
     `rocks` by scene id (collision, state key and payout counts), and `views` by region chunk id: for each rock a region
     draws or hides things for, its art quads (tag 0 while broken, 1 while whole) and the draw and edge indices a broken
     rock removes there. Coordinates stay in world units; the encoder fixes them to Q16."""
-    by_scene={}
+    art=scene_art(banks);by_scene={}
     for r in rocks:
         by_scene.setdefault(r['scene'],[]).append({k:r[k]for k in ('source','state','x','y','bounds','polygons','hits','per_hit','final_payout','hit_cooldown')})
     for rows in by_scene.values():rows.sort(key=lambda row:row['state'])
@@ -369,7 +445,7 @@ def bank_rows(rocks,bindings,metadata):
             arts+=[(0,p['art'],corners(p['vertices']))for p in r['broken_extra']]+[(1,p['art'],corners(p['vertices']))for p in r['intact_extra']]
             out.append({'source':r['source'],'state':b['state'],'arts':arts,'off':b['off'],'edges':b['edges']})
         if out:views[str(region['chunk_id'])]=out
-    return {'rocks':{str(k):v for k,v in by_scene.items()},'views':views}
+    return {'rocks':{str(k):v for k,v in by_scene.items()},'views':views,'uploads':{str(k):rows for k,(where,rows)in art.items()}}
 
 def bind_regions(rocks,metadata):
     bindings=[]
@@ -402,8 +478,8 @@ def source_cil_evidence(source):
     return found
 
 def cook():
-    source=Source();cil=source_cil_evidence(source);rocks,enemies,coins,art,clips,unsupported_rocks=collect(source)
-    blob,uploads,textures,mapping,sheet=art_bank([a['image']for a in art])
+    source=Source();cil=source_cil_evidence(source);rocks,enemies,coins,art,clips,unsupported_rocks,banks,coin_bank=collect(source)
+    blob,uploads,textures,mapping,sheet,_=coin_bank
     metadata=json.loads((ROOT/'data/regions.json').read_text());bindings=bind_regions(rocks,metadata)
     # HeroBox is a child at identity local transform in the observed source.
     f=source.file('resources.assets');hero=[]
@@ -417,9 +493,9 @@ def cook():
         hero.append(([t['m_Offset'][k]+sign*t['m_Size'][k]/2 for sign in (-1,1)for k in 'xy'],source.sid(o)))
     if len(hero)!=1:raise ValueError('HeroBox source is ambiguous')
     physics=next(o for o in source.file('globalgamemanagers').objects.values()if o.type.name=='Physics2DSettings');gravity=source.read(physics)['m_Gravity']['y']
-    rust=generate(rocks,enemies,coins,art,clips,textures,mapping,uploads,hero[0][0],gravity)
+    rust=generate(rocks,enemies,coins,art[:len(mapping)],clips,textures,mapping,uploads,hero[0][0],gravity)
     out=ROOT/'data';out.mkdir(exist_ok=True);(out/'geo.hk').write_bytes(blob);(out/'geo.rs').write_text(rust)
-    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'unsupported_rocks':unsupported_rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'textures':textures,'uploads':uploads,'bindings':bindings,'bank':bank_rows(rocks,bindings,metadata),'hero_box':hero,'gravity':gravity,
+    report={'format':'HKGEO01','region_metadata_sha256':hashlib.sha256((ROOT/'data/regions.json').read_bytes()).hexdigest(),'code_sha256':{n:hashlib.sha256((ROOT/n).read_bytes()).hexdigest()for n in ('host/geo.py','host/source.py','host/cook.py','host/materials.py','host/scene.py','host/focus.py')},'cil_evidence':cil,'previously_omitted_rock_art':True,'rocks':rocks,'unsupported_rocks':unsupported_rocks,'enemies':enemies,'coins':coins,'clips':clips,'art':[{k:v for k,v in a.items()if k!='image'}|{'texture':tid}for a,tid in zip(art,mapping)],'rock_banks':{str(scene):{'uploads':[{k:v for k,v in u.items()}for u in bank[1]],'bytes':len(bank[0])}for scene,bank in banks.items()},'textures':textures,'uploads':uploads,'bindings':bindings,'bank':bank_rows(rocks,bindings,metadata,banks),'hero_box':hero,'gravity':gravity,
         'vram_bytes':len(blob),'vram_limit':MAX_VRAM_BYTES,'permitted_rectangles':VRAM_RECTS,'payload_sha256':hashlib.sha256(blob).hexdigest(),'rust_sha256':hashlib.sha256(rust.encode()).hexdigest(),
         'source_files':{str(Path(n).relative_to(source.directory)):hashlib.sha256(Path(n).read_bytes()).hexdigest()for n in sorted({str(source.directory/name)for name in source.files}|{str(source.directory/'Managed/Assembly-CSharp.dll'),str(source.directory/'Managed/PlayMaker.dll')}|{str(p)for name in source.files for p in source.directory.glob(name+'*')if p.is_file()})if Path(n).is_file()},
         'limitations':['Source colors quantized jointly to15 visible colors; source alpha approximated by ordered0/half/full coverage.', 'Coin images sampled at current camera projection; no scenery/room changes or gameplay disc reads.', 'GeoControl Get clip is unused in the observed collection handler and is not cooked.', 'Rock gleam, hit jitter, debris and acid reactions are recorded as incomplete runtime effects.']}

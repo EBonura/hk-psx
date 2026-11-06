@@ -29,7 +29,7 @@ MAX_FADE_TICKS = 1023  # ten flag bits
 LEVER_FLAG = 16  # a switch breakable (host/world_links.py)
 TOLL_FLAG = 32  # a Toll Machine's bit: a lever the nail leaves alone (game/src/toll.rs sets it)
 MAX_Q16 = 512 * 65536
-KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21, "geo_rock": 22, "geo_art": 23, "geo_view": 24}
+KINDS = {"breakable": 1, "grass": 2, "hazard": 3, "checkpoint": 4, "actor": 5, "mask_fade": 6, "remote_mask": 7, "reveal_bindings": 8, "region_statics": 9, "pogo": 10, "camera_lock": 11, "bench": 12, "shroom": 13, "npc": 14, "gate": 15, "geo_enemy": 16, "reveal_mask": 17, "secret": 18, "remote_art": 19, "fragment": 20, "fragment_frames": 21, "geo_rock": 22, "geo_art": 23, "geo_view": 24, "geo_upload": 25}
 MAX_REVEAL_CONTROLLERS = 16
 
 
@@ -352,8 +352,12 @@ def encode_scene(scene, rows):
         for view in row.get("geo_views", []):
             state = bounded(view["state"], 256, "geo view state")
             for tag, art, quad in view["arts"]:
+                # `art` is where the scene's Geo bank put the texture: u, v, w, h, clut, tpage (host/geo.py).
                 add_object("geo_art", {"source": view["source"], "quad": [quad]}, state | bounded(tag, 2, "geo art tag") << 8,
-                           bounded(art, 65536, "geo art frame"), row["activation_bounds"], "quad")
+                           0, row["activation_bounds"], "quad",
+                           (bounded(art["u"], 256, "geo art u") | bounded(art["v"], 256, "geo art v") << 8
+                            | bounded(art["w"], 256, "geo art w") << 16 | bounded(art["h"], 128, "geo art h") << 24,
+                            bounded(art["clut"], 65536, "geo art clut") | bounded(art["tpage"], 65536, "geo art tpage") << 16, 0))
             if view["off"] or view["edges"]:
                 stream = [len(view["off"])] + list(view["off"]) + list(view["edges"])
                 add_object("geo_view", {"source": view["source"]}, state, 0, row["activation_bounds"], None,
@@ -508,6 +512,14 @@ def encode_scene(scene, rows):
                 add_object("geo_rock", rock, bounded(rock["state"], 256, "geo rock state"), 0, rock["bounds"], "polygons",
                            (q(rock["x"]), q(rock["y"]),
                             counts[0] | counts[1] << 8 | counts[2] << 16 | counts[3] << 24))
+            # The scene's rock art, as rectangles of VRAM halfwords to upload when this bank is admitted
+            # (KIND_GEO_UPLOAD): x | y << 16, width | height << 8, and the halfwords as an index list.
+            for number, upload in enumerate(scene.get("geo_uploads", [])):
+                x, y, w, h = (bounded(upload[k], limit, "geo upload " + k) for k, limit in (("x", 1024), ("y", 512), ("w", 65), ("h", 256)))
+                if not w or not h or len(upload["words"]) != w * h:
+                    raise ValueError("geo upload rectangle and halfword count differ")
+                add_object("geo_upload", {"source": f"geo_upload:{number}"}, x | y << 16, w | h << 8,
+                           row["activation_bounds"], None, (index_list(upload["words"], 0x10000, "geo upload halfwords"), 0, 0))
             # The scene's reveal-mask controllers, in the order the per-region
             # KIND_REVEAL_BINDINGS pairs index them. `state` is that index, the
             # object's bounds are the trigger's own AABB so the guest's per-tick

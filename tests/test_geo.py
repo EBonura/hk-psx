@@ -107,15 +107,21 @@ class GeoTests(unittest.TestCase):
         def region(chunk,views):return {'chunk_id':chunk,'activation_bounds':box,'camera_bounds':box,'geo_views':views,'draws':9,'edges':9,
                                        'statics':{'packet_budget':0,'particle_bank':-1,'grass_impact':-1}}
         quad=[[1.0,2.0],[3.0,2.0],[1.0,1.0]]
-        view={'source':'level4:77','state':2,'arts':[(0,10,quad),(1,11,quad),(1,12,quad)],'off':[4,5],'edges':[6]}
+        def texture(u):return {'u':u,'v':3,'w':8,'h':14,'clut':0x7A00|u,'tpage':21}
+        view={'source':'level4:77','state':2,'arts':[(0,texture(10),quad),(1,texture(11),quad),(1,texture(12),quad)],'off':[4,5],'edges':[6]}
         rock={'source':'level4:77','state':2,'x':2.0,'y':1.5,'bounds':[1.0,1.0,3.0,2.0],'polygons':[[[1.0,1.0],[3.0,1.0],[3.0,2.0]]],'hits':5,'per_hit':2,'final_payout':5,'hit_cooldown':6}
-        scene={'scene_id':3,'file':'level4','scene_name':'Crossroads_05','raw_fnv':7,'geo_rocks':[rock]}
+        upload={'x':320,'y':464,'w':3,'h':2,'words':[1,2,3,4,5,6]}
+        scene={'scene_id':3,'file':'level4','scene_name':'Crossroads_05','raw_fnv':7,'geo_rocks':[rock],'geo_uploads':[upload]}
         bank=wm.encode_scene(scene,[region(1,[]),region(2,[view])])[0]
         offset,count,stride=struct.unpack_from('<3I',bank,64+12)
         objects=[struct.unpack_from('<IIHH4i2I3i',bank,offset+n*stride)for n in range(count)]
         rocks=[o for o in objects if o[2]==wm.KINDS['geo_rock']];arts=[o for o in objects if o[2]==wm.KINDS['geo_art']];views=[o for o in objects if o[2]==wm.KINDS['geo_view']]
         self.assertEqual([(o[0],o[1]) for o in rocks],[(77,2)]);self.assertEqual(rocks[0][-1],5|2<<8|5<<16|6<<24)
-        self.assertEqual(sorted((o[1]>>8,o[1]&255,o[3])for o in arts),[(0,2,10),(1,2,11),(1,2,12)])
+        self.assertEqual(sorted((o[1]>>8,o[1]&255,o[-3]&255,o[-3]>>8&255,o[-3]>>16&255,o[-3]>>24,o[-2]&0xFFFF,o[-2]>>16)for o in arts),
+                         [(0,2,10,3,8,14,0x7A0A,21),(1,2,11,3,8,14,0x7A0B,21),(1,2,12,3,8,14,0x7A0C,21)])
+        uploads=[o for o in objects if o[2]==wm.KINDS['geo_upload']]
+        self.assertEqual([(o[1]&0xFFFF,o[1]>>16,o[3]&255,o[3]>>8) for o in uploads],[(320,464,3,2)])
+        self.assertEqual(wm.KINDS['geo_upload'],25)
         self.assertEqual(len(views),1);self.assertEqual(views[0][1],2)
         self.assertLess(objects.index(rocks[0]),objects.index(views[0]),'the rock sits in the first region, ahead of the second region')
         with self.assertRaises(ValueError):wm.encode_scene(dict(scene,geo_rocks=[dict(rock,hits=256)]),[region(1,[])])

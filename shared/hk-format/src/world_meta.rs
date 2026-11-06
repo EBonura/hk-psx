@@ -116,7 +116,8 @@ pub const KIND_FRAGMENT_FRAMES: u16 = 21;
 pub const KIND_GEO_ROCK: u16 = 22;
 /// One art quad of a Geo rock in a region that draws it. `state` is the rock's
 /// state | tag << 8 (tag 0: drawn once the rock is broken, 1: while it is
-/// whole), `flags` the frame in the Geo art bank, and the one polygon three of
+/// whole), `flags` unused, payload word 0 the texture rectangle in the scene's Geo bank (u | v << 8 | w << 16 | h << 24),
+/// word 1 its clut | tpage << 16, and the one polygon three of
 /// the quad's corners (top left, top right, bottom left; the fourth follows
 /// from the parallelogram).
 pub const KIND_GEO_ART: u16 = 23;
@@ -124,6 +125,11 @@ pub const KIND_GEO_ART: u16 = 23;
 /// payload word 0 spans a u16 list: the count of draw indices it hides, those
 /// draw indices, then the collider edge indices it removes.
 pub const KIND_GEO_VIEW: u16 = 24;
+/// Rock art for a scene's Geo bank, in the first region: a rectangle of VRAM halfwords the guest uploads when the bank is
+/// admitted (host/geo.py cooks the scene's rock art into the part of the Geo reservation the coins leave). `state` is
+/// x | y << 16 of the rectangle, `flags` is its width | height << 8, and payload word 0 spans a u16 list of the
+/// width * height halfwords, row by row.
+pub const KIND_GEO_UPLOAD: u16 = 25;
 /// The most points a fragment's polygon may carry.
 pub const FRAGMENT_MAX_POINTS: usize = 8;
 
@@ -290,6 +296,7 @@ impl<'a> WorldMeta<'a> {
                 | KIND_SECRET
                 | KIND_REMOTE_ART
                 | KIND_GEO_VIEW
+                | KIND_GEO_UPLOAD
                 | KIND_FRAGMENT_FRAMES => &[0],
                 _ => &[],
             };

@@ -92,6 +92,7 @@ def world_metadata_banks(meta, output_dir, scene_raw_fnv=None):
         source_scene['reveal_mask_controllers']=controllers
         source_scene['geo_enemies']=enemies.get(scene['scene_id'],[])
         source_scene['geo_rocks']=geo_bank['rocks'].get(str(scene['scene_id']),[])
+        source_scene['geo_uploads']=geo_bank['uploads'].get(str(scene['scene_id']),[])
         for row in rows:row['geo_views']=geo_bank['views'].get(str(row['chunk_id']),[])
         raw,descriptor=encode_scene(source_scene,rows)
         stored=compressed(raw)
