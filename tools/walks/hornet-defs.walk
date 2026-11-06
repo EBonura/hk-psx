@@ -19,8 +19,8 @@ def needle_near $needle_out && abs(i32(HK_HORNET_NEEDLE) - $px) <= 327680 && abs
 # States in which no hit box of hers is out (idle, recovering, running, stunned): bit per state.
 def hcalm $hs < 64 && ((4566826223321225330 >> $hs) & 1) == 1
 # In a swing's reach (the Knight's origin to her centre: 3.2 and her half width), at his height.
-def reach_left $hlive && $level && $hdx < 0 && $adx <= 229376
-def reach_right $hlive && $level && $hdx >= 0 && $adx <= 229376
+def hreach_left $hlive && $level && $hdx < 0 && $adx <= 229376
+def hreach_right $hlive && $level && $hdx >= 0 && $adx <= 229376
 # Her ground dash is on its way: the wind-up lasts 33 ticks and the dash 10; a jump from the 19th tick of the wind-up is high when she passes.
 def dash_coming $hlive && (($hs == 2 && $age >= 19) || $hs == 3) && $adx < 524288
 # Where her dash ends (it covers 5.7 units toward the Knight): the jump drifts away from that.

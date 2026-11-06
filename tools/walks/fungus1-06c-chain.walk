@@ -1,0 +1,21 @@
+# Fungus1_06 from the Activated Plat of vine 4 (x 115.8, y 4.35) to the gap in the floor at x 101 to 105, which is the exit to Fungus1_07.
+# Planned with hk-walkplan room on the disc (HK_WALKPLAN_MARGIN=0.4, sync poll) with the whole run before it as the pre, 2026-11-03.
+at 115.79 4.35
+loop d06c-h001 until expr abs(i32(HK_PLAYER_X) - 7117210) <= 58982 && abs(i32(HK_PLAYER_Y) - 484311) <= 19661 max 3 timeout 900
+walk 114.68
+walk 115.11   # run-up
+walk 114.68   # take-off
+hold left+cross for 28
+hold left for 16
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 108.27 109.62
+snipe
+guard 2
+retreat 108.27 109.62
+heal
+walk 107.77
+hold left until expr abs(i32(HK_PLAYER_X) - 2359296) <= 327680 && abs(i32(HK_PLAYER_Y) - 4063232) <= 393216 timeout 900
+wait until expr abs(i32(HK_PLAYER_X) - 2359296) <= 327680 && abs(i32(HK_PLAYER_Y) - 4063232) <= 393216 timeout 600
+wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,0 +1,52 @@
+name walk-new-game-to-hornet
+title one run from a new game to Hornet beaten: the False Knight and the Crest, the Mound's spell, Crossroads_33 and 07 to the Elder Baldur, Greenpath west (01, 01b, 02, the vine room 06 with two cuts, 07, 19, 10, 30), the toll and the bench in Fungus1_31, its climb, then 32, Fungus1_20_v02 and 21 to Hornet, the Cloak and the dash; no card, no seeded wallet, no cheat
+max_ticks 260000
+sync poll
+# Without the Moss Knight and Vengefly King fights (not in the port yet): the fair route is this one plus those.
+include chain-new-game-to-greenpath.walk
+include fungus1-06a-chain.walk
+include fungus1-06-vine1.walk
+include fungus1-06b-chain.walk
+include fungus1-06-vine4.walk
+include fungus1-06c-chain.walk
+include fungus1-07-chain.walk
+include fungus1-19-chain.walk
+include fungus1-10-chain.walk
+include fungus1-30-chain.walk
+include fungus1-31a-chain.walk
+include fungus1-31-toll-chain.walk
+include fungus1-31b-chain.walk
+include fungus1-32-chain.walk
+include fungus1-20v02-chain.walk
+include fungus1-21-chain.walk
+wait until HK_WALK_READY == 1 timeout 300
+include fungus1-04.walk
+wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
+wait until expr u8(HK_HERO_LOCK) == 1 timeout 300                      # her greeting has taken hold of the Knight (the lock can come a few ticks after the encounter count)
+loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting holds the Knight: a press lands whenever its box is ready, not at a fixed phase
+press cross
+wait 45
+end
+wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
+include hornet-defs.walk
+check sealed HK_HORNET_ENCOUNTERS == 1 ; HK_ARENA_GATE_CLOSES >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+hold left until x le 28.8 timeout 200                              # out of the right corner before she wakes: the gate she is sealed behind leaves the Knight at x 32.4, and her leaps pin him to that wall
+loop hornet-fight until expr u32(HK_HORNET_PHASE) >= 2 || u32(HK_DEATHS) > 0 max 5000 timeout 30000
+include hornet-round.walk
+end
+wait until HK_HORNET_PHASE == 3 timeout 900
+wait until expr u16(HK_HORNET_CLOAK_WAIT) == 0 timeout 900
+check hornet-gone HK_HORNET_HP == 0 ; HK_ARENA_GATE_OPENS >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HORNET_ENCOUNTERS == 1
+walk 23.2
+wait until HK_WALK_READY == 1 timeout 300
+repeat 3 press up rest 45
+wait 120
+check cloak expr (u32(HK_WORLD_PLAYER) & 67108868) == 67108868 ; HK_DEATHS == 0
+press cross
+wait 60
+loop dash until expr u32(HK_ABILITY_DRAWN) >= 5 max 4 timeout 900
+hold right+r2 for 20
+wait 40
+end
+check dash HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0
+check no-card-no-cheat HK_CHEATS == 0 ; HK_DEATHS == 0
