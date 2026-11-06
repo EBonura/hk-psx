@@ -11,8 +11,8 @@ Generated from `docs/catalog/scenes.tsv` by `hk-catalog render`; do not edit by 
 
 | State | Scenes | Meaning |
 | --- | ---: | --- |
-| playable | 68 | In `quality::SCENE_TABLE`: on the disc and playable. |
-| cooked-pack | 389 | An isolated scene pack cooks (decoder and packet bound PASS) but the scene is not admitted to the disc. |
+| playable | 72 | In `quality::SCENE_TABLE`: on the disc and playable. |
+| cooked-pack | 385 | An isolated scene pack cooks (decoder and packet bound PASS) but the scene is not admitted to the disc. |
 | no-envelope | 41 | The importer found no tilemap, gate or camera envelope to cook views from. |
 | over-128-views | 3 | The scene needs more than the 128 views one HKSCNE scene header allows, so its pack fails. |
 
@@ -30,7 +30,7 @@ Area comes from the scene name prefix (`area_of` in `host/hk-cook/src/catalog.rs
 | Tram | 2 | 0 | 2 | 0 | 0 | 0 | 39 |
 | Forgotten Crossroads | 46 | 43 | 0 | 3 | 0 | 274 | 2206 |
 | Greenpath | 37 | 20 | 16 | 1 | 0 | 241 | 2757 |
-| Fungal Wastes | 32 | 2 | 28 | 2 | 0 | 198 | 2186 |
+| Fungal Wastes | 32 | 6 | 24 | 2 | 0 | 198 | 2186 |
 | Fog Canyon and Queen's Gardens | 33 | 0 | 30 | 3 | 0 | 276 | 1835 |
 | City of Tears | 45 | 0 | 41 | 4 | 0 | 238 | 2181 |
 | Resting Grounds | 11 | 0 | 10 | 1 | 0 | 12 | 502 |
@@ -47,7 +47,7 @@ Area comes from the scene name prefix (`area_of` in `host/hk-cook/src/catalog.rs
 | Dreams | 13 | 0 | 13 | 0 | 0 | 18 | 589 |
 | Hollow Knight finale | 2 | 0 | 2 | 0 | 0 | 1 | 68 |
 | Godhome | 77 | 0 | 74 | 3 | 0 | 185 | 3003 |
-| **Total** | **501** | **68** | **389** | **41** | **3** | **2499** | **26606** |
+| **Total** | **501** | **72** | **385** | **41** | **3** | **2499** | **26606** |
 
 ## Base game and expansions
 
@@ -55,7 +55,7 @@ Grimm Troupe and Godhome are the two expansions the port will carry after the ba
 
 | Part | Scenes | Playable | Cooked pack | No envelope | Over 128 views | Enemies | Cooked KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Base game | 420 | 68 | 312 | 37 | 3 | 2310 | 23506 |
+| Base game | 420 | 72 | 308 | 37 | 3 | 2310 | 23506 |
 | Grimm Troupe | 4 | 0 | 3 | 1 | 0 | 4 | 96 |
 | Godhome | 77 | 0 | 74 | 3 | 0 | 185 | 3003 |
 
@@ -426,6 +426,10 @@ The rows of `SCENE_TABLE`. RAM is the resident scene bytes the arena must hold (
 | 159 | Fungus1_32 | playable | 18 | 128 | 273 | 83 | 3 | Moss Knight B x1, Moss Knight C x1, Moss Walker x1 | breakable 14, breakable_wall 1, reveal_mask 2, persistent 5, inspect 1, battle 1 | 3 | Fungus1_20_v02, Fungus1_21, Fungus1_31 |  |
 | 170 | Fungus2_06 | playable | 22 | 175 | 275 | 116 | 6 | Fungus Flyer x4, Fung Crawler x2 | breakable 42, persistent 4 | 5 | Crossroads_18, Fungus2_05, Fungus2_07, Fungus2_26, Fungus2_33 |  |
 | 171 | Fungus2_07 | playable | 12 | 81 | 104 | 50 | 5 | Mushroom Baby x3, Mushroom Roller x2 | breakable 17, reveal_mask 2, persistent 4, inspect 1 | 2 | Fungus2_06, Fungus2_08 |  |
+| 172 | Fungus2_08 | playable | 10 | 92 | 138 | 59 | 4 | Mushroom Turret x3, Fungus Flyer x1 | breakable 19, persistent 1, geo_rock 1 | 3 | Fungus2_07, Fungus2_09, Fungus2_32 |  |
+| 173 | Fungus2_09 | playable | 8 | 71 | 104 | 44 | 0 |  | breakable 17, conversation 1 | 2 | Fungus2_08, Fungus2_10 |  |
+| 174 | Fungus2_10 | playable | 24 | 139 | 206 | 89 | 2 | Zombie Fungus A x1, Zombie Fungus B x1 | breakable 45, breakable_wall 1, reveal_mask 1, persistent 5, geo_rock 1, soul_totem 1 | 3 | Fungus2_09, Fungus2_11, Fungus2_21 |  |
+| 186 | Fungus2_21 | playable | 28 | 128 | 206 | 79 | 1 | Fung Crawler x1 | breakable 3, breakable_wall 1, reveal_mask 3, persistent 7, geo_rock 1, lever 2, soul_totem 1, conversation 1, inspect 1 | 2 | Fungus2_10, Ruins1_01 |  |
 
 ## Menus, helpers and tests
 
@@ -609,9 +613,9 @@ The rows of `SCENE_TABLE`. RAM is the resident scene bytes the arena must hold (
 | 169 | Fungus2_05 | cooked-pack | 12 | 74 | 138 | 44 | 12 | Mushroom Baby x6, Cap Hit x3, Mushroom Brawler x3 | breakable 12, persistent 4, shiny 2, battle 1 | 2 | Fungus2_04, Fungus2_06 |  |
 | 170 | Fungus2_06 | playable | 22 | 175 | 275 | 116 | 6 | Fungus Flyer x4, Fung Crawler x2 | breakable 42, persistent 4 | 5 | Crossroads_18, Fungus2_05, Fungus2_07, Fungus2_26, Fungus2_33 |  |
 | 171 | Fungus2_07 | playable | 12 | 81 | 104 | 50 | 5 | Mushroom Baby x3, Mushroom Roller x2 | breakable 17, reveal_mask 2, persistent 4, inspect 1 | 2 | Fungus2_06, Fungus2_08 |  |
-| 172 | Fungus2_08 | cooked-pack | 10 | 92 | 138 | 59 | 4 | Mushroom Turret x3, Fungus Flyer x1 | breakable 19, persistent 1, geo_rock 1 | 3 | Fungus2_07, Fungus2_09, Fungus2_32 |  |
-| 173 | Fungus2_09 | cooked-pack | 8 | 71 | 104 | 44 | 0 |  | breakable 17, conversation 1 | 2 | Fungus2_08, Fungus2_10 |  |
-| 174 | Fungus2_10 | cooked-pack | 24 | 139 | 206 | 89 | 2 | Zombie Fungus A x1, Zombie Fungus B x1 | breakable 45, breakable_wall 1, reveal_mask 1, persistent 5, geo_rock 1, soul_totem 1 | 3 | Fungus2_09, Fungus2_11, Fungus2_21 |  |
+| 172 | Fungus2_08 | playable | 10 | 92 | 138 | 59 | 4 | Mushroom Turret x3, Fungus Flyer x1 | breakable 19, persistent 1, geo_rock 1 | 3 | Fungus2_07, Fungus2_09, Fungus2_32 |  |
+| 173 | Fungus2_09 | playable | 8 | 71 | 104 | 44 | 0 |  | breakable 17, conversation 1 | 2 | Fungus2_08, Fungus2_10 |  |
+| 174 | Fungus2_10 | playable | 24 | 139 | 206 | 89 | 2 | Zombie Fungus A x1, Zombie Fungus B x1 | breakable 45, breakable_wall 1, reveal_mask 1, persistent 5, geo_rock 1, soul_totem 1 | 3 | Fungus2_09, Fungus2_11, Fungus2_21 |  |
 | 175 | Fungus2_11 | cooked-pack | 10 | 97 | 139 | 63 | 5 | Fung Crawler x2, Mushroom Turret x2, Fungus Flyer x1 | breakable 24, persistent 1, geo_rock 2 | 4 | Fungus2_10, Fungus2_12, Fungus2_17, Fungus2_18 |  |
 | 176 | Fungus2_12 | cooked-pack | 24 | 128 | 205 | 81 | 7 | Mantis Flyer Child x4, Mantis x3 | breakable 31, persistent 3, inspect 1 | 2 | Fungus2_11, Fungus2_13 |  |
 | 177 | Fungus2_13 | cooked-pack | 16 | 146 | 240 | 97 | 9 | Mantis x5, Mantis Flyer Child x4 | breakable 49, persistent 5, geo_rock 3, bench 1 | 3 | Fungus2_12, Fungus2_14, Fungus2_23 |  |
@@ -623,7 +627,7 @@ The rows of `SCENE_TABLE`. RAM is the resident scene bytes the arena must hold (
 | 183 | Fungus2_18 | cooked-pack | 35 | 196 | 241 | 126 | 15 | Fungoon Baby x11, Fung Crawler x2, Fungus Flyer x1 | breakable 85, persistent 5, geo_rock 4, switch 1, gate 1, grub 1, conversation 3 | 3 | Fungus2_03, Fungus2_11, Fungus2_19 |  |
 | 184 | Fungus2_19 | cooked-pack | 9 | 71 | 104 | 44 | 2 | Fungoon Baby x2 |  | 2 | Fungus2_18, Fungus2_20 |  |
 | 185 | Fungus2_20 | cooked-pack | 12 | 98 | 139 | 64 | 1 | Mushroom Turret x1 | breakable 19, breakable_wall 2, reveal_mask 3, persistent 6, shiny 1, grub 1, inspect 1 | 2 | Deepnest_01, Fungus2_19 |  |
-| 186 | Fungus2_21 | cooked-pack | 28 | 128 | 206 | 79 | 1 | Fung Crawler x1 | breakable 3, breakable_wall 1, reveal_mask 3, persistent 7, geo_rock 1, lever 2, soul_totem 1, conversation 1, inspect 1 | 2 | Fungus2_10, Ruins1_01 |  |
+| 186 | Fungus2_21 | playable | 28 | 128 | 206 | 79 | 1 | Fung Crawler x1 | breakable 3, breakable_wall 1, reveal_mask 3, persistent 7, geo_rock 1, lever 2, soul_totem 1, conversation 1, inspect 1 | 2 | Fungus2_10, Ruins1_01 |  |
 | 187 | Fungus2_23 | cooked-pack | 20 | 133 | 206 | 87 | 8 | Mushroom Baby x5, Mushroom Roller x2, Mushroom Turret x1 | breakable 20, breakable_wall 1, reveal_mask 1, persistent 5, gate 1, shiny 1, conversation 1 | 2 | Fungus2_13, Waterways_09 |  |
 | 188 | Fungus2_25 | cooked-pack | 24 | 114 | 170 | 68 | 0 |  | breakable 14, breakable_wall 2, persistent 3, geo_rock 3, conversation 1 | 4 | Deepnest_16, Fungus2_15, Fungus2_30 |  |
 | 189 | Fungus2_26 | cooked-pack | 6 | 63 | 104 | 39 | 0 |  | breakable 10, bench 1, shop 2, conversation 1 | 1 | Fungus2_06 | text |

@@ -317,6 +317,14 @@ SCENE_TABLE = (
      'runtime_bounds': [-2, -5, 38, 165], 'camera_global_bounds': [0, 0, 36, 160]},
     {'scene_id': 67, 'scene_name': 'Fungus2_07', 'file': 'level171',
      'runtime_bounds': [-2, -5, 72, 41], 'camera_global_bounds': [0, 0, 70, 40]},
+    {'scene_id': 68, 'scene_name': 'Fungus2_08', 'file': 'level172',
+     'runtime_bounds': [-2, -5, 32, 71], 'camera_global_bounds': [0, 0, 30, 70]},
+    {'scene_id': 69, 'scene_name': 'Fungus2_09', 'file': 'level173',
+     'runtime_bounds': [-2, -5, 72, 26], 'camera_global_bounds': [0, 0, 70, 25]},
+    {'scene_id': 70, 'scene_name': 'Fungus2_10', 'file': 'level174',
+     'runtime_bounds': [-1, -6, 72, 76], 'camera_global_bounds': [0, 0, 70, 75]},
+    {'scene_id': 71, 'scene_name': 'Fungus2_21', 'file': 'level186',
+     'runtime_bounds': [-2, -5, 152, 56], 'camera_global_bounds': [0, 0, 150, 55]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)

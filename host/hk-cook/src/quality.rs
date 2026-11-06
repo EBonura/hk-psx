@@ -46,7 +46,7 @@ pub const SCENERY_SCENE_CAPS: [(&str, i64); 4] = [
 ];
 
 /// `SCENE_TABLE`.
-pub const SCENE_TABLE: [SceneRow; 68] = [
+pub const SCENE_TABLE: [SceneRow; 72] = [
     SceneRow {
         scene_id: 0,
         scene_name: "Tutorial_01",
@@ -522,6 +522,34 @@ pub const SCENE_TABLE: [SceneRow; 68] = [
         file: "level171",
         runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(72), Num::I(41)],
         camera_global_bounds: [Num::I(0), Num::I(0), Num::I(70), Num::I(40)],
+    },
+    SceneRow {
+        scene_id: 68,
+        scene_name: "Fungus2_08",
+        file: "level172",
+        runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(32), Num::I(71)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(30), Num::I(70)],
+    },
+    SceneRow {
+        scene_id: 69,
+        scene_name: "Fungus2_09",
+        file: "level173",
+        runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(72), Num::I(26)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(70), Num::I(25)],
+    },
+    SceneRow {
+        scene_id: 70,
+        scene_name: "Fungus2_10",
+        file: "level174",
+        runtime_bounds: [Num::I(-1), Num::I(-6), Num::I(72), Num::I(76)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(70), Num::I(75)],
+    },
+    SceneRow {
+        scene_id: 71,
+        scene_name: "Fungus2_21",
+        file: "level186",
+        runtime_bounds: [Num::I(-2), Num::I(-5), Num::I(152), Num::I(56)],
+        camera_global_bounds: [Num::I(0), Num::I(0), Num::I(150), Num::I(55)],
     },
 ];
 
