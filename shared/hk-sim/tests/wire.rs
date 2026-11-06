@@ -75,6 +75,17 @@ fn controllers() -> Vec<C> {
             params: Params { attack: Attack::SwipeCalm, ..Params::RUNNER },
             alert: [0, 0, 0, 0],
         },
+        C::Runner {
+            idle_clip: 3,
+            anticipate_clip: 4,
+            lunge_clip: 5,
+            cooldown_clip: 6,
+            params: Params {
+                attack: Attack::Gas { delay: 45, antic_ticks: 45, attack_ticks: 48, cd_ticks: 30, idle_ticks: 30 },
+                ..Params::RUNNER
+            },
+            alert: [5, -6, 7, 8],
+        },
         C::Climber { stun_clip: 11 },
         C::Vengefly { startle_clip: 23, chase_clip: 24, turn_fly_clip: 25 },
         C::Gruzzer,

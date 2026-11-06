@@ -196,6 +196,14 @@ fn encode_attack(a: &Attack, w: &mut Writer) {
             w.u16(idle_ticks);
         }
         Attack::SwipeCalm => w.u8(2),
+        Attack::Gas { delay, antic_ticks, attack_ticks, cd_ticks, idle_ticks } => {
+            w.u8(3);
+            w.u16(delay);
+            w.u16(antic_ticks);
+            w.u16(attack_ticks);
+            w.u16(cd_ticks);
+            w.u16(idle_ticks);
+        }
     }
 }
 
@@ -211,6 +219,13 @@ fn decode_attack(r: &mut Reader) -> Option<Attack> {
             idle_ticks: r.u16(),
         },
         2 => Attack::SwipeCalm,
+        3 => Attack::Gas {
+            delay: r.u16(),
+            antic_ticks: r.u16(),
+            attack_ticks: r.u16(),
+            cd_ticks: r.u16(),
+            idle_ticks: r.u16(),
+        },
         _ => return None,
     })
 }
