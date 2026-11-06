@@ -173,8 +173,8 @@ index	scene	area	dlc	role	status	views	ram_bytes	vram_bytes	disc_bytes	pages	pal
 167	Fungus2_03	Fungal Wastes		gameplay	cooked-pack	36	133800	176512	80868	5	396	13	Mushroom Turret=5|Fungoon Baby=3|Fungus Flyer=3|Zombie Fungus B=1|Zombie Hornhead=1	breakable=46|persistent=6|shiny=1		3	Fungus2_01|Fungus2_04|Fungus2_18	0
 168	Fungus2_04	Fungal Wastes		gameplay	cooked-pack	12	110372	176160	71924	5	385	4	Mushroom Turret=3|Fung Crawler=1	breakable=28|persistent=3|gate=2|switch=2|geo_rock=1|inspect=1|shiny=1		4	Fungus2_03|Fungus2_05|Fungus2_28	0
 169	Fungus2_05	Fungal Wastes		gameplay	cooked-pack	12	76220	140992	45508	4	310	12	Mushroom Baby=6|Cap Hit=3|Mushroom Brawler=3	breakable=12|persistent=4|shiny=2|battle=1		2	Fungus2_04|Fungus2_06	0
-170	Fungus2_06	Fungal Wastes		gameplay	cooked-pack	22	179652	281600	119145	8	608	6	Fungus Flyer=4|Fung Crawler=2	breakable=42|persistent=4		5	Crossroads_18|Fungus2_05|Fungus2_07|Fungus2_26|Fungus2_33	0
-171	Fungus2_07	Fungal Wastes		gameplay	cooked-pack	12	82936	106784	51706	3	265	5	Mushroom Baby=3|Mushroom Roller=2	breakable=17|persistent=4|reveal_mask=2|inspect=1		2	Fungus2_06|Fungus2_08	0
+170	Fungus2_06	Fungal Wastes		gameplay	playable	22	179652	281600	119145	8	608	6	Fungus Flyer=4|Fung Crawler=2	breakable=42|persistent=4		5	Crossroads_18|Fungus2_05|Fungus2_07|Fungus2_26|Fungus2_33	0
+171	Fungus2_07	Fungal Wastes		gameplay	playable	12	82936	106784	51706	3	265	5	Mushroom Baby=3|Mushroom Roller=2	breakable=17|persistent=4|reveal_mask=2|inspect=1		2	Fungus2_06|Fungus2_08	0
 172	Fungus2_08	Fungal Wastes		gameplay	cooked-pack	10	93712	141760	60175	4	334	4	Mushroom Turret=3|Fungus Flyer=1	breakable=19|geo_rock=1|persistent=1		3	Fungus2_07|Fungus2_09|Fungus2_32	0
 173	Fungus2_09	Fungal Wastes		gameplay	cooked-pack	8	73032	106080	44811	3	243	0		breakable=17|conversation=1		2	Fungus2_08|Fungus2_10	0
 174	Fungus2_10	Fungal Wastes		gameplay	cooked-pack	24	142204	211296	91157	6	459	2	Zombie Fungus A=1|Zombie Fungus B=1	breakable=45|persistent=5|breakable_wall=1|geo_rock=1|reveal_mask=1|soul_totem=1		3	Fungus2_09|Fungus2_11|Fungus2_21	0

@@ -310,7 +310,7 @@ remains with the renderer/UI packages.
 | Tram | 2 | 0 | 2 | 0 | 0 | 0 | 39 |
 | Forgotten Crossroads | 46 | 43 | 0 | 3 | 0 | 274 | 2206 |
 | Greenpath | 37 | 20 | 16 | 1 | 0 | 241 | 2757 |
-| Fungal Wastes | 32 | 0 | 30 | 2 | 0 | 198 | 2186 |
+| Fungal Wastes | 32 | 2 | 28 | 2 | 0 | 198 | 2186 |
 | Fog Canyon and Queen's Gardens | 33 | 0 | 30 | 3 | 0 | 276 | 1835 |
 | City of Tears | 45 | 0 | 41 | 4 | 0 | 238 | 2181 |
 | Resting Grounds | 11 | 0 | 10 | 1 | 0 | 12 | 502 |
@@ -327,7 +327,7 @@ remains with the renderer/UI packages.
 | Dreams | 13 | 0 | 13 | 0 | 0 | 18 | 589 |
 | Hollow Knight finale | 2 | 0 | 2 | 0 | 0 | 1 | 68 |
 | Godhome | 77 | 0 | 74 | 3 | 0 | 185 | 3003 |
-| **Total** | **501** | **66** | **391** | **41** | **3** | **2499** | **26606** |
+| **Total** | **501** | **68** | **389** | **41** | **3** | **2499** | **26606** |
 
 ## P09 first slice and disc validation evidence (builds 72 to 74)
 

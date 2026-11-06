@@ -344,7 +344,7 @@ pub fn cook_poem(body_bytes: &[u8]) -> Result<PoemFont> {
 
 /// The area and boss cards' main lines, which the card strip carries the glyphs of
 /// (host/title_cards.py asserts every cooked main line is drawable from them).
-pub const CARD_MAINS: [&str; 5] = ["Crossroads", "Dirtmouth", "Greenpath", "King's Pass", "Mound"];
+pub const CARD_MAINS: [&str; 6] = ["Crossroads", "Dirtmouth", "Greenpath", "King's Pass", "Mound", "Fungal Wastes"];
 /// Every line of a boss card (`Titles` sheet: `_SUPER`, `_MAIN`, `_SUB`). They are drawn in small
 /// capitals, as the original's boss title is: a capital of the source text is a full capital, a
 /// lowercase letter is the same capital at the small size.

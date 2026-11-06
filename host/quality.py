@@ -311,6 +311,12 @@ SCENE_TABLE = (
     # grid is 16 views. Its Giant Buzzer (the Vengefly King) has no actor family yet and is left out of the cook.
     {'scene_id': 65, 'scene_name': 'Fungus1_20_v02', 'file': 'level148',
      'runtime_bounds': [-1, -6, 182, 26], 'camera_global_bounds': [0, 0, 180, 25]},
+    # The Fungal Wastes (docs/CITY_ROUTE.md): the way from Crossroads_18's east exit toward the top of the Wastes. Envelopes are
+    # tools/cook_scene_pack.py's `envelope` (2026-11-06).
+    {'scene_id': 66, 'scene_name': 'Fungus2_06', 'file': 'level170',
+     'runtime_bounds': [-2, -5, 38, 165], 'camera_global_bounds': [0, 0, 36, 160]},
+    {'scene_id': 67, 'scene_name': 'Fungus2_07', 'file': 'level171',
+     'runtime_bounds': [-2, -5, 72, 41], 'camera_global_bounds': [0, 0, 70, 40]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)
