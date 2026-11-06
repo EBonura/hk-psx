@@ -103,3 +103,31 @@ fight reuses it, its first 8,365 polls are the road's).
   above the slab), and hk-walkplan reaches the top exit only with both gates open. The port's Toll Machine (docs/WORLD_LINKS.md; `walk-toll-31-pay`, `-refuse`, `-reload`) takes the 50 Geo at the machine at (10.5, 52.0) or (22.3, 59.2) and removes both gates; a fair walk has to bring the Geo (50 of the 53 source rocks are cooked; only Fungus1_21's three, whose art the VRAM bank cannot hold, are left out). The machines and both gates are drawn (Fungus1_31 tk2d idle sprites); the gates vanish with the toll bit. Fungus1_03
   (13 views) is not admitted.
 - Fungus1_04's other exit, to Fungus1_25, is not admitted either, so nothing the Cloak opens in Greenpath can be walked to yet.
+
+## Greenpath sightings (not ported; read of the source, 2026-11-06)
+
+`hornetGreenpath` is the counter. Three objects write it, one script raises it: `Hornet Encounter GP1` (Fungus1_02, at 6.42, 61.49),
+`GP2` (Fungus1_10, at 17.12, 13.46, scale x -1) and `GP3` (Fungus1_30, at 88.69, 23.68, scale x -1, layer 18, with a solid 1.08 x 1.94
+box); Fungus1_31's `Hornet Encounter Control` sets it to 3 when lower (IntCompare, listed in `fsm3_scripts.rs` `INERT_ON_DISC`). Each object is
+a tk2dSprite + tk2dSpriteAnimator + Rigidbody2D + AudioSource + the `Hornet Encounter` FSM, with an `Evade Range` child (a trigger box on layer
+13, `FSM` Init/Detect/Enter/Exit that sets the parent's `Evade Range` bool); GP1 also has a `Turn Range` child and a `Grass` particle child.
+
+| | Init destroys it when the counter is | Triggers | Sequence (values from the FSM) | Counter |
+| --- | --- | --- | --- | --- |
+| GP1 | above 0 (Remove Cam: also destroys `CameraLockArea H`) | Turn Range box 12.46 x 18.28 at offset (5.73, -0.27); Evade Range box 6.53 x 18.28 at (2.77, -0.27) | Idle; Turn Range: scale x -1, clip Turn, then clip Idle for up to 5 s; Evade Range: clip Evade Antic, then clip Evade at x velocity -25 for 3 s with a particle emit and a sound; after 5 s without Evade: turn back (scale +1, clip Turn), clip Run at -9 for 5 s with a sound | 1 on Turn |
+| GP2 | above 1 | Evade Range box 11.81 x 11.38 at (5.40, 3.18) | Idle; Evade: clip Run at x -10 for 5 s, scale x +1, a sound | 2 on Evade |
+| GP3 | above 2 | Evade Range box 12.68 x 13.33 at (2.80, 2.21) | Idle; Evade: counter 3, clip Jump Full at (7, 28) with a sound, wait for a collision (bottom hit), sound, clip Soft Land, zero velocity, clip Jump at y velocity 28 for 2 s with a sound | 3 on Evade |
+
+All three are destroyed when the sequence ends, so a sighting is once per counter value. The arena (Fungus1_04) does not read the counter, so
+nothing on the route to the fight changes; the sightings only add Hornet to three rooms.
+
+What a port needs, smallest first: (1) `IntCompare` (and `GetPlayerDataInt`, `SetPlayerDataInt` on `hornetGreenpath`) in the light families, so
+the Fungus1_31 script goes live and scene 63 leaves `INERT_ON_DISC`; the counter must be in the save record. (2) A trigger-driven actor with
+no health: the Pigeon (`shared/hk-sim/src/pigeon.rs`) is the nearest precedent (a critter whose only contact is a trigger), or one more
+`enemy_families.json` row on the HKFSM03 kernel with ops for SetVelocity2d, SetScale, NextFrameEvent, CheckCollisionSide (GP3 only), DestroySelf
+and AudioPlaySimple. (3) Art: eight clips of the Hornet NPC collection (Idle, Turn, Run, Evade Antic, Evade, Jump Full, Soft Land, Jump) as an
+actor or boss bank in three scenes; Fungus1_02's tightest view has 43 free CLUT slots (quality.py), 10 has 127 and 30 has 116, so the bank
+must share the boss bank's 16 palettes and stay streamed. (4) The sounds, from the scene's sound bank. (5) A walk check per sighting.
+
+It is a feature of its own (module code, a cook change that re-keys three scenes, a bank), not a data fix, and it adds RAM to rooms that
+are already on the route; it belongs after hk-resident lands.

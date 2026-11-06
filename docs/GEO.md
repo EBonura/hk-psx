@@ -85,3 +85,15 @@ queue pressure, denominations, deterministic physics, dynamic support removal,
 menu button edges and audio voice behavior. Source provenance, collision matrix
 and CIL evidence remain ignored under `.hkpsx/geo-source/`, `.hkpsx/geo-runtime/`
 and the Geo cook reports; retail asset dumps are not part of shared docs.
+
+## The three refused rocks (Fungus1_21), what streaming per scene would change
+
+Geo art is one bank uploaded at boot (`geo_render::upload`, `data/geo.rs GEO_UPLOADS`, 8,192 B at most, placed in the five proven VRAM
+slivers of `host/geo.py VRAM_RECTS`, 6,336 B of rectangles). The bank must hold the union of every rock of every admitted scene, which is
+why Fungus1_21's three rocks no longer fit after the other 50. To admit them without cutting art, the bank has to become per scene: the
+cooker places each scene's rock art alone (`art_bank` over one scene's images; a trial per scene instead of one global trial), the scene's
+metadata bank carries its upload rows and pixels (or the scene stream carries them), and the guest uploads the scene's bank into the same slivers
+at the scene load that already uploads the scene's atlases, instead of once at boot. The `KIND_GEO_ART` quads already store UVs; they only have
+to refer to the scene's placement. The coin art (`COIN_CLIPS`, shared by every scene) stays in the boot bank, so the slivers are split: a coin
+region that never changes and a rock region that is replaced per scene. Whether the coin art leaves room for Fungus1_21's rocks in the rock
+region is not measured; do that trial before writing the guest side. Not started.
