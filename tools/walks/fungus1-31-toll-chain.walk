@@ -1,0 +1,22 @@
+# Fungus1_31, standing at the left Toll Machine (x 10.5, y 51.4): pay the 50 Geo the run has earned, cross where the first gate stood, sit and save at the bench (x 27.34).
+check toll-ready HK_GEO_WALLET >= 50 ; HK_TOLL_PAID == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+press up
+wait 20
+check toll-box HK_TOLL_STEP == 1 ; HK_TOLL_OPENED == 1 ; HK_TOLL_PAID == 0
+press cross
+wait 10
+check toll-paid HK_TOLL_PAID == 50 ; HK_TOLL_STEP == 0 ; HK_DEATHS == 0
+wait 90
+hold right until x ge 15.2 timeout 300
+hold right+cross for 16
+hold right for 60
+wait 30
+check past-the-gate x between 21 32 ; y between 50.5 52.5 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+walk 27.34
+press up
+wait until HK_BENCH_RESTS ge 1 timeout 600
+wait 120
+press cross
+wait until HK_SAVE_WRITES ge 1 timeout 900
+wait 90
+check rested HK_SAVE_ERRORS == 0 ; HK_BENCH_RESTS >= 1 ; HK_HEALTH >= 5 ; HK_DEATHS == 0 ; HK_CHEATS == 0

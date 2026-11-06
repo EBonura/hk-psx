@@ -1,0 +1,6 @@
+# Fungus1_06, on the fourth hanging platform (x 115.8, y 23.83): one swing to the right cuts vine 4 (Vine Platform (4), hit box x 116.41 to 116.77), and the Knight drops onto its Activated Plat at the acid (y 4.35).
+hold right for 2
+press square
+wait until y between 4.0 4.8 timeout 400
+wait until HK_WALK_READY == 1 timeout 300
+check vine-4 HK_BREAK_COUNT >= 2 ; HK_DEATHS == 0 ; HK_CHEATS == 0

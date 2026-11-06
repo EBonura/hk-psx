@@ -591,8 +591,16 @@ fn definitions(text: &str) -> Result<String> {
             for (known, text) in &defs {
                 body = body.replace(&format!("${known}"), &format!("({text})"));
             }
-            defs.push((name.to_string(), body));
-            defs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
+            // The first definition of a name wins everywhere (the substitution finds it first), so a second one with another
+            // body silently changes nothing: a chain that includes two scripts' defs (Baldur's and Hornet's `reach_left`) played
+            // the Hornet round on Baldur's meaning and never swung. Same body again (a file included twice) is harmless.
+            if defs.iter().any(|(n, b)| n == name && *b != body) {
+                return Err(format!("line {}: `{name}` is already defined with another body; pick another name", index + 1));
+            }
+            if !defs.iter().any(|(n, _)| n == name) {
+                defs.push((name.to_string(), body));
+                defs.sort_by_key(|(n, _)| std::cmp::Reverse(n.len()));
+            }
             out.push('\n');
             continue;
         }
@@ -1057,6 +1065,13 @@ mod tests {
     fn a_script_cannot_redefine_a_standing_definition() {
         let err = compile_text("name t\ndef chaser_left u32(HK_FK_PHASE) == 1\n").unwrap_err();
         assert!(err.contains("standing definition"), "{err}");
+    }
+
+    #[test]
+    fn a_name_defined_twice_with_another_body_is_refused() {
+        let err = compile_text("name t\ndef near 1\ndef near 2\n").unwrap_err();
+        assert!(err.contains("already defined"), "{err}");
+        assert!(compile_text("name t\ndef near 1\ndef near 1\n").is_ok());
     }
 
     #[test]

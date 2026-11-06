@@ -1,0 +1,49 @@
+# Fungus1_30 to its top gate into Fungus1_31 (the arrival there is on the floor at x 24.0, y 3.4).
+# Planned with hk-walkplan room on the disc (HK_WALKPLAN_MARGIN=0.4, sync poll) with the whole run before it as the pre, 2026-11-03.
+at 99.50 14.40
+loop d30-h001 until expr abs(i32(HK_PLAYER_X) - 6140068) <= 58982 && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
+walk 97.84
+walk 98.27   # run-up
+walk 97.84   # take-off
+hold left+cross for 24
+hold left for 6
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 92.67 93.69
+snipe
+guard 2
+retreat 92.67 93.69
+heal
+loop d30-h002 until expr abs(i32(HK_PLAYER_X) - 5858918) <= 58982 && abs(i32(HK_PLAYER_Y) - 1532887) <= 19661 max 3 timeout 900
+walk 93.69   # take-off
+hold left+cross for 20
+hold left for 11
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 86.75 89.73
+snipe
+guard 2
+retreat 86.75 89.73
+heal
+loop d30-h003 until expr abs(i32(HK_PLAYER_X) - 6085673) <= 58982 && abs(i32(HK_PLAYER_Y) - 1860567) <= 19661 max 3 timeout 900
+walk 88.97   # run-up
+walk 89.40   # take-off
+hold right+cross for 24
+hold right for 6
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 92.25 95.25
+snipe
+guard 2
+retreat 92.25 95.25
+heal
+walk 92.43   # run-up
+walk 92.86   # take-off
+hold right+cross for 24
+wait 6
+wait until HK_WALK_READY == 1 timeout 300
+wait until expr abs(i32(HK_PLAYER_X) - 1376256) <= 327680 && abs(i32(HK_PLAYER_Y) - -32768) <= 393216 timeout 600
+wait until HK_GAME_MODE == 1 timeout 1800
