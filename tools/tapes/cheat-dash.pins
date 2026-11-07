@@ -1,4 +1,4 @@
-pacing = 2
+pacing = 12
 frame_time = 210
 long_frames = 2
 # Mothwing Cloak: the tape presses no direction at all, so the alternative

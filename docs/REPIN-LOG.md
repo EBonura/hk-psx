@@ -47,3 +47,26 @@ Manny's decision (2026-11-06): Hollow Knight takes the SDK's default 30 fps cap 
 - ability-dash and ability-wings (outcome pins, not pacing): the first dash found the carried ability art pack absent (`HK_FX_LATE` 1, `HK_FX_RAISED` one short) because the pack read is paced by frames and a frame now takes longer. Forty neutral polls inserted at poll 480 of both tapes (inside the idle gap after the Cheats page closes, before the dash); both pass with the pins unchanged. HAND EXCEPTION to the no-hand-retime rule, accepted by the coordinator: these routes load no scene after the first, so `cuts` (closed loop) does not apply, and validate judges every route open loop. The pack arrival is a race with a margin under 10 polls even on the pre-repin build (its tape fails with 10 polls removed; the repinned build needs 10 to 20 polls more than the tape has). Open: the first earned dash after the Cloak in Fungus1_04 also raises no effect (walk-new-game-to-hornet, HK_FX_LATE 17 to 18, HK_FX_RAISED unchanged); the pack is not resident then. To be converted to walk scripts.
 - secret-c03-reload: `HK_PLAYER_X` 670932 against the pinned 634672 (gameplay begins 4 polls earlier than on the old build). Four neutral polls inserted at poll 100 (same hand exception, accepted); the final X is 634672 again to the unit.
 - Baseline check: the pre-repin twin of ab7760b passes all 60 routes and the journeys; the shipping disc is not a valid disc for the open-loop routes (they need the route-input twin built in the same tree as the validate).
+
+## 2026-11-07 13:05 UTC, disc 05fc6c8d4c69
+
+Emulator rebaseline, not a game change (coordinator decision 2026-11-07, policy of 2026-10-23: emulator accuracy first, then repin). The tools moved from the retained frontend b3848054 to emulator main bb788f5b (frontend and psoxide-gate rebuilt there). On the same disc (SDK bfb464405) the old frontend passes focus, cheat-dash, c37-stand, grub-jar and secret-c37 inside their old ceilings (focus 207 of 217, grub-jar 228 of 251), the new one is over on 18 routes with identical outcome pins and no tape changed. The SDK bump is neutral for pacing (focus 207 on both, the figure measured on 9a0bca6). The cause is the timing model that landed in the emulator between b3848054 and bb788f5b (10-22/10-23: a streaming fetch's wait charged to the pending issue cycles, GPU DMA request waits, the I-cache miss-path series); not bisected to one commit. Ceilings moved by `validate --repin` (the rule of 2026-10-29), except grub-jar, which is 23 percent over (228 to 280) and so past the 10 percent slowdown guard: its three ceilings were set by hand by the `pace-pins` rule (frame_time the measurement plus 5 percent, pacing the measurement plus 30 percent and 2 frames), measured 280, 101 over 2 vblanks of 150 frames. No tape and no outcome pin changed.
+
+- grub-jar: frame_time 251 to 294 (measured 280), pacing 56 to 134 (measured 101), by hand
+- baldur-spell: frame_time 275 to 294 (measured 280)
+- c37-stand: pacing 407 to 545 (measured 417)
+- cheat-dash: pacing 2 to 12 (measured 7)
+- cheat-dream: frame_time 241 to 257 (measured 244), pacing 268 to 383 (measured 293)
+- cocoon-open: frame_time 301 to 324 (measured 308)
+- ctrl-climb: pacing 344 to 454 (measured 347)
+- focus: pacing 28 to 54 (measured 40)
+- kings-death: pacing 286 to 451 (measured 345)
+- kings-return: frame_time 245 to 260 (measured 247), pacing 243 to 356 (measured 272)
+- kp-playtest: frame_time 227 to 243 (measured 231), long_frames 6 to 12 (measured 8), pacing 173 to 274 (measured 209)
+- mound-spell: frame_time 264 to 304 (measured 289)
+- secret-c03: frame_time 368 to 417 (measured 397)
+- secret-c04: pacing 33 to 47 (measured 34)
+- secret-c09: pacing 26 to 39 (measured 28)
+- secret-c10: frame_time 225 to 242 (measured 230), pacing 27 to 70 (measured 52)
+- secret-c37: frame_time 447 to 490 (measured 466)
+- secret-f08a: long_frames 4 to 17 (measured 12)

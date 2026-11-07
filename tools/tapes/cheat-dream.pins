@@ -1,5 +1,5 @@
-pacing = 268
-frame_time = 241
+pacing = 383
+frame_time = 257
 long_frames = 33
 # Dream Nail: SOUL on this port comes from a nail hit, a Focus refund or
 # DREAM_NAIL_PARAMS.soul. Enemy hits and Focus are both zero, so the 33 is
