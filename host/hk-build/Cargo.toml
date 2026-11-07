@@ -26,7 +26,7 @@ libc = "0.2"
 hk-fsm-cook = { path = "../hk-fsm" }
 # The games-library install, shared by every game. A host-only crate, so it is pinned on its own
 # revision and does not move the guest SDK pin (sdk.lock.json).
-psx-library = { git = "https://github.com/EBonura/PSoXide.git", rev = "c75f63928b069e0d25408b6bf3be85e27f7e27c2" }
+psx-library = { git = "https://github.com/EBonura/PSoXide.git", rev = "bfb46440549213cb7acaced016e0f277313e938f" }
 
 psoxide-hazard = { path = "../../.psoxide/tools/psoxide-hazard" }
 psx-residency = { path = "../../.psoxide/sdk/crates/psx-residency" }
