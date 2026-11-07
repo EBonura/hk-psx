@@ -7,8 +7,8 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |810,704|
-| Code-to-data alignment |48|
+| Linked code |810,696|
+| Code-to-data alignment |56|
 | Linked data, including menu and HUD |246,552|
 | BSS, including shared scene arena and runtime pools |795,764|
 | Total static span |1,853,076|
@@ -653,3 +653,5 @@ The 2026-11-02 enemy-family pipeline and the first family (docs/ENEMY-FAMILIES.m
 The 2026-11-06 resident tables landing (docs/SCENE-SPECS.md): the 112 `ActorSpec` records and the `CorpseSpec` records leave the resident image and ride one extra sector in front of each scene's chunk (the widest is 1,084 bytes), decoded at admission into a small pool sized for the outgoing and the incoming scene (13 specs and 4 corpses); the atlas inventory of 708 rows shrinks from 32 to 16 bytes a row, the scene, the raw length and the unpacked kind and count being derived and checked by the cook for every row. Measured on the shipping disc against main 1954aa7: linked code 797,632 to 802,108 bytes (+4,476, the decoders and the pool), linked data 271,128 to 246,440 (-24,688), BSS 795,724 unchanged, so free RAM below the module pool went from 9,108 to 29,316 (+20,208; the pool stays 108,544). The bar for HK landings is 8,192, which leaves 21,124 of room for the next scenes.
 
 The 2026-11-06 repin to SDK main c75f63928 (every SDK reference on one commit) moved the free RAM below the module pool from 29,316 to 18,540: linked code 802,108 to 810,704 (psx-rt's entry state, diagnostics and cache code, the presentation cap and the renamed calls), linked data 246,440 to 246,552, BSS 795,724 to 795,764, and the room module pool 108,544 to 110,592 (+2,048: the same module sources compile larger, the worst room needed 105,768 of the 104,448 the old pool left after the fence).
+
+The 2026-11-07 SDK repin (SDK main c75f63928, the 30 fps presentation cap) took the free RAM below the module pool from 29,316 to 18,540 bytes (bar 8,192). Linked code grew 8,588 bytes: hk_psx +5,408 (the intro blob's machine-state save and restore, 388, and inlining drift), psx_io +1,760 (the CD reader's pause settle), the entry state in `_start` +1,720, psx_rt +1,240 (instruction-cache flush and interrupt code), hk_sim +824, psx_math -2,572; data +112, bss +40. The module pool grew 2,048 bytes (0x1A800 to 0x1B000): the room 10 fit needed 105,768 of 104,448 bytes because the enemy modules compile larger (debris +740, aspid +424, climber +224, fsm3_body +180). An SDK commit after the repin (bfb464405) returns about 1.9 KB of the resident code to this figure.
