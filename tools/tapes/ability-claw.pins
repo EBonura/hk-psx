@@ -1,5 +1,5 @@
 pacing = 4
-frame_time = 150
+frame_time = 220
 long_frames = 2
 card = town-continue.mcd
 # Mantis Claw on the Dirtmouth card: the Knight runs right out of the town into the next room, where a

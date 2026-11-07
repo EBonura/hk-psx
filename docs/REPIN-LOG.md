@@ -33,3 +33,17 @@ Pacing ceilings that `cargo hk-build validate --repin` moved on its own, newest 
 - secret-c04: pacing 29 to 33 (measured 30; main 1954aa7 measures 27). `--repin` offered 41 and was cut back to the measurement plus 10 percent so the pin keeps its edge.
 - secret-c37: frame_time 438 to 447 (measured 442; main 1954aa7 measures 436 of 438). Same cut-back from the offered 465.
 - Cause for both: layout drift from the scene spec chunks (resident code +4,476 bytes) and the one extra sector each scene load reads. Both routes begin in a freshly loaded scene, and frame time and long frames are where a load's extra sector shows (about 1 percent). No gate, hit or fault changed.
+
+## 2026-11-07 (unify-hk, by hand, twin disc ffeffbea2692): the 30 fps presentation cap
+
+Manny's decision (2026-11-06): Hollow Knight takes the SDK's default 30 fps cap (`PresentCap`, SDK main c75f63928); the opt-outs are gone. A frame now lasts at least 2 VBlanks, so every frame of a light room measures exactly 2.00 vblanks and `--repin` (which refuses a frame time more than 10 percent over its pin) cannot move these pins. Each new pin is the measurement plus 10 percent.
+
+- ability-claw: frame_time 150 to 220 (measured 200).
+- ability-dash: frame_time 135 to 220 (measured 200).
+- ability-wings: frame_time 130 to 220 (measured 200).
+- town-reset2: frame_time 189 to 220 (measured 200).
+- town-shade: frame_time 124 to 220 (measured 200).
+- Every other pacing pin held; their frames were already at or above the cap or under their ceilings.
+- ability-dash and ability-wings (outcome pins, not pacing): the first dash found the carried ability art pack absent (`HK_FX_LATE` 1, `HK_FX_RAISED` one short) because the pack read is paced by frames and a frame now takes longer. Forty neutral polls inserted at poll 480 of both tapes (inside the idle gap after the Cheats page closes, before the dash); both pass with the pins unchanged. These routes load no scene after the first, so `cuts` (closed loop) does not apply to them.
+- secret-c03-reload: `HK_PLAYER_X` 670932 against the pinned 634672 (gameplay begins 4 polls earlier than on the old build). Four neutral polls inserted at poll 100; the final X is 634672 again to the unit.
+- Baseline check: the pre-repin twin of ab7760b passes all 60 routes and the journeys; the shipping disc is not a valid disc for the open-loop routes (they need the route-input twin built in the same tree as the validate).

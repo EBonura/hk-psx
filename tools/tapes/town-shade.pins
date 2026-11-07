@@ -1,5 +1,5 @@
 pacing = 17
-frame_time = 124
+frame_time = 220
 long_frames = 2
 card = town-shade.mcd
 # town-shade boots from a card whose record already carries a Hollow Shade six units
