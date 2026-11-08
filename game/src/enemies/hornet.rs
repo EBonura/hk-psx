@@ -137,7 +137,12 @@ pub fn tick(
         s.cloak_seen = true;
         s.cloak_ticks = 60 * 8;
     }
-    s.cloak_ticks = s.cloak_ticks.saturating_sub(1);
+    // With the Cloak taken she has nothing left to do: her fight code (half of the room's pool) is given back, so the Knight's
+    // ability art is read into it while the item panel is still up and the first dash draws its effect (modules.rs `retire_boss`).
+    // The panel's countdown and its Cross and Circle (`convo_tick`) live in `hornet_art`, which stays.
+    if s.cloak_seen {
+        crate::modules::retire_boss();
+    }
     unsafe {
         let wait = super::HK_HORNET_CLOAK_WAIT;
         if wait != 0 && wait != u16::MAX {
@@ -327,6 +332,7 @@ pub fn convo_tick(bits: u16) {
     let Some(s) = state_block() else { return };
     let pressed = bits & !s.convo_prev;
     s.convo_prev = bits;
+    s.cloak_ticks = s.cloak_ticks.saturating_sub(1);
     let (cross, circle) = (0x4000, 0x2000);
     if s.cloak_ticks != 0 && pressed & (cross | circle) != 0 {
         s.cloak_ticks = 0;

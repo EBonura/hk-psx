@@ -89,6 +89,10 @@ static mut WAS_ALIVE: bool = false;
 /// Effects raised so far, for the route pins.
 #[no_mangle]
 pub static mut HK_FX_RAISED: u32 = 0;
+/// Dash effects raised so far (a subset of `HK_FX_RAISED`): the walks that earn the Cloak judge their first dash by it, since a
+/// chain's earlier spell casts count in the totals.
+#[no_mangle]
+pub static mut HK_FX_DASH_RAISED: u32 = 0;
 /// Effects that were due and found no art in the pool.
 #[no_mangle]
 pub static mut HK_FX_LATE: u32 = 0;
@@ -115,7 +119,13 @@ fn raise(slot: usize, at: [i32; 2], facing: i32) {
 #[inline(never)]
 pub fn on_edges(before: &Player, after: &Player) {
     if before.dash_left == 0 && after.dash_left > 0 && !after.shadow_dashing {
+        let raised = unsafe { HK_FX_RAISED };
         raise(0, [0; 2], 0);
+        if unsafe { HK_FX_RAISED } != raised {
+            unsafe {
+                HK_FX_DASH_RAISED = HK_FX_DASH_RAISED.wrapping_add(1);
+            }
+        }
     }
     if !before.double_jumping && after.double_jumping {
         raise(1, [0; 2], 0);

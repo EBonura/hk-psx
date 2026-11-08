@@ -228,6 +228,10 @@ CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_
 # Carried packages the pool-fit guarantee leaves out: the guest asks for one only where it fits beside the room's own
 # modules and whatever else is wanted (game/src/modules.rs `fx_fit`), and does without it where it does not.
 OPTIONAL = ('art_fx', 'art_fx_spell')
+# Modules the room's boss no longer needs once she has nothing left to do (game/src/modules.rs `retire_boss`): Hornet's fight code,
+# which is half of her room's pool, is dead weight from the moment the Cloak is picked up, so the optional packs are asked for
+# against the room less these (the third row of `HK_FX_FIT`) and the pool takes the Knight's ability art in her place.
+RETIRE_AFTER_BOSS = ('hornet',) if HORNET else ()
 # Code modules the boot reads and installs itself, each in a chunk of its own at the head of the disc's
 # boot group (just before the title art, so the read costs no seek): not carried by any room.
 BOOT_MODULES = tuple(m for m in ('title',) if m not in ALWAYS_RESIDENT)
@@ -538,6 +542,7 @@ def manifest_rust(packed, regions_rs, props_rs=None):
               + ','.join(_mask(fsm3_modules(FAMILY_TREE[i])) for i in sorted(FAMILY_TREE)) + '];']
     lines += [f'pub const LINK_BASE:u32={LINK_BASE:#x};', f'pub const LINK_STRIDE:u32={LINK_STRIDE:#x};',
               f'pub const POOL_BYTES:usize={POOL_BYTES:#x};',
+              f'pub const RETIRE_AFTER_BOSS:psx_math::Mask64={_mask(RETIRE_AFTER_BOSS)};',
               f'pub const MAX_IMPORTS:usize={MAX_IMPORTS};',
               '/// Modules each manifest scene needs, one bit per module.',
               f'pub const SCENE_MODULES:[u32;{n}]=[{",".join(str(m & 0xffffffff) for m in masks)}];',

@@ -131,6 +131,9 @@ static mut SLOTS: [Slot; MODULE_COUNT] = [EMPTY; MODULE_COUNT];
 static mut PINNED: Mods = Mods::EMPTY;
 /// The resident room (manifest index), for its art.
 static mut CURRENT: usize = usize::MAX;
+/// Modules the resident room's boss has given back (`retire_boss`): not wanted, not pinned, so the pool may reuse them. Empty from
+/// each admission on.
+static mut RETIRED: Mods = Mods::EMPTY;
 /// Pool bytes a chunk read is landing in: (offset, bytes), bytes 0 when none.
 static mut RESERVE: (u32, u32) = (0, 0);
 static mut CLOCK: u32 = 0;
@@ -189,7 +192,22 @@ pub fn scene_modules(scene: usize) -> Mods {
             hi = row & 0x00ff_ffff;
         }
     }
-    Mods::from_words(SCENE_MODULES[scene], hi)
+    let wanted = Mods::from_words(SCENE_MODULES[scene], hi);
+    if scene == unsafe { CURRENT } {
+        wanted.and_not(unsafe { RETIRED })
+    } else {
+        wanted
+    }
+}
+/// The resident room's boss has nothing left to do, so the modules the build names (`RETIRE_AFTER_BOSS`: Hornet's fight code once
+/// she has gone and the Cloak is taken) are no longer wanted: the pool may take their place for the Knight's ability art
+/// (`fx_fit`'s third row). They stay resident, and callable, until something needs the room. Idempotent; the next admission
+/// wants them again.
+pub fn retire_boss() {
+    unsafe {
+        RETIRED = RETIRED.or(RETIRE_AFTER_BOSS);
+        PINNED = PINNED.and_not(RETIRE_AFTER_BOSS);
+    }
 }
 /// Carried data: (module, manifest scene) pairs gameplay asked for, which the
 /// scene's gate loads like its own art (`carry`).
@@ -197,7 +215,8 @@ const CARRY_SLOTS: usize = 5;
 static mut CARRIED: [(u8, u16); CARRY_SLOTS] = [(u8::MAX, u16::MAX); CARRY_SLOTS];
 /// Per manifest scene, which of the optional carried packs (the Knight's ability effects, `art_fx`
 /// then `art_fx_spell`) fit in the pool beside the scene's own modules: bits 0 and 1 beside the Death
-/// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee).
+/// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee), bits
+/// 4 and 5 beside the Death and respawn clips and the room less what its boss has given back (`retire_boss`).
 /// The build writes it into the image (host/hk-build/module_publish.rs).
 #[no_mangle]
 pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()];
@@ -205,7 +224,14 @@ pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()
 /// Shade's art is wanted there (`shade`).
 pub fn fx_fit(scene: usize, shade: bool) -> u8 {
     let fit = unsafe { HK_FX_FIT[scene] };
-    (if shade { fit >> 2 } else { fit }) & 3
+    let retired = scene == unsafe { CURRENT } && !unsafe { RETIRED }.is_empty();
+    (if retired {
+        fit >> 4
+    } else if shade {
+        fit >> 2
+    } else {
+        fit
+    }) & 3
 }
 /// Ask for carried data module `m` (one with its own chunk, host/code_modules.py
 /// `CARRIED`) to be resident whenever manifest scene `scene` is, or for no scene
@@ -992,6 +1018,9 @@ fn gate_begin_run(scene: usize) {
 /// the scene's code chunk when something is missing (the gate-time path).
 pub fn admit(scene: usize, chunk: impl FnOnce() -> Option<&'static [u8]>) -> bool {
     // Code only: the room's art is read at the end of the gate (admit_art).
+    unsafe {
+        RETIRED = Mods::EMPTY;
+    }
     let want = scene_modules(scene).and(CODE_MASK);
     unsafe {
         PINNED = wanted(scene);

@@ -1,0 +1,32 @@
+name walk-ability-dash
+title the Mothwing Cloak from the pause Cheats page on the Dirtmouth card: two dashes, each plays the Dash Burst and drags the Dash Ash dust; the art pack is waited for, not raced
+max_ticks 9000
+sync poll
+# Replaces the open-loop tape ability-dash (its 40 hand-inserted neutral polls were a race with the pack read, docs/REPIN-LOG.md).
+# This walk judges the same: HK_CHEATS 16 (the Cloak), HK_FX_RAISED >= 2 with HK_FX_LATE 0, HK_PARTICLES_SPAWNED >= 32.
+card town-continue.mcd
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1
+wait until HK_GAME_MODE == 1 timeout 1500
+wait until HK_WALK_READY == 1 timeout 900
+check dirtmouth HK_CHEATS == 0 ; HK_FX_RAISED == 0 ; HK_FX_LATE == 0
+press start rest 3                             # the pause menu
+repeat 2 press up rest 3                       # to the Cheats page
+press cross rest 3
+repeat 4 press down rest 3                     # the Cloak row
+press right rest 3
+repeat 2 press circle rest 3                   # leave the page and the pause menu
+check cloak HK_CHEATS == 16
+wait until expr ((u8(HK_MODULE_RESIDENT + 4) >> 4) & 1) == 1 timeout 1800   # art_fx (module 36): carried, read in the background
+wait until HK_WALK_READY == 1 timeout 300
+hold right for 20
+hold right+r2 for 2
+hold right for 28
+wait 90
+hold left for 20
+hold left+r2 for 2
+hold left for 28
+wait 40
+check dashed HK_CHEATS == 16 ; HK_FX_RAISED >= 2 ; HK_FX_LATE == 0 ; HK_PARTICLES_SPAWNED >= 32 ; HK_DEATHS == 0

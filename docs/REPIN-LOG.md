@@ -70,3 +70,25 @@ Emulator rebaseline, not a game change (coordinator decision 2026-11-07, policy 
 - secret-c10: frame_time 225 to 242 (measured 230), pacing 27 to 70 (measured 52)
 - secret-c37: frame_time 447 to 490 (measured 466)
 - secret-f08a: long_frames 4 to 17 (measured 12)
+
+## 2026-11-08 (hk-hornet): the three hand-retime exceptions are gone
+
+The open-loop tapes `ability-dash`, `ability-wings` and `secret-c03-reload` (the three routes of 2026-11-07 whose neutral polls were
+inserted by hand: 40, 40 and 4) are replaced by walk scripts that wait on game state, so nothing about them races a pack read or the
+poll on which gameplay begins:
+
+- `walk-ability-dash` (Cheats page, the Cloak, two dashes; waits for `art_fx` to be resident; HK_CHEATS 16, FX_RAISED >= 2, FX_LATE 0, PARTICLES_SPAWNED >= 32).
+- `walk-ability-wings` (Cheats page, Wings, two double jumps; HK_CHEATS 64, FX_RAISED >= 4, FX_LATE 0).
+- `walk-secret-c03-reload` (the reload card, no hits, no breaks, walks left of where the wall stood; judges a place, not the X after 90 polls).
+
+Their tapes, pins and route files are deleted. The Hornet-arena half of the same finding is fixed in the game (docs/ABILITY_EFFECTS.md,
+"Hornet's arena"), not in a tape: `walk-new-game-to-hornet` raises the Cloak's dash effect on the first dash.
+
+## 2026-11-08 13:15 UTC, disc c66faa26f484
+
+- c37-stand: frame_time 238 to 252 (measured 240)
+- cocoon-open: pacing 104 to 114 (measured 106)
+- secret-c18: long_frames 3 to 7 (measured 4)
+- secret-c37: long_frames 16 to 24 (measured 17)
+
+Layout noise, not a pacing change in a route's own area: the Hornet-arena change (SDK 31c3149b7, emulator d31e7075) adds 656 bytes of resident code, which moves every address after it. The baseline twin of origin/main cd1ad83 built in the same session passes the four routes inside their old ceilings (c37-stand 237 of 238, cocoon-open 103 of 104, secret-c18 0 of 3 long frames, secret-c37 14 of 16); on the new tree they measure 240, 106, 4 and 17 (secret-c37 frame time 466 to 475, c37-stand 237 to 240, cocoon-open frame time 308 to 306). The bb788f5b emulator gives the same figures to the digit on the new tree, so neither the emulator nor the SDK pin is the cause. Moved by `validate --repin`; outcome pins unchanged.

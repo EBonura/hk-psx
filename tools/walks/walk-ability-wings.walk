@@ -1,0 +1,33 @@
+name walk-ability-wings
+title Monarch Wings from the pause Cheats page on the Dirtmouth card: two jumps with a second press in the air each, the wings and the blue glow of each double jump; the art pack is waited for, not raced
+max_ticks 9000
+sync poll
+# Replaces the open-loop tape ability-wings (40 hand-inserted neutral polls, docs/REPIN-LOG.md). Same judgement:
+# HK_CHEATS 64 (Wings), HK_FX_RAISED >= 4 (wings and glow, twice) with HK_FX_LATE 0.
+card town-continue.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1500
+wait until HK_WALK_READY == 1 timeout 900
+check dirtmouth HK_CHEATS == 0 ; HK_FX_RAISED == 0 ; HK_FX_LATE == 0
+press start rest 3
+repeat 2 press up rest 3
+press cross rest 3
+repeat 6 press down rest 3                     # the Wings row
+press right rest 3
+repeat 2 press circle rest 3
+check wings HK_CHEATS == 64
+wait until expr ((u8(HK_MODULE_RESIDENT + 4) >> 4) & 1) == 1 timeout 1800   # art_fx (module 36): carried, read in the background
+wait until HK_WALK_READY == 1 timeout 300
+hold cross for 14                              # the jump, then the second press in the air
+wait 16
+hold cross for 14
+wait until HK_WALK_READY == 1 timeout 600
+hold right+cross for 14
+wait 16
+hold cross for 14
+wait until HK_WALK_READY == 1 timeout 600
+wait 40
+check doubled HK_CHEATS == 64 ; HK_FX_RAISED >= 4 ; HK_FX_LATE == 0 ; HK_DEATHS == 0

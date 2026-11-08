@@ -256,3 +256,11 @@ The pad reaches the game byte by byte: Select, Start and the d-pad are in the fi
 **Rooms are planned on the disc they must pass on.** The fragments are hop lists planned with `hk-walkplan room ... --card cold --pre CHAIN` against one disc; a code or layout change elsewhere moves load timing and frame phase, and a marginal hop then misses (on the 1954aa7 disc only Fungus1_31's climb did: hop 17 of the shaft landed 14 units low and the per-hop retry loop re-ran it from the wrong floor). The recovery is to plan again, not to branch: the room from its start with everything before it as `--pre` (about 40 minutes for the 60-hop shaft), then `walk-new-game-to-hornet` once more. A phase variant of the whole chain (`wait N` after `sync poll`, N = 7, 23, 41, 67) is the check that a plan is not riding one lucky phase.
 
 **Pitfall: a `def` name defined twice.** The compiler substitutes `$name` with the first definition it finds, so a second definition with another body changed nothing: Baldur's `reach_left` / `reach_right` (baldur-defs.walk) won over Hornet's in the chain and the Hornet round never swung (12,000 ticks of dodging, Hornet's health untouched, no death either). Hornet's are now `hreach_left` / `hreach_right`, and the compiler refuses a name defined again with another body (`a_name_defined_twice_with_another_body_is_refused`). Also: `check cloak` in the chain tests the dash bits of `HK_WORLD_PLAYER` (a continuous run carries other world bits too), and the Hornet walks move out of the arena's right corner before she wakes (`hold left until x le 28.8`).
+
+### Hornet, the first dash and three tape conversions (2026-11-08)
+
+`walk-new-game-to-hornet` (and its card-seeded back half, `walk-fungus1-32-to-hornet`) now end on the Cloak's first dash with no wait after the
+item panel: the checks are that `art_fx` is resident when Cross closes the panel and that `HK_FX_RAISED >= 1` with `HK_FX_LATE == 0` after the dash
+(the old ending's `loop dash until HK_ABILITY_DRAWN >= 5` was already true and never dashed). `walk-ability-dash`, `walk-ability-wings` and
+`walk-secret-c03-reload` replace the open-loop tapes of the same names (REPIN-LOG 2026-11-08). The Cheats page is walked by presses (Start, Up Up,
+Cross, Down xN, Right, Circle Circle); the walk then waits for the pack's module bit in `HK_MODULE_RESIDENT` instead of counting polls.

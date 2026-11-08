@@ -651,7 +651,8 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
     // The guest decides which optional carried packages (the Knight's ability effects) it asks for into a
     // scene (`modules::fx_fit`): `HK_FX_FIT`, per manifest scene, one bit for each optional pack that fits
     // beside the scene's own modules and the Death and respawn clips (bits 0, 1) or beside those and the
-    // Shade's art too (bits 2, 3), filled in the order the packs are listed.
+    // Shade's art too (bits 2, 3), or beside the room less the modules its boss retires (bits 4, 5; modules.rs `retire_boss`), filled in
+    // the order the packs are listed.
     {
         let scenes = config["room_scenes"].as_array().ok_or("room_scenes")?;
         let optional: Vec<u32> = config["optional"]
@@ -681,6 +682,12 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         if optional.len() > 2 {
             return Err("HK_FX_FIT holds two optional packs".into());
         }
+        let retire: Vec<u64> = config["retire"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|id| id.as_u64())
+            .collect();
         let symbol = symbols
             .iter()
             .find(|s| s.name == "HK_FX_FIT")
@@ -696,9 +703,18 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 .map(|e| (e.0, e.3))
                 .ok_or("room need")?;
             let mut bits = 0u8;
+            // What the room's boss gives back once she is done: the sizes of the retired modules among its own.
+            let given: u32 = config["rooms"][position]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|id| id.as_u64())
+                .filter(|id| retire.contains(id))
+                .map(|id| sizes.get(id as usize).copied().unwrap_or(0))
+                .sum();
             // A room without a Shade (Hornet's) never carries it: both rows are the light one.
             let full = if shadeless { light } else { carried };
-            for (row, beside) in [light, full].into_iter().enumerate() {
+            for (row, (beside, need)) in [(light, need), (full, need), (light, need - given)].into_iter().enumerate() {
                 let mut room = limit.saturating_sub(need + beside);
                 for (k, bytes) in optional.iter().enumerate() {
                     if *bytes <= room {

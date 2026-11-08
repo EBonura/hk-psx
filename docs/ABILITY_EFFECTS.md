@@ -75,3 +75,24 @@ The dust is the break-effects cooker's (docs/BREAK_EFFECTS.md): the Knight's own
 
 `HK_FX_RAISED` (effects raised) and `HK_FX_LATE` (raised while their art was absent, pinned at zero) on the
 four ability routes: `cheat-dash`, `cheat-wings`, `cheat-claw` and `cheat-spell`.
+
+## Hornet's arena: the Cloak's first dash (2026-11-08)
+
+Fungus1_04 is the one room where the Knight earns an ability and uses it in the same visit, and its pool is the tightest in the
+build: her fight code (`hornet`, 49,848 bytes), her art code and her state block (15,844 and 15,976) plus the Death and respawn clips
+leave +5,424 bytes against the 14,336 that `art_fx` reserves. `HK_FX_FIT` therefore said "does not fit", the pack was never asked for in
+that room, and every dash there raised no effect (`HK_FX_LATE` counted them, `HK_FX_RAISED` stayed at zero). It was not a timing race:
+found by the first dash of `walk-new-game-to-hornet`, reproduced on the pre-fix disc by `walk-fungus1-32-to-hornet` (late 1, raised 0).
+
+The fix gives the room's boss a way to hand her modules back. `modules::retire_boss` (called by her tick once the Cloak is taken, and on
+every later visit that has it) takes `RETIRE_AFTER_BOSS` (her `hornet` module, `host/code_modules.py`) out of what the room wants and
+pins, so the pool may reuse the space; her art code and state block stay because the item panel still runs from them (its countdown
+now sits in `convo_tick`). `HK_FX_FIT` has a third row (bits 4 and 5): the packs that fit beside the room less the retired modules.
+`fx_fit` answers with it while a retirement is in force in the resident room, `carry_ability_art` then asks for `art_fx`, and the pool's
+background fetch reads it into her old space during the item panel. Nothing resident changes (free RAM is the same as before the
+change); the pool fit check is untouched because it judges the room as it stands before the fight.
+
+Proof: `walk-fungus1-32-to-hornet` and `walk-new-game-to-hornet` check, right after Cross closes the item panel, that `art_fx` is resident
+and, after the first dash with no wait, `HK_FX_DASH_RAISED >= 1` (a counter of dash effects alone, since the chain's earlier spell casts
+count in `HK_FX_RAISED` and `HK_FX_LATE`). On the disc without the change the same walk fails the residency check and the dash count (on
+that disc `HK_FX_LATE` goes 0, 1, 2 over the first two dashes and `HK_FX_RAISED` stays 0).
