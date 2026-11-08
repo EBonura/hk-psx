@@ -38,6 +38,7 @@ wait until HK_WALK_READY == 1 timeout 300
 repeat 3 press up rest 45
 wait 120
 check cloak HK_WORLD_PLAYER == 67108868 ; HK_DEATHS == 0
+check no-item-banner expr u32(HK_TITLE_CARD) != 255                  # the Cloak is announced by its item panel alone: the corner item banner of a charm or relic pickup must not name it too
 check fx-before HK_FX_DASH_RAISED == 0
 press cross                                                          # closes the item panel
 check pack-resident expr ((u8(HK_MODULE_RESIDENT + 4) >> 4) & 1) == 1   # art_fx (module 36) was read while the panel was up

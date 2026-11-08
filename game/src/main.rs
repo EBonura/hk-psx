@@ -574,7 +574,11 @@ fn take_pickup(scene: usize, p: &pickups::Pickup) {
             shop::pick_up(|s| s.rancid_eggs = s.rancid_eggs.saturating_add(1))
         }
     }
-    title_card::show_item(p.name);
+    // An ability is `Shiny Control`'s big item: its own item-get panel names it (the Cloak's is
+    // enemies/hornet.rs), so the corner banner of the charm and relic route must not name it too.
+    if !matches!(p.grant, pickups::Grant::Ability(_)) {
+        title_card::show_item(p.name);
+    }
     scene_sfx::play(if p.touch {
         scene_sfx::HEARTPIECE_COLLECT
     } else {
