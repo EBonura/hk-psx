@@ -12,6 +12,13 @@ press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 wait 60
 check whole HK_GEO_ROCKS_DEPLETED == 0 ; HK_GEO_WALLET == 6 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; x between 27.5 28.5
+# Crossroads_05's two Angry Buzzers (Vengeflies) see the Knight from the seeded spot (the 7.8 unit alert circle, docs/VENGEFLY.md) and knock him over the
+# rock's top mid-swing, so a player clears them first; the rock waits.
+loop clear until expr !$foe_near max 12 timeout 1800
+strike
+snipe
+wait 20
+end
 walk 27.4
 wait until HK_WALK_READY == 1 timeout 300
 repeat 4 press square rest 40
