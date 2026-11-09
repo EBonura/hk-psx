@@ -82,13 +82,13 @@ the first frames of her fight from missing a poll.
 All three replay on the disc with zero faults, open loop on the pinned frontend and closed loop on the gate (`hornet-road.cuts`; the
 fight reuses it, its first 8,365 polls are the road's).
 
-- `hornet-road`: seeded at (24, 12) in Fungus1_22, climbs the 120 unit shaft, takes the top gate into Fungus1_21, its left gate into
+- `hornet-road` (RETIRED from `validate` 2026-11-09, files deleted; see REPIN-LOG): seeded at (24, 12) in Fungus1_22, climbs the 120 unit shaft, takes the top gate into Fungus1_21, its left gate into
   Fungus1_04 and walks into her trigger (region 1005, two gate loads). Her greeting opens and holds the Knight: 5 masks,
   `HK_HORNET_ENCOUNTERS` 1, no part dropped, the bank's 70 chunks found.
-- `hornet-road-defeated`: the same walk on a card whose only difference is `hornet1Defeated`. The Knight takes the Cloak,
+- `hornet-road-defeated` (RETIRED with it): the same walk on a card whose only difference is `hornet1Defeated`. The Knight takes the Cloak,
   `HK_WORLD_PLAYER` is 0x4000004 (bits 26 and 2) and the dash runs (`HK_ABILITY_DRAWN` 5 or more).
 - `hornet-fight` (RETIRED from `validate`, 2026-10-31: its pins are deleted; the tape, route and cuts stay for a host simulation): the road, then her greeting turned through with four Crosses, the pause menu's Invincible and Pure Nail cheats (`HK_CHEATS` 3), a Square mash that killed her, the walk to the shiny, UP three times (the Cloak, bit 2) and the dash. It used two cheats, which the release route does not allow: a kill without them needs a Knight that dodges her, which an open-loop tape cannot do.
-- `walk-hornet-fight` (docs/ROUTES.md) is the fair fight: closed loop on her raw state, nail only, no cheat, SOUL 0, then the seal, the open gates, the Cloak and the dash, all checked on game state. The road to her arena (`hornet-road`, `hornet-road-defeated`) stays as it was: she hurts a Knight who stands still (`HK_HORNET_HURT`).
+- `walk-hornet-fight` (docs/ROUTES.md) is the fair fight: closed loop on her raw state, nail only, no cheat, SOUL 0, then the seal, the open gates, the Cloak and the dash, all checked on game state. The road to her arena is `walk-new-game-to-hornet` (and `walk-fungus1-32-to-hornet`) now: she hurts a Knight who stands still (`HK_HORNET_HURT`).
 
 ## What blocks a walk from Greenpath
 

@@ -1,5 +1,5 @@
 pacing = 939
-frame_time = 327
+frame_time = 345
 long_frames = 2
 missed_vblanks = 2
 card = greenpath.mcd
