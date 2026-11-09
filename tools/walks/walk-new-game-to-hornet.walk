@@ -6,6 +6,7 @@ sync poll
 include chain-new-game-to-greenpath.walk
 include fungus1-06a-chain.walk
 include fungus1-06-vine1.walk
+wait 13                                       # rest before Fungus1_06's second half: the Shakers there gas a hop that lands at the wrong phase; 7 and 13 pass the chain on the 2026-11-09 layout, the unrested run and 9/21 before 06a do not
 include fungus1-06b-chain.walk
 include fungus1-06-vine4.walk
 include fungus1-06c-chain.walk
