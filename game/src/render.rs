@@ -1180,6 +1180,15 @@ pub fn begin_frame(framebuffer_y: u16) {
                 remember_cpu_view(false);
             }
         }
+        // Measurement builds only (docs/REPIN-LOG.md): pin the policy to one state.
+        #[cfg(feature = "trim-force-on")]
+        {
+            TRIMMING = true;
+        }
+        #[cfg(feature = "trim-force-off")]
+        {
+            TRIMMING = false;
+        }
         CPU_BOUND = !TRIMMING;
         Scratch::initialize_at(occlusion_scratch::base());
         USED = 0;
@@ -1208,8 +1217,8 @@ static mut CPU_BOUND: bool = false;
 /// `trim_policy::OFF_TAIL` the CPU was the limit, from `trim_policy::ON_TAIL`
 /// the GPU was.
 static mut TRIMMING: bool = true;
-/// Slow frames in a row that ran out of CPU first (`trim_policy`).
-static mut CPU_SLOW_FRAMES: u8 = 0;
+/// The recent presented frames that were slow and ran out of CPU first, one bit each (`trim_policy`).
+static mut CPU_SLOW_FRAMES: u16 = 0;
 /// Views (bank, view) found CPU-bound, so they start without trimming when
 /// they are bound again instead of paying a slow frame to find out.
 static mut CPU_VIEWS: [(usize, usize); 8] = [(usize::MAX, 0); 8];

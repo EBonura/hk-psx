@@ -13,6 +13,9 @@ card-diag = []
 # The per-tick HK_TRACE block (trace.rs) for the replay harness: 512 bytes of RAM and
 # 1,260 of code that the shipped disc has no use for. No in-tree tool reads it yet.
 trace = []
+# Measurement builds only: pin the scenery trimming on or off (render::begin_frame), to cost both states of `trim_policy`.
+trim-force-on = []
+trim-force-off = []
 # Seamless-transition study: scripted gate tour and per-phase gate timing.
 # Gate phase timing (HK_GATE_LOG) in an otherwise ordinary build, for walking routes.
 gate-log = []
