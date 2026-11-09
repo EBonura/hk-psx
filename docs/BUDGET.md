@@ -7,8 +7,8 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |808,428|
-| Code-to-data alignment |20|
+| Linked code |808,408|
+| Code-to-data alignment |40|
 | Linked data, including menu and HUD |244,696|
 | BSS, including shared scene arena and runtime pools |795,996|
 | Total static span |1,849,148|
@@ -662,4 +662,4 @@ The 2026-11-08 Hornet-arena change (the boss gives back her fight code once the 
 
 The 2026-11-08 per-scene Geo bank (docs/GEO.md "Geo art per scene") took the free RAM below the module pool from 17,116 to 18,556 bytes (bar 8,192) on the shipping disc: linked code 812,040 to 812,608 (+568: `geo_render::upload_scene`, the coin table lookup, the rock quads reading their own texture words, `fsm3_flow`'s `IntCompare`), linked data 246,552 to 244,408 (-2,144: `GEO_ART` keeps only each coin frame's width and height, 2 bytes where it held 8, and `GEO_UPLOADS` is gone), BSS +192 (the coin frames' u, v and page, 46 entries, filled when a scene loads), alignment 120 to 64. The scene arena is unchanged: the bank rides in each scene's effect-art chunk (a block after the particle art, 3,684 to 5,790 bytes of texels and 4,016 to 6,664 bytes of block), which `prepare_effect_art` decodes in the arena front before the scene owns it, so no scene's arena tail grows (the first version put it in the metadata bank, which would have grown the arena tail of Tutorial_01, the scene that sets the arena and holds five rocks).
 
-The 2026-11-09 SDK repin (PSoXide main efdd3083c: smaller cache flush, pad, memory card, CD reader and panic path) together with the Mossman Shaker (`Attack::Gas` on the Runner, its gas hit polygon, emitters and corpse, the spec wire arm) took linked code from 812,608 to 808,428 (-4,180), alignment 64 to 20, linked data 244,408 to 244,696 (+288) and BSS 795,972 to 795,996 (+24), so 22,468 bytes are free below the module pool on the shipping disc (18,556 on 67dd74e; bar 8,192). The two changes were built together; the SDK's own share was not measured apart.
+The 2026-11-09 SDK repin (PSoXide main efdd3083c: smaller cache flush, pad, memory card, CD reader and panic path) together with the Mossman Shaker (`Attack::Gas` on the Runner, its gas hit polygon, emitters and corpse, the spec wire arm) took linked code from 812,608 to 808,408 (-4,200), alignment 64 to 40, linked data 244,408 to 244,696 (+288) and BSS 795,972 to 795,996 (+24), so 22,468 bytes are free below the module pool on the shipping disc (18,556 on 67dd74e; bar 8,192). The two changes were built together; the SDK's own share was not measured apart.
