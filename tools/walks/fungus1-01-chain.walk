@@ -169,6 +169,11 @@ snipe
 guard 2
 retreat 63.21 64.98
 heal
+# The Mossman Shaker (post 56.5, 15.6) patrols this platform and the leap lands on it at x 58 to 60: a Shaker standing there hurts the landing (contact and gas)
+# and the recoil throws the Knight back onto this ledge. The Knight waits out of its sight until the Shaker has walked left of x 56.5, then leaps.
+def shaker_left any(i in 0..32: let ax = i32(HK_ACT + 8 * i), ay = i32(HK_ACT + 8 * i + 4) in ax != 2147483647 && ay > 14 * 65536 && ay < 17 * 65536 && ax > 50 * 65536 && ax < 56 * 65536 + 32768)
+loop shaker-leap until expr i32(HK_PLAYER_Y) > 917504 && i32(HK_PLAYER_X) < 3997696 max 4 timeout 3000
+wait until expr $shaker_left timeout 900
 walk 64.24
 walk 64.67   # run-up
 walk 64.24   # take-off
@@ -176,6 +181,7 @@ hold left+cross for 24
 hold left for 12
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
+end
 fight 4 52.29 60.70
 snipe
 guard 2

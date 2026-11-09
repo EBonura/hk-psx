@@ -1,0 +1,17 @@
+name walk-shaker-fight
+title Fungus1_01's Mossman Shaker: gas hurts a Knight who stands in it, then he closes on the Shaker and kills it from the ground
+max_ticks 6000
+# Boots from tools/cards/shaker-01.mcd (a seeded record, tools/seed_card.py: Fungus1_01 scene 46, region 710, the ledge at (53.0, 15.5) three and a half
+# units left of the Shaker's post at (56.5, 15.6), full health, nothing hit). It proves the Shaker's Gas attack and its death, not the journey to it.
+card shaker-01.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check start HK_HEALTH == 5 ; HK_DEATHS == 0 ; HK_ENEMY_KILLS == 0 ; HK_CHEATS == 0 ; x between 52.5 53.5
+wait until HK_HEALTH < 5 timeout 900
+check gassed HK_HEALTH < 5 ; HK_DEATHS == 0 ; HK_ENEMY_KILLS == 0
+fight 8 44 70 noheal
+check killed HK_ENEMY_KILLS >= 1 ; HK_ENEMY_HITS >= 2 ; HK_DEATHS == 0
