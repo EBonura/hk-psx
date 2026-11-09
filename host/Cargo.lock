@@ -318,7 +318,7 @@ dependencies = [
 [[package]]
 name = "psx-library"
 version = "0.1.0"
-source = "git+https://github.com/EBonura/PSoXide.git?rev=31c3149b755790ad37fd4ead132c66cd2821c9f3#31c3149b755790ad37fd4ead132c66cd2821c9f3"
+source = "git+https://github.com/EBonura/PSoXide.git?rev=efdd3083c343d275d3c9cf39e2d6d3658ac3995d#efdd3083c343d275d3c9cf39e2d6d3658ac3995d"
 dependencies = [
  "serde_json",
  "sha2",
