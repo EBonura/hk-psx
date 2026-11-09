@@ -1,30 +1,30 @@
 # One round of the Hornet fight: reactions in order of what matters; each costs no time when there is nothing to react to.
 hold circle until expr !$hheal timeout 240           # Focus when nothing can reach him
 wait until HK_FOCUS_LOCKED == 0 timeout 120
-hold circle until expr !$hcast || (u32(HK_SIM_TICKS) & 7) == 0 timeout 30   # a tap of at most 8 ticks casts
+hold circle until expr !$hcast || (u32(HK_INPUT_POLLS) & 7) == 0 timeout 30   # a tap of at most 8 ticks casts
 hold cross+left until expr !($dash_coming && $px < $dash_end && $px > 1114112) timeout 90      # jump her ground dash, drifting away from where it ends
 hold cross+right until expr !($dash_coming && $px >= $dash_end && $px < 2359296) timeout 90
 hold cross until expr !$dash_coming timeout 90
-hold left until expr !($throw_near && $hdx > 0 && $px > 1114112) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200            # out of the needle's reach while she winds up
-hold right until expr !($throw_near && $hdx <= 0 && $px < 2359296) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200
-hold cross until expr !($hlive && $needle_near && $py < 2031616) || (u32(HK_SIM_TICKS) & 31) == 0 timeout 200                  # jump the needle
-hold left until expr !($hlive && ($sphere || $airborne) && $hdx > 0 && $adx < 393216 && $px > 1114112) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200   # give ground from a sphere or a leap
-hold right until expr !($hlive && ($sphere || $airborne) && $hdx < 0 && $adx < 393216 && $px < 2359296) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200
-hold right until expr !($hlive && $hcalm && $level && $hdx > 262144 && $adx > 229376 && $hx < 2293760) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200            # close on her when she is calm
-hold left until expr !($hlive && $hcalm && $level && $hdx < -262144 && $adx > 229376 && $hx > 1179648) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200
-hold right until expr !($hlive && $hcalm && !$dash_coming && $px < 1441792 && ($hdx < -196608 || $hdx > 458752)) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200   # back to the middle of the arena from the left wall (her dashes and leaps pin him there)
-hold left until expr !($hlive && $hcalm && !$dash_coming && $px > 2031616 && ($hdx > 196608 || $hdx < -458752)) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200   # and from the right wall
+hold left until expr !($throw_near && $hdx > 0 && $px > 1114112) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200            # out of the needle's reach while she winds up
+hold right until expr !($throw_near && $hdx <= 0 && $px < 2359296) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200
+hold cross until expr !($hlive && $needle_near && $py < 2031616) || (u32(HK_INPUT_POLLS) & 31) == 0 timeout 200                  # jump the needle
+hold left until expr !($hlive && ($sphere || $airborne) && $hdx > 0 && $adx < 393216 && $px > 1114112) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200   # give ground from a sphere or a leap
+hold right until expr !($hlive && ($sphere || $airborne) && $hdx < 0 && $adx < 393216 && $px < 2359296) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200
+hold right until expr !($hlive && $hcalm && $level && $hdx > 262144 && $adx > 229376 && $hx < 2293760) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200            # close on her when she is calm
+hold left until expr !($hlive && $hcalm && $level && $hdx < -262144 && $adx > 229376 && $hx > 1179648) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200
+hold right until expr !($hlive && $hcalm && !$dash_coming && $px < 1441792 && ($hdx < -196608 || $hdx > 458752)) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200   # back to the middle of the arena from the left wall (her dashes and leaps pin him there)
+hold left until expr !($hlive && $hcalm && !$dash_coming && $px > 2031616 && ($hdx > 196608 || $hdx < -458752)) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200   # and from the right wall
 hold cross+left until expr !($dash_coming && $px < $dash_end && $px > 1114112) timeout 90
 hold cross+right until expr !($dash_coming && $px >= $dash_end && $px < 2359296) timeout 90
 hold cross until expr !$dash_coming timeout 90
-hold right until expr !($ready && $hreach_right && i32(HK_PLAYER_FACING) < 0) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200
-hold square until expr !($ready && $hreach_right) || (u32(HK_SIM_TICKS) & 7) == 0 timeout 200   # a Square held since a recoil is no new press: let go within 16 ticks
+hold right until expr !($ready && $hreach_right && i32(HK_PLAYER_FACING) < 0) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200
+hold square until expr !($ready && $hreach_right) || (u32(HK_INPUT_POLLS) & 7) == 0 timeout 200   # a Square held since a recoil is no new press: let go within 16 ticks
 wait until expr u32(HK_NAIL_BUSY) == 0 || $dash_coming || u32(HK_HEALTH) == 0 timeout 90
 hold cross+left until expr !($dash_coming && $px < $dash_end && $px > 1114112) timeout 90
 hold cross+right until expr !($dash_coming && $px >= $dash_end && $px < 2359296) timeout 90
 hold cross until expr !$dash_coming timeout 90
-hold left until expr !($ready && $hreach_left && i32(HK_PLAYER_FACING) > 0) || (u32(HK_SIM_TICKS) & 15) == 0 timeout 200
-hold square until expr !($ready && $hreach_left) || (u32(HK_SIM_TICKS) & 7) == 0 timeout 200
+hold left until expr !($ready && $hreach_left && i32(HK_PLAYER_FACING) > 0) || (u32(HK_INPUT_POLLS) & 15) == 0 timeout 200
+hold square until expr !($ready && $hreach_left) || (u32(HK_INPUT_POLLS) & 7) == 0 timeout 200
 wait until expr u32(HK_NAIL_BUSY) == 0 || $dash_coming || u32(HK_HEALTH) == 0 timeout 90
 hold cross+left until expr !($dash_coming && $px < $dash_end && $px > 1114112) timeout 90
 hold cross+right until expr !($dash_coming && $px >= $dash_end && $px < 2359296) timeout 90
