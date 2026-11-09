@@ -9,7 +9,7 @@ sync poll
 card hornet-04-entry.mcd
 wait 300
 press cross
-wait 40
+wait 57                                       # rest after the title: 40 loses this fight on the 2026-11-09 layout (phase class, docs/ROUTES.md); 5, 17, 31 and 47 extra ticks all win
 press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 include fungus1-04.walk

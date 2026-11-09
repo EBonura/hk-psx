@@ -41,7 +41,7 @@ check cloak HK_WORLD_PLAYER == 67108868 ; HK_DEATHS == 0
 check no-item-banner expr u32(HK_TITLE_CARD) != 255                  # the Cloak is announced by its item panel alone: the corner item banner of a charm or relic pickup must not name it too
 check fx-before HK_FX_DASH_RAISED == 0
 press cross                                                          # closes the item panel
-check pack-resident expr ((u8(HK_MODULE_RESIDENT + 4) >> 4) & 1) == 1   # art_fx (module 36) was read while the panel was up
+check pack-resident expr ((u8(HK_MODULE_RESIDENT + 4) >> 5) & 1) == 1   # art_fx (module 37) was read while the panel was up
 hold right+r2 for 20                                                 # the first dash, at once
 wait 40
 check dash HK_FX_DASH_RAISED >= 1 ; HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0

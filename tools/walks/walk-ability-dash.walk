@@ -19,7 +19,7 @@ repeat 4 press down rest 3                     # the Cloak row
 press right rest 3
 repeat 2 press circle rest 3                   # leave the page and the pause menu
 check cloak HK_CHEATS == 16
-wait until expr ((u8(HK_MODULE_RESIDENT + 4) >> 4) & 1) == 1 timeout 1800   # art_fx (module 36): carried, read in the background
+wait until expr ((u8(HK_MODULE_RESIDENT + 4) >> 5) & 1) == 1 timeout 1800   # art_fx (module 37): carried, read in the background
 wait until HK_WALK_READY == 1 timeout 300
 hold right for 20
 hold right+r2 for 2
