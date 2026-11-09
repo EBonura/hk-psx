@@ -535,9 +535,10 @@ def generate(report, out_path=None):
         specs, placed = scene_actor_bank([r for r in regions if r['scene_id'] == scene])
         out.append(f'static SCENE_ACTORS_{scene}: &[hk_sim::ActorSpec] = &[' + ','.join(specs) + '];')
         state_bytes = max(state_bytes, sum((p.get('state_bytes', 0) + 3) // 4 * 4 for _, p in placed.values()))
+    # (After the SCENE_ACTORS table: the spec cut takes everything from SCENE_ACTORS_0 through that table.)
     # The widest room's tree memory: the size of the `art_fsm_state` package (host/code_modules.py).
-    out.append(f'pub const FSM_STATE_BYTES: usize = {state_bytes};')
     out.append('pub static SCENE_ACTORS: &[&[hk_sim::ActorSpec]] = &[' + ','.join(f'SCENE_ACTORS_{scene}' for scene in range(SCENES)) + '];')
+    out.append(f'pub const FSM_STATE_BYTES: usize = {state_bytes};')
     # Per-scene statics the runtime Region value borrows, and small variant
     # catalogues the bank's KIND_REGION_STATICS object indexes per region.
     scene_emitters = {}
