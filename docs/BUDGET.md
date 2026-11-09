@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |812,040|
-| Code-to-data alignment |120|
-| Linked data, including menu and HUD |246,552|
-| BSS, including shared scene arena and runtime pools |795,780|
-| Total static span |1,854,500|
+| Linked code |812,608|
+| Code-to-data alignment |64|
+| Linked data, including menu and HUD |244,408|
+| BSS, including shared scene arena and runtime pools |795,972|
+| Total static span |1,853,060|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |127,708|
+| Unallocated gap before reserved stack |129,148|
 | Room module pool, inside that gap |110,592|
-| Free RAM below the module pool |17,116|
+| Free RAM below the module pool |18,556|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d4c24`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d4684`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -659,3 +659,5 @@ The 2026-11-07 SDK repin (SDK main c75f63928, the 30 fps presentation cap) took 
 The 2026-11-07 bump to SDK main bfb464405 (psx-rt cache restructure) moved the free RAM below the module pool from 18,540 to 17,772 bytes (bar 8,192). Linked code grew 792 bytes: `psx_rt::cache::flush_instruction_cache` 972 to 1,520 plus the out-of-line `spin_until_idle` (244). HK links only the full flush, so the SDK's dedupe of the flush body has nothing to remove here; the SDK follow-up is queued. Linked data and BSS are unchanged.
 
 The 2026-11-08 Hornet-arena change (the boss gives back her fight code once the Cloak is taken, so the Knight's ability art is read into Fungus1_04's pool: docs/ABILITY_EFFECTS.md, "Hornet's arena") took the free RAM below the module pool from 17,772 to 17,116 bytes (bar 8,192) on the shipping disc: linked code 811,488 to 812,040 (+552: `retire_boss`, the third `HK_FX_FIT` row in `fx_fit`, the retired set in `scene_modules`, the panel countdown moved into `convo_tick`, and the dash counter), the code-to-data alignment 32 to 120, BSS +16 (`RETIRED`, `HK_FX_DASH_RAISED`), linked data unchanged. No pool change. Measured on the tree that carries it, SDK 31c3149b7.
+
+The 2026-11-08 per-scene Geo bank (docs/GEO.md "Geo art per scene") took the free RAM below the module pool from 17,116 to 18,556 bytes (bar 8,192) on the shipping disc: linked code 812,040 to 812,608 (+568: `geo_render::upload_scene`, the coin table lookup, the rock quads reading their own texture words, `fsm3_flow`'s `IntCompare`), linked data 246,552 to 244,408 (-2,144: `GEO_ART` keeps only each coin frame's width and height, 2 bytes where it held 8, and `GEO_UPLOADS` is gone), BSS +192 (the coin frames' u, v and page, 46 entries, filled when a scene loads), alignment 120 to 64. The scene arena is unchanged: the bank rides in each scene's effect-art chunk (a block after the particle art, 3,684 to 5,790 bytes of texels and 4,016 to 6,664 bytes of block), which `prepare_effect_art` decodes in the arena front before the scene owns it, so no scene's arena tail grows (the first version put it in the metadata bank, which would have grown the arena tail of Tutorial_01, the scene that sets the arena and holds five rocks).

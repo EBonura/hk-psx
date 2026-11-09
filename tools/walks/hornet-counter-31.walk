@@ -1,0 +1,15 @@
+name walk-hornet-counter-31
+title Fungus1_31's Hornet Encounter Control runs on the disc: entering the room raises hornetGreenpath (IntCompare in the light families), once
+max_ticks 3000
+# Boots from tools/cards/toll-31-geo60.mcd (Fungus1_31, hornetGreenpath 0 in the card's script fields). The control script (GetPlayerDataInt, IntCompare
+# less than 3, SetPlayerDataInt 3) was inert on the disc while HKFSM03's light families had no IntCompare; it writes the PlayerData field once on entry.
+card toll-31-geo60.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 120
+check raised HK_SCRIPT_WRITES >= 1 ; HK_SCRIPT_HALTS == 0 ; HK_DEATHS == 0
+wait 300
+check once HK_SCRIPT_WRITES == 1 ; HK_SCRIPT_HALTS == 0

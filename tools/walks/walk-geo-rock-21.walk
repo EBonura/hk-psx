@@ -1,0 +1,25 @@
+name walk-geo-rock-21
+title Fungus1_21's Geo rock from its scene's own Geo bank (the scene whose three rocks no longer fit the one global bank): a nail breaks it in five hits and the Knight walks through where it stood
+max_ticks 6000
+# Boots from tools/cards/geo-rock-21.mcd (tools/seed_card.py --scene 61 --region 985 --x 14.9 --y 26.15 --facing -1 --geo 6; a seeded record, docs/ROUTES.md:
+# Fungus1_21 at the left of the second rock, 6 Geo, nothing hit). It proves the scene's bank (the coins' frames and the three rocks' art uploaded with the
+# scene, the rock's strike, payout and collider edges), not the journey to it. The rock stands at x 11.09 to 13.15 (y 24.33 to 25.98).
+card geo-rock-21.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+wait 60
+check whole HK_GEO_ROCKS_DEPLETED == 0 ; HK_GEO_WALLET == 6 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; x between 14.4 15.4
+walk 14.3
+wait until HK_WALK_READY == 1 timeout 300
+repeat 4 press square rest 40
+wait 60
+check four-hits HK_GEO_ROCKS_DEPLETED == 0
+repeat 2 press square rest 40
+wait 150
+check broken HK_GEO_ROCKS_DEPLETED == 1 ; HK_GEO_WALLET >= 6 ; HK_DEATHS == 0
+walk 9.5
+wait until HK_WALK_READY == 1 timeout 300
+check through x between 8.5 10.5 ; HK_DEATHS == 0

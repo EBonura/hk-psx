@@ -352,8 +352,12 @@ def encode_scene(scene, rows):
         for view in row.get("geo_views", []):
             state = bounded(view["state"], 256, "geo view state")
             for tag, art, quad in view["arts"]:
+                # `art` is where the scene's Geo bank put the texture: u, v, w, h, clut, tpage (host/geo.py).
                 add_object("geo_art", {"source": view["source"], "quad": [quad]}, state | bounded(tag, 2, "geo art tag") << 8,
-                           bounded(art, 65536, "geo art frame"), row["activation_bounds"], "quad")
+                           0, row["activation_bounds"], "quad",
+                           (bounded(art["u"], 256, "geo art u") | bounded(art["v"], 256, "geo art v") << 8
+                            | bounded(art["w"], 256, "geo art w") << 16 | bounded(art["h"], 128, "geo art h") << 24,
+                            bounded(art["clut"], 65536, "geo art clut") | bounded(art["tpage"], 65536, "geo art tpage") << 16, 0))
             if view["off"] or view["edges"]:
                 stream = [len(view["off"])] + list(view["off"]) + list(view["edges"])
                 add_object("geo_view", {"source": view["source"]}, state, 0, row["activation_bounds"], None,

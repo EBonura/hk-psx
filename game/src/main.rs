@@ -936,7 +936,6 @@ fn main() {
     let art = unsafe { &mut *(&raw mut ROOM_CACHE) }.menu_art().ok();
     // The art the game uploads once, from the same chunk while it is staged.
     if let Some(boot) = art {
-        geo_render::upload(boot);
         lifeblood::upload(boot);
     }
     // A disc that would not give the title's code starts a game with the settings a fresh card has.

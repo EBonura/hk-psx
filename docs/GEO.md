@@ -7,8 +7,8 @@ not implement shops, saving, charms or recoverable Shades.
 
 ## Where the rocks live
 
-50 of the 53 source rocks are cooked; the three of Fungus1_21 stay out because the art bank cannot hold their art. Nothing about a rock is linked into
-the guest except the coin and art-bank tables in `data/geo.rs`. A rock is a `KIND_GEO_ROCK` object in the first region of its scene's metadata bank
+All 53 source rocks are cooked (Fungus1_21's three since the per-scene bank, below). Nothing about a rock is linked into
+the guest except the coin tables in `data/geo.rs`. A rock is a `KIND_GEO_ROCK` object in the first region of its scene's metadata bank
 (`tools/world_metadata.py`: source id, scene-local state, bounds, collision polygons, position and payout counts); the regions that draw it carry its art
 quads as `KIND_GEO_ART` (tag 0 while broken, 1 while whole) and what a broken rock hides and unblocks as `KIND_GEO_VIEW` (a draw list then an edge list).
 `host/geo.py` `bank_rows` writes those rows into its report and `host/pack_scenes.py` hands them to the encoder. A save restores a rock by its state key
@@ -86,14 +86,16 @@ menu button edges and audio voice behavior. Source provenance, collision matrix
 and CIL evidence remain ignored under `.hkpsx/geo-source/`, `.hkpsx/geo-runtime/`
 and the Geo cook reports; retail asset dumps are not part of shared docs.
 
-## The three refused rocks (Fungus1_21), what streaming per scene would change
+## Geo art per scene (2026-11-08)
 
-Geo art is one bank uploaded at boot (`geo_render::upload`, `data/geo.rs GEO_UPLOADS`, 8,192 B at most, placed in the five proven VRAM
-slivers of `host/geo.py VRAM_RECTS`, 6,336 B of rectangles). The bank must hold the union of every rock of every admitted scene, which is
-why Fungus1_21's three rocks no longer fit after the other 50. To admit them without cutting art, the bank has to become per scene: the
-cooker places each scene's rock art alone (`art_bank` over one scene's images; a trial per scene instead of one global trial), the scene's
-metadata bank carries its upload rows and pixels (or the scene stream carries them), and the guest uploads the scene's bank into the same slivers
-at the scene load that already uploads the scene's atlases, instead of once at boot. The `KIND_GEO_ART` quads already store UVs; they only have
-to refer to the scene's placement. The coin art (`COIN_CLIPS`, shared by every scene) stays in the boot bank, so the slivers are split: a coin
-region that never changes and a rock region that is replaced per scene. Whether the coin art leaves room for Fungus1_21's rocks in the rock
-region is not measured; do that trial before writing the guest side. Not started.
+Every scene has a Geo bank of its own: the coin frames and that scene's rocks, quantized to one palette and placed together in the five VRAM slivers
+of `host/geo.py VRAM_RECTS` (6,336 B of rectangles). A rock is admitted when the bank built from the scene's admitted rocks and the new one still
+places (an exact trial, as before, but per scene: rocks of other scenes no longer compete for the slivers). The worst scene, Fungus1_31 with three
+tall rocks, needs 5,790 B; scenes without rocks carry the coins alone (3,684 B), so VRAM is right whichever scene came before.
+
+The bank is a block after the particle art in the scene's effect chunk (`host/geo.py block_bytes`, written to `.hkpsx/geo-banks/scene_N.bin`, appended by
+`hk-cook break_effects.rs with_geo_bank`, its offset the chunk's last word). `prepare_effect_art` uploads it (`geo_render::upload_scene`) in the same pass
+as the particle art, before the scene owns the arena, so it costs no arena and no resident table beyond `COIN_TEX` (the coin frames' u, v and page, 184 B
+of BSS). Each rock's art quads (`KIND_GEO_ART`) carry their own texture words (u, v, w, h in payload word 0, clut and tpage in word 1). The metadata-bank
+variant (a `KIND_GEO_UPLOAD` object in the first region) was built first and dropped: the scene metadata bank sits in the arena tail, and Tutorial_01 sets
+the arena. `walk-geo-rock-21` breaks one of Fungus1_21's rocks from a seeded card; `walk-geo-rock-05` and the chains cover the scenes that had rocks.

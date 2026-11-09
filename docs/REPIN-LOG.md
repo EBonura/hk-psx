@@ -92,3 +92,9 @@ Their tapes, pins and route files are deleted. The Hornet-arena half of the same
 - secret-c37: long_frames 16 to 24 (measured 17)
 
 Layout noise, not a pacing change in a route's own area: the Hornet-arena change (SDK 31c3149b7, emulator d31e7075) adds 656 bytes of resident code, which moves every address after it. The baseline twin of origin/main cd1ad83 built in the same session passes the four routes inside their old ceilings (c37-stand 237 of 238, cocoon-open 103 of 104, secret-c18 0 of 3 long frames, secret-c37 14 of 16); on the new tree they measure 240, 106, 4 and 17 (secret-c37 frame time 466 to 475, c37-stand 237 to 240, cocoon-open frame time 308 to 306). The bb788f5b emulator gives the same figures to the digit on the new tree, so neither the emulator nor the SDK pin is the cause. Moved by `validate --repin`; outcome pins unchanged.
+
+## 2026-11-08 16:33 UTC, disc d15e1e359fef
+
+- c37-stand: frame_time 252 to 272 (measured 259), pacing 545 to 766 (measured 587)
+
+Per-scene Geo bank landing (docs/GEO.md). Measured A/B in the same session: the baseline twin of origin/main 2150dae passes c37-stand at frame time 240, 410 frames over 2 vblanks (1,236 frames); the twin of this tree measures 259 and 587. Every other route and journey passes inside its old ceilings. Nothing the standing Knight runs changed per frame (the room's one rock is 23 units above him and rejected off screen, no coin is out), the change adds 568 bytes of code and takes 2,144 bytes of data away, which moves every address after it; the cause is therefore taken to be layout (the Hornet-arena entry above and docs/ROUTES.md measured the same room's route at 237 to 240 and other routes up to 10 percent either way on layout alone). Not proven by a layout-only control build; the figure is kept in the log so a later landing that moves it back can lower the pin. Moved by `validate --repin`.

@@ -3271,6 +3271,19 @@ fn scene_json(data: &SceneArt) -> Json {
 
 /// The cook: writes data/break_effects.rs and .hkpsx/break-effects/ under
 /// `root` and returns the summary line.
+/// The scene's Geo bank (host/geo.py `block_bytes`, written to `.hkpsx/geo-banks/`) after its particle art, with the block's
+/// offset in the chunk as the chunk's last word. The guest reads it back in `geo_render::upload_scene`; `load_scene` ignores
+/// everything past the texels it names.
+fn with_geo_bank(root: &Path, scene: i64, mut raw: Vec<u8>) -> Result<Vec<u8>> {
+    let path = root.join(format!(".hkpsx/geo-banks/scene_{scene}.bin"));
+    let block = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    raw.resize(raw.len().div_ceil(4) * 4, 0);
+    let at = raw.len();
+    raw.extend_from_slice(&block);
+    raw.extend_from_slice(&(at as u32).to_le_bytes());
+    Ok(raw)
+}
+
 pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let metadata: J = serde_json::from_slice(
         &std::fs::read(root.join("data/regions.json")).map_err(|e| e.to_string())?,
@@ -3340,6 +3353,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         for (k, w) in widest.iter_mut().enumerate() {
             *w = (*w).max(u32::from_le_bytes(raw[8 + 4 * k..12 + 4 * k].try_into().unwrap()) as usize);
         }
+        let raw = with_geo_bank(root, scene, raw)?;
         let stored = compressed(&raw);
         let name = format!("scene_{scene}.hkfx.z");
         std::fs::write(dest.join(&name), &stored).map_err(|e| e.to_string())?;

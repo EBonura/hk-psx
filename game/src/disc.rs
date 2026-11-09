@@ -2254,6 +2254,10 @@ impl Cache {
         ) {
             return Err(LoadError::EffectArt);
         }
+        // The scene's Geo bank (coins and rocks) follows the particle art in the same chunk.
+        if !crate::geo_render::upload_scene(&arena[..f.raw_len]) {
+            return Err(LoadError::EffectArt);
+        }
         self.effect_scene = scene;
         Ok(())
     }

@@ -10,6 +10,8 @@ pub fn entry(c: &mut Ctx<'_, '_>, op: u8) -> u16 {
         float_compare(c)
     } else if op == flow::FLOAT_SWITCH {
         float_switch(c)
+    } else if op == flow::INT_COMPARE {
+        int_compare(c)
     } else if op == flow::PLAYER_DATA_BOOL_TEST {
         // PlayerDataBoolTest [field slot, isTrue, isFalse]
         let e = if c.pd_read() != 0 { c.event(1) } else { c.event(2) };
@@ -45,6 +47,20 @@ fn float_compare(c: &mut Ctx<'_, '_>) -> u16 {
         c.event(4)
     } else {
         c.event(5)
+    };
+    r_with(r_stateless(c.flags) & R_FIN != 0, e)
+}
+
+/// IntCompare [integer1, integer2, equal, lessThan, greaterThan].
+#[inline(never)]
+fn int_compare(c: &mut Ctx<'_, '_>) -> u16 {
+    let (x, y) = (c.int(0), c.int(1));
+    let e = if x == y {
+        c.event(2)
+    } else if x < y {
+        c.event(3)
+    } else {
+        c.event(4)
     };
     r_with(r_stateless(c.flags) & R_FIN != 0, e)
 }
