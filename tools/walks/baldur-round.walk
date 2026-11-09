@@ -9,6 +9,6 @@ strike
 hold circle until expr !($focus && u32(HK_HEALTH) <= 4) timeout 240   # heal when low
 wait until HK_FOCUS_LOCKED == 0 timeout 120
 hold left until expr i32(HK_PLAYER_FACING) < 0 || $rnear timeout 40   # face him unless a roller is near
-hold circle until expr !$castable || (u32(HK_SIM_TICKS) & 7) == 0 timeout 30   # Vengeful Spirit fires on release inside the tap time: a tap of at most 8 ticks, only when wanted
+hold circle until expr !$castable || (u32(HK_INPUT_POLLS) & 7) == 0 timeout 30   # Vengeful Spirit fires on release inside the tap time: a tap of at most 8 ticks, only when wanted
 wait until HK_WALK_READY == 1 timeout 120
 wait 6

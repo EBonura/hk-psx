@@ -139,13 +139,32 @@ fn value(text: &str, units: bool) -> Result<i64> {
     }
 }
 
+/// `HK_SIM_TICKS` is published once per simulated frame, and a frame can consume more than one
+/// input sample, so it can step by two or more between pad polls. A condition on its exact value
+/// or on a modulus of it (`== N`, `& 7`, `% 8`) can therefore be skipped for as long as a hold
+/// lasts (walk-new-game-to-hornet aborted on one). `HK_INPUT_POLLS` advances once per poll, and a
+/// threshold (`>=`) cannot be skipped.
+fn refuse_exact_counter(expression: &str) -> Result<()> {
+    let mut rest = expression;
+    while let Some(at) = rest.find("HK_SIM_TICKS") {
+        rest = &rest[at + "HK_SIM_TICKS".len()..];
+        let after = rest.trim_start_matches([' ', ')']).trim_start();
+        if after.starts_with("==") || after.starts_with('%') || (after.starts_with('&') && !after.starts_with("&&")) {
+            return Err("HK_SIM_TICKS can step by more than one between polls: test a threshold (>=) or use HK_INPUT_POLLS, not == or a modulus".into());
+        }
+    }
+    Ok(())
+}
+
 fn parse_cond(tokens: &[&str], words: &BTreeMap<String, Word>) -> Result<Cond> {
     if let ["expr", rest @ ..] = tokens {
         if rest.is_empty() {
             return Err("expr takes an expression".into());
         }
+        let expression = rest.join(" ");
+        refuse_exact_counter(&expression)?;
         let word = Word { symbol: String::new(), units: false, signed: false, offset: 0 };
-        return Ok(Cond { word, op: "", value: 0, high: None, expr: Some(rest.join(" ")) });
+        return Ok(Cond { word, op: "", value: 0, high: None, expr: Some(expression) });
     }
     let [name, op, rest @ ..] = tokens else {
         return Err(format!("a condition is WORD OP VALUE, got `{}`", tokens.join(" ")));
@@ -958,6 +977,25 @@ mod tests {
             text,
             &Setup { disc: Path::new("/d.cue"), symbols: Path::new("/g.map"), cards: Path::new("/cards") },
         )
+    }
+
+    #[test]
+    fn sim_ticks_is_refused_for_exact_values_and_moduli_but_not_thresholds() {
+        for bad in [
+            "hold circle until expr (u32(HK_SIM_TICKS) & 7) == 0 timeout 30",
+            "wait until expr u32(HK_SIM_TICKS) == 100 timeout 30",
+            "wait until expr u32(HK_SIM_TICKS) % 8 == 0 timeout 30",
+        ] {
+            let error = compile_text(&format!("name t\n{bad}\n")).unwrap_err();
+            assert!(error.contains("HK_SIM_TICKS"), "{bad}: {error}");
+        }
+        for good in [
+            "wait until expr u32(HK_SIM_TICKS) >= 100 timeout 30",
+            "wait until expr u32(HK_SOUL) > 3 && u32(HK_SIM_TICKS) > 5 timeout 30",
+            "hold circle until expr (u32(HK_INPUT_POLLS) & 7) == 0 timeout 30",
+        ] {
+            assert!(compile_text(&format!("name t\n{good}\n")).is_ok(), "{good}");
+        }
     }
 
     #[test]
