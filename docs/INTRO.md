@@ -194,8 +194,7 @@ never has them. `cargo hk-build intro-cook` cooks them and compiles the player a
 Console risk (not tested, the emulator cannot show it): the program returns into a game whose interrupt wrapper,
 DMA priorities and SPU it has used in between; `machine.rs` puts back what the emulator showed it changes and the
 CD controller's flags are acknowledged before the game's handler sees them, but silicon has surprised this code
-before (CD DMA priority, Pause timing). The vendored chain loader in `intro/vendor` (only `quiesce` is used now)
-lacks the editor's CD stop fix until HK's SDK repin.
+before (CD DMA priority, Pause timing). The reset at the start is the SDK chain loader crate's `runtime::quiesce` (the wider entry state; machine.rs lists each register it writes and how it comes back). The console has not run it: it goes on the list for the next Private disc burn.
 
 ## Journeys
 
