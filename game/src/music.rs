@@ -5,11 +5,8 @@
 //! that the CD refills between room loads, so it plays on through a load from
 //! what is buffered. The drive itself is scheduled by `disc`: room loads,
 //! music refills and XA never overlap.
-use psx_io::cd;
-#[path = "xa_player.rs"]
-mod xa_player;
+use psx_io::cd::xa::{DriveSpeed, Event, File, Player, Song};
 use psx_spu::{self as spu, Adsr, CdVolume, Voice, Volume};
-use xa_player::{Event, Player, Song};
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/xa_music.rs"));
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -25,7 +22,10 @@ const _: () = assert!(MUSIC_RING_BYTES == stream::RING_BYTES);
 // The controller is driven by this player only while a song plays: `disc` hands
 // the drive over (`cdda_acquire`) before a fight, and music::begin owns it at
 // the title, so nothing else programs it meanwhile.
-static mut PLAYER: Player = Player::new();
+// SAFETY: a token is a logic guard, not a memory-safety one (see `psx_io::periph`); the raw CD
+// drivers in this game have never held one, and the player is the only thing that drives the
+// controller while a song plays.
+static mut PLAYER: Player = Player::new(unsafe { psx_io::periph::Cd::steal() });
 fn player() -> &'static mut Player {
     unsafe { &mut *(&raw mut PLAYER) }
 }
@@ -55,17 +55,21 @@ fn song(id: u8) -> Option<Song> {
     if lba == 0 {
         return None;
     }
-    Some(Song {
-        lba,
-        span: s.span,
-        file: XA_FILE_NUMBER,
-        channel: s.channel,
-    })
+    Some(
+        File::new(lba, XA_SECTORS, XA_FILE_NUMBER, DriveSpeed::Single)
+            .song_with_span(s.channel, s.span),
+    )
 }
-/// Start song `id` from the top.
+/// Start song `id` from the top. One copy: the title and the fights both start songs.
+#[inline(never)]
 fn play(id: u8, looping: bool) -> bool {
     let Some(song) = song(id) else { return false };
-    player().play(song, looping)
+    if player().play(song, looping).is_err() {
+        return false;
+    }
+    // The drive's own mixer passes the song at unity (the SDK leaves the level to the caller).
+    player().set_volume(0x80, 0x80);
+    true
 }
 static mut ENABLED: bool = false;
 static mut LAST_POLL: u32 = 0;

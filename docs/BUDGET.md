@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |808,008|
-| Code-to-data alignment |56|
+| Linked code |808,324|
+| Code-to-data alignment |124|
 | Linked data, including menu and HUD |244,712|
-| BSS, including shared scene arena and runtime pools |796,020|
-| Total static span |1,848,804|
+| BSS, including shared scene arena and runtime pools |795,988|
+| Total static span |1,849,156|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |133,404|
+| Unallocated gap before reserved stack |133,052|
 | Room module pool, inside that gap |110,592|
-| Free RAM below the module pool |22,812|
+| Free RAM below the module pool |22,460|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -57,7 +57,7 @@ authored colours) took 4,104 more, mostly code that crossed an alignment step,
 which left 9,736. A broken stalactite's flung rocks, dust and sounds
 (2026-10-04, the rocks flying in the Geo coin pool) took 2,072 of those, one
 alignment step: 7,664 were free below the pool then. Playing the title and the fights as
-XA songs through the player the game carries (game/src/xa_player.rs, the directory
+XA songs through a player (then the game's own copy, since replaced by the SDK's xa::Player; the directory
 lookup of MUSIC.XA in disc.rs, 2026-10-04) took 2,064 of them: 5,600 are free below the
 pool now. The pad driver of the SDK pin that holds the analog request and the
 ACK-paced poll (psx-pad, PadReader and require_analog_port1 at boot,
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d35e4`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d3744`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -665,3 +665,5 @@ The 2026-11-08 per-scene Geo bank (docs/GEO.md "Geo art per scene") took the fre
 The 2026-11-09 SDK repin (PSoXide main efdd3083c: smaller cache flush, pad, memory card, CD reader and panic path) together with the Mossman Shaker (`Attack::Gas` on the Runner, its gas hit polygon, emitters and corpse, the spec wire arm) took linked code from 812,608 to 808,484 (-4,124), alignment 64 to 92, linked data 244,408 to 244,696 (+288) and BSS 795,972 to 795,996 (+24), so 22,340 bytes are free below the module pool on the shipping disc (18,556 on 67dd74e; bar 8,192; measured on main 1e8c32a). The two changes were built together; the SDK's own share was not measured apart.
 
 The 2026-11-13 SDK repin (PSoXide 091551541: the pad poll that accepts the latched ACK, the interrupt dispatcher, the architecture gate, and the polled CD command paths sharing one copy of the response drain and read) took linked code from 808,484 to 808,008 (-476), alignment 92 to 56, linked data 244,696 to 244,712 and BSS 795,996 to 796,020, so 22,812 bytes are free below the module pool on the shipping disc (22,340 before; bar 8,192).
+
+The 2026-11-13 move of the XA player from the game's own copy (game/src/xa_player.rs) to the SDK's `xa::Player` took linked code from 808,008 to 808,324 (+316) and BSS from 796,020 to 795,988, so 22,460 bytes are free below the module pool on the shipping disc (22,812 before; bar 8,192). The 352 bytes of free RAM are what the SDK player has over the copy: error results, suspend and resume, per-song speed and the head sample (sdk CHANGELOG).

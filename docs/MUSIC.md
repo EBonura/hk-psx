@@ -17,10 +17,8 @@ one-second poll sees the song end, and runs the SDK's `xa-encode` and the
 reference decoder's `xa-score`. It writes `data/music.xa`, `data/xa_music.rs`
 (each song's channel and the sectors from the file start to the end of its own
 audio) and `.hkpsx/xa-music.json`. The encoder comes from the SDK revision in
-`xa-encoder.lock.json`, exported once under `.hkpsx/xa-encoder`: the guest's pin
-(sdk.lock.json) predates it and cannot move until host/stack_budget.py and
-host/code_modules.py are ported to the SDK's single-region linker script and
-Rust hazard patcher (the SDK dropped `tools/hazard_patch.py`).
+`xa-encoder.lock.json`, exported once under `.hkpsx/xa-encoder` (the guest's own pin,
+sdk.lock.json, is a later SDK revision that has the player and the encoder both).
 
 Disc: `hk-psx-build disc` (host/hk-build/disc.rs, ported from the packaging
 half of build_guest.py) stages WORLD.PAK and calls `mkisopsx --xa-file`. The
@@ -28,10 +26,11 @@ file follows WORLD.PAK; the guest finds it by name in the root directory
 (`disc::Cache::find_xa`, before the CD interrupt is installed), so a program
 moved to another LBA keeps working.
 
-Guest: `game/src/xa_player.rs` is the logic of the SDK's
-`psx_io::cd::xa::Player` over the pinned SDK's drive commands (delete it for the
-import when the pin moves). Each song loops at its own end: the player is given
-the song's span, not the file's. `music.rs` plays the title (after the
+Guest: `game/src/music.rs` plays the songs through the SDK's
+`psx_io::cd::xa::Player`; the game carries no player of its own (the local copy
+`game/src/xa_player.rs` was deleted). Each song loops at its own end:
+`File::song_with_span` is given the song's span, not the file's, and
+`Player::set_volume(0x80, 0x80)` puts the drive's mixer at unity after a start. `music.rs` plays the title (after the
 source's one second delay) and the fights; the fade, the Music volume option,
 `Floor Break`'s snapshot fade, the one-shot sting and the stop before a room
 load work as they did on CD-DA, because the CD input's volume is the SPU's.
