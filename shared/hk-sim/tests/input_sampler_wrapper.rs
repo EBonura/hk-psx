@@ -2,6 +2,7 @@
 #![allow(static_mut_refs)]
 extern crate self as psx_pad;
 extern crate self as psx_rt;
+extern crate self as psx_io;
 use std::sync::atomic::{AtomicU32, Ordering};
 static CLOCK: AtomicU32 = AtomicU32::new(100);
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
@@ -43,6 +44,7 @@ pub mod interrupts {
         super::CLOCK.load(super::Ordering::SeqCst)
     }
 }
+#[derive(Clone, Copy)]
 pub struct Buttons(u16);
 impl Buttons {
     pub fn bits(self) -> u16 {
@@ -79,6 +81,7 @@ impl Sticks {
         (self.left_x as i16 - 0x80, self.left_y as i16 - 0x80)
     }
 }
+#[derive(Clone, Copy)]
 pub struct Pad {
     pub buttons: Buttons,
     pub sticks: Sticks,
@@ -96,13 +99,29 @@ pub fn poll_port1() -> Pad {
     }
 }
 // The reader the game polls through; the stub hardware never rejects a poll.
-pub struct PadReader;
-impl PadReader {
-    pub const fn port1() -> Self {
-        Self
+pub mod periph {
+    pub struct ControllerPort;
+    impl ControllerPort {
+        pub const unsafe fn steal() -> Self {
+            Self
+        }
     }
-    pub fn poll(&mut self) -> Pad {
-        poll_port1()
+}
+pub enum Port {
+    One,
+}
+pub struct Controllers {
+    last: Pad,
+}
+impl Controllers {
+    pub const fn new() -> Self {
+        Self {
+            last: Pad { buttons: Buttons(0), sticks: Sticks::CENTERED },
+        }
+    }
+    pub fn poll(&mut self, _port: &mut periph::ControllerPort, _which: Port) -> &Pad {
+        self.last = poll_port1();
+        &self.last
     }
 }
 #[allow(non_upper_case_globals)]

@@ -19,13 +19,6 @@ remove = "W5"
 
 [[exception]]
 program = "hk-psx"
-kind = "deprecated-use"
-item = "game/src/input.rs"
-count = 1
-remove = "W2"
-
-[[exception]]
-program = "hk-psx"
 kind = "register-literal"
 item = "game/src/card_diag.rs"
 count = 2
@@ -65,13 +58,6 @@ kind = "cop0-asm"
 item = "intro/src/machine.rs"
 count = 2
 remove = "W5"
-
-[[exception]]
-program = "hk-intro"
-kind = "deprecated-use"
-item = "intro/src/main.rs"
-count = 2
-remove = "W2"
 
 [[exception]]
 program = "hk-intro"

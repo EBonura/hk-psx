@@ -310,6 +310,8 @@ fn show_rows(top: u32, bottom: u32) {
 /// The pad and the skip prompt it drives.
 pub(crate) struct Skip {
     port: ControllerPort,
+    /// The buttons only: the game that called this program has run the analog handshake already.
+    pads: psx_pad::Controllers<false>,
     /// Buttons down at the poll before; the pad starts out counted as held, so a button still
     /// down from the menu that launched the disc does not count as a press.
     held: u16,
@@ -335,7 +337,7 @@ impl Skip {
             return false;
         }
         self.last_vblank = now;
-        let down = psx_pad::poll_on(&mut self.port, Port::One).buttons.bits();
+        let down = self.pads.poll(&mut self.port, Port::One).buttons.bits();
         let pressed = down & !self.held != 0;
         self.held = down;
         if pressed && self.prompt.press(now) {
@@ -467,7 +469,7 @@ fn hand_back_the_screen(gpu: &mut Gpu, display: DisplayConfig, skip: &mut Skip) 
     gpu.set_draw_area((0, 0), (319, 239));
     gpu.set_draw_offset((0, 0));
     for _ in 0..600 {
-        let down = psx_pad::poll_on(&mut skip.port, Port::One).buttons.bits();
+        let down = skip.pads.poll(&mut skip.port, Port::One).buttons.bits();
         if down & (psx_pad::button::START | psx_pad::button::CROSS) == 0 {
             break;
         }
@@ -500,6 +502,7 @@ fn main() {
 
     let mut skip = Skip {
         port: peripherals.controller_port,
+        pads: psx_pad::Controllers::digital(),
         held: u16::MAX,
         last_vblank: interrupts::vblank_count(),
         prompt: Prompt { since: None, drawn: None },

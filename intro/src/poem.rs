@@ -365,6 +365,7 @@ pub fn tick(carry: &mut Carry, now: u32) -> u32 {
     // the first scene is up.
     let mut skip = Skip {
         port: unsafe { psx_io::periph::ControllerPort::steal() },
+        pads: psx_pad::Controllers::digital(),
         held: carry.held as u16,
         last_vblank: carry.last,
         prompt: crate::Prompt {

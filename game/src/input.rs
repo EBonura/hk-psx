@@ -1,10 +1,11 @@
 //! Main-thread-only cooperative pad service; never called from interrupt context.
 use crate::input_sampler::{Fault, Sampler};
 static mut SAMPLER: Sampler = Sampler::new();
-/// Port 1 through one reader for the whole program, menus and gameplay alike:
-/// a poll the driver rejects reads as the last clean state instead of every
-/// button released, so a held button cannot fire twice. See PAD-ANALOG.md.
-static mut PAD: psx_pad::PadReader = psx_pad::PadReader::port1();
+/// The controller ports through the SDK's one reader for the whole program, menus and gameplay
+/// alike: a poll the driver rejects reads as the last clean state instead of every button
+/// released, so a held button cannot fire twice, and the first poll of a pad runs the analog
+/// handshake (the game reads the left stick). See PAD-ANALOG.md.
+static mut PADS: psx_pad::Controllers = psx_pad::Controllers::new();
 /// The original's default controller layout on the PS1 pad, one for one.
 ///
 /// Source: the Steam build's `Assembly-CSharp.dll` (1.5.78), `ControllerMapping..ctor`,
@@ -62,7 +63,10 @@ pub fn with_stick(state: psx_pad::PadState) -> u16 {
 /// One poll of port 1 through the reader, as button bits with the left stick
 /// folded into the d-pad.
 pub fn poll_bits() -> u16 {
-    with_stick(unsafe { (*(&raw mut PAD)).poll() })
+    // SAFETY: a token is a logic guard, not a memory-safety one (see `psx_io::periph`); the pad
+    // is polled from the main thread only, and the memory card shares SIO0 only between polls.
+    let mut port = unsafe { psx_io::periph::ControllerPort::steal() };
+    with_stick(*unsafe { &mut *(&raw mut PADS) }.poll(&mut port, psx_pad::Port::One))
 }
 #[no_mangle]
 pub static mut HK_INPUT_POLLS: u32 = 0;

@@ -894,10 +894,11 @@ fn main() {
     gpu::set_draw_offset(0, 0);
     // The card is read before the pad sampler exists: SIO0 is not yet shared.
     let (slots, card_fault) = save::survey();
-    // A launcher leaves the pad in whatever mode its last program used: ask for analog
-    // and lock it (the Analog button then cannot flip it mid-play). Only now that the
-    // card is done with SIO0. The game reads buttons only, so a digital pad plays too.
-    let _ = psx_pad::require_analog_port1();
+    // A launcher leaves the pad in whatever mode its last program used: the first poll asks
+    // for analog and locks it (the Analog button then cannot flip it mid-play). Only now that
+    // the card is done with SIO0. The game reads sticks as a second d-pad and buttons, so a
+    // digital pad plays too.
+    let _ = input::poll_bits();
     // Each slot's one line on the save screen. Geo and masks are what the
     // record holds; the source also shows play time, completion and the map
     // zone, none of which this port tracks.
