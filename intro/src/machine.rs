@@ -39,35 +39,42 @@
 use psx_io::periph::Cd;
 use psx_io::{irq, read_u16, read_u32, write_u16, write_u32};
 
+use psx_hw::{dma, spu, timers};
+
 const VECTOR: u32 = 0x8000_0080;
-const DPCR: u32 = 0x1F80_10F0;
-const DICR: u32 = 0x1F80_10F4;
+const DPCR: u32 = dma::DPCR;
+const DICR: u32 = dma::DICR;
 /// DICR bits 24 to 30 are interrupt flags, cleared by writing a one: a restore writes the rest back.
 const DICR_FLAGS: u32 = 0x7F00_0000;
 /// Mode registers of the three root counters.
-const TIMER_MODES: [u32; 3] = [0x1F80_1104, 0x1F80_1114, 0x1F80_1124];
+const TIMER_MODES: [u32; 3] = [
+    timers::block(0) + timers::MODE,
+    timers::block(1) + timers::MODE,
+    timers::block(2) + timers::MODE,
+];
 /// The SPU registers the entry-state reset or the program changes that the game's own driver reads back
 /// or relies on: main volume (left, right), reverb volume (left, right), the CD input volume (left,
-/// right), the external input volume, the reverb work base, SPUCNT, the transfer control, and the
-/// pitch-modulation, noise and reverb-enable masks (low and high halves).
+/// right), the external input volume (the two words after the CD input's), the reverb work base,
+/// SPUCNT, the transfer control, and the pitch-modulation, noise and reverb-enable masks (low and
+/// high halves).
 const SPU_REGISTERS: [u32; 17] = [
-    0x1F80_1D80,
-    0x1F80_1D82,
-    0x1F80_1D84,
-    0x1F80_1D86,
-    0x1F80_1DB0,
-    0x1F80_1DB2,
-    0x1F80_1DB4,
-    0x1F80_1DB6,
-    0x1F80_1DA2,
-    0x1F80_1DAA,
-    0x1F80_1DAC,
-    0x1F80_1D90,
-    0x1F80_1D92,
-    0x1F80_1D94,
-    0x1F80_1D96,
-    0x1F80_1D98,
-    0x1F80_1D9A,
+    spu::MAIN_VOL_LEFT,
+    spu::MAIN_VOL_RIGHT,
+    spu::REVERB_VOL_LEFT,
+    spu::REVERB_VOL_RIGHT,
+    spu::CD_VOL_LEFT,
+    spu::CD_VOL_RIGHT,
+    spu::CD_VOL_LEFT + 4,
+    spu::CD_VOL_LEFT + 6,
+    spu::REVERB_WORK_BASE,
+    spu::SPUCNT,
+    spu::TRANSFER_CTRL,
+    spu::mask::PITCH_MOD_LO,
+    spu::mask::PITCH_MOD_HI,
+    spu::mask::NOISE_LO,
+    spu::mask::NOISE_HI,
+    spu::mask::REVERB_ENABLE_LO,
+    spu::mask::REVERB_ENABLE_HI,
 ];
 
 /// Everything [`Saved::restore`] writes back.
@@ -138,8 +145,8 @@ impl Saved {
             }
             // The program's own sound is over: no voice of it keys on (it uses none), the SPU is
             // as the game left it.
-            write_u16(0x1F80_1D8C, 0xFFFF);
-            write_u16(0x1F80_1D8E, 0x00FF);
+            write_u16(spu::mask::KEY_OFF_LO, 0xFFFF);
+            write_u16(spu::mask::KEY_OFF_HI, 0x00FF);
             for (address, value) in SPU_REGISTERS.iter().zip(self.spu) {
                 write_u16(*address, value);
             }

@@ -448,7 +448,11 @@ pub fn package(
         .args(["--volume", "HKPSX", "--world-pack-extra-dir"])
         .arg(&chunks)
         .arg("--world-pack-order-file")
-        .arg(&order);
+        .arg(&order)
+        // The program's exceptions to the SDK architecture gate (sdk/docs/GATE.md), among them
+        // that its executables do not come through `psoxide-pgo apply`.
+        .arg("--gate-file")
+        .arg(root.join("psx-gate.toml"));
     if let Some(intro) = intro {
         for movie in &intro.movies {
             command.arg("--xa-file").arg(movie);

@@ -293,13 +293,22 @@ name = "psoxide-hazard"
 version = "0.1.0"
 dependencies = [
  "psx-disasm",
+ "psx-gate",
  "psx-residency",
  "regex",
+ "serde_json",
 ]
 
 [[package]]
 name = "psx-disasm"
 version = "0.1.0"
+
+[[package]]
+name = "psx-gate"
+version = "0.1.0"
+dependencies = [
+ "psx-iso",
+]
 
 [[package]]
 name = "psx-hw"
@@ -314,6 +323,10 @@ version = "0.1.0"
 dependencies = [
  "psx-hw",
 ]
+
+[[package]]
+name = "psx-iso"
+version = "0.1.0"
 
 [[package]]
 name = "psx-library"
