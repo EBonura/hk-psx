@@ -6,7 +6,7 @@ sync poll
 include chain-new-game-to-greenpath.walk
 include fungus1-06a-chain.walk
 include fungus1-06-vine1.walk
-wait 7                                        # rest before Fungus1_06's second half: the Shakers there gas a hop that lands at the wrong phase. On the 35b285c78 pin: before the Controllers change 7 passes, 13 and 23 fail (hop 15); with it 7 and 23 pass, 13, 41 and 67 fail (hop 13). Marginal hops: replan the room (docs/ROUTES.md, rooms are planned on the disc they must pass on)
+wait 7                                        # phase-rest 06b: rest before Fungus1_06's second half: the Shakers there gas a hop that lands at the wrong phase. On the 35b285c78 pin: before the Controllers change 7 passes, 13 and 23 fail (hop 15); with it 7 and 23 pass, 13, 41 and 67 fail (hop 13). Marginal hops: replan the room (docs/ROUTES.md, rooms are planned on the disc they must pass on)
 include fungus1-06b-chain.walk
 include fungus1-06-vine4.walk
 include fungus1-06c-chain.walk
@@ -26,7 +26,7 @@ wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
 wait until expr u8(HK_HERO_LOCK) == 1 timeout 300                      # her greeting has taken hold of the Knight (the lock can come a few ticks after the encounter count)
 loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting holds the Knight: a press lands whenever its box is ready, not at a fixed phase
 press cross
-wait 38                                       # 45 loses the fight on the 2026-11-09 layout, 38 and 51 win; on the 35b285c78 pin with the Controllers change 51 loses it (a hold in her dash times out) and 38 wins (the phase class of docs/ROUTES.md)
+wait 38                                       # phase-rest greeting: 45 loses the fight on the 2026-11-09 layout, 38 and 51 win; on the 35b285c78 pin with the Controllers change 51 loses it (a hold in her dash times out) and 38 wins (the phase class of docs/ROUTES.md)
 end
 wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
 include hornet-defs.walk

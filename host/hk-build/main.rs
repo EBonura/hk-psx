@@ -17,6 +17,7 @@ mod earned_focus;
 mod guest_manifest;
 mod intro;
 mod pacing;
+mod phase_sweep;
 mod region_cache;
 mod repin;
 mod routes;
@@ -2436,7 +2437,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|scene-specs|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|phase-sweep|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|scene-specs|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune] [--repin] [--resume]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2457,6 +2458,7 @@ fn usage() -> ! {
          pace-pins [RUN_DIR]  rewrite the pacing ceilings of the route pin files from a validate run (default .hkpsx/validate)\n\
          tape-hold NAME FIRST LAST BUTTON  hold BUTTON over polls FIRST..LAST of tools/tapes/NAME.pxtape\n\
          tape-extend NAME POLLS  add POLLS neutral polls to the end of tools/tapes/NAME.pxtape (then tape-hold presses into them)\n\
+         phase-sweep WALK [--rest NAME]... [--values A,B,...] --library DIR...  try a walk's `# phase-rest NAME` waits on each build (shipping library)\n\
          tape-stall NAME POLL TICKS  repeat sample POLL of tools/tapes/NAME.pxtape TICKS more times (a hard landing's lock)\n\
          card-check  list a memory card image (.mcd) the way the console's card manager would, and check its layout\n          \
          earned-focus  prove four earned hits, two kills, real damage, and one Focus heal\n\
@@ -2567,6 +2569,14 @@ fn main() {
             usage();
         }
         if let Err(error) = card_check::run(&files) {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "phase-sweep" {
+        // phase-sweep WALK [--rest NAME]... [--values A,B,...] --library DIR...: re-pick a walk's phase rests (docs/ROUTES.md).
+        if let Err(error) = phase_sweep::run(&root(), &mut args) {
             eprintln!("error: {error}");
             std::process::exit(1);
         }

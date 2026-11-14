@@ -505,12 +505,17 @@ pub fn scripts(root: &Path) -> Result<Vec<(String, std::path::PathBuf)>> {
 /// Play one walk script on the disc in `library` with `gate`, writing the journey and the gate's
 /// report under `out`. Returns the gate's verdict line and whether it passed.
 pub fn play(gate: &Path, library: &Path, map: &Path, out: &Path, name: &str, script: &Path) -> Result<(bool, String)> {
+    play_text(gate, library, map, out, name, &expand(script)?)
+}
+
+/// `play` for a script already expanded (a phase sweep plays the same walk with another rest).
+pub fn play_text(gate: &Path, library: &Path, map: &Path, out: &Path, name: &str, text: &str) -> Result<(bool, String)> {
     let dir = out.join(name);
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let cue = crate::disc::disc_cue(library);
     let cards = crate::root().join("tools/cards");
-    let toml = compile(&expand(script)?, &Setup { disc: &cue, symbols: map, cards: &cards })?;
+    let toml = compile(text, &Setup { disc: &cue, symbols: map, cards: &cards })?;
     let file = dir.join(format!("{name}.toml"));
     std::fs::write(&file, toml).map_err(|e| e.to_string())?;
     let output = std::process::Command::new(gate)
