@@ -144,6 +144,16 @@ pub fn force_flip() {
     }
 }
 
+/// Turn the display on or off at a gate. The presenter's own call waits for the slot and the last
+/// flip with no checkpoints, which would miss pad polls; the checkpoints run here instead.
+pub fn set_display_enabled(on: bool) {
+    while pending() {
+        crate::input::checkpoint();
+        present::kick();
+    }
+    present::set_display_enabled(on);
+}
+
 // Menus, title, loading screens and the gates draw through the command port.
 /// Start a frame drawn through the port: wait until the one handed over last is on screen, then
 /// point the draw area at the draw side. Once before a screen's first draw, and after each

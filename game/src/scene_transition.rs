@@ -40,7 +40,7 @@ pub fn load(
     let fading = crate::exit_fade::armed();
     if !fading {
         // The presenter applies the word at the next edge with GPUSTAT bit 24 up, never held by the cap.
-        psx_rt::present::set_display_enabled(false);
+        crate::presentation::set_display_enabled(false);
         while psx_rt::present::is_flip_pending() {
             crate::input::checkpoint();
         }
@@ -71,7 +71,7 @@ pub fn load(
     crate::gate_probe::set(crate::gate_probe::DISPLAY);
     if result.is_ok() {
         vram.admit_scene(region, cache.atlases_ready());
-        psx_rt::present::set_display_enabled(true);
+        crate::presentation::set_display_enabled(true);
         while psx_rt::present::is_flip_pending() {
             crate::input::checkpoint();
         }

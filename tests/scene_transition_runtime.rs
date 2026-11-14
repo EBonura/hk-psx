@@ -73,6 +73,11 @@ pub mod present {
 }
 mod presentation {
     pub fn pending() -> bool { super::present::is_flip_pending() }
+    // The game's wait (checkpoints while a flip is pending) then the presenter's call.
+    pub fn set_display_enabled(enabled: bool) {
+        while pending() { super::input::checkpoint(); }
+        super::present::set_display_enabled(enabled);
+    }
 }
 pub fn arm_draw_done() { device(|h| { h.armed = true; h.signalled = false; }); }
 pub fn signal_draw_done() { device(|h| { assert!(h.armed, "GP0(1Fh) without an arm"); h.armed = false; h.signalled = true; }); }
