@@ -2425,12 +2425,14 @@ fn repair(
 }
 
 /// Hand every packet built since the last handover to the presenter as one chunk (a `Part::More`)
-/// if the slot is empty. Never waits: a full slot just leaves the packets for a later call or the
-/// final list, so the CPU stays ahead of the GPU. The presenter starts the chunk as soon as the
-/// frame before is on screen and the channel is idle.
+/// if the slot is empty and the channel is idle. Never waits: a busy channel or a full slot just
+/// leaves the packets for a later call or the final list, so the CPU stays ahead of the GPU.
+/// The idle channel is the old rule and it matters: a chunk handed over behind a walking one
+/// used up the frame's chunks early on small lists and left a long final list (c37-stand's mean
+/// frame was 7 percent longer); chunks built only when the channel is free are the big ones.
 pub fn kick_ready() {
     unsafe {
-        if USED == KICKED || CHUNK_COUNT == CHUNKS || psx_rt::present::is_slot_full() {
+        if USED == KICKED || CHUNK_COUNT == CHUNKS || psx_rt::present::is_slot_full() || dma_pending() {
             return;
         }
         let ot = &mut CHUNK_OTS[CHUNK_COUNT];
