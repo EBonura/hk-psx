@@ -543,13 +543,33 @@ pub fn compile(repository: &Path, psoxide: &Path) -> Result<PathBuf> {
         )?,
     )?;
     let map = dir(repository).join("hk-intro.map");
+    // The intro is its own workspace, so Cargo hashes its path dependencies (`../.psoxide/...`)
+    // by absolute path, rustc seeds every crate disambiguator from that, and the image's code
+    // layout changed with where the repository was checked out. The SDK's `psoxide-rustc`
+    // replaces that one value with a hash of the crate's name, features and path relative to
+    // the repository root (as the staged guest build does).
+    run_command(
+        Command::new("cargo")
+            .args(["build", "--quiet", "--release", "--locked", "--manifest-path"])
+            .arg(psoxide.join("Cargo.toml"))
+            .args(["-p", "psoxide-pgo", "--bin", "psoxide-rustc"]),
+        "build the SDK's path-independent compiler wrapper",
+    )?;
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| psoxide.join("target"));
     let mut command = Command::new("cargo");
     command
         .current_dir(&intro)
         .args(["build", "--release"])
         .env("PSOXIDE", psoxide)
         .env("HK_INTRO_LOAD_ADDR", format!("{LOAD_ADDR:#x}"))
-        .env("HKPSX_LINK_MAP", &map);
+        .env("HKPSX_LINK_MAP", &map)
+        .env("RUSTC_WRAPPER", target.join("release/psoxide-rustc"))
+        .env("PSOXIDE_REPRO_ROOT", repository);
+    if let Some(inner) = std::env::var_os("RUSTC_WRAPPER") {
+        command.env("PSOXIDE_REPRO_INNER", inner);
+    }
     run_command(&mut command, "compile the hk-psx intro for PlayStation")?;
     let exe = intro.join("target/mipsel-sony-psx/release/hk-intro.exe");
     if !exe.is_file() {
