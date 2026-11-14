@@ -26,7 +26,7 @@ wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
 wait until expr u8(HK_HERO_LOCK) == 1 timeout 300                      # her greeting has taken hold of the Knight (the lock can come a few ticks after the encounter count)
 loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting holds the Knight: a press lands whenever its box is ready, not at a fixed phase
 press cross
-wait 51                                       # 45 loses the fight on the 2026-11-09 layout, 38 and 51 win (the phase class of docs/ROUTES.md)
+wait 38                                       # 45 loses the fight on the 2026-11-09 layout, 38 and 51 win; on the 35b285c78 pin with the Controllers change 51 loses it (a hold in her dash times out) and 38 wins (the phase class of docs/ROUTES.md)
 end
 wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
 include hornet-defs.walk
