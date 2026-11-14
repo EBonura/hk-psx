@@ -1217,7 +1217,7 @@ static mut CPU_BOUND: bool = false;
 /// the GPU was.
 static mut TRIMMING: bool = true;
 /// The recent presented frames that were slow and ran out of CPU first, one bit each (`trim_policy`).
-static mut CPU_SLOW_FRAMES: u16 = 0;
+static mut CPU_SLOW_FRAMES: u32 = 0;
 /// Views (bank, view) found CPU-bound, so they start without trimming when
 /// they are bound again instead of paying a slow frame to find out.
 static mut CPU_VIEWS: [(usize, usize); 8] = [(usize::MAX, 0); 8];
