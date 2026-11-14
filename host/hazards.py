@@ -40,6 +40,17 @@ def _tools():
         _TOOLS=Path(os.environ.get('CARGO_TARGET_DIR') or sdk/'target')/'release'
     return _TOOLS
 
+def stamp_receipt(exe,features=()):
+    """The SDK's architecture gate (sdk/docs/GATE.md) judges the game once more and writes its
+    receipt into the finished, hazard-patched exe, the same receipt `psoxide-pgo apply` writes.
+    The disc builder refuses an executable without one, and one changed after this call."""
+    command=[str(_tools()/'psx-gate'),'--sdk',str(ROOT/'.psoxide'),'--crate',str(ROOT/'game'),
+             '--program-file',str(ROOT/'psx-gate.toml'),'--receipt',str(exe),'--','build','--release']
+    if features:command+=['--features',','.join(features)]
+    done=subprocess.run(command,capture_output=True,text=True)
+    print(done.stdout+done.stderr,end='',flush=True)
+    if done.returncode!=0:raise ValueError('The gate refused the game, or could not write its receipt:\n'+done.stdout+done.stderr)
+
 def _module_tool():
     """Rust helper for compact, verified module images."""
     global _MODULE_TOOL

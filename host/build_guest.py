@@ -290,7 +290,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         return {'elf':out/'hk-psx.elf'}
     # Split and patch from the linker's own bytes, so a cached link stays clean.
     exe=out/'hk-psx-patched.exe'
-    from hazards import irq_stack_guard, scan, stack_guard
+    from hazards import irq_stack_guard, scan, stack_guard, stamp_receipt
     report=out/'hazards.json' if work else hazard_report_path(telemetry,candidate)
     if profile is None:
         from shared_publish import publish
@@ -301,6 +301,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         stack_guard(exe,resident_map)
         irq_stack_guard(exe,resident_map)
         check_main_frame(exe,link_map.read_text())
+        stamp_receipt(exe,features)
         if link_map.resolve()!=(out/'hk-psx.map').resolve():shutil.copy2(link_map,out/'hk-psx.map')
         outputs={'exe':out/'hk-psx.exe','bin':out/f'disc/{DISC_NAME}.bin','cue':out/f'disc/{DISC_NAME}.cue'} if work else artifacts(telemetry,candidate)
         outputs['exe'].parent.mkdir(parents=True,exist_ok=True)
@@ -315,6 +316,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     stack_guard(exe,resident_map)
     irq_stack_guard(exe,resident_map)
     check_main_frame(exe,link_map.read_text())
+    stamp_receipt(exe,features)
     shutil.copy2(link_map,out/'hk-psx.map')
     outputs = {'exe':out/'hk-psx.exe','bin':out/f'disc/{DISC_NAME}.bin','cue':out/f'disc/{DISC_NAME}.cue'} if work else artifacts(telemetry,candidate)
     outputs['exe'].parent.mkdir(parents=True,exist_ok=True)

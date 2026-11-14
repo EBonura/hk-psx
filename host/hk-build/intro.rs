@@ -572,6 +572,21 @@ pub fn compile(repository: &Path, psoxide: &Path) -> Result<PathBuf> {
             .arg(&map),
         "prove hk-intro.exe free of load-delay hazards",
     )?;
+    // The architecture gate (sdk/docs/GATE.md) judges the program once more and stamps its receipt
+    // into the finished executable, the same receipt `psoxide-pgo apply` writes.
+    run_command(
+        hazard_tool(psoxide, "psx-gate")
+            .arg("--sdk")
+            .arg(psoxide)
+            .arg("--crate")
+            .arg(&intro)
+            .arg("--program-file")
+            .arg(repository.join("psx-gate.toml"))
+            .arg("--receipt")
+            .arg(&exe)
+            .args(["--", "build", "--release"]),
+        "write the gate receipt into hk-intro.exe",
+    )?;
     let staged = repository.join("data/intro.exe");
     std::fs::copy(&exe, &staged)?;
     Ok(staged)

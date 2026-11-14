@@ -65,15 +65,3 @@ kind = "vector-write"
 item = "intro/src/machine.rs"
 count = 1
 remove = "W5"
-
-[[exception]]
-program = "hk-psx-patched"   # the executable mkisopsx is given (hk-psx linked, then hazard-patched): it names a program by the file stem
-kind = "no-receipt"
-item = "-"
-remove = "W9"
-
-[[exception]]
-program = "hk-intro"
-kind = "no-receipt"
-item = "-"
-remove = "W9"
