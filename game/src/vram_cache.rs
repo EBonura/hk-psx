@@ -58,7 +58,7 @@ impl Cache {
 /// palette coverage within each scene by Cache::init before uploads start.
 pub fn upload_atlas(a: &crate::disc::AtlasDesc, bytes: &[u8]) {
     assert_eq!(bytes.len(), a.raw_len);
-    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::is_display_control_queued());
+    assert!(!crate::render::dma_pending() && !crate::presentation::pending());
     crate::input::checkpoint();
     match a.kind {
         0 => {

@@ -1,147 +1,141 @@
-//! Main-thread presentation progress at cooperative simulation checkpoints.
-//! Only the VBlank IRQ consumes the SDK's GP1 queue; it never accesses this
-//! state. Arm after the final OT is complete, retire before any packet reuse.
+//! Main-thread presentation through the SDK's presenter (psx_rt::present, sdk/docs/PRESENT.md).
+//!
+//! A frame is handed over as DMA chains: every chunk the renderer kicks while it builds is a
+//! `Part::More`, the final list (HUD and dialogue on top, ending on GP0(1Fh)) the `Part::Final`
+//! that carries the display word. The presenter links the draw area, offset and clear in front of
+//! the first part, starts a part as soon as the frame before is on screen and the channel is idle
+//! (here from `checkpoint`, else the VBlank handler), and flips at the first edge the 30 fps cap
+//! allows. The main thread never waits for it: cooperative checkpoints kick, simulation ticks
+//! and input run in the waits (`submit_final`, `present_spin`).
+//!
+//! Phase of the frame in hand: not submitted, final list handed over (its walk may still run),
+//! and drained (the walk has ended, so CPU-only work may reuse packet RAM while the GPU finishes
+//! and the flip waits for its edge).
+use psx_gpu::display::DoubleBuffer;
+use psx_rt::present::{self, Part, PresentCap, Presenter};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Phase {
     Idle,
-    FinalDma,
-    Drain,
-    Queued,
+    Submitted,
+    Drained,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Action {
-    None,
-    KickFinal,
-    Queue(u32),
-}
-struct State {
-    display: u32,
-    phase: Phase,
-}
-const _: () = assert!(core::mem::size_of::<State>() <= 8);
-impl State {
-    const fn new() -> Self {
-        Self {
-            display: 0,
-            phase: Phase::Idle,
-        }
-    }
-    fn begin(&mut self, display: u32) {
-        assert!(self.phase == Phase::Idle, "presentation still owns packets");
-        self.display = display;
-        self.phase = Phase::FinalDma;
-    }
-    #[inline(always)]
-    fn needs_service(&self) -> bool {
-        matches!(self.phase, Phase::FinalDma | Phase::Drain)
-    }
-    fn advance(&mut self, dma_busy: bool) -> Action {
-        if dma_busy {
-            return Action::None;
-        }
-        match self.phase {
-            Phase::FinalDma => {
-                self.phase = Phase::Drain;
-                Action::KickFinal
-            }
-            Phase::Drain => {
-                self.phase = Phase::Queued;
-                Action::Queue(self.display)
-            }
-            Phase::Idle | Phase::Queued => Action::None,
-        }
-    }
-    fn finish(&mut self, queue_pending: bool) {
-        assert!(
-            self.phase == Phase::Queued && !queue_pending,
-            "presentation incomplete"
-        );
-        self.phase = Phase::Idle;
-    }
-}
-#[cfg(not(test))]
-static mut STATE: State = State::new();
-#[cfg(not(test))]
-pub fn begin(display: u32) {
+static mut PHASE: Phase = Phase::Idle;
+static mut PRESENTER: Option<Presenter> = None;
+static mut FB: *mut DoubleBuffer = core::ptr::null_mut();
+
+/// Take over presentation: once, after `install_vblank_counter`, with the GPU idle. `fb` is the
+/// program's double buffer; the presenter is the only thing that moves its draw side. Every
+/// frame is cleared to the sky colour in front of its first part. Hollow Knight runs at 30 fps by
+/// the owner's decision: a cap of two VBlanks, set by name.
+pub fn start(fb: &mut DoubleBuffer) {
     unsafe {
-        STATE.begin(display);
+        FB = fb;
+        PRESENTER = Some(Presenter::new(Some((9, 13, 20))));
+    }
+    present::set_cap(PresentCap::HZ30);
+}
+fn presenter() -> &'static mut Presenter {
+    // SAFETY: set once by `start`; the main thread is the only caller.
+    unsafe { (*(&raw mut PRESENTER)).as_mut().expect("presentation not started") }
+}
+/// The program's double buffer.
+fn buffers() -> &'static mut DoubleBuffer {
+    unsafe { &mut *FB }
+}
+
+/// A frame or a display word is handed over and not on screen yet: the replacement of "a display
+/// word is queued", for the places that need nothing of the frame in flight touched.
+#[inline(always)]
+pub fn pending() -> bool {
+    present::is_slot_full() || present::is_flip_pending()
+}
+/// Hand over one chunk of the frame being built. The caller checked that the slot is empty.
+pub fn submit_more(head: *const u32) {
+    // SAFETY: the chunk's table and packets stay untouched until its walk has ended
+    // (`render::begin_frame` runs after the frame is drained).
+    unsafe { presenter().submit(buffers(), head, Part::More) };
+}
+/// Hand over the final list. Waits only while an earlier chunk still waits in the slot, running
+/// the checkpoints.
+pub fn submit_final(head: *const u32) {
+    while present::is_slot_full() {
+        crate::input::checkpoint();
+        present::kick();
+    }
+    unsafe {
+        PHASE = Phase::Submitted;
+        KICK_NOTED = false;
+        presenter().submit(buffers(), head, Part::Final);
     }
 }
-#[cfg(not(test))]
-#[inline(always)]
-pub fn queued() -> bool {
-    unsafe { STATE.phase == Phase::Queued }
-}
-#[cfg(not(test))]
+/// Start the part in the slot when it can go, and note when the final list has drained.
 #[inline(always)]
 pub fn checkpoint() {
-    if unsafe { STATE.needs_service() } {
+    if present::is_slot_full() {
+        present::kick();
+    }
+    if unsafe { PHASE == Phase::Submitted } {
         service();
     }
 }
-#[cfg(not(test))]
+static mut KICK_NOTED: bool = false;
 #[inline(never)]
 fn service() {
-    // Do not queue on GPU readiness alone: an earlier linked-list DMA can
-    // still own packet memory even when the GPU's FIFO reports ready.
-    if crate::render::dma_pending() {
-        return;
-    }
-    // End the state borrow before any hardware call. These calls do not invoke
-    // cooperative checkpoints, and IRQ handlers never mutate STATE.
-    let action = unsafe { STATE.advance(false) };
-    match action {
-        Action::None => {}
-        Action::KickFinal => crate::render::kick_front(),
-        Action::Queue(display) => {
-            unsafe {
-                let now = psx_rt::interrupts::vblank_count();
-                // The vblanks between this frame's flip and the last one's: the
-                // flip follows the queue by one vblank either way.
-                HK_FRAME_VBLANKS = now.wrapping_sub(QUEUED_AT);
-                QUEUED_AT = now;
-            }
-            psx_rt::interrupts::queue_display_control_at_vblank(display);
-            unsafe {
-                crate::render::HK_FRAME_FLIP_LINES = crate::render::frame_lines();
-            }
+    // The final list leaves the slot when it starts: the line it started on (the policy of
+    // `render::begin_frame` reads the walk's length from it).
+    if unsafe { !KICK_NOTED } && !present::is_slot_full() {
+        unsafe {
+            KICK_NOTED = true;
+            crate::render::HK_FRAME_LAST_KICK_LINES = crate::render::frame_lines();
         }
     }
-}
-#[cfg(not(test))]
-pub fn finish() {
+    // Not drained while a part waits or the channel still walks: an earlier linked list can own
+    // packet memory even when the GPU's FIFO reports ready.
+    if present::is_slot_full() || crate::render::dma_pending() {
+        return;
+    }
     unsafe {
-        STATE.finish(psx_rt::interrupts::is_display_control_queued());
+        PHASE = Phase::Drained;
+        let now = psx_rt::interrupts::vblank_count();
+        // The vblanks between this frame's drain and the last one's.
+        HK_FRAME_VBLANKS = now.wrapping_sub(QUEUED_AT);
+        QUEUED_AT = now;
+        crate::render::HK_FRAME_FLIP_LINES = crate::render::frame_lines();
     }
 }
-/// VBlanks a queued flip may wait for its GP0(1Fh) before it is written by
-/// hand. psx-rt applies a queued word only once the GPU has signalled the end
-/// of the frame's drawing (GPUSTAT bit 24); a frame that never does (a lost
-/// GP0(1Fh), a wedged GPU) would otherwise wait forever, on a console and in
-/// the emulator alike. A frame that heavy still flips, late and counted.
+/// The final list has drained: the frame's walk has ended and its flip waits (or has landed).
+#[inline(always)]
+pub fn queued() -> bool {
+    unsafe { PHASE == Phase::Drained }
+}
+/// Retire the frame once its flip has landed.
+pub fn finish() {
+    unsafe {
+        assert!(PHASE == Phase::Drained && !present::is_flip_pending(), "presentation incomplete");
+        PHASE = Phase::Idle;
+    }
+}
+/// VBlanks a flip may wait for its GPU before it is written by hand. The presenter recovers a
+/// stalled walk and a missing GP0(1Fh) itself; this stays for a frame that heavy.
 pub const FLIP_TIMEOUT_VBLANKS: u32 = 30;
 #[no_mangle]
 pub static mut HK_FLIP_TIMEOUTS: u32 = 0;
-#[cfg(not(test))]
 static mut QUEUED_AT: u32 = 0;
-/// Vblanks the last presented frame took (flip to flip); the renderer reads it
-/// to see which resource a slow frame ran out of (render::begin_frame).
-#[cfg(not(test))]
+/// Vblanks the last presented frame took (drain to drain); the renderer reads it to see which
+/// resource a slow frame ran out of (render::begin_frame).
 #[no_mangle]
 pub static mut HK_FRAME_VBLANKS: u32 = 0;
-/// The main loop's queued flip has waited FLIP_TIMEOUT_VBLANKS for its GPU.
-#[cfg(not(test))]
+/// The main loop's flip has waited FLIP_TIMEOUT_VBLANKS for its GPU.
 pub fn flip_overdue() -> bool {
     queued()
-        && psx_rt::interrupts::is_display_control_queued()
-        && psx_rt::interrupts::vblank_count().wrapping_sub(unsafe { QUEUED_AT })
-            >= FLIP_TIMEOUT_VBLANKS
+        && present::is_flip_pending()
+        && psx_rt::interrupts::vblank_count().wrapping_sub(unsafe { QUEUED_AT }) >= FLIP_TIMEOUT_VBLANKS
 }
-/// Take the queued display word back from psx-rt and write it now. Racing the
-/// VBlank handler is harmless: it writes the same idempotent GP1 word.
-#[cfg(not(test))]
+/// Take the pending display word back from the presenter and write it now. Racing the VBlank
+/// handler is harmless: it writes the same idempotent GP1 word.
 pub fn force_flip() {
-    let word = psx_rt::interrupts::take_queued_display_control();
+    let word = present::cancel_flip();
     if word != 0 {
         psx_io::gpu::write_display_control(word);
         unsafe {
@@ -150,62 +144,14 @@ pub fn force_flip() {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn every_busy_schedule_preserves_final_dma_then_queue() {
-        for schedule in 0..65536u32 {
-            let mut state = State::new();
-            assert!(!state.needs_service());
-            assert_eq!(state.advance(false), Action::None);
-            let display = 0x05000000 | schedule;
-            state.begin(display);
-            let mut actions = std::vec::Vec::new();
-            for i in 0..18 {
-                let busy = i < 16 && schedule & (1 << i) != 0;
-                let before = state.phase;
-                let action = state.advance(busy);
-                if busy {
-                    assert_eq!(action, Action::None);
-                    assert_eq!(state.phase, before);
-                }
-                if action != Action::None {
-                    actions.push(action);
-                }
-            }
-            assert_eq!(actions, [Action::KickFinal, Action::Queue(display)]);
-            assert!(!state.needs_service());
-            assert_eq!(state.advance(false), Action::None);
-            state.finish(false);
-            assert!(!state.needs_service());
-            state.begin(display ^ 1);
-            assert_eq!(state.advance(false), Action::KickFinal);
-            assert_eq!(state.advance(false), Action::Queue(display ^ 1));
-        }
-    }
-    #[test]
-    #[should_panic(expected = "presentation still owns packets")]
-    fn cannot_rearm_while_final_dma_is_pending() {
-        let mut s = State::new();
-        s.begin(1);
-        s.begin(2);
-    }
-    #[test]
-    #[should_panic(expected = "presentation incomplete")]
-    fn cannot_retire_before_final_dma_drains() {
-        let mut s = State::new();
-        s.begin(1);
-        s.advance(false);
-        s.finish(false);
-    }
-    #[test]
-    #[should_panic(expected = "presentation incomplete")]
-    fn cannot_retire_before_vblank_consumes_queue() {
-        let mut s = State::new();
-        s.begin(1);
-        s.advance(false);
-        s.advance(false);
-        s.finish(true);
-    }
+// Menus, title, loading screens and the gates draw through the command port.
+/// Start a frame drawn through the port: wait until the one handed over last is on screen, then
+/// point the draw area at the draw side. Once before a screen's first draw, and after each
+/// `present_drawn`.
+pub fn begin_drawn() {
+    presenter().begin_frame(buffers());
+}
+/// Present a frame drawn through the port and return at once; the flip lands at its edge.
+pub fn present_drawn() {
+    presenter().present_drawn(buffers());
 }

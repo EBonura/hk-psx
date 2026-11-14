@@ -8,7 +8,7 @@
 //! `CALLERS`). Each is a plain forwarder; calling one while the module is not installed would land on
 //! `__hk_module_trap`, so `main` brackets them with `open` and `close`.
 use crate::{disc::Cache, menu, modules};
-use psx_gpu::framebuf::FrameBuffer;
+use psx_gpu::display::DoubleBuffer;
 
 /// Disc reads `open` tries before it gives up (each a whole read of one 20 KB chunk).
 const ATTEMPTS: usize = 4;
@@ -36,7 +36,7 @@ pub fn close() {
 /// `menu::run`: the title, its pages and the save slot chooser.
 #[inline(never)]
 pub fn run(
-    fb: &mut FrameBuffer,
+    fb: &mut DoubleBuffer,
     art: Option<&[u8]>,
     slots: &[&str; 4],
     fault: &str,
@@ -46,13 +46,13 @@ pub fn run(
 
 /// `menu::loading`: the title art with its loading prompt, while the first scene is read.
 #[inline(never)]
-pub fn loading(fb: &mut FrameBuffer) {
+pub fn loading(fb: &mut DoubleBuffer) {
     menu::loading(fb);
 }
 
 /// `menu::retry`: the title art with its retry prompt, until START or Cross is pressed again.
 #[inline(never)]
-pub fn retry(fb: &mut FrameBuffer) {
+pub fn retry(fb: &mut DoubleBuffer) {
     menu::retry(fb);
 }
 

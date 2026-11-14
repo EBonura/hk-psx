@@ -96,7 +96,7 @@ impl Line {
     }
 }
 
-fn show(fb: &mut psx_gpu::framebuf::FrameBuffer, lines: &[Line]) {
+fn show(fb: &mut psx_gpu::display::DoubleBuffer, lines: &[Line]) {
     let mut text: [&str; 14] = [""; 14];
     for (slot, line) in text.iter_mut().zip(lines.iter()) {
         *slot = line.as_str();
@@ -108,7 +108,7 @@ fn read_u32(value: *const u32) -> u32 {
     unsafe { core::ptr::read_volatile(value) }
 }
 
-fn probe_a(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuffer) {
+fn probe_a(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::display::DoubleBuffer) {
     unsafe {
         HK_PROBE_PHASE = 1;
     }
@@ -210,7 +210,7 @@ fn wait(limit: u32, mut ready: impl FnMut() -> bool) -> u32 {
     }
 }
 
-fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuffer) {
+fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::display::DoubleBuffer) {
     unsafe {
         HK_PROBE_PHASE = 2;
     }
@@ -309,7 +309,7 @@ fn probe_b(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuff
 }
 
 /// Runs both probes, then holds the last screen.
-pub fn run(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::framebuf::FrameBuffer) -> ! {
+pub fn run(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::display::DoubleBuffer) -> ! {
     while cache.prepare_ambience().is_err() {
         idle(60);
     }

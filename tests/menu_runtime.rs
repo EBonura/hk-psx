@@ -12,10 +12,6 @@ use std::sync::Mutex;
 static LOCK:Mutex<()>=Mutex::new(());
 #[derive(Default)]struct Trace{samples:VecDeque<u16>,polls:usize,pending:bool,armed:bool,signalled:bool,uploads:Vec<(VramRect,usize)>,volumes:Vec<(u8,u8)>,sprites:usize,music_begins:usize,unlocks:Vec<u8>,style_reads:usize,quads:usize}
 thread_local!{static TRACE:RefCell<Trace>=RefCell::new(Trace::default());}
-pub mod framebuf{
- pub struct FrameBuffer;
- impl FrameBuffer{pub fn begin_deferred_swap(&mut self)->u32{0}pub fn apply_draw_target(&mut self){}}
-}
 pub mod material{
  pub struct TextureMaterial;
  #[derive(Clone,Copy)]pub enum BlendMode{Opaque,Add,Subtract}
@@ -36,14 +32,12 @@ pub struct Pad{pub buttons:Buttons}
 pub fn poll_port1()->Pad{TRACE.with(|t|{let mut t=t.borrow_mut();t.polls+=1;Pad{buttons:Buttons(t.samples.pop_front().expect("menu polled past bounded test input"))}})}
 // The title polls through the program-wide pad reader (game/src/input.rs); the trace is its hardware.
 mod input{pub fn poll_bits()->u16{super::poll_port1().buttons.bits()}}
-// GPUSTAT bit 24: psx-rt applies a queued flip only once a GP0(1Fh) sent
-// after the last arm has raised it, so every present must arm, then signal.
-pub fn arm_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();t.armed=true;t.signalled=false;});}
-pub fn signal_draw_done(){TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.armed,"GP0(1Fh) without an arm");t.armed=false;t.signalled=true;});}
-mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic!("the menu's flip timed out");}}
+// The presenter acknowledges bit 24 and sends GP0(1Fh) after a drawn frame, then queues the flip.
+mod presentation{pub const FLIP_TIMEOUT_VBLANKS:u32=30;pub fn force_flip(){panic!("the menu's flip timed out");}
+ pub fn present_drawn(){super::TRACE.with(|t|t.borrow_mut().pending=true);}
+ pub fn begin_drawn(){}}
+pub mod present{pub fn is_flip_pending()->bool{super::TRACE.with(|t|t.borrow().pending)}}
 pub mod interrupts{
- pub fn queue_display_control_at_vblank(_:u32){super::TRACE.with(|t|{let mut t=t.borrow_mut();assert!(t.signalled,"flip queued with no GP0(1Fh) after the arm: it would never apply");t.signalled=false;t.pending=true;});}
- pub fn is_display_control_queued()->bool{super::TRACE.with(|t|t.borrow().pending)}
  pub fn vblank_count()->u32{super::TRACE.with(|t|t.borrow().polls as u32)}
  pub fn wait_vblank(){super::TRACE.with(|t|t.borrow_mut().pending=false);}
 }
@@ -56,6 +50,7 @@ pub mod audio{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volume
 // record of what the title asked for.
 pub mod display{
  use std::cell::RefCell;
+ pub struct DoubleBuffer;
  thread_local!{pub static STATE:RefCell<(i8,(i8,i8),Vec<u8>)>=RefCell::new((0,(0,0),Vec::new()));}
  pub fn brightness()->i8{STATE.with(|s|s.borrow().0)}
  pub fn screen()->(i8,i8){STATE.with(|s|s.borrow().1)}
@@ -104,55 +99,55 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  // into play; confirming slot 1 is what begins.
  for b in [button::START,button::CROSS]{
   let mut samples=vec![0;8];samples.push(b);samples.push(0);samples.push(button::CROSS);samples.extend([0;40]);feed(samples);
-  let (s,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings::new());assert_eq!(p,0);
+  let (s,p)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings::new());assert_eq!(p,0);
   TRACE.with(|t|{let t=t.borrow();assert!(t.volumes.is_empty());assert_eq!(t.uploads.len(),23);});
  }
 }
 #[test]fn options_call_real_volume_hooks_and_controls_return_without_auto_start(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
  let mut samples=Vec::new();for b in [DOWN,CROSS,LEFT,DOWN,LEFT,DOWN,LEFT,CIRCLE,DOWN,CROSS,CIRCLE,DOWN,DOWN,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(s,menu::Settings{sfx:9,ambience:9,music:9,..menu::Settings::new()});
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.volumes,[(0,9),(1,9),(2,9)]);assert!(t.sprites>100);});
 }
 #[test]fn retry_requires_release_and_patch_uploads_keep_their_exact_ranges(){
- let _guard=LOCK.lock().unwrap();fresh();feed([button::START,button::START,0,button::CROSS]);menu::restore(Some(ART));menu::retry(&mut framebuf::FrameBuffer);
+ let _guard=LOCK.lock().unwrap();fresh();feed([button::START,button::START,0,button::CROSS]);menu::restore(Some(ART));menu::retry(&mut display::DoubleBuffer);
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.polls,4);// `restore` uploads the glyphs ahead of the art now; find the patches by place.
   let patch=t.uploads.iter().find(|v|v.0.x==544).expect("the status patches");assert_eq!(patch.0.h,64);assert_eq!(patch.1,12288);
   assert_eq!(t.uploads.iter().map(|v|v.1).sum::<usize>(),89600+12832+4976+7680+32);// art, glyphs, the title ornaments, the card glyphs, then the style's logo
  });
- feed([0]);menu::loading(&mut framebuf::FrameBuffer);TRACE.with(|t|assert_eq!(t.borrow().polls,1));
+ feed([0]);menu::loading(&mut display::DoubleBuffer);TRACE.with(|t|assert_eq!(t.borrow().polls,1));
 }
 
 #[test]fn cheats_render_within_screen_and_carry_settings_to_gameplay(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
  let mut samples=Vec::new();for b in [UP,CROSS,CROSS,DOWN,RIGHT,DOWN,RIGHT,DOWN,RIGHT,CIRCLE,DOWN,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s.cheats.bits(),15);
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(s.cheats.bits(),15);
  TRACE.with(|t|assert!(t.borrow().sprites>100));
 }
 #[test]fn the_save_screen_returns_the_confirmed_profile_and_can_be_left(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
  // Start Game, down twice to slot 3, confirm.
  let mut samples=Vec::new();for b in [START,DOWN,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (_,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(p,2);
+ let (_,p)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(p,2);
  // Circle leaves the save screen for the title, so the next Start still works.
  let mut samples=Vec::new();for b in [START,DOWN,CIRCLE,START,DOWN,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (_,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(p,1);
+ let (_,p)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(p,1);
  // A slot's line is whatever the caller surveyed, including a card fault.
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
  let lines=["Geo 42","Empty","Damaged","Empty"];
- let (_,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&lines,"Memory card full");assert_eq!(p,0);
+ let (_,p)=menu::run(&mut display::DoubleBuffer,Some(ART),&lines,"Memory card full");assert_eq!(p,0);
 }
 #[test]fn brightness_and_screen_position_reach_the_display_and_carry_to_gameplay(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
  display::STATE.with(|s|*s.borrow_mut()=(0,(0,0),Vec::new()));
  // Options, down to Brightness (+2), Screen X (-3), Screen Y (+1), back, then start slot 1.
  let mut samples=Vec::new();for b in [DOWN,CROSS,DOWN,DOWN,DOWN,RIGHT,RIGHT,DOWN,LEFT,LEFT,LEFT,DOWN,RIGHT,CIRCLE,UP,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");
  assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));assert_eq!(s,menu::Settings{brightness:2,screen_x:-3,screen_y:1,..menu::Settings::new()});
  display::STATE.with(|d|{let d=d.borrow();assert_eq!((d.0,d.1),(2,(-3,1)));assert!(!d.2.is_empty()&&d.2.iter().all(|&g|g<=128));});
  // The next visit to the title starts from what is set now.
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!((s.brightness,s.screen_x,s.screen_y),(2,-3,1));
 }
 
 #[test]fn the_options_page_changes_the_title_style_with_a_fade_a_disc_read_and_a_new_upload(){
@@ -164,12 +159,12 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  for _ in 0..STYLE_ROW{samples.extend([DOWN,0]);}
  samples.extend([RIGHT,0]);samples.extend([0;24]);
  for b in [DOWN,CROSS,UP,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,p)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(p,0);assert_eq!(s,menu::Settings{style:0,..menu::Settings::new()});
+ let (s,p)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(p,0);assert_eq!(s,menu::Settings{style:0,..menu::Settings::new()});
  // The title came up with Modern's art and the change uploaded Classic's palette.
  TRACE.with(|t|{let t=t.borrow();assert_eq!(t.uploads.iter().filter(|v|v.0.x==768&&v.0.y==480).count(),2);assert_eq!(t.style_reads,1);assert_eq!(t.music_begins,2);});
  // The next visit to the title keeps the style, which is read again.
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s.style,0);
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(s.style,0);
 }
 #[test]fn the_selector_skips_the_styles_whose_unlocks_are_not_set_and_the_cheats_page_sets_them_all(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
@@ -192,14 +187,14 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  for _ in 0..STYLE_ROW{samples.extend([DOWN,0]);}
  for _ in 0..2{samples.extend([LEFT,0]);samples.extend([0;24]);}
  for b in [DOWN,CROSS,UP,START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");
  TRACE.with(|t|assert_eq!(t.borrow().unlocks,[ALL_STYLE_KEYS],"the card is written once"));
  assert_eq!((s.unlocked,s.style),(ALL_STYLE_KEYS,7),"Eternal, two steps from Modern");
  // And a card that already holds keys hands them to the selector at the title.
  TRACE.with(|t|{*t.borrow_mut()=Trace::default();t.borrow_mut().unlocks.push(1);});
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
  TRACE.with(|t|t.borrow_mut().unlocks.push(1));
- let (s,_)=menu::run(&mut framebuf::FrameBuffer,Some(ART),&EMPTY,"");assert_eq!(s.unlocked,1);
+ let (s,_)=menu::run(&mut display::DoubleBuffer,Some(ART),&EMPTY,"");assert_eq!(s.unlocked,1);
 }
 #[test]fn a_style_blob_of_particles_and_layers_draws_one_quad_each_per_frame_they_are_on_screen(){
  let _guard=LOCK.lock().unwrap();fresh();use menu::state::*;
@@ -216,7 +211,7 @@ fn feed(bits:impl IntoIterator<Item=u16>){TRACE.with(|t|*t.borrow_mut()=Trace{sa
  let at=89712+12832+10768+7680;let mut chunk=ART.to_vec();chunk[at..at+blob.len()].copy_from_slice(&blob);
  // Straight to the save screen: the two slots draw while a page shows, and the layer too.
  let mut samples=Vec::new();for b in [START,CROSS]{samples.extend([b,0]);}samples.extend([0;40]);feed(samples);
- let _=menu::run(&mut framebuf::FrameBuffer,Some(&chunk),&EMPTY,"");
+ let _=menu::run(&mut display::DoubleBuffer,Some(&chunk),&EMPTY,"");
  TRACE.with(|t|{let t=t.borrow();
   // The pieces went up as the one upload the table lists, ahead of the first frame.
   assert!(t.uploads.iter().any(|v|v.0.x==768&&v.0.y==0&&v.0.w==64&&v.0.h==1&&v.1==128),"{:?}",t.uploads.iter().map(|v|(v.0.x,v.0.y,v.1)).collect::<Vec<_>>());

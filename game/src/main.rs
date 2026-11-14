@@ -6,7 +6,7 @@
 extern crate psx_rt;
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::{Nail, Player, ONE};
-use psx_gpu::{self as gpu, framebuf::FrameBuffer, display::Resolution, display::VideoMode};
+use psx_gpu::{self as gpu, display::DoubleBuffer, display::Resolution, display::VideoMode};
 use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
 
@@ -882,7 +882,8 @@ fn publish_walk_senses(game: &frame::Game) {
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
     psx_rt::interrupts::install_vblank_counter();
-    let mut fb = FrameBuffer::new(320, 240);
+    let mut fb = DoubleBuffer::new(Resolution::R320X240);
+    presentation::start(&mut fb);
     // The renderer's working storage lives for the whole program in this
     // frame, inside the 48 KiB stack reservation (measured peak about 32 KiB,
     // boss-fight), rather than in .bss: see render::RenderScratch.
@@ -1311,8 +1312,8 @@ fn main() {
             emit::counter(counter::TRI_PRIMITIVES, prims * 2);
             emit::stage_end(stage::RENDER);
             emit::stage_begin(stage::PRESENT);
-            let display = fb.begin_deferred_swap();
-            presentation::begin(display);
+            // The final list goes to the presenter, which moves the draw side and carries the flip.
+            presentation::submit_final(render::final_head());
             let mut ticks = 0;
             // Idle time before the next simulation tick can already prepare
             // the current camera/state. A later changed state rejects/replaces
@@ -1328,7 +1329,7 @@ fn main() {
                 // render while sampled input still waits for simulation. Drain
                 // the observed VBlanks first, including ticks spent rendering.
                 if presentation::queued()
-                    && !psx_rt::interrupts::is_display_control_queued()
+                    && !psx_rt::present::is_flip_pending()
                     && sim_clock == psx_rt::interrupts::vblank_count()
                 {
                     break;
@@ -1462,7 +1463,7 @@ fn main() {
                 if sim_clock != coverage_clock
                     && target.is_none()
                     && presentation::queued()
-                    && psx_rt::interrupts::is_display_control_queued()
+                    && psx_rt::present::is_flip_pending()
                 {
                     coverage_clock = sim_clock;
                     game.state.apply(&rv);
@@ -1484,7 +1485,7 @@ fn main() {
                         spstack::sim(|| {
                             render::prepare_back_prefix(
                                 next_camera,
-                                fb.buffer_y(fb.drawing),
+                                fb.draw_origin().1,
                                 cache.coverage(),
                             )
                         })
@@ -1494,7 +1495,6 @@ fn main() {
             }
             presentation::finish();
             render::finish_gpu_frame();
-            fb.apply_draw_target();
             hk_clock.end_frame();
             emit::counter(counter::SIM_TICKS, ticks);
             emit::stage_end(stage::PRESENT);
@@ -1585,8 +1585,8 @@ fn main() {
                         &mut vram,
                         id,
                         sim_clock,
-                        fb.buffer_y(fb.drawing ^ 1),
-                        fb.buffer_y(fb.drawing),
+                        fb.display_origin().1,
+                        fb.draw_origin().1,
                     )
                     .expect("scene gate load");
                     // The entry's blackout hold ran while the load finished.
@@ -1630,7 +1630,7 @@ fn present_spin(sim_clock: u32, cache: &mut disc::Cache) {
         if psx_rt::interrupts::vblank_count() != sim_clock || presentation::queued() != queued {
             return;
         }
-        if queued && !psx_rt::interrupts::is_display_control_queued() {
+        if queued && !psx_rt::present::is_flip_pending() {
             return;
         }
         if presentation::flip_overdue() {

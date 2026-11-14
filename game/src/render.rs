@@ -321,7 +321,7 @@ fn vertex(p: (i16, i16)) -> u32 {
 }
 /// Called after final GPU/DMA retirement, before any scene/atlas replacement.
 pub fn release_scene() {
-    assert!(!dma_pending() && !psx_rt::interrupts::is_display_control_queued());
+    assert!(!dma_pending() && !crate::presentation::pending());
     unsafe {
         BOUND_VIEW = usize::MAX;
         (&mut *(&raw mut BACK_PREFIX)).invalidate();
@@ -1010,7 +1010,7 @@ pub fn prepare_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
 #[inline(never)]
 pub fn prepare_back_prefix(camera: (i32, i32), framebuffer_y: u16, coverage: CoverageView<'_>) {
     let camera = scenery_camera(camera);
-    if !crate::presentation::queued() || !psx_rt::interrupts::is_display_control_queued() {
+    if !crate::presentation::queued() || !psx_rt::present::is_flip_pending() {
         return;
     }
     unsafe {
@@ -1023,18 +1023,17 @@ pub fn prepare_back_prefix(camera: (i32, i32), framebuffer_y: u16, coverage: Cov
         }
         prefix.invalidate();
         prepare_tile_coverage(camera, coverage);
-        if !BACK_PREBUILD_ALLOWED || !psx_rt::interrupts::is_display_control_queued() {
+        if !BACK_PREBUILD_ALLOWED || !psx_rt::present::is_flip_pending() {
             return;
         }
         let Some(count) = draw_visibility::sparse_snapshot(prefix.state_mut()) else {
             return;
         };
-        // Pair the SDK's completed async DMA lease before reusing packet RAM.
+        // The final list has drained (presentation::queued), so packet RAM is free to reuse.
         // Animation uploads/completion still belong to the post-flip begin.
-        gpu::submit_linked_list_wait();
         collect_occluders(camera);
         restore_tile_coverage(camera);
-        if !psx_rt::interrupts::is_display_control_queued() {
+        if !psx_rt::present::is_flip_pending() {
             return;
         }
         USED = 0;
@@ -1385,9 +1384,8 @@ pub fn animation_tpage_word(id: u16) -> u16 {
     TexturePage::new(x, y, TextureDepth::Bit4).uv_word(0)
 }
 pub fn finish_gpu_frame() {
-    // Main has already observed DMA idle. Pair the SDK async submission with
-    // its completion API before any packet or texture-cache storage is reused.
-    gpu::submit_linked_list_wait();
+    // Main has already observed DMA idle and the flip landed: the frame's walks have ended
+    // before any packet or texture-cache storage is reused.
     animation_cache::complete();
 }
 pub fn dma_pending() -> bool {
@@ -2078,7 +2076,7 @@ fn scenery_range(camera: (i32, i32), front: bool, start: usize, prebuilding: boo
                 next = i + 1;
                 continue;
             }
-            if prebuilding && !psx_rt::interrupts::is_display_control_queued() {
+            if prebuilding && !psx_rt::present::is_flip_pending() {
                 break;
             }
             next = i + 1;
@@ -2426,19 +2424,14 @@ fn repair(
     }
 }
 
-/// Kick every packet built since the last kick as its own DMA list if the
-/// channel is free. Never waits: a busy channel just leaves the packets for a
-/// later call or the final list, so the CPU stays ahead of the GPU.
+/// Hand every packet built since the last handover to the presenter as one chunk (a `Part::More`)
+/// if the slot is empty. Never waits: a full slot just leaves the packets for a later call or the
+/// final list, so the CPU stays ahead of the GPU. The presenter starts the chunk as soon as the
+/// frame before is on screen and the channel is idle.
 pub fn kick_ready() {
     unsafe {
-        if USED == KICKED || CHUNK_COUNT == CHUNKS || dma_pending() {
+        if USED == KICKED || CHUNK_COUNT == CHUNKS || psx_rt::present::is_slot_full() {
             return;
-        }
-        // The frame's first kick: clear GPUSTAT bit 24 so the GP0(1Fh) that
-        // ends the final list is what raises it (the previous frame's flip has
-        // landed; main waited for it before rendering this one).
-        if CHUNK_COUNT == 0 {
-            gpu::arm_draw_done();
         }
         let ot = &mut CHUNK_OTS[CHUNK_COUNT];
         ot.clear();
@@ -2446,7 +2439,7 @@ pub fn kick_ready() {
             let words = PACKETS[i].word_count();
             crate::display::ot_add(ot, 0, &mut PACKETS[i], words);
         }
-        ot.submit_async();
+        crate::presentation::submit_more(ot.submit_head());
         if CHUNK_COUNT == 0 {
             HK_FRAME_FIRST_KICK_LINES = frame_lines();
         }
@@ -2456,8 +2449,8 @@ pub fn kick_ready() {
 }
 /// Build the final list (everything not yet kicked, then HUD and dialogue on
 /// top). It is not kicked here: an earlier chunk may still be walking, and
-/// main kicks it through `kick_front` once the channel is idle so the wait
-/// runs simulation ticks and input checkpoints instead of spinning.
+/// main hands it to the presenter (`final_head`), which starts it once the
+/// channel is idle while the waits run simulation ticks and input checkpoints.
 // Never inlined: `main` is one 611-line function whose generated code sits
 // against the 128 KB a MIPS PC16 branch reaches, and absorbing a body this
 // size pushes a branch out of range. The assembler reports only "out of
@@ -2517,17 +2510,12 @@ pub fn submit(
     }
     crate::input::checkpoint();
 }
-/// Call only after `dma_pending()` returned false for the last kicked chunk.
-pub fn kick_front() {
-    // A frame with no earlier chunk arms here, before its only kick.
-    if unsafe { CHUNK_COUNT } == 0 {
-        gpu::arm_draw_done();
-    }
+/// The final list's head, for `presentation::submit_final`.
+pub fn final_head() -> *const u32 {
     unsafe {
-        (&*(&raw const OT)).submit_async();
-        HK_FRAME_LAST_KICK_LINES = frame_lines();
         if CHUNK_COUNT == 0 {
-            HK_FRAME_FIRST_KICK_LINES = HK_FRAME_LAST_KICK_LINES;
+            HK_FRAME_FIRST_KICK_LINES = frame_lines();
         }
+        (&*(&raw const OT)).submit_head()
     }
 }

@@ -53,13 +53,13 @@ pub mod gpu { pub mod gp1 {
 }}
 pub mod interrupts {
     pub fn vblank_count() -> u32 { super::device(|h| h.tick) }
-    pub fn is_display_control_queued() -> bool { super::device(|h| h.queued.is_some()) }
-    pub fn queue_display_control_at_vblank(command: u32) {
-        assert!(command == 0x03000000 || command == 0x03000001);
-        let enabled = command == 0x03000000;
+}
+// The presenter applies a display-enable word at the next edge with GPUSTAT bit 24 up (it raises
+// it itself when nothing is left to draw), never held by the cap; two checkpoints complete it.
+pub mod present {
+    pub fn is_flip_pending() -> bool { super::device(|h| h.queued.is_some()) }
+    pub fn set_display_enabled(enabled: bool) {
         super::device(|h| {
-            assert!(h.signalled, "queued without a GP0(1Fh) after the arm: psx-rt never applies it");
-            h.signalled = false;
             assert!(h.input_owned && h.queued.is_none());
             if enabled {
                 assert!((!h.display || h.fade_black) && h.framebuffer_clear);
@@ -70,6 +70,9 @@ pub mod interrupts {
             h.record(super::Event::Queue(enabled));
         });
     }
+}
+mod presentation {
+    pub fn pending() -> bool { super::present::is_flip_pending() }
 }
 pub fn arm_draw_done() { device(|h| { h.armed = true; h.signalled = false; }); }
 pub fn signal_draw_done() { device(|h| { assert!(h.armed, "GP0(1Fh) without an arm"); h.armed = false; h.signalled = true; }); }

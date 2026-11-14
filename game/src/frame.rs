@@ -271,7 +271,7 @@ pub fn render(
     view: &world::Region,
     room: &Room,
     other_npc: Option<(world::Npc, &Room)>,
-    fb: &mut FrameBuffer,
+    fb: &mut DoubleBuffer,
     npc: Option<world::Npc>,
     camera: (i32, i32),
     sim_clock: u32,
@@ -333,7 +333,7 @@ pub fn render(
         && effect_frame.is_none_or(|f| animation_cache::resident(u32_at(room.frame(f), 0) as u16));
     let mut prims = 0;
     if early {
-        render::begin_frame(fb.buffer_y(fb.drawing));
+        render::begin_frame(fb.draw_origin().1);
         // The early back pass draws with the vignette words too, so they
         // refresh here as on any other frame (the bound view is this room's).
         #[cfg(feature = "hero-vignette")]
@@ -347,7 +347,7 @@ pub fn render(
             camera,
         );
         // Both scenery passes run with their frames in the scratchpad (spstack.rs).
-        fb.clear(9, 13, 20);
+        // The frame's clear (9, 13, 20) is the presenter's, linked in front of the first part.
         if !veiled {
             prims += unsafe { spstack::sim(|| render::scenery(camera, false)) };
             prims += game.state.draw_secrets(view, camera, false);
@@ -508,7 +508,7 @@ pub fn render(
     if early {
         render::bind_animation(room, &needed[..needed_len], true);
     } else {
-        render::begin(room, &needed[..needed_len], fb.buffer_y(fb.drawing));
+        render::begin(room, &needed[..needed_len], fb.draw_origin().1);
         // The hero vignette darkens scenery through its own colour modulation;
         // its centre is the Knight's (Vignette local y -0.58).
         #[cfg(feature = "hero-vignette")]
@@ -521,7 +521,7 @@ pub fn render(
             }),
             camera,
         );
-        fb.clear(9, 13, 20);
+        // The frame's clear (9, 13, 20) is the presenter's, linked in front of the first part.
         if !veiled {
             prims += unsafe { spstack::sim(|| render::scenery(camera, false)) };
             prims += game.state.draw_secrets(view, camera, false);

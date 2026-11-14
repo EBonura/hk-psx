@@ -18,7 +18,7 @@
 //!
 //! Each figure is also an `HK_CARD_*` symbol for emulator replays.
 use crate::save::Fault;
-use psx_gpu::framebuf::FrameBuffer;
+use psx_gpu::display::DoubleBuffer;
 use psx_mc::hardware::Timing;
 use psx_mc::{Block, ControllerPort, Error, HardwareCard, Slot, TransportFault, TransportTrace};
 
@@ -204,7 +204,7 @@ fn write_back(timing: Timing) -> (Result<(), Error>, TransportTrace, u32, bool) 
 /// same place the audio probe runs.
 #[inline(never)]
 #[optimize(size)]
-pub fn run(fb: &mut FrameBuffer) {
+pub fn run(fb: &mut DoubleBuffer) {
     let mut lines: [Line; 14] = core::array::from_fn(|_| Line::new());
     let mut n = 0;
     let mut put = |line: Line| {

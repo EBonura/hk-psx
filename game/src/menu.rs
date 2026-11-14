@@ -5,7 +5,7 @@
 use crate::input::poll_bits;
 use psx_gpu::{
     self as gpu,
-    framebuf::FrameBuffer,
+    display::DoubleBuffer,
     material::{BlendMode, TextureMaterial},
 };
 use psx_pad::button;
@@ -595,14 +595,12 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
     // BRIGHTNESS over the whole screen, text included (display.rs).
     crate::display::draw_direct(v.gain);
 }
-fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
-    // The menu draws through the command port; GP0(1Fh) after it is what lets
-    // psx-rt apply the flip, once the GPU has drawn everything before it.
-    gpu::arm_draw_done();
-    gpu::signal_draw_done();
-    psx_rt::interrupts::queue_display_control_at_vblank(fb.begin_deferred_swap());
+fn present_samples(_fb: &mut DoubleBuffer, mut sample: impl FnMut(u16)) {
+    // The menu draws through the command port; the presenter sends GP0(1Fh) after it, which is
+    // what lets the VBlank handler apply the flip once the GPU has drawn everything before it.
+    crate::presentation::present_drawn();
     let mut waited = 0u32;
-    while psx_rt::interrupts::is_display_control_queued() {
+    while psx_rt::present::is_flip_pending() {
         psx_rt::interrupts::wait_vblank();
         // Process each real sample in order, even if a frame spans several blanks.
         sample(poll_bits());
@@ -611,9 +609,10 @@ fn present_samples(fb: &mut FrameBuffer, mut sample: impl FnMut(u16)) {
             crate::presentation::force_flip();
         }
     }
-    fb.apply_draw_target();
+    // The next screen draws into the other side.
+    crate::presentation::begin_drawn();
 }
-fn present(fb: &mut FrameBuffer) -> u16 {
+fn present(fb: &mut DoubleBuffer) -> u16 {
     let mut pressed = 0;
     present_samples(fb, |bits| pressed |= bits);
     pressed
@@ -625,7 +624,7 @@ fn present(fb: &mut FrameBuffer) -> u16 {
 #[cfg_attr(not(test), optimize(size))]
 #[cfg_attr(not(test), optimize(size))]
 pub fn run(
-    fb: &mut FrameBuffer,
+    fb: &mut DoubleBuffer,
     art: Option<&[u8]>,
     slots: &[&str; 4],
     fault: &str,
@@ -774,7 +773,7 @@ pub fn run(
     (menu.settings, menu.profile.unwrap_or(0))
 }
 
-fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {
+fn status(fb: &mut DoubleBuffer, patch: u8) -> u16 {
     draw(128);
     logo(128);
     gpu::draw_sprite_material(
@@ -794,7 +793,7 @@ fn status(fb: &mut FrameBuffer, patch: u8) -> u16 {
 
 /// One screen of probe results over the dimmed title art (audio_probe.rs).
 #[cfg(any(feature = "audio-probe", feature = "card-diag"))]
-pub fn probe_screen(fb: &mut FrameBuffer, lines: &[&str]) {
+pub fn probe_screen(fb: &mut DoubleBuffer, lines: &[&str]) {
     draw(40);
     for (row, line) in lines.iter().enumerate() {
         text(16, 16 + row as i16 * 15, line, 128);
@@ -804,13 +803,13 @@ pub fn probe_screen(fb: &mut FrameBuffer, lines: &[&str]) {
 
 /// Keep the title visible while the blocking room read completes.
 #[inline(never)]
-pub fn loading(fb: &mut FrameBuffer) {
+pub fn loading(fb: &mut DoubleBuffer) {
     let _ = status(fb, 0);
 }
 
 /// A failed read can be retried after releasing the previous activating press.
 #[inline(never)]
-pub fn retry(fb: &mut FrameBuffer) {
+pub fn retry(fb: &mut DoubleBuffer) {
     let mut released = false;
     loop {
         let pressed = status(fb, 1) & (button::START | button::CROSS) != 0;

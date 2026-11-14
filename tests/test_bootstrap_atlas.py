@@ -45,7 +45,8 @@ impl Recorded {
 thread_local!{static LOG:RefCell<Recorded>=RefCell::new(Recorded::new());}
 fn reset(){LOG.with(|l|*l.borrow_mut()=Recorded::new());}
 mod render{pub fn dma_pending()->bool{super::LOG.with(|l|l.borrow().dma)}}
-pub mod interrupts{pub fn is_display_control_queued()->bool{super::LOG.with(|l|l.borrow().queued)}}
+pub mod present{pub fn is_flip_pending()->bool{super::LOG.with(|l|l.borrow().queued)}}
+mod presentation{pub fn pending()->bool{super::present::is_flip_pending()}}
 mod input{pub fn checkpoint(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Checkpoint));}}
 mod texture_upload {
     pub fn upload(r:super::VramRect,bytes:&[u8]) {

@@ -27,7 +27,7 @@ pub fn load(
     shown: u16,
     other: u16,
 ) -> Result<u32, crate::disc::LoadError> {
-    assert!(!crate::render::dma_pending() && !psx_rt::interrupts::is_display_control_queued());
+    assert!(!crate::render::dma_pending() && !crate::presentation::pending());
     crate::gate_probe::load_start(0);
     crate::gate_probe::set(crate::gate_probe::PREP);
     crate::input::begin_scene_load(clock);
@@ -39,12 +39,9 @@ pub fn load(
     // otherwise queue the blackout at VBlank before touching either.
     let fading = crate::exit_fade::armed();
     if !fading {
-        // psx-rt applies a queued word only once GPUSTAT bit 24 is up: raise
-        // it (the GPU has nothing left to draw here) before queueing.
-        psx_gpu::arm_draw_done();
-        psx_gpu::signal_draw_done();
-        psx_rt::interrupts::queue_display_control_at_vblank(psx_hw::gpu::gp1::display_enable(false));
-        while psx_rt::interrupts::is_display_control_queued() {
+        // The presenter applies the word at the next edge with GPUSTAT bit 24 up, never held by the cap.
+        psx_rt::present::set_display_enabled(false);
+        while psx_rt::present::is_flip_pending() {
             crate::input::checkpoint();
         }
         crate::gate_probe::note(22, psx_rt::interrupts::vblank_count());
@@ -74,10 +71,8 @@ pub fn load(
     crate::gate_probe::set(crate::gate_probe::DISPLAY);
     if result.is_ok() {
         vram.admit_scene(region, cache.atlases_ready());
-        psx_gpu::arm_draw_done();
-        psx_gpu::signal_draw_done();
-        psx_rt::interrupts::queue_display_control_at_vblank(psx_hw::gpu::gp1::display_enable(true));
-        while psx_rt::interrupts::is_display_control_queued() {
+        psx_rt::present::set_display_enabled(true);
+        while psx_rt::present::is_flip_pending() {
             crate::input::checkpoint();
         }
     }

@@ -172,7 +172,7 @@ hk_intro_leave:
 #[optimize(size)]
 pub fn play(
     boot: &[u8],
-    fb: &mut psx_gpu::framebuf::FrameBuffer,
+    fb: &mut psx_gpu::display::DoubleBuffer,
     screen: (i8, i8),
     load: fn(),
 ) {
@@ -228,7 +228,10 @@ pub fn play(
     // SAFETY: as above.
     unsafe { core::ptr::write_volatile(hand!(h, magic), 0) };
     // The blob left the GPU reset, the display where the title put it and the frame buffers black.
-    *fb = psx_gpu::framebuf::FrameBuffer::new(320, 240);
+    *fb = psx_gpu::display::DoubleBuffer::new(psx_gpu::display::Resolution::R320X240);
+    // The presenter starts afresh: bit 24 up, the draw target on the new draw side.
+    crate::presentation::start(fb);
+    crate::presentation::begin_drawn();
 }
 
 /// The registers the blob's entry state rewrites and the game's drivers rely on.
