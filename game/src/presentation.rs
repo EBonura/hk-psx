@@ -67,6 +67,13 @@ pub fn submit_final(head: *const u32) {
         PHASE = Phase::Submitted;
         KICK_NOTED = false;
         presenter().submit(buffers(), head, Part::Final);
+        // The presenter starts the final list inside `submit` when the channel is idle: that is
+        // the moment the trim policy's tail starts from, not the next checkpoint (which can come
+        // after the whole walk and read a tail of nothing).
+        if !present::is_slot_full() {
+            KICK_NOTED = true;
+            crate::render::HK_FRAME_LAST_KICK_LINES = crate::render::frame_lines();
+        }
     }
 }
 /// Start the part in the slot when it can go, and note when the final list has drained.
