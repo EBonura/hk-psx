@@ -167,6 +167,14 @@ def stack_guard(exe,map_path,module=None):
 # The wrapper in game/src/cd_stream.rs enters hk_cd_interrupt with this much of HK_CD_IRQ_STACK reserved.
 IRQ_STACK_RESERVED=16
 
+def inline_gate(exe,map_path):
+    """The SDK's `inline-gate` (sdk/docs/GATE.md, "Inlined frame-path functions"): a frame-path
+    function the profile lists under [inline] (psx_gpu::chain::start_walk today) must not be linked
+    as a function. Raises on a refusal."""
+    done=subprocess.run([str(_tools()/'inline-gate'),str(exe),'--map',str(map_path),'--profile',str(ROOT/'.psoxide/sdk/profile.toml')],capture_output=True,text=True)
+    print(done.stdout+done.stderr,end='',flush=True)
+    if done.returncode!=0:raise ValueError('Inline gate failed:\n'+done.stdout+done.stderr)
+
 def irq_stack_guard(exe,map_path):
     """Prove the CD interrupt's call tree fits HK_CD_IRQ_STACK, the stack the exception
     wrapper switches to (game/src/cd_stream.rs). The same static walk as the scratchpad

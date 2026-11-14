@@ -290,7 +290,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         return {'elf':out/'hk-psx.elf'}
     # Split and patch from the linker's own bytes, so a cached link stays clean.
     exe=out/'hk-psx-patched.exe'
-    from hazards import irq_stack_guard, scan, stack_guard, stamp_receipt
+    from hazards import inline_gate, irq_stack_guard, scan, stack_guard, stamp_receipt
     report=out/'hazards.json' if work else hazard_report_path(telemetry,candidate)
     if profile is None:
         from shared_publish import publish
@@ -300,6 +300,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         scan(exe,resident_map,report_path=report)
         stack_guard(exe,resident_map)
         irq_stack_guard(exe,resident_map)
+        inline_gate(exe,link_map)
         check_main_frame(exe,link_map.read_text())
         stamp_receipt(exe,features)
         if link_map.resolve()!=(out/'hk-psx.map').resolve():shutil.copy2(link_map,out/'hk-psx.map')
@@ -315,6 +316,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # After the patch: the guard follows its trampolines to the real callees.
     stack_guard(exe,resident_map)
     irq_stack_guard(exe,resident_map)
+    inline_gate(exe,link_map)
     check_main_frame(exe,link_map.read_text())
     stamp_receipt(exe,features)
     shutil.copy2(link_map,out/'hk-psx.map')
