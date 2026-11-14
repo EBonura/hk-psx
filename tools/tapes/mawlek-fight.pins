@@ -47,3 +47,4 @@ HK_REGION_ID = 225
 HK_MW_SWIPES >= 1
 HK_MW_PARRIES >= 1
 HK_MW_HEAD_SHOTS >= 1
+startup_polls = 25

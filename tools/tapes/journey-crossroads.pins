@@ -27,3 +27,4 @@ HK_REGION_ID = 535
 # ended to the ground is zero. It was 0.61 units (40,000) before the gate spawn was grounded.
 HK_GATE_ENTRIES = 7
 HK_GATE_ENTRY_DROP_MAX = 0
+startup_polls = 25

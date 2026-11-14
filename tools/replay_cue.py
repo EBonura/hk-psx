@@ -3,7 +3,7 @@
 
 No build, disc copy, GUI or RAM patch. Captures both software and hardware views.
 """
-import argparse,csv,hashlib,json,re,struct,subprocess
+import argparse,csv,hashlib,json,re,shutil,struct,subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 WATCHES='''HK_PLAYER_X HK_PLAYER_Y HK_REGION_ID HK_GAME_MODE HK_HEALTH HK_SOUL
@@ -95,15 +95,47 @@ WATCHES+='HK_MW_WOKEN HK_MW_DEATHS HK_MW_KILL_CHEATS HK_MW_BLOWN HK_MW_HP HK_MW_
 WATCHES+='HK_GZ_WOKEN HK_GZ_CHARGES HK_GZ_SLAMS HK_GZ_HITS HK_GZ_DEATHS HK_GZ_KILL_CHEATS HK_GZ_BLOWN HK_GZ_RELEASED HK_GZ_FLY_DEATHS HK_GZ_PHASE HK_GZ_ARENA HK_GZ_ACTIVATED'.split()
 WATCHES+='HK_MW_X HK_MW_Y HK_MW_SPRAYS HK_MW_LEAPS HK_MW_SWIPES HK_MW_PARRIES HK_MW_HEAD_SHOTS HK_MW_HITS HK_MW_SHOT_HITS HK_MUSIC_BOSS_TRACK'.split()
 
+# A tape is indexed from the first port-1 poll after reset, so a build whose startup (the pad
+# handshake and the loader ahead of the sampler) takes fewer or more polls than the build the
+# tape was recorded on meets every recorded event that many sampler ticks later or earlier. A
+# route whose pin file says `startup_polls = N` (the polls the recording build took before the
+# sampler's first poll) is anchored: the replay measures its own disc's startup with the route's
+# own tape (its first polls hold the presses that get the game that far) and cuts or repeats the
+# tape at that point, so the sampler's first poll reads the sample the recording build's did.
+
+def startup_polls(frontend,cue,symbols,tape,memcard,work):
+    """Port-1 polls the disc takes under this tape before the sampler's first poll (HK_INPUT_POLLS reaching 1)."""
+    work.mkdir(parents=True,exist_ok=True)
+    command=[str(frontend),'launch','--path',str(cue),'--embedded-playtest','--config-dir',str(work/'emulator'),
+        '--steps','6000000000','--input-tape',str(tape),'--stop-at-poll','600','--route-log',str(work/'route.csv'),
+        '--route-watch-u32',symbols['HK_INPUT_POLLS']]
+    if memcard:
+        if memcard.exists():shutil.copy2(memcard,work/'card.mcd')
+        command+=['--memcard',str(work/'card.mcd')]
+    with (work/'replay.log').open('w')as log:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
+    for row in csv.DictReader((work/'route.csv').open()):
+        if int(row['ram_'+symbols['HK_INPUT_POLLS'][2:]])>=1:return int(row['port1_polls'])-1
+    raise ValueError('the sampler never polled in the startup probe')
+
+def anchor(data,startup,recorded):
+    """The tape with its polls [startup, recorded) cut out (or repeated, when the startup was longer)."""
+    count,start=struct.unpack_from('<II',data,8)
+    body=data[16:]
+    body=body[:startup*6]+body[recorded*6:]
+    return b'PXITAPE2'+struct.pack('<II',len(body)//6,start)+body
+
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
-def missed_vblanks_allowed(tape):
-    """`missed_vblanks = N` in the route's pin file: pad polls the route may still miss (a ceiling like `pacing`)."""
+def pin_value(tape,name):
+    """`NAME = N` in the route's pin file, or None."""
     pins=tape.with_suffix('.pins')
-    if not pins.exists():return 0
+    if not pins.exists():return None
     for line in pins.read_text().splitlines():
         key,sep,value=line.partition('=')
-        if sep and key.strip()=='missed_vblanks':return int(value.strip())
-    return 0
+        if sep and key.strip()==name:return int(value.strip())
+    return None
+def missed_vblanks_allowed(tape):
+    """`missed_vblanks = N` in the route's pin file: pad polls the route may still miss (a ceiling like `pacing`)."""
+    return pin_value(tape,'missed_vblanks') or 0
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--tape',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
@@ -123,23 +155,27 @@ def main():
     count,start=struct.unpack_from('<II',data,8)
     if len(data)!=16+count*6 or a.screenshot_interval<=0:raise ValueError('Invalid tape/capture interval')
     out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
+    symbols={s[-1]:'0x'+s[0] for line in mp.read_text().splitlines()if len(s:=line.split())==5}
+    recorded=pin_value(tape,'startup_polls');played=tape;delay=0
+    if recorded is not None:
+        startup=startup_polls(a.frontend,cue,symbols,tape,a.memcard,out/'startup-probe')
+        played=out/'anchored.pxtape';played.write_bytes(anchor(data,startup,recorded));delay=startup-recorded;count+=delay
     help_text=subprocess.check_output([str(a.frontend),'launch','--help'],text=True)
     for flag in ('--embedded-playtest','--stop-at-poll','--dump-hw','--dump-spu-ram','--route-watch-u32'):
         if flag not in help_text:raise ValueError('Unsupported frontend flag '+flag)
     (out/'frontend-help.txt').write_text(help_text)
     command=[str(a.frontend),'launch','--path',str(cue),'--embedded-playtest',
-        '--config-dir',str(out/'emulator'),'--steps',str(a.steps),'--input-tape',str(tape),
+        '--config-dir',str(out/'emulator'),'--steps',str(a.steps),'--input-tape',str(played),
         '--stop-at-poll',str(start+count),'--route-screenshot-interval',str(a.screenshot_interval)]
     for flag,name in {'route-log':'route.csv','route-screenshot-dir':'screenshots','dump-display':'display.ppm',
         'dump-hw':'hw.ppm','dump-vram':'vram.ppm','dump-spu-ram':'spu.bin','dump-ram':'ram.bin','dump-audio':'audio.wav','cd-command-log':'cd.csv'}.items():
         command+=['--'+flag,str(out/name)]
-    symbols={s[-1]:'0x'+s[0] for line in mp.read_text().splitlines()if len(s:=line.split())==5}
     watches={n:symbols[n] for n in WATCHES if n in symbols}
     for addr in watches.values():command+=['--route-watch-u32',addr]
     if a.memcard:command+=['--memcard',str(a.memcard.resolve())]
     paths=[cue,Path(r['artifacts']['bin']),exe,mp,tape,a.frontend]
     def inputs():return {str(path):{'bytes':path.stat().st_size,'sha256':digest(path)}for path in paths}
-    before=inputs();report={'command':command,'inputs':before,'watches':watches,'samples':count,'start_poll':start}
+    before=inputs();report={'command':command,'inputs':before,'watches':watches,'samples':count,'start_poll':start,'startup_trim_polls':delay}
     (out/'command.json').write_text(json.dumps(report,indent=2)+'\n');(out/'build-report.json').write_text(json.dumps(r,indent=2)+'\n')
     (out/'game.map').write_bytes(mp.read_bytes())
     with (out/'replay.log').open('w')as log:result=subprocess.run(command,stdout=log,stderr=subprocess.STDOUT)

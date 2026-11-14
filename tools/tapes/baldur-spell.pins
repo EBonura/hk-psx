@@ -16,3 +16,4 @@ HK_CHEATS = 1031
 HK_SAVE_LOADED = 1
 HK_FX_RAISED >= 20
 HK_FX_LATE = 0
+startup_polls = 25

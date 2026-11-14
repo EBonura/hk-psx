@@ -15,6 +15,7 @@
 //! pacing = 303                 late frames (over two vblanks) the route may still show
 //! art_late = 44                frames the route may still show late art for
 //! missed_vblanks = 12          pad polls the route may still miss (read by tools/replay_cue.py)
+//! startup_polls = 25           port-1 polls the recording build took before the sampler's first poll: the replay anchors the tape on it (tools/replay_cue.py)
 //! HK_REGION_ID = 150           final telemetry that must be exactly this
 //! HK_HEALTH >= 2               final telemetry that must be at least this
 //! ```
@@ -94,6 +95,8 @@ pub struct Route {
     pub art_late: u64,
     /// Pad polls the route may miss; the replay itself judges it (tools/replay_cue.py).
     pub missed_vblanks: u64,
+    /// Port-1 polls the recording build took before the sampler's first poll; 0: the tape is played from reset.
+    pub startup_polls: u64,
     pub pins: Vec<Pin>,
     /// Scene loads found in the baseline replay; empty when the route has no cut list.
     pub cuts: Option<Cuts>,
@@ -141,6 +144,7 @@ pub fn parse_pins(name: &str, text: &str) -> Result<Route> {
                 "long_frames" => route.long_frames = Some(number(value)?),
                 "art_late" => route.art_late = number(value)?,
                 "missed_vblanks" => route.missed_vblanks = number(value)?,
+                "startup_polls" => route.startup_polls = number(value)?,
                 k if k.starts_with("HK_") || k.starts_with("__") => route.pins.push(Pin {
                     symbol: k.to_string(),
                     op: PinOp::Eq,
