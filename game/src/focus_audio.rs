@@ -44,10 +44,7 @@ pub fn upload(bytes: &[u8]) -> bool {
     if SPU_BASE < end {
         return false;
     }
-    let mut checksum = 0x811c9dc5u32;
-    for &b in bytes {
-        checksum = (checksum ^ u32::from(b)).wrapping_mul(0x01000193);
-    }
+    let checksum = psx_pack::fnv1a32(bytes);
     if checksum != BANK_CHECKSUM {
         return false;
     }

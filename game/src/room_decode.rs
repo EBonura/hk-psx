@@ -62,59 +62,12 @@ pub struct Decoder {
 /// cook proved, at about 440 ms per gate. The stored hash stays: it is the CD
 /// integrity check. HK_VERIFY_COOK=1 at build time restores both.
 pub const TRUST_COOK: bool = option_env!("HK_VERIFY_COOK").is_none();
-pub const FNV: u32 = 0x811c9dc5;
-// 0x01000193 = 2^24 + 13*31. Eight wrapping shifts/adds avoid
-// dependent MULT/MFLO stalls on R3000A without changing either checksum.
-// Keep the MIPS operations opaque to LLVM's constant-multiply refolding.
-#[inline(always)]
-fn fnv_multiply(mut value: u32) -> u32 {
-    #[cfg(target_arch = "mips")]
-    unsafe {
-        core::arch::asm!(
-        "sll {t0}, {value}, 1", "addu {t0}, {t0}, {value}",
-        "sll {t0}, {t0}, 2", "addu {t0}, {t0}, {value}",
-        "sll {t1}, {t0}, 5", "subu {t0}, {t1}, {t0}",
-        "sll {t1}, {value}, 24", "addu {value}, {t0}, {t1}",
-        value=inout(reg)value,t0=out(reg)_,t1=out(reg)_,
-        options(pure,nomem,nostack));
-    }
-    #[cfg(not(target_arch = "mips"))]
-    {
-        let thirteen = value
-            .wrapping_shl(1)
-            .wrapping_add(value)
-            .wrapping_shl(2)
-            .wrapping_add(value);
-        value = thirteen
-            .wrapping_shl(5)
-            .wrapping_sub(thirteen)
-            .wrapping_add(value.wrapping_shl(24));
-    }
-    value
-}
-// Keep the four dependent FNV rounds identical, but fetch aligned payload
-// words once: each byte RAM access otherwise costs a separate PS1 bus load.
-fn hash_bytes(mut hash: u32, bytes: &[u8]) -> u32 {
-    let mut p = bytes.as_ptr();
-    let end = unsafe { p.add(bytes.len()) };
-    while p != end && (p as usize & 3) != 0 {
-        hash = fnv_multiply(hash ^ unsafe { *p } as u32);
-        p = unsafe { p.add(1) };
-    }
-    while (end as usize) - (p as usize) >= 4 {
-        // Alignment is established above; all four bytes lie in the slice.
-        let word = u32::from_le(unsafe { p.cast::<u32>().read() });
-        hash = fnv_multiply(hash ^ (word & 255));
-        hash = fnv_multiply(hash ^ ((word >> 8) & 255));
-        hash = fnv_multiply(hash ^ ((word >> 16) & 255));
-        hash = fnv_multiply(hash ^ (word >> 24));
-        p = unsafe { p.add(4) };
-    }
-    while p != end {
-        hash = fnv_multiply(hash ^ unsafe { *p } as u32);
-        p = unsafe { p.add(1) };
-    }
-    hash
+pub const FNV: u32 = psx_pack::Fnv32::OFFSET_BASIS;
+/// FNV-1a over `bytes` resumed from `hash`: the SDK's word-fetching form.
+fn hash_bytes(hash: u32, bytes: &[u8]) -> u32 {
+    let mut fnv = psx_pack::Fnv32::from_state(hash);
+    fnv.update_bulk(bytes);
+    fnv.finish()
 }
 /// One round of the word hash: Jenkins' one-at-a-time mix over a little-endian 32-bit word.
 #[inline(always)]

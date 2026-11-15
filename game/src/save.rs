@@ -252,9 +252,7 @@ pub struct Save {
     pub version: u8,
 }
 fn fnv(bytes: &[u8]) -> u32 {
-    bytes
-        .iter()
-        .fold(0x811c9dc5u32, |h, &b| (h ^ b as u32).wrapping_mul(16777619))
+    psx_pack::fnv1a32(bytes)
 }
 impl Save {
     /// Write the record and `items` (sorted `persist` words) into `out`, and

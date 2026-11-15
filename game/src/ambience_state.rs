@@ -274,7 +274,7 @@ pub struct ClipCheck {
 impl ClipCheck {
     pub const fn new() -> Self {
         Self {
-            hash: 0x811c9dc5,
+            hash: psx_pack::Fnv32::OFFSET_BASIS,
             index: 0,
         }
     }
@@ -313,18 +313,9 @@ impl ClipCheck {
             }
             k += 16;
         }
-        // FNV-1a; the prime 0x01000193 as shifts and adds.
-        let mut hash = self.hash;
-        for &byte in bytes {
-            let h = hash ^ byte as u32;
-            hash = h
-                .wrapping_add(h << 1)
-                .wrapping_add(h << 4)
-                .wrapping_add(h << 7)
-                .wrapping_add(h << 8)
-                .wrapping_add(h << 24);
-        }
-        self.hash = hash;
+        let mut fnv = psx_pack::Fnv32::from_state(self.hash);
+        fnv.update_bulk(bytes);
+        self.hash = fnv.finish();
         self.index = start + bytes.len();
         true
     }

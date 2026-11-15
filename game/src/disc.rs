@@ -668,14 +668,12 @@ pub const fn scene_clobbered(scene: usize) -> bool {
     false
 }
 fn fnv(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c9dc5u32;
+    let mut hash = psx_pack::Fnv32::new();
     for block in bytes.chunks(1024) {
         crate::input::checkpoint();
-        for &byte in block {
-            hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
-        }
+        hash.update_bulk(block);
     }
-    hash
+    hash.finish()
 }
 /// A title style other than the default (host/build_guest.py `boot_art`), or `None` when the disc does not
 /// give it. The options page calls this with the title's song stopped.
