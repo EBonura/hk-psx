@@ -7,7 +7,8 @@ include chain-new-game-to-greenpath.walk
 include fungus1-06a-chain.walk
 include fungus1-06-vine1.walk
 include fungus1-06b-chain.walk
-include fungus1-06-vine4.walk
+include fungus1-06v4-chain.walk
+check vine-4 HK_BREAK_COUNT >= 2 ; HK_DEATHS == 0 ; HK_CHEATS == 0
 include fungus1-06c-chain.walk
 include fungus1-07-chain.walk
 include fungus1-19-chain.walk

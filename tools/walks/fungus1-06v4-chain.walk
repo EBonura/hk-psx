@@ -1,0 +1,26 @@
+# Fungus1_06 on the fourth hanging platform (x 115.8, y 23.83): the swing that cuts vine 4 (Vine Platform (4), hit box x 116.41 to 116.77) and drops the Knight onto its Activated Plat at the acid (y 4.35). Planned by hk-walkplan room (--swing) with the run before it as the pre.
+at 115.79 23.83
+walk 115.79
+clear d06v-swing-arc 115.790 23.830 114.91 118.06
+heal
+if expr !(abs(i32(HK_PLAYER_X) - 7588413) <= 98304 && abs(i32(HK_PLAYER_Y) - 285082) <= 52429) && abs(i32(HK_PLAYER_Y) - 1561723) <= 32768
+walk 115.79
+hold right for 2
+press square for 3 rest 40
+end
+if expr !(abs(i32(HK_PLAYER_X) - 7588413) <= 98304 && abs(i32(HK_PLAYER_Y) - 285082) <= 52429) && abs(i32(HK_PLAYER_Y) - 1561723) <= 32768
+clear d06v-swing2-arc 115.790 23.830 114.91 118.06
+heal
+walk 115.79
+hold right for 2
+press square for 3 rest 40
+end
+if expr !(abs(i32(HK_PLAYER_X) - 7588413) <= 98304 && abs(i32(HK_PLAYER_Y) - 285082) <= 52429) && abs(i32(HK_PLAYER_Y) - 1561723) <= 32768
+clear d06v-swing3-arc 115.790 23.830 114.91 118.06
+heal
+walk 115.79
+hold right for 2
+press square for 3 rest 40
+end
+wait until expr abs(i32(HK_PLAYER_X) - 7588413) <= 98304 && abs(i32(HK_PLAYER_Y) - 285082) <= 52429 timeout 400
+wait until HK_GAME_MODE == 1 timeout 1800

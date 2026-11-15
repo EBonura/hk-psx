@@ -11,7 +11,7 @@
 //!
 //! ```text
 //! hk-walkplan room PREV SCENE NEXT --lib DIR [--name N] [--between 'line;line'] [--open X0,Y0,X1,Y1]...
-//!                  [--spawn X Y REGION] [--goal X Y] [--tail 'line;line'] [--tol T] [--max N]
+//!                  [--spawn X Y REGION] [--goal X Y] [--tail 'line;line'] [--swing PX PY LO HI LX LY] [--tol T] [--max N]
 //!                  [--pre FILE] [--card FILE] [--fireball N] [--work DIR]
 //! ```
 //!
@@ -154,6 +154,52 @@ fn retrying(
     out
 }
 
+/// A swing at a vine from a hanging platform: the Knight stands at `stand` on a platform that reaches `span`, one cut of
+/// the vine drops him onto the Activated Plat at `land`. The planner does not search it (the way down exists only once the
+/// vine is cut); it writes it as one more guarded hop of the room.
+#[derive(Clone, Copy, Debug)]
+struct Swing {
+    stand: (f64, f64),
+    span: (f64, f64),
+    land: (f64, f64),
+}
+
+/// Passes of a swing: a hit in the swing's recoil or a Mosquito's knock leaves the vine uncut, the Knight on the platform.
+const SWING_PASSES: u32 = 3;
+/// How near the platform's height counts as still on it, and how near the Activated Plat's as landed on it (world units).
+const SWING_ON_Y: f64 = 0.5;
+const SWING_LAND_X: f64 = 1.5;
+const SWING_LAND_Y: f64 = 0.8;
+
+/// The lines of a swing hop, the same vocabulary as a jump hop: a `clear` while a foe is in reach of the platform, a heal,
+/// then passes that each run only while the Knight is still on the platform and has not landed below (so a pass after a
+/// good cut costs no ticks), every pass clearing and healing first, and a wait on the landing as the judge.
+fn swing_lines(name: &str, swing: &Swing, q: impl Fn(f64) -> i64) -> Vec<String> {
+    let Swing { stand: (px, py), span: (lo, hi), land: (lx, ly) } = *swing;
+    let landed = format!(
+        "abs(i32(HK_PLAYER_X) - {}) <= {} && abs(i32(HK_PLAYER_Y) - {}) <= {}",
+        q(lx),
+        q(SWING_LAND_X),
+        q(ly),
+        q(SWING_LAND_Y)
+    );
+    let on_platform = format!("abs(i32(HK_PLAYER_Y) - {}) <= {}", q(py), q(SWING_ON_Y));
+    let mut out = vec![format!("clear {name}-swing-arc {px:.3} {py:.3} {lo:.2} {hi:.2}"), "heal".to_string()];
+    for pass in 1..=SWING_PASSES {
+        out.push(format!("if expr !({landed}) && {on_platform}"));
+        if pass > 1 {
+            out.push(format!("clear {name}-swing{pass}-arc {px:.3} {py:.3} {lo:.2} {hi:.2}"));
+            out.push("heal".to_string());
+        }
+        out.push(format!("walk {px:.2}"));
+        out.push("hold right for 2".to_string());
+        out.push("press square for 3 rest 40".to_string());
+        out.push("end".to_string());
+    }
+    out.push(format!("wait until expr {landed} timeout 400"));
+    out
+}
+
 /// A hop that ends this far (world units) from where its plan said counts as landed as planned.
 const LAND_X: f64 = 0.7;
 const LAND_Y: f64 = 0.35;
@@ -169,6 +215,7 @@ struct Options {
     spawn: Option<(f64, f64, i64)>,
     goal: Option<(f64, f64)>,
     tail: Option<Vec<String>>,
+    swing: Option<Swing>,
     tolerance: f64,
     max_hops: usize,
     pre: Option<PathBuf>,
@@ -207,6 +254,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         spawn: None,
         goal: None,
         tail: None,
+        swing: None,
         tolerance: 0.6,
         max_hops: 40,
         pre: None,
@@ -239,6 +287,13 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 o.spawn = Some((x, y, number(&mut it)? as i64));
             }
             "--goal" => o.goal = Some((number(&mut it)?, number(&mut it)?)),
+            "--swing" => {
+                let mut n = [0.0; 6];
+                for v in &mut n {
+                    *v = number(&mut it)?;
+                }
+                o.swing = Some(Swing { stand: (n[0], n[1]), span: (n[2], n[3]), land: (n[4], n[5]) });
+            }
             "--tol" => o.tolerance = number(&mut it)?,
             "--max" => o.max_hops = number(&mut it)? as usize,
             "--pre" => o.pre = Some(PathBuf::from(it.next().ok_or_else(usage)?)),
@@ -606,8 +661,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
         2 => vec![format!("hold right until {reached} timeout 900")],
         _ => vec![format!("wait until {reached} timeout 600")],
     });
+    let swing = o.swing.map(|s| swing_lines(&name, &s, q)).unwrap_or_default();
     let tail: Vec<String> = tail
         .into_iter()
+        .chain(swing)
         .chain([
             "wait until HK_GAME_MODE == 1 timeout 1800".to_string(),
             "probe end x y HK_REGION_ID HK_SCENE_LOADS HK_HEALTH HK_DEATHS".to_string(),
@@ -1033,6 +1090,17 @@ mod tests {
             .expect("a landing");
         assert!((x - 16.5).abs() < 1e-9 && (y - 5.39).abs() < 1e-9);
         assert!(!last);
+    }
+
+    #[test]
+    fn a_swing_is_guarded_passes_and_a_wait_on_the_landing() {
+        let swing = Swing { stand: (115.79, 23.83), span: (114.91, 118.06), land: (115.79, 4.35) };
+        let lines = swing_lines("d06b", &swing, q);
+        assert_eq!(lines.first().map(String::as_str), Some("clear d06b-swing-arc 115.790 23.830 114.91 118.06"));
+        assert_eq!(lines.iter().filter(|l| l.starts_with("if expr")).count(), SWING_PASSES as usize);
+        assert_eq!(lines.iter().filter(|l| *l == "end").count(), SWING_PASSES as usize);
+        assert!(lines.iter().filter(|l| l.starts_with("press square")).count() == SWING_PASSES as usize);
+        assert!(lines.last().is_some_and(|l| l.starts_with("wait until expr")));
     }
 
     #[test]
