@@ -353,7 +353,7 @@ pub fn init(
     scenery_packets: usize,
     coverage: CoverageView<'_>,
 ) {
-    crate::input::render_checkpoint();
+    crate::input::checkpoint();
     unsafe {
         BOUND_VIEW = region;
         EARLY_BACK = EARLY_UNKNOWN;
@@ -405,7 +405,7 @@ pub fn init(
             OPAQUE_CORES = [[0; 4]; MAX_TEXTURES];
             for i in 0..room.counts[1] {
                 if i & 63 == 0 {
-                    crate::input::render_checkpoint();
+                    crate::input::checkpoint();
                 }
                 CORES[i] = crate::disc::scene_black_core(bank, i);
                 OPAQUE_CORES[i] = crate::disc::scene_opaque_core(bank, i);
@@ -435,7 +435,7 @@ pub fn init(
         if scene_changed {
             for i in 0..room.counts[1] {
                 if i & 31 == 0 {
-                    crate::input::render_checkpoint();
+                    crate::input::checkpoint();
                 }
                 let t = room.texture(i);
                 let flags = crate::disc::scene_texture_flags(bank, i);
@@ -489,7 +489,7 @@ pub fn init(
         SOLID_CORE_DRAW_COUNT = 0;
         for i in 0..DRAW_COUNT {
             if i & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             let record = room.draw(i).as_ptr().cast::<Draw>();
             // Scene banks and their draw sections are word aligned.
@@ -560,7 +560,7 @@ pub fn init(
         bind_tile_groups(room, coverage);
     }
     reset_visibility();
-    crate::input::render_checkpoint();
+    crate::input::checkpoint();
 }
 /// The flags a draw's record and its scene textures fix for the whole scene.
 const STATIC_FLAGS: u8 =
@@ -669,7 +669,7 @@ fn bind_tile_groups(room: &Room, coverage: CoverageView<'_>) {
         let mut pool_to_local = [u16::MAX; opaque_groups::GROUP_POOL_CAPACITY];
         for i in 0..DRAW_COUNT {
             if i & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             if let Some(pool) = room.draw_pool_index(i) {
                 if let Some(slot) = pool_to_local.get_mut(pool) {
@@ -680,7 +680,7 @@ fn bind_tile_groups(room: &Room, coverage: CoverageView<'_>) {
             }
         }
         for group in coverage.groups() {
-            crate::input::render_checkpoint();
+            crate::input::checkpoint();
             let Some(local) = opaque_groups::resolve_indexed(group, &pool_to_local) else {
                 continue;
             };
@@ -719,7 +719,7 @@ fn collect_occluders(camera: (i32, i32)) {
         occluders.clear();
         for candidate in 0..OCCLUDER_DRAW_COUNT {
             if candidate & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             let i = OCCLUDER_DRAWS[candidate] as usize;
             let d = draw_record(i);
@@ -886,7 +886,7 @@ fn collect_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
         let (mut candidates, mut lookups, mut tiles) = (0u32, 0u32, 0u32);
         for candidate in (0..TILE_DRAW_COUNT).rev() {
             if candidate & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             let (draw, cert) = TILE_DRAWS[candidate];
             let i = draw as usize;
@@ -926,7 +926,7 @@ fn collect_tile_coverage(camera: (i32, i32), coverage: CoverageView<'_>) {
         // Joint seam coverage remains valid only until its earliest member.
         // Upgrade earlier owners without displacing any later single proof.
         for group in &TILE_GROUPS[..TILE_GROUP_COUNT] {
-            crate::input::render_checkpoint();
+            crate::input::checkpoint();
             let first = draw_record(group.members[0] as usize);
             let cx = psx_math::int32::mul_shr_i32(camera.0 >> 8, first.scale as i32, 12);
             let cy = psx_math::int32::mul_shr_i32(camera.1 >> 8, first.scale as i32, 12);
@@ -1270,7 +1270,7 @@ fn early_back_allowed(room: &Room) -> bool {
                     let f = end;
                     end += 1;
                     if f & 31 == 0 {
-                        crate::input::render_checkpoint();
+                        crate::input::checkpoint();
                     }
                     let base = u32_at(room.frame(f), 0) as usize;
                     if base >= room.counts[1] {
@@ -1320,7 +1320,7 @@ pub fn early_back(room: &Room) -> bool {
 #[inline(never)]
 pub fn wait_dma_idle() {
     while dma_pending() {
-        crate::input::render_checkpoint();
+        crate::input::checkpoint();
     }
 }
 /// The animation half of `begin`: upload missing frames and point their
@@ -2082,7 +2082,7 @@ fn scenery_range(camera: (i32, i32), front: bool, start: usize, prebuilding: boo
             next = i + 1;
             visited = visited.wrapping_add(1);
             if visited & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             // Start rasterising after the first emitted draw; subsequent
             // chunks retain the established eight-source-draw cadence.
@@ -2341,7 +2341,7 @@ fn repair(
     draw: usize,
     front: bool,
 ) -> u32 {
-    crate::input::render_checkpoint();
+    crate::input::checkpoint();
     unsafe {
         let children = &mut *(&raw mut REPAIR_CHILDREN);
         let count = match scenery_geometry::subdivide_in(v, uv, children, &mut *GRID) {
@@ -2419,7 +2419,7 @@ fn repair(
             emitted += 1;
         }
         HK_SCENERY_REPAIRS = HK_SCENERY_REPAIRS.wrapping_add(1);
-        crate::input::render_checkpoint();
+        crate::input::checkpoint();
         emitted
     }
 }
@@ -2467,7 +2467,7 @@ pub fn submit(
     blue_health: u16,
     transition: u8,
 ) {
-    crate::input::render_checkpoint();
+    crate::input::checkpoint();
     animation_cache::submit();
     // One owner, no mutation until main observes DMA and GPU completion.
     unsafe {
@@ -2503,14 +2503,14 @@ pub fn submit(
         crate::hud::append(ot, health, max_health, soul, max_soul, paused, blue_health);
         for i in (KICKED..USED).rev() {
             if i & 31 == 0 {
-                crate::input::render_checkpoint();
+                crate::input::checkpoint();
             }
             let words = PACKETS[i].word_count();
             crate::display::ot_add(ot, 0, &mut PACKETS[i], words);
         }
         KICKED = USED;
     }
-    crate::input::render_checkpoint();
+    crate::input::checkpoint();
 }
 /// The final list's head, for `presentation::submit_final`.
 pub fn final_head() -> *const u32 {

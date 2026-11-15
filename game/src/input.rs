@@ -215,31 +215,15 @@ pub fn start(tick: u32) {
         }
     }
 }
-/// The full cooperative checkpoint, the exit fade included: for code that runs while a scene is
-/// loaded (the disc, module and VRAM loops, the scene gate), where the fade is stepped. One copy:
-/// this is called from dozens of sites and none is hot enough to earn its own.
+/// The cooperative checkpoint: the presenter, the exit fade, the audio and CD services and the
+/// pad poll, in that order. Called from the disc, module and VRAM loops, the scene gate and the
+/// renderer's loops (render code runs on the 1 KB scratchpad stack, and the build's stack check
+/// proves this fits by walking the static call graph, the fade's direct GPU writes included).
+/// One copy: it is called from dozens of sites and none is hot enough to earn its own.
 #[inline(never)]
 pub fn checkpoint() {
     crate::presentation::checkpoint();
     crate::exit_fade::service();
-    services();
-}
-/// The checkpoint of render code: everything `checkpoint` does, in the same order, except the exit
-/// fade. Render code runs on the 1 KB scratchpad stack, which the build's stack check proves
-/// fits by walking the static call graph. The fade writes the GPU directly (draw area, fills,
-/// display start), and a direct write runs the presenter's guard through a registered function
-/// pointer, which that check cannot bound and should not: a render pass never runs while a
-/// fade is armed (it only runs during a gate load), so it must not be able to reach it. One copy,
-/// called from the renderer's loops (a call and a return a checkpoint; the services dominate).
-#[inline(never)]
-pub fn render_checkpoint() {
-    crate::presentation::checkpoint();
-    services();
-}
-/// What both checkpoints do after the presenter (and the fade): the audio and CD services and the
-/// pad poll, once.
-#[inline(never)]
-fn services() {
     crate::music::service();
     crate::disc::stream_checkpoint();
     let now = psx_rt::interrupts::vblank_count();
