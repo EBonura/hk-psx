@@ -581,7 +581,9 @@ def layer(script):
     script = sub(r'^(STACK_RESERVE = [^\n]*)$',
                  r'\1\nPOOL_BYTES = %#x; /* hk-psx: streaming code pool, host/code_modules.py */\n'
                  r'POOL_BASE = STACK_INIT - STACK_RESERVE - POOL_BYTES;' % POOL_BYTES, script)
-    script = sub(r'LENGTH = EXE_HEAD_BYTES \+ STACK_INIT - LOAD_ADDR - STACK_RESERVE$',
+    # The SDK's RAM region ends RAM_SIZE - BIOS_SIZE above the load address less the reserve; the game's ends 256 bytes
+    # lower, at STACK_INIT, so the link bound agrees with `__heap_end` and the reported stack floor.
+    script = sub(r'LENGTH = EXE_HEAD_BYTES \+ RAM_SIZE - BIOS_SIZE - STACK_RESERVE$',
                  'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES\n'
                  f'    MODLINK (rwx) : ORIGIN = {LINK_BASE:#x}, LENGTH = {LINK_STRIDE * len(MODULES):#x}', script)
     # The BIOS loads text and data only: the SDK header's size is `__image_end`, the

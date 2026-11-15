@@ -27,13 +27,15 @@ class StackBudgetTests(unittest.TestCase):
             root = Path(temp)
             sdk = root / '.psoxide/sdk/psoxide.ld'
             sdk.parent.mkdir(parents=True)
-            original = 'STACK_RESERVE = 0x8000; /* SDK */\nLENGTH = EXE_HEAD_BYTES + RAM_SIZE - BIOS_SIZE - STACK_RESERVE\n'
+            original = ('STACK_RESERVE = DEFINED(STACK_RESERVE_OVERRIDE) ? STACK_RESERVE_OVERRIDE : 0x8000; /* SDK */\n'
+                        'LENGTH = EXE_HEAD_BYTES + RAM_SIZE - BIOS_SIZE - STACK_RESERVE\n')
             sdk.write_text(original)
             first = prepare_linker(root, root)
             self.assertEqual(sdk.read_text(), original)
-            self.assertIn('STACK_RESERVE = 0xc000;', first.read_text())
+            self.assertTrue(first.read_text().startswith('STACK_RESERVE_OVERRIDE = 0xc000;'))
+            self.assertTrue(first.read_text().endswith(original))
             sdk.write_text(original + '/* other SDK change */\n')
             self.assertNotEqual(first, prepare_linker(root, root))
             sdk.write_text('STACK_RESERVE = 0x4000;\n')
-            with self.assertRaisesRegex(ValueError, 'declaration changed'):
+            with self.assertRaisesRegex(ValueError, 'no STACK_RESERVE_OVERRIDE hook'):
                 prepare_linker(root, root)

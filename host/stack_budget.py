@@ -2,26 +2,22 @@
 import hashlib
 import json
 from pathlib import Path
-import re
 import struct
 
 STACK_RESERVE = 48 * 1024
 
 
 def prepare_linker(root, output):
+    """The pinned SDK linker script, unchanged, behind one line: the SDK's own `STACK_RESERVE_OVERRIDE` hook.
+
+    The SDK script reads the override when the link defines it before the script's own use of the reserve (a script
+    placed first, or, as here, the first line of the one script handed to the linker), and the link map then
+    carries the line. Nothing in the SDK text is rewritten."""
     source = root / '.psoxide/sdk/psoxide.ld'
     original = source.read_text()
-    generated, count = re.subn(r'^STACK_RESERVE = 0x8000;[^\n]*$',
-                              'STACK_RESERVE = 0xc000; /* hk-psx: 48 KiB stack reservation */',
-                              original, flags=re.M)
-    if count != 1:
-        raise ValueError('Pinned SDK stack declaration changed; review project reservation')
-    # STACK_INIT leaves 256 bytes at the top of RAM. Exclude those too so
-    # the linker's static limit agrees with the reported stack floor.
-    generated, count = re.subn(r'LENGTH = EXE_HEAD_BYTES \+ RAM_SIZE - BIOS_SIZE - STACK_RESERVE',
-                              'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE', generated)
-    if count != 1:
-        raise ValueError('Pinned SDK RAM region changed; review project reservation')
+    if 'DEFINED(STACK_RESERVE_OVERRIDE)' not in original:
+        raise ValueError('Pinned SDK has no STACK_RESERVE_OVERRIDE hook; review project reservation')
+    generated = f'STACK_RESERVE_OVERRIDE = {STACK_RESERVE:#x}; /* hk-psx: 48 KiB stack reservation */\n' + original
     # Derive the filename from its contents: Cargo must relink when the budget
     # changes, even though it does not track external linker-script contents.
     digest = hashlib.sha256(generated.encode()).hexdigest()

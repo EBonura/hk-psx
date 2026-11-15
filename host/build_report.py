@@ -28,7 +28,7 @@ def memory_budget(link_map,exe,arena_bytes,coverage_bytes=0):
         if not m:raise ValueError('Missing final map section: '+name)
         return int(m[1],16),int(m[2],16)
     code,code_bytes=section('.text');data,data_bytes=section('.data');bss,bss_bytes=section('.bss')
-    reserve=re.search(r'STACK_RESERVE = (0x[0-9a-fA-F]+)',text)
+    reserve=re.search(r'STACK_RESERVE_OVERRIDE = (0x[0-9a-fA-F]+)',text)
     if not reserve:raise ValueError('Cannot verify linker stack reservation')
     stack_bytes=int(reserve[1],16);initial_sp=int.from_bytes(exe.read_bytes()[0x30:0x34],'little')
     static_end=bss+bss_bytes;stack_floor=initial_sp-stack_bytes
