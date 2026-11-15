@@ -33,40 +33,24 @@ pub mod bind {
     pub const INVENTORY: u16 = button::SELECT;
     pub const PAUSE: u16 = button::START;
 }
-/// Left-stick deflection (of 127) that counts as a d-pad press, per axis, so a
+/// Left-stick deflection (of 127) beyond which a push counts as a d-pad press (a push of 48 or more), per axis, so a
 /// diagonal push sets two bits like a diagonal on the d-pad. Celeste's threshold
 /// (pico8-psx `shared/src/input.rs`): wide enough that a worn stick registers,
 /// narrow enough that centre drift (12 to 20 counts on a console SCPH-110) does
 /// not. The original reads its stick through the same direction actions as the
 /// d-pad (InControl, `HeroActions.left/right/up/down`), so the stick is a
 /// second d-pad here as well.
-const STICK_THRESHOLD: i16 = 48;
-/// `state`'s buttons with its left stick folded into the d-pad bits. A pad that
-/// reports no sticks (digital, or garbled and replaced by the reader's last
-/// clean state) has them centred and adds nothing. Menus, dialogue and play all
-/// read the pad through `poll_bits`, so all of them answer the stick.
-pub fn with_stick(state: psx_pad::PadState) -> u16 {
-    let (x, y) = state.sticks.left_centered();
-    let mut bits = state.buttons.bits();
-    if x <= -STICK_THRESHOLD {
-        bits |= psx_pad::button::LEFT;
-    } else if x >= STICK_THRESHOLD {
-        bits |= psx_pad::button::RIGHT;
-    }
-    if y <= -STICK_THRESHOLD {
-        bits |= psx_pad::button::UP;
-    } else if y >= STICK_THRESHOLD {
-        bits |= psx_pad::button::DOWN;
-    }
-    bits
-}
+const STICK_THRESHOLD: i16 = 47;
 /// One poll of port 1 through the reader, as button bits with the left stick
-/// folded into the d-pad.
+/// folded into the d-pad (a pad with no sticks adds nothing). Menus, dialogue and play all
+/// read the pad through `poll_bits`, so all of them answer the stick.
 pub fn poll_bits() -> u16 {
     // SAFETY: a token is a logic guard, not a memory-safety one (see `psx_io::periph`); the pad
     // is polled from the main thread only, and the memory card shares SIO0 only between polls.
     let mut port = unsafe { psx_io::periph::ControllerPort::steal() };
-    with_stick(*unsafe { &mut *(&raw mut PADS) }.poll(&mut port, psx_pad::Port::One))
+    let state = *unsafe { &mut *(&raw mut PADS) }.poll(&mut port, psx_pad::Port::One);
+    // The SDK's one stick rule: sticks count when the pad reports them (analog or config mode).
+    state.buttons.bits() | psx_pad::stick_bits_of::<STICK_THRESHOLD>(&state)
 }
 #[no_mangle]
 pub static mut HK_INPUT_POLLS: u32 = 0;
