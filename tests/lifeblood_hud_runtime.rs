@@ -54,6 +54,7 @@ mod render {
  pub fn set_visible(_:usize,_:bool){}
  pub fn resident_quad(_:&crate::prim::QuadTextured,points:[(i16,i16);4]){assert!(points.iter().all(|p|p.0.abs()<1000&&p.1.abs()<1000));}
 }
+#[path="../game/src/sine.rs"]mod sine;
 #[path="../game/src/lifeblood.rs"]mod lifeblood;
 /// The boot art chunk carries the cocoon art at `LIFE_ART`; this harness
 /// hands the real bank over as a chunk of its own.

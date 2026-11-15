@@ -1,5 +1,8 @@
 #![allow(dead_code)] // includes game modules by path and exercises part of each
 #[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
+#[path = "../../../game/src/sine.rs"]
+mod sine;
+#[allow(clippy::all, unexpected_cfgs)]
 #[path = "../../../game/src/lifeblood.rs"]
 mod lifeblood;
 use hk_sim::{Hurt, VitalParams, Vitals, ONE};

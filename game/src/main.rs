@@ -113,6 +113,7 @@ mod room_decode;
 mod runner_audio;
 mod scene_sfx;
 mod scenery_geometry;
+mod sine;
 mod script;
 mod shaman;
 mod shop;

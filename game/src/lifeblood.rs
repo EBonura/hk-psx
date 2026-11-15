@@ -1,6 +1,7 @@
 //! Source HealthCocoon/ScuttlerControl subset. Two authored bugs, no heap.
 //! Run/land/activation/heal timings come from the installed CIL. Terrain uses
 //! the existing 60Hz swept-box solver rather than claiming native Box2D parity.
+use crate::sine::sin;
 use hk_sim::{polygon_hits_box, Params, Player, ONE};
 #[derive(Clone, Copy, Debug)]
 pub struct Spec {
@@ -297,35 +298,6 @@ fn range(rng: &mut u32, span: [i32; 2]) -> i32 {
     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
     span[0] + psx_math::WideU::mul(*rng, (span[1] - span[0]) as u32).high() as i32
 }
-const SINE: [i32; 91] = [
-    0, 1144, 2287, 3430, 4572, 5712, 6850, 7987, 9121, 10252, 11380, 12505, 13626, 14742, 15855,
-    16962, 18064, 19161, 20252, 21336, 22415, 23486, 24550, 25607, 26656, 27697, 28729, 29753,
-    30767, 31772, 32768, 33754, 34729, 35693, 36647, 37590, 38521, 39441, 40348, 41243, 42126,
-    42995, 43852, 44695, 45525, 46341, 47143, 47930, 48703, 49461, 50203, 50931, 51643, 52339,
-    53020, 53684, 54332, 54963, 55578, 56175, 56756, 57319, 57865, 58393, 58903, 59396, 59870,
-    60326, 60764, 61183, 61584, 61966, 62328, 62672, 62997, 63303, 63589, 63856, 64104, 64332,
-    64540, 64729, 64898, 65048, 65177, 65287, 65376, 65446, 65496, 65526, 65536,
-];
-fn sin(angle: i32) -> i32 {
-    let a = angle.rem_euclid(360 * ONE);
-    let quadrant = a / (90 * ONE);
-    let mut t = a % (90 * ONE);
-    if quadrant == 1 || quadrant == 3 {
-        t = 90 * ONE - t;
-    }
-    let i = (t / ONE) as usize;
-    let v = if i == 90 {
-        ONE
-    } else {
-        SINE[i] + mul(SINE[i + 1] - SINE[i], t % ONE)
-    };
-    if quadrant >= 2 {
-        -v
-    } else {
-        v
-    }
-}
-
 #[cfg(not(test))]
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/lifeblood.rs"));
 

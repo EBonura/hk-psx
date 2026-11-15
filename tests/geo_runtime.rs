@@ -1,3 +1,4 @@
+#[path="../game/src/sine.rs"]mod sine;
 #[path="../game/src/geo.rs"]mod geo;
 use geo::*;
 use hk_sim::ONE;
