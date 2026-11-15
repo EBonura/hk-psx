@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |815,436|
-| Code-to-data alignment |52|
+| Linked code |814,528|
+| Code-to-data alignment |64|
 | Linked data, including menu and HUD |244,712|
-| BSS, including shared scene arena and runtime pools |796,072|
-| Total static span |1,856,280|
+| BSS, including shared scene arena and runtime pools |796,056|
+| Total static span |1,855,368|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |125,928|
+| Unallocated gap before reserved stack |126,840|
 | Room module pool, inside that gap |110,592|
-| Free RAM below the module pool |15,336|
+| Free RAM below the module pool |16,248|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d5318`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d4f88`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -677,3 +677,5 @@ The 2026-11-15 pass after the present path (SDK pins up to e02467b0, `trim_polic
 The 2026-11-15 repin to SDK b05a6476 left the ship build at the same sizes (code 815,584, free 15,208), and dropping the render-side checkpoint (the stack-check workaround; the guard is a call by name since e02467b0, so the proof passes with the one full checkpoint at 928 of 1,004 bytes) took linked code to 815,436 bytes (-148) and the free RAM below the module pool to 15,336 (+128; static end 0x801d5318). The SDK lookup for MUSIC.XA is still 44 bytes larger in code (128 bytes less free RAM) than the thirty lines it replaces, so it is not taken.
 
 The repin to SDK 6e25f2ae (ten additive commits after b05a6476) left the ship build byte for byte the same: disc 10383b1f2b0d, code 815,436, data 244,712, bss 796,072, free RAM below the module pool 15,336, no symbol of the link map changes size. The stack reservation now reaches the link through the SDK's own `STACK_RESERVE_OVERRIDE` line (`host/stack_budget.py` puts one line in front of the SDK script; the text patch of `STACK_RESERVE = 0x8000;` is gone); the link map carries that line and `host/build_report.py` reads the reservation from it.
+
+The 2026-11-16 repin to SDK d559ad157edd (the pad fix, the shared disc lookup for MUSIC.XA, the Fnv32 hash adoption, the formatter family, the stack-reserve hook, two arctangents) left BSS at 796,056 and took linked code to 814,528 bytes and data to 244,712, so the free RAM below the module pool is 16,248 (static end 0x801d4f88). Against the 57b4212830cd pin (code 814,652, data 244,840, free 15,992) the coarse `atan2_q12` is back: 128 bytes of table data and 124 bytes of code (the Mosquito's lunge angle in `frame::render`) are gone, and `angle_deg` in the FSM module is 112 bytes smaller.
