@@ -4,4 +4,5 @@ version="0.1.0"
 edition="2021"
 [workspace]
 [dev-dependencies]
+psx-hw = { path = "../../.psoxide/crates/psx-hw" }
 psx-pack = { path = "../../.psoxide/sdk/crates/psx-pack" }

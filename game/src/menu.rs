@@ -905,7 +905,7 @@ fn upload_style(chunk: &[u8]) -> bool {
         EXTRA = core::slice::from_raw_parts(extra.as_ptr(), extra.len());
     }
     // GP0(01h): the texture and palette caches still hold the previous style's texels and colours.
-    psx_io::gpu::write_command(0x0100_0000);
+    psx_io::gpu::write_command(psx_hw::gpu::gp0::CLEAR_CACHE);
     true
 }
 fn upload_ornaments(rows: &[u8]) {

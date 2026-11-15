@@ -8,7 +8,7 @@
 //! which is shown instead. Nothing here reads the scene arena, the static
 //! pages or the coverage arena, so the load may replace all of them at once;
 //! only the two framebuffers (x 0..320, y 0..480) are used.
-use psx_hw::gpu::{gp0, gp1, pack_color, pack_texcoord, pack_vertex, pack_xy};
+use psx_hw::gpu::{gp0, gp1, pack_color, pack_texcoord, pack_vertex, pack_xy, packet};
 use psx_io::gpu::{wait_command_ready, write_command};
 struct Fade {
     armed: bool,
@@ -137,7 +137,7 @@ fn copy_dimmed(src: u16, dst: u16, modulate: u8) {
             write_command(gp0::draw_mode(x as u32 / 64, page_y, 0, 2, false, true));
             wait_command_ready();
             // GP0(64h): textured rectangle, variable size, blended with the colour.
-            write_command(0x6400_0000 | pack_color(modulate, modulate, modulate));
+            write_command(packet::TEXTURED_RECT | pack_color(modulate, modulate, modulate));
             write_command(pack_vertex(x as i16, row as i16));
             write_command(pack_texcoord(0, (y & 255) as u8, 0));
             write_command(pack_xy(w, rows));

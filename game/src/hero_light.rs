@@ -183,7 +183,7 @@ pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {
         let uv_rim = ((RAMP_U0 + 63) as u32) | (RAMP_V as u32) << 8;
         // GP0(26h): textured triangle, semi-transparent, modulated.
         tris[n] = [
-            0x2600_0000 | colour,
+            psx_hw::gpu::packet::FLAT_TEXTURED_TRIANGLE | psx_hw::gpu::packet::SEMI_TRANSPARENT | colour,
             vertex(centre),
             uv0 | clut << 16,
             vertex(a),

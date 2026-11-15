@@ -40,6 +40,7 @@ use psx_chainloader::runtime::{self};
 use psx_fmv::player::{self, Config, Depth, Movie, Stop};
 use psx_gpu::display::{DisplayConfig, Resolution, VideoMode};
 use psx_gpu::Gpu;
+use psx_hw::gpu::{gp0, gp1, packet};
 use psx_io::gpu::write_display_control;
 use psx_io::periph::ControllerPort;
 use psx_pad::Port;
@@ -268,7 +269,7 @@ impl Prompt {
 pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     // The bar black (GP0 fill: always on whole 16-pixel columns, outside the draw area).
     poem::packet(&[
-        0x0200_0000,
+        gp0::FILL_RECT,
         u32::from(y + LETTERBOX_Y) << 16 | u32::from(x),
         u32::from(LETTERBOX_H) << 16 | 320,
     ]);
@@ -280,14 +281,14 @@ pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
     // black bar.
     let page = TexturePage::new(prompt_text::FONT_X, prompt_text::FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1);
     poem::packet(&[
-        0xE200_0000,
-        0xE300_0000 | u32::from(x) | u32::from(y + LETTERBOX_Y) << 10,
-        0xE400_0000 | u32::from(x + 319) | u32::from(y + 239) << 10,
-        0xE500_0000 | u32::from(x) | u32::from(y) << 11,
-        0xE100_0000 | u32::from(page),
+        gp0::tex_window(0, 0, 0, 0),
+        gp0::draw_area_top_left_in_range(u32::from(x), u32::from(y + LETTERBOX_Y)),
+        gp0::draw_area_bottom_right_in_range(u32::from(x + 319), u32::from(y + 239)),
+        gp0::draw_offset_in_range(u32::from(x), u32::from(y)),
+        gp0::draw_mode_from_texpage(u32::from(page)),
     ]);
     let clut = u32::from(Clut::new(FONT_CLUT.0, FONT_CLUT.1).uv_word());
-    let color = 0x6600_0000 | level * 0x0001_0101;
+    let color = packet::TEXTURED_RECT | packet::SEMI_TRANSPARENT | level * 0x0001_0101;
     let left = (320 - prompt_text::WIDTH) / 2;
     let top = PROMPT_TOP;
     // One wait per glyph packet, as the poem: an unpaced burst of this size overflows the GPU's FIFO on silicon.
@@ -304,7 +305,7 @@ pub(crate) fn draw_bar(x: u16, y: u16, level: u32) {
 /// Show the display buffers' lines down to `bottom`, the rest of the screen the signal's own black. The window
 /// starts at its usual place, `top`: 16, the NTSC window's top, plus the screen offset the game chose.
 fn show_rows(top: u32, bottom: u32) {
-    write_display_control(0x0700_0000 | top | (top + bottom) << 10);
+    write_display_control(gp1::v_display_range_in_range(top, top + bottom));
 }
 
 /// The pad and the skip prompt it drives.
@@ -464,7 +465,7 @@ fn hand_back_the_screen(gpu: &mut Gpu, display: DisplayConfig, skip: &mut Skip) 
     // SAFETY: nothing else is using the GPU's channel; the program owns it until it returns.
     *gpu = Gpu::new(unsafe { psx_io::periph::GpuDma::steal() }, display);
     for y in [0u32, 240] {
-        poem::packet(&[0x0200_0000, y << 16, 240 << 16 | 320]);
+        poem::packet(&[gp0::FILL_RECT, y << 16, 240 << 16 | 320]);
     }
     gpu.set_draw_area((0, 0), (319, 239));
     gpu.set_draw_offset((0, 0));

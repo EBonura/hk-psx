@@ -216,7 +216,9 @@ fn start_x(width: i16, centre: i16) -> i16 {
 /// line's bands (two or three a glyph): Dirtmouth with The Fading Town is the worst, and a charm
 /// name is at most 17.
 fn rect(x: i16, y: i16, tpage: u16, uv: u32, wh: u32, level: u8) {
-    crate::dialogue::raw_rect(x, y, tpage, 0x6600_0000 | u32::from(level) * 0x0001_0101, uv, wh);
+    crate::dialogue::raw_rect(x, y, tpage, psx_hw::gpu::packet::TEXTURED_RECT
+            | psx_hw::gpu::packet::SEMI_TRANSPARENT
+            | u32::from(level) * 0x0001_0101, uv, wh);
 }
 /// A small line, in the dialogue font, centred on `centre`.
 fn line(text: &str, y: i16, level: u8, centre: i16) {

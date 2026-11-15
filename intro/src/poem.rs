@@ -12,6 +12,7 @@
 //! starts it a second into the sequence, and the file opens with silence so that its first note lands at
 //! 3.53 s whatever the drive's start takes within a few tenths of a second.
 
+use psx_hw::gpu::{gp0, gp1, packet};
 use psx_io::cd::xa::{DriveSpeed, Event, File, Player};
 use psx_io::gpu::{try_wait_command_ready, write_command, write_display_control};
 use psx_io::periph::Cd;
@@ -86,16 +87,16 @@ pub(crate) fn wait_idle() {
 /// Aim drawing at the buffer at (`x`, `y`): its area and offset, no texture window.
 fn aim(x: u16, y: u16) {
     packet(&[
-        0xE200_0000,
-        0xE300_0000 | u32::from(x) | u32::from(y) << 10,
-        0xE400_0000 | u32::from(x + 319) | u32::from(y + 239) << 10,
-        0xE500_0000 | u32::from(x) | u32::from(y) << 11,
+        gp0::tex_window(0, 0, 0, 0),
+        gp0::draw_area_top_left_in_range(u32::from(x), u32::from(y)),
+        gp0::draw_area_bottom_right_in_range(u32::from(x + 319), u32::from(y + 239)),
+        gp0::draw_offset_in_range(u32::from(x), u32::from(y)),
     ]);
 }
 
 /// Black over the whole buffer (GP0 fill: whole 16-pixel columns, outside the drawing area).
 fn clear(x: u16, y: u16) {
-    packet(&[0x0200_0000, u32::from(y) << 16 | u32::from(x), 240 << 16 | 320]);
+    packet(&[gp0::FILL_RECT, u32::from(y) << 16 | u32::from(x), 240 << 16 | 320]);
 }
 
 /// One frame of the poem at `ms`, into the buffer at (`x`, `y`).
@@ -105,13 +106,13 @@ fn draw_frame(x: u16, y: u16, ms: u32) {
     // The poem's own cells (host/hk-build/intro.rs `PoemStrip`), uploaded by `play`, in the font's palette.
     let (vx, vy, ..) = prompt_text::POEM_STRIP_VRAM;
     let page = TexturePage::new(vx, vy, TextureDepth::Bit4).uv_word(1);
-    packet(&[0xE100_0000 | u32::from(page) | 1 << 10]);
+    packet(&[gp0::draw_mode_from_texpage(u32::from(page) | 1 << 10)]);
     let clut = u32::from(Clut::new(FONT_CLUT.0, FONT_CLUT.1).uv_word());
     let mut first = 0;
     for (line, &end) in prompt_text::POEM_LINE_END.iter().enumerate() {
         let level = brightness(line, ms);
         if level != 0 {
-            let color = 0x6600_0000 | level * 0x0001_0101;
+            let color = packet::TEXTURED_RECT | packet::SEMI_TRANSPARENT | level * 0x0001_0101;
             for (&(u, v, gx, gy), &size) in
                 prompt_text::POEM_GLYPHS[first..end].iter().zip(&prompt_text::POEM_GLYPH_SIZES[first..end])
             {
@@ -169,7 +170,7 @@ impl Run {
         // The frame drawn last time goes up at the blank edge, before anything else is done.
         if let Some(finished) = self.shown.take() {
             let (x, y) = buffers[finished];
-            write_display_control(0x0500_0000 | u32::from(x) | u32::from(y) << 10);
+            write_display_control(gp1::display_start_in_range(u32::from(x), u32::from(y)));
             self.shown = Some(finished);
         }
         let ms = self.ms(now);
@@ -404,7 +405,7 @@ pub fn tick(carry: &mut Carry, now: u32) -> u32 {
             if psx_vram::dma_copy_to_vram_done() {
                 let (x, y) = buffers()[run.back];
                 clear(x, y);
-                write_display_control(0x0500_0000 | u32::from(x) | u32::from(y) << 10);
+                write_display_control(gp1::display_start_in_range(u32::from(x), u32::from(y)));
             }
             2
         }

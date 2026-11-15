@@ -1,5 +1,6 @@
 //! DMA-owned flat textured quads with optional scoped drawing areas.
 //! E3/E4 bracket the original quad, preserving its UV interpolation and order.
+use psx_hw::gpu::gp0;
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Packet {
@@ -23,7 +24,7 @@ impl Packet {
     /// Same polygon coverage as FT4, with no texture fetch for proven solid fill.
     pub fn write_black(&mut self, vertices: [u32; 4]) {
         self.tag = 5 << 24;
-        self.words[0] = 0x2800_0000;
+        self.words[0] = psx_hw::gpu::packet::FLAT_QUAD;
         self.words[1..5].copy_from_slice(&vertices);
     }
     pub fn scissored(quad: [u32; 9], rect: [i16; 4], framebuffer_y: u16) -> Self {
@@ -38,13 +39,16 @@ impl Packet {
         );
         assert!(framebuffer_y == 0 || framebuffer_y == 240);
         self.tag = 13 << 24;
-        self.words[0] = 0xe300_0000 | left as u32 | ((top as u32 + framebuffer_y as u32) << 10);
+        self.words[0] =
+            gp0::draw_area_top_left_in_range(left as u32, top as u32 + framebuffer_y as u32);
         // Drawing-area lower/right limits are inclusive; helper rectangles are not.
-        self.words[1] =
-            0xe400_0000 | (right - 1) as u32 | ((bottom as u32 - 1 + framebuffer_y as u32) << 10);
+        self.words[1] = gp0::draw_area_bottom_right_in_range(
+            (right - 1) as u32,
+            bottom as u32 - 1 + framebuffer_y as u32,
+        );
         self.words[2..11].copy_from_slice(&quad);
-        self.words[11] = 0xe300_0000 | ((framebuffer_y as u32) << 10);
-        self.words[12] = 0xe400_0000 | 319 | ((framebuffer_y as u32 + 239) << 10);
+        self.words[11] = gp0::draw_area_top_left_in_range(0, framebuffer_y as u32);
+        self.words[12] = gp0::draw_area_bottom_right_in_range(319, framebuffer_y as u32 + 239);
     }
     pub fn word_count(&self) -> u8 {
         (self.tag >> 24) as u8

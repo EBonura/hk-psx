@@ -8,6 +8,7 @@ use crate::menu::state::{
     CAPS_ADVANCES, CAPS_CHARS, CAPS_H, CAPS_PER_ROW, CAPS_V0, CAPS_W, COIN_CELL, FONT_X,
     FONT_PAGE_Y, FONT_V0, GLYPH_H, GLYPH_PER_ROW, GLYPH_ROW_PITCH, GLYPH_U0, GLYPH_W,
 };
+use psx_hw::gpu::{gp0, packet};
 use psx_vram::{upload_bytes, Clut, TextureDepth, TexturePage, VramRect};
 #[path = "npc_state.rs"]
 mod npc_state;
@@ -324,7 +325,7 @@ fn text(x: i16, y: i16, text: &str) {
 fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
     // Semi-transparent, adding: the glyph palette's entries carry the semi-transparency bit, so a
     // glyph's anti-aliased edge brightens what is behind it (host/hk-cook/src/font_strip.rs).
-    let color = 0x6600_0000 | u32::from(faded(gain)) * 0x0001_0101;
+    let color = packet::TEXTURED_RECT | packet::SEMI_TRANSPARENT | u32::from(faded(gain)) * 0x0001_0101;
     let mut x = x;
     for b in text.bytes() {
         assert!((32..=126).contains(&b));
@@ -339,8 +340,9 @@ fn text_gain(x: i16, y: i16, text: &str, gain: u8) {
                 assert!(USED < CAP);
                 let p = &mut GLYPHS[USED];
                 USED += 1;
-                p.mode = 0xe100_0000
-                    | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32;
+                p.mode = gp0::draw_mode_from_texpage(
+                    TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32,
+                );
                 p.color = color;
                 p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
                 p.uv = glyph_u(i) as u32
@@ -366,8 +368,8 @@ fn coin(x: i16, y: i16) {
         assert!(USED < CAP);
         let p = &mut GLYPHS[USED];
         USED += 1;
-        p.mode = 0xe100_0000 | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(0) as u32;
-        p.color = 0x6400_0000 | u32::from(faded(0x80)) * 0x0001_0101;
+        p.mode = gp0::draw_mode_from_texpage(TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(0) as u32);
+        p.color = packet::TEXTURED_RECT | u32::from(faded(0x80)) * 0x0001_0101;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         let (col, row) = (COIN_CELL % CAPS_PER_ROW, COIN_CELL / CAPS_PER_ROW);
         p.uv = (GLYPH_U0 + col * CAPS_W) as u32
@@ -390,7 +392,7 @@ pub(crate) fn caps_width(value: &str) -> i16 {
 /// A space between capitals.
 pub(crate) const CAPS_SPACE: i16 = 6;
 pub(crate) fn caps_text(x: i16, y: i16, value: &str, gain: u8) {
-    let color = 0x6600_0000 | u32::from(faded(gain)) * 0x0001_0101;
+    let color = packet::TEXTURED_RECT | packet::SEMI_TRANSPARENT | u32::from(faded(gain)) * 0x0001_0101;
     let mut x = x;
     for b in value.bytes() {
         let Some(i) = CAPS_CHARS.iter().position(|&c| c == b.to_ascii_uppercase()) else {
@@ -401,7 +403,7 @@ pub(crate) fn caps_text(x: i16, y: i16, value: &str, gain: u8) {
             assert!(USED < CAP);
             let p = &mut GLYPHS[USED];
             USED += 1;
-            p.mode = 0xe100_0000 | TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32;
+            p.mode = gp0::draw_mode_from_texpage(TexturePage::new(FONT_X, FONT_PAGE_Y, TextureDepth::Bit4).uv_word(1) as u32);
             p.color = color;
             p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
             let (col, row) = (i % CAPS_PER_ROW, i / CAPS_PER_ROW);
@@ -729,7 +731,7 @@ pub(crate) fn raw_rect(x: i16, y: i16, tpage: u16, color: u32, uv: u32, wh: u32)
         }
         let p = &mut GLYPHS[USED];
         USED += 1;
-        p.mode = 0xe100_0000 | u32::from(tpage);
+        p.mode = gp0::draw_mode_from_texpage(u32::from(tpage));
         p.color = color;
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         p.uv = uv;
@@ -775,8 +777,9 @@ fn ornament_color(
             let p = &mut GLYPHS[USED];
             USED += 1;
             let page = crate::render::animation_tpage_word(key);
-            p.mode = 0xe100_0000 | u32::from(if add { page & !0x60 | 0x20 } else { page });
-            p.color = if add { 0x6600_0000 } else { 0x6400_0000 } | color;
+            p.mode =
+                gp0::draw_mode_from_texpage(u32::from(if add { page & !0x60 | 0x20 } else { page }));
+            p.color = if add { packet::TEXTURED_RECT | packet::SEMI_TRANSPARENT } else { packet::TEXTURED_RECT } | color;
             p.xy = left as u16 as u32 | ((y as u16 as u32) << 16);
             p.uv = u32::from(u + cut) | (u32::from(v) << 8) | (clut << 16);
             p.wh = u32::from(w) | (u32::from(h) << 16);

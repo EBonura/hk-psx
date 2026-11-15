@@ -271,9 +271,10 @@ fn sprite(x: i16, y: i16, t: &MapTex, clut: usize) {
         }
         let p = &mut SPRITES[USED];
         USED += 1;
-        p.mode = 0xe100_0000
-            | TexturePage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TextureDepth::Bit4).uv_word(0) as u32;
-        p.color = 0x6480_8080;
+        p.mode = psx_hw::gpu::gp0::draw_mode_from_texpage(
+            TexturePage::new(MAP_PAGE_XY.0, MAP_PAGE_XY.1, TextureDepth::Bit4).uv_word(0) as u32,
+        );
+        p.color = psx_hw::gpu::packet::TEXTURED_RECT | psx_hw::gpu::pack_color(0x80, 0x80, 0x80);
         p.xy = x as u16 as u32 | ((y as u16 as u32) << 16);
         p.uv = t.u as u32
             | ((t.v as u32) << 8)
