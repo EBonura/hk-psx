@@ -57,7 +57,7 @@ static mut NOW: Scene = Scene {
 /// Random.Range(idleTimeMin, idleTimeMax) in ticks, from one LCG per scene so a
 /// replayed route drips the same.
 fn idle(rng: &mut u32) -> u16 {
-    *rng = NrLcg::step(rng);
+    *rng = NrLcg::step(*rng);
     IDLE_MIN + ((*rng >> 16) * (IDLE_MAX - IDLE_MIN) as u32 >> 16) as u16
 }
 

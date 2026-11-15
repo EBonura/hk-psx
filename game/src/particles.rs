@@ -504,7 +504,7 @@ impl Pool {
     }
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = NrLcg::step(seed);
+    *seed = NrLcg::step(*seed);
     *seed
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {

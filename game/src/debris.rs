@@ -185,7 +185,7 @@ pub struct Body {
     pub bounces: u16,
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = NrLcg::step(seed);
+    *seed = NrLcg::step(*seed);
     *seed
 }
 #[inline(always)]

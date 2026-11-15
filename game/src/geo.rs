@@ -779,7 +779,7 @@ fn mul(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_trunc_i32(a, b, 16)
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = NrLcg::step(seed);
+    *seed = NrLcg::step(*seed);
     *seed
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {

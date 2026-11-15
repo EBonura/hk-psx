@@ -296,7 +296,7 @@ fn mul(a: i32, b: i32) -> i32 {
 }
 fn range(rng: &mut u32, span: [i32; 2]) -> i32 {
     assert!(span[1] >= span[0]);
-    *rng = NrLcg::step(rng);
+    *rng = NrLcg::step(*rng);
     span[0] + psx_math::WideU::mul(*rng, (span[1] - span[0]) as u32).high() as i32
 }
 #[cfg(not(test))]

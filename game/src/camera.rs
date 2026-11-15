@@ -96,7 +96,7 @@ pub static mut HK_CAMERA_SHAKES_REFUSED: u32 = 0;
 /// extent and by the linear decay. One LCG step per axis rather than one draw
 /// split in half, because an LCG's low bits are not independent of its high.
 fn shake_axis(rng: &mut u32, extents: i32, amount_q16: i32) -> i32 {
-    *rng = NrLcg::step(rng);
+    *rng = NrLcg::step(*rng);
     let unit = ((*rng >> 15) as i32) - ONE; // [-1, 1) in Q16
     psx_math::Wide::mul(extents, unit).sar(16).times(amount_q16).shr_i32(16)
 }

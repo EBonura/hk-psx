@@ -210,7 +210,7 @@ struct RunnerRuntime {
 }
 impl RunnerRuntime {
     fn draw(rng: &mut u32) -> u32 {
-        *rng = NrLcg::step(rng);
+        *rng = NrLcg::step(*rng);
         *rng
     }
     fn choose(rng: &mut u32, _wait: hk_sim::runner::Wait, [hi, lo]: [u16; 2]) -> u16 {
@@ -1048,7 +1048,7 @@ impl ZombieShieldRuntime {
     /// `Shield Start`'s `RandomInt(60, 100)`, inclusive at both ends, from the
     /// per-actor generator rather than a claim on Unity's global sequence.
     fn counter(rng: &mut u32, [hi, lo]: [u16; 2]) -> u16 {
-        *rng = NrLcg::step(rng);
+        *rng = NrLcg::step(*rng);
         lo + (*rng % (hi - lo + 1) as u32) as u16
     }
 }
@@ -1181,7 +1181,7 @@ impl BlockerRuntime {
     /// `WaitRandom(0.8, 1.2)` and `RandomFloat(X Speed Min, X Speed Max)`, both
     /// inclusive, from the per-actor generator rather than Unity's own.
     fn sample(rng: &mut u32, [lo, hi]: [i32; 2]) -> i32 {
-        *rng = NrLcg::step(rng);
+        *rng = NrLcg::step(*rng);
         lo + (*rng % (hi - lo + 1) as u32) as i32
     }
 }

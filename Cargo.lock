@@ -27,6 +27,7 @@ dependencies = [
  "hk-format",
  "hk-sim",
  "psx-fmv",
+ "psx-fx",
  "psx-gpu",
  "psx-hw",
  "psx-io",
@@ -67,6 +68,13 @@ dependencies = [
  "psx-rt",
  "psx-spu",
  "psx-vram",
+]
+
+[[package]]
+name = "psx-fx"
+version = "0.1.0"
+dependencies = [
+ "psx-gpu",
 ]
 
 [[package]]
