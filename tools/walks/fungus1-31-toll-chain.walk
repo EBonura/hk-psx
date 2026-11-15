@@ -1,12 +1,12 @@
 # Fungus1_31, standing at the left Toll Machine (x 10.5, y 51.4): pay the 50 Geo the run has earned, cross where the first gate stood, sit and save at the bench (x 27.34).
 check toll-ready HK_GEO_WALLET >= 50 ; HK_TOLL_PAID == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
 press up
-wait 20
+wait until HK_TOLL_STEP == 1 timeout 300
 check toll-box HK_TOLL_STEP == 1 ; HK_TOLL_OPENED == 1 ; HK_TOLL_PAID == 0
 press cross
-wait 10
+wait until HK_TOLL_PAID == 50 timeout 300
 check toll-paid HK_TOLL_PAID == 50 ; HK_TOLL_STEP == 0 ; HK_DEATHS == 0
-wait 90
+wait 90   # the gates leave TOLL_WAIT game ticks after the payment (game/src/toll.rs): a delay the game defines, counted in its own polls, not a frame phase
 hold right until x ge 15.2 timeout 300
 hold right+cross for 16
 hold right for 60

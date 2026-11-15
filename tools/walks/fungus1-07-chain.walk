@@ -8,7 +8,8 @@ snipe
 guard 2
 retreat 17.27 34.25
 heal
-loop d07-h002 until expr abs(i32(HK_PLAYER_X) - 1642988) <= 58982 && abs(i32(HK_PLAYER_Y) - 3433431) <= 19661 max 3 timeout 900
+clear d07-h002-arc 25.070 52.390 17.27 34.25
+loop d07-h002 until expr (abs(i32(HK_PLAYER_X) - 1642988) <= 58982 || (i32(HK_PLAYER_X) >= 1092485 && i32(HK_PLAYER_X) <= 2283930)) && abs(i32(HK_PLAYER_Y) - 3433431) <= 19661 max 3 timeout 900
 walk 31.57
 walk 32.00   # run-up
 walk 31.57   # take-off
@@ -22,7 +23,8 @@ snipe
 guard 2
 retreat 17.27 34.25
 heal
-loop d07-h003 until expr abs(i32(HK_PLAYER_X) - 1353318) <= 58982 && abs(i32(HK_PLAYER_Y) - 3433431) <= 19661 max 3 timeout 900
+clear d07-h003-arc 20.650 52.390 17.27 34.25
+loop d07-h003 until expr (abs(i32(HK_PLAYER_X) - 1353318) <= 58982 || (i32(HK_PLAYER_X) >= 1093140 && i32(HK_PLAYER_X) <= 2283930)) && abs(i32(HK_PLAYER_Y) - 3433431) <= 19661 max 3 timeout 900
 walk 25.50   # run-up
 walk 25.07   # take-off
 hold left+cross for 12
@@ -35,7 +37,8 @@ snipe
 guard 2
 retreat 17.28 34.25
 heal
-loop d07-h004 until expr abs(i32(HK_PLAYER_X) - 1026949) <= 58982 && abs(i32(HK_PLAYER_Y) - 3367895) <= 19661 max 3 timeout 900
+clear d07-h004-arc 15.670 51.390 17.28 34.25
+loop d07-h004 until expr (abs(i32(HK_PLAYER_X) - 1026949) <= 58982 || (i32(HK_PLAYER_X) >= 766771 && i32(HK_PLAYER_X) <= 1104282)) && abs(i32(HK_PLAYER_Y) - 3367895) <= 19661 max 3 timeout 900
 walk 19.82
 walk 20.25   # run-up
 walk 19.82   # take-off
@@ -49,7 +52,8 @@ snipe
 guard 2
 retreat 12.30 16.25
 heal
-loop d07-h005 until expr abs(i32(HK_PLAYER_X) - 736625) <= 58982 && abs(i32(HK_PLAYER_Y) - 2909143) <= 19661 max 3 timeout 900
+clear d07-h005-arc 11.240 44.390 12.30 16.25
+loop d07-h005 until expr (abs(i32(HK_PLAYER_X) - 736625) <= 58982 || (i32(HK_PLAYER_X) >= 140902 && i32(HK_PLAYER_X) <= 1459487)) && abs(i32(HK_PLAYER_Y) - 2909143) <= 19661 max 3 timeout 900
 walk 16.10   # run-up
 walk 15.67   # take-off
 hold left+cross for 12
@@ -63,7 +67,8 @@ guard 2
 retreat 2.75 21.67
 heal
 wait 21
-loop d07-h006 until expr abs(i32(HK_PLAYER_X) - 1125908) <= 58982 && abs(i32(HK_PLAYER_Y) - 2909143) <= 19661 max 3 timeout 900
+clear d07-h006-arc 17.180 44.390 2.75 21.67
+loop d07-h006 until expr (abs(i32(HK_PLAYER_X) - 1125908) <= 58982 || (i32(HK_PLAYER_X) >= 140902 && i32(HK_PLAYER_X) <= 1458831)) && abs(i32(HK_PLAYER_Y) - 2909143) <= 19661 max 3 timeout 900
 walk 12.48
 walk 12.05   # run-up
 walk 12.48   # take-off
@@ -77,7 +82,8 @@ snipe
 guard 2
 retreat 2.75 21.66
 heal
-loop d07-h007 until expr abs(i32(HK_PLAYER_X) - 1488323) <= 58982 && abs(i32(HK_PLAYER_Y) - 1860567) <= 19661 max 3 timeout 900
+clear d07-h007-arc 22.710 28.390 2.75 21.66
+loop d07-h007 until expr (abs(i32(HK_PLAYER_X) - 1488323) <= 58982 || (i32(HK_PLAYER_X) >= 1164575 && i32(HK_PLAYER_X) <= 1759642)) && abs(i32(HK_PLAYER_Y) - 1860567) <= 19661 max 3 timeout 900
 walk 16.75   # run-up
 walk 17.18   # take-off
 hold right+cross for 16
@@ -90,7 +96,8 @@ snipe
 guard 2
 retreat 18.37 26.25
 heal
-loop d07-h008 until expr abs(i32(HK_PLAYER_X) - 853279) <= 58982 && abs(i32(HK_PLAYER_Y) - 681574) <= 19661 max 3 timeout 900
+clear d07-h008-arc 13.020 10.400 18.37 26.25
+loop d07-h008 until expr (abs(i32(HK_PLAYER_X) - 853279) <= 58982 || (i32(HK_PLAYER_X) >= 692716 && i32(HK_PLAYER_X) <= 977797)) && abs(i32(HK_PLAYER_Y) - 681574) <= 19661 max 3 timeout 900
 walk 21.88
 walk 22.31   # run-up
 walk 21.88   # take-off
@@ -104,7 +111,8 @@ snipe
 guard 2
 retreat 11.17 14.32
 heal
-loop d07-h009 until expr abs(i32(HK_PLAYER_X) - 382075) <= 58982 && abs(i32(HK_PLAYER_Y) - 877527) <= 19661 max 3 timeout 900
+clear d07-h009-arc 5.830 13.390 11.17 14.32
+loop d07-h009 until expr (abs(i32(HK_PLAYER_X) - 382075) <= 58982 || (i32(HK_PLAYER_X) >= -14418 && i32(HK_PLAYER_X) <= 479068)) && abs(i32(HK_PLAYER_Y) - 877527) <= 19661 max 3 timeout 900
 walk 13.45   # run-up
 walk 13.02   # take-off
 hold left+cross for 34
@@ -117,6 +125,7 @@ snipe
 guard 2
 retreat 0.38 6.71
 heal
+clear d07-h010-arc 1.120 13.390 0.38 6.71
 loop d07-h010 until expr abs(i32(HK_PLAYER_X) - 73400) <= 58982 && abs(i32(HK_PLAYER_Y) - 877527) <= 19661 max 3 timeout 900
 walk 6.26   # run-up
 walk 5.83   # take-off

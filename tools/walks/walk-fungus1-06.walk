@@ -1,0 +1,21 @@
+name walk-fungus1-06
+title from a seeded card at Fungus1_06's west arrival (fungus1-06-entry.mcd, Vengeful Spirit owned, SOUL 0, no cheat): the vine room with its two vine cuts, over the hanging platforms and out by the gap in the floor to the arrival in Fungus1_07
+max_ticks 40000
+sync poll
+# One segment of walk-new-game-to-hornet that starts from a known save, so a run of it does not carry the frame phase of the forty rooms before it.
+# Measured 2026-11-15 on disc 10383b1f2b0d (the 6e25f2ae SDK build) and the library disc df3e8443c5fb, with N extra polls of rest after the boot: N 0, 7, 11, 17
+# and 23 pass on both; 31 and 41 stop at d06a-h003 (a Mosquito over the jump), 3 on the repinned disc at d06b-h013, 47 on it in a walk. The segment is as
+# phase-sensitive as its hops (docs/ROUTES.md, "Walk from a new game to Hornet, 2026-11-15"); it is here so the room has a short test that starts from a save.
+# fungus1-06-entry.mcd is a seeded record (tools/seed_card.py --scene 50 --region 776 --x 0.5 --y 16.4 --fireball 1, based on fungus1-07-top.mcd).
+card fungus1-06-entry.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-06a-chain.walk
+include fungus1-06-vine1.walk
+include fungus1-06b-chain.walk
+include fungus1-06-vine4.walk
+include fungus1-06c-chain.walk
+check in-07 x between 34 38 ; y between 60 64 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1

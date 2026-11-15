@@ -59,6 +59,10 @@ const DEFAULT_TIMEOUT: u64 = 1_800;
 
 /// How far the Knight walks in one tick (a speed of 8.3 units a second, a tick a sixtieth).
 const WALK_PER_TICK: f64 = 0.138;
+/// A hold that stops at a floor's end (`fight LO HI`, `retreat LO HI`) stops this far inside it. The walk moves in whole
+/// ticks of `WALK_PER_TICK`, so a stop exactly at the bound lets one more step carry the Knight off the ledge (hk-walk
+/// 2026-11-15: a landing 0.00006 inside the bound, one step, a 13 unit fall).
+const EDGE_BAND: f64 = 0.15;
 /// How far before its take-off a leap lets go of the walk (see `macros`).
 const LEAP_EARLY: f64 = 0.3;
 
@@ -862,8 +866,30 @@ pub fn macros(text: &str) -> Result<String> {
                 };
                 let timeout = 80 + ((hi - lo).abs() / WALK_PER_TICK) as u64;
                 let low = format!("u32(HK_HEALTH) <= {masks}");
-                let _ = writeln!(out, "hold left until expr !({low} && $chaser_right) || i32(HK_PLAYER_X) <= {} timeout {timeout} # {label}: away from the right", (lo * ONE as f64).round() as i64);
-                let _ = writeln!(out, "hold right until expr !({low} && $chaser_left) || i32(HK_PLAYER_X) >= {} timeout {timeout} # {label}: away from the left", (hi * ONE as f64).round() as i64);
+                let _ = writeln!(out, "hold left until expr !({low} && $chaser_right) || i32(HK_PLAYER_X) <= {} timeout {timeout} # {label}: away from the right", ((lo + EDGE_BAND) * ONE as f64).round() as i64);
+                let _ = writeln!(out, "hold right until expr !({low} && $chaser_left) || i32(HK_PLAYER_X) >= {} timeout {timeout} # {label}: away from the left", ((hi - EDGE_BAND) * ONE as f64).round() as i64);
+            }
+            // `clear NAME TX TY [LO HI]`: before a hop that ends at (TX, TY), react while a live actor is in the hop's box:
+            // the arc from where the Knight stands to the landing, 4 units either side, 2 below and 6 above. A Mosquito that
+            // hangs over the arc dives at a Knight who jumps into it, and a hit in the air drops him a floor that no retry
+            // climbs back; waiting does not move it (it idles until he is close), so each pass is a round of `fight` (LO and
+            // HI: the floor he stands on; without them a strike in place) and `snipe`, which lures it down and kills it.
+            // It always ends: at the next pass that starts on a multiple of 128 pad polls (`HK_INPUT_POLLS`) the hop goes
+            // ahead, so an actor that never comes cannot hang the walk. The hop's own retry loop and the checks after it
+            // remain the judge.
+            ["clear", name, tx, ty, rest @ ..] => {
+                let (tx, ty) = ((number(Some(tx))? * ONE as f64).round() as i64, (number(Some(ty))? * ONE as f64).round() as i64);
+                let round = match rest {
+                    [] => "strike\n".to_string(),
+                    [lo, hi] => format!("fight 1 {lo} {hi}\n"),
+                    _ => return Err(located("clear NAME TX TY [LO HI]".into())),
+                };
+                let hot = format!(
+                    "any(i in 0..33: let ax = i32($row), ay = i32($row + 4), x0 = (i32(HK_PLAYER_X) < {tx} ? i32(HK_PLAYER_X) : {tx}) - 262144, x1 = (i32(HK_PLAYER_X) > {tx} ? i32(HK_PLAYER_X) : {tx}) + 262144, y0 = (i32(HK_PLAYER_Y) < {ty} ? i32(HK_PLAYER_Y) : {ty}) - 131072, y1 = (i32(HK_PLAYER_Y) > {ty} ? i32(HK_PLAYER_Y) : {ty}) + 393216 in $live && ax != 2147483647 && ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1)"
+                );
+                let _ = writeln!(out, "loop {name} until expr !({hot}) || (u32(HK_INPUT_POLLS) & 127) == 0 max 200 timeout 1500 # {label}");
+                out.push_str(&macros(&format!("{round}snipe\nwait 1\n"))?);
+                let _ = writeln!(out, "end");
             }
             ["strike"] => strike_both(&mut out, label),
             ["snipe"] => snipe(&mut out, label),
@@ -903,8 +929,8 @@ pub fn macros(text: &str) -> Result<String> {
                 };
                 let (stop_right, stop_left) = match bounds {
                     Some((lo, hi)) => (
-                        format!(" || i32(HK_PLAYER_X) >= {}", (hi * ONE as f64).round() as i64),
-                        format!(" || i32(HK_PLAYER_X) <= {}", (lo * ONE as f64).round() as i64),
+                        format!(" || i32(HK_PLAYER_X) >= {}", ((hi - EDGE_BAND) * ONE as f64).round() as i64),
+                        format!(" || i32(HK_PLAYER_X) <= {}", ((lo + EDGE_BAND) * ONE as f64).round() as i64),
                     ),
                     None => (String::new(), String::new()),
                 };
@@ -1075,17 +1101,27 @@ mod tests {
         let toml = compile_text("name t\nat 10 5.39\nretreat 8.5 14.5\n").unwrap();
         // Left from a foe on the right until the floor's end (8.5 units = 557056), right from one on the left.
         assert!(toml.contains("u32(HK_HEALTH) <= 2"), "{toml}");
-        assert!(toml.contains("i32(HK_PLAYER_X) <= 557056"), "{toml}");
-        assert!(toml.contains("i32(HK_PLAYER_X) >= 950272"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) <= 566886"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) >= 940442"), "{toml}");
         assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nretreat 1 two\n").unwrap_err().contains("number"));
     }
 
     #[test]
+    fn a_clear_reacts_while_the_hop_box_is_occupied_and_always_ends() {
+        let toml = compile_text("name t\nat 10 5.39\nclear d1-arc 21.5 9.75 8.5 14.5\nwalk 12\n").unwrap();
+        assert!(toml.contains("name = \"d1-arc\""), "{toml}");
+        assert!(toml.contains("HK_INPUT_POLLS"), "{toml}");
+        assert!(toml.contains("max_iter = 200"), "{toml}");
+        assert!(!toml.contains('$'), "{toml}");
+        assert!(compile_text("name t\nclear a 1\n").unwrap_err().contains("clear"));
+    }
+
+    #[test]
     fn a_bounded_fight_never_closes_past_the_floor() {
         let toml = compile_text("name t\nat 10 5.39\nfight 2 8.5 14.5\n").unwrap();
-        assert!(toml.contains("i32(HK_PLAYER_X) >= 950272"), "{toml}");
-        assert!(toml.contains("i32(HK_PLAYER_X) <= 557056"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) >= 940442"), "{toml}");
+        assert!(toml.contains("i32(HK_PLAYER_X) <= 566886"), "{toml}");
         let plain = compile_text("name t\nat 10 5.39\nfight 2\n").unwrap();
         assert!(!plain.contains("950272"));
         assert!(compile_text("name t\nfight 2 8.5\n").unwrap_err().contains("fight"));
