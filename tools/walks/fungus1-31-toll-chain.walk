@@ -6,17 +6,20 @@ check toll-box HK_TOLL_STEP == 1 ; HK_TOLL_OPENED == 1 ; HK_TOLL_PAID == 0
 press cross
 wait until HK_TOLL_PAID == 50 timeout 300
 check toll-paid HK_TOLL_PAID == 50 ; HK_TOLL_STEP == 0 ; HK_DEATHS == 0
-wait 90   # the gates leave TOLL_WAIT game ticks after the payment (game/src/toll.rs): a delay the game defines, counted in its own polls, not a frame phase
+# The gates leave TOLL_WAIT game ticks after the payment (game/src/toll.rs). No tick rest: a jump that meets the gate still standing lands against its face, and the
+# next pass jumps again; the pass that gets over ends the loop.
+loop gate-gone until x ge 21 max 6 timeout 1200
 hold right until x ge 15.2 timeout 300
 hold right+cross for 16
 hold right for 60
-wait 30
+end
+wait until HK_WALK_READY == 1 timeout 300
 check past-the-gate x between 21 32 ; y between 50.5 52.5 ; HK_DEATHS == 0 ; HK_CHEATS == 0
 walk 27.34
 press up
 wait until HK_BENCH_RESTS ge 1 timeout 600
-wait 120
+wait until HK_SAVE_UI == 1 timeout 600   # the seated question is up (game/src/save_ui.rs Ui::code)
 press cross
 wait until HK_SAVE_WRITES ge 1 timeout 900
-wait 90
+wait until HK_SAVE_UI == 0 timeout 900   # the write and its confirmation are done
 check rested HK_SAVE_ERRORS == 0 ; HK_BENCH_RESTS >= 1 ; HK_HEALTH >= 5 ; HK_DEATHS == 0 ; HK_CHEATS == 0
