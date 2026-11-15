@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 static CLOCK: AtomicU32 = AtomicU32::new(100);
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
 static POLLS: AtomicU32 = AtomicU32::new(0);
+/// The stub pad's left stick, x in the low byte and y in the next (0x80 centred).
+static STICKS: AtomicU32 = AtomicU32::new(0x8080);
 static POLL_CROSS_VBLANK: AtomicU32 = AtomicU32::new(0);
 // This harness exercises real input sampling with stub hardware. Presentation
 // state ordering has its own native tests; count calls here to verify input
@@ -95,8 +97,28 @@ pub fn poll_port1() -> Pad {
     );
     Pad {
         buttons: Buttons(BUTTONS.load(Ordering::SeqCst) as u16),
-        sticks: Sticks::CENTERED,
+        sticks: {
+            let packed = STICKS.load(Ordering::SeqCst);
+            Sticks { left_x: packed as u8, left_y: (packed >> 8) as u8 }
+        },
     }
+}
+/// The SDK's `stick_bits_of` for the stub pad (psx-pad `stick.rs`: strictly beyond the threshold on an
+/// axis sets that direction; the stub pad always reports sticks).
+pub fn stick_bits_of<const THRESHOLD: i16>(pad: &Pad) -> u16 {
+    let (x, y) = pad.sticks.left_centered();
+    let mut bits = 0;
+    if x < -THRESHOLD {
+        bits |= button::LEFT;
+    } else if x > THRESHOLD {
+        bits |= button::RIGHT;
+    }
+    if y < -THRESHOLD {
+        bits |= button::UP;
+    } else if y > THRESHOLD {
+        bits |= button::DOWN;
+    }
+    bits
 }
 // The reader the game polls through; the stub hardware never rejects a poll.
 pub mod periph {
@@ -204,20 +226,24 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
 #[test]
 fn the_left_stick_is_a_second_d_pad_and_digital_pads_are_untouched() {
     use button::*;
-    let pad = |buttons: u16, x: u8, y: u8| Pad {
-        buttons: Buttons(buttons),
-        sticks: Sticks { left_x: x, left_y: y },
+    // The game's own poll: the buttons the stub pad holds with its stick folded in by the SDK's rule.
+    let with_stick = |buttons: u16, x: u8, y: u8| {
+        BUTTONS.store(u32::from(buttons), Ordering::SeqCst);
+        STICKS.store(u32::from(x) | u32::from(y) << 8, Ordering::SeqCst);
+        input::poll_bits()
     };
     // Centred, and the SCPH-110's measured rest offset (LX 6C, LY 73): nothing.
-    assert_eq!(input::with_stick(pad(CROSS, 0x80, 0x80)), CROSS);
-    assert_eq!(input::with_stick(pad(0, 0x6C, 0x73)), 0);
+    assert_eq!(with_stick(CROSS, 0x80, 0x80), CROSS);
+    assert_eq!(with_stick(0, 0x6C, 0x73), 0);
     // The threshold is 48 of 127 per axis, edges included.
-    assert_eq!(input::with_stick(pad(0, 0x80 - 47, 0x80)), 0);
-    assert_eq!(input::with_stick(pad(0, 0x80 - 48, 0x80)), LEFT);
-    assert_eq!(input::with_stick(pad(0, 0x80 + 48, 0x80)), RIGHT);
-    assert_eq!(input::with_stick(pad(0, 0x80, 0x80 - 48)), UP);
-    assert_eq!(input::with_stick(pad(0, 0x80, 0x80 + 48)), DOWN);
+    assert_eq!(with_stick(0, 0x80 - 47, 0x80), 0);
+    assert_eq!(with_stick(0, 0x80 - 48, 0x80), LEFT);
+    assert_eq!(with_stick(0, 0x80 + 48, 0x80), RIGHT);
+    assert_eq!(with_stick(0, 0x80, 0x80 - 48), UP);
+    assert_eq!(with_stick(0, 0x80, 0x80 + 48), DOWN);
     // Full deflection, a diagonal, and a stick beside a pressed button.
-    assert_eq!(input::with_stick(pad(0, 0x00, 0xFF)), LEFT | DOWN);
-    assert_eq!(input::with_stick(pad(SQUARE | UP, 0xFF, 0x80)), SQUARE | UP | RIGHT);
+    assert_eq!(with_stick(0, 0x00, 0xFF), LEFT | DOWN);
+    assert_eq!(with_stick(SQUARE | UP, 0xFF, 0x80), SQUARE | UP | RIGHT);
+    BUTTONS.store(0, Ordering::SeqCst);
+    STICKS.store(0x8080, Ordering::SeqCst);
 }

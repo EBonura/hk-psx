@@ -12,4 +12,5 @@ boss = []
 
 [dependencies]
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
+psx-pack = { path = "../../.psoxide/sdk/crates/psx-pack" }
 hk-format={path="../hk-format"}
