@@ -1100,7 +1100,13 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
         "shared/hk-cache/Cargo.toml",
         "host/Cargo.toml",
     ] {
-        run("cargo", &["test", "-q", "--manifest-path", manifest], root)?;
+        // hk-sim's tests include game modules whose statics (the telemetry words, the camera) every test in a
+        // binary shares: one test thread, or a parallel pair now and then reads the other's state.
+        if manifest.starts_with("shared/hk-sim") {
+            run("cargo", &["test", "-q", "--manifest-path", manifest, "--", "--test-threads=1"], root)?;
+        } else {
+            run("cargo", &["test", "-q", "--manifest-path", manifest], root)?;
+        }
     }
     let telemetry: &[&str] = if options.telemetry {
         &["--telemetry"]
