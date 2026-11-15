@@ -21,6 +21,9 @@
 //! wait       until COND [timeout N]      run until the condition holds
 //! press      BUTTONS [for N] [rest N]    tap (3 ticks, no rest unless told)
 //! hold       BUTTONS until COND [timeout N]
+//! if         COND   ... `end`           the lines between run once, and only when COND holds at the moment the walk reaches the
+//!                                        line (the gate's `when`): no time at all when it does not. A recovery that applies only on the
+//!                                        floor a miss ended on, or one try of a hop that did not land yet. Same rules as `loop` for the body
 //! include    FILE [times N]              the lines of FILE (N times over, for a round of reactions)
 //! loop       NAME until COND max N timeout T   ... `end`   the lines between are a block the gate repeats until COND (checked before
 //!                                        every pass), at most N passes and T ticks (psoxide-gate 358eae9a "Loops and blocks"); a fight
@@ -63,6 +66,8 @@ const WALK_PER_TICK: f64 = 0.138;
 /// ticks of `WALK_PER_TICK`, so a stop exactly at the bound lets one more step carry the Knight off the ledge (hk-walk
 /// 2026-11-15: a landing 0.00006 inside the bound, one step, a 13 unit fall).
 const EDGE_BAND: f64 = 0.15;
+/// Rounds of `fight`/`snipe` a `clear` makes at most.
+const CLEAR_ROUNDS: u32 = 6;
 /// How far before its take-off a leap lets go of the walk (see `macros`).
 const LEAP_EARLY: f64 = 0.3;
 
@@ -450,9 +455,14 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 let cond = parse_cond(cond, &words).map_err(located)?;
                 open.push((loop_name.to_string(), cond, *max, *timeout, std::mem::take(&mut body), label.to_string()));
             }
+            "if" => {
+                let cond = parse_cond(rest, &words).map_err(located)?;
+                // `max` 0 marks a guard: a loop always has at least one pass.
+                open.push((format!("if-{}", index + 1), cond, 0, 0, std::mem::take(&mut body), label.to_string()));
+            }
             "end" => {
                 let (loop_name, cond, max, timeout, outer, loop_label) =
-                    open.pop().ok_or(located("`end` without `loop`".into()))?;
+                    open.pop().ok_or(located("`end` without `loop` or `if`".into()))?;
                 let inner = std::mem::replace(&mut body, outer);
                 if inner.contains("checkpoint") || inner.contains("[step.card]") {
                     return Err(located(format!("loop {loop_name}: a loop body holds no probe, check, card or reboot")));
@@ -461,14 +471,18 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
                 let _ = writeln!(blocks, "\n[[block]]\nname = \"{}\"", escape(&loop_name));
                 blocks.push_str(&inner.replace("[[step]]", "[[block.step]]").replace("[step.", "[block.step."));
                 let _ = writeln!(body, "\n[[step]]\nlabel = \"{}\"\nblock = \"{}\"", escape(&loop_label), escape(&loop_name));
-                let _ = writeln!(body, "max_iter = {max}\ntimeout = {timeout}");
-                write_cond(&mut body, "step.until", &cond, None);
+                if max == 0 {
+                    write_cond(&mut body, "step.when", &cond, None);
+                } else {
+                    let _ = writeln!(body, "max_iter = {max}\ntimeout = {timeout}");
+                    write_cond(&mut body, "step.until", &cond, None);
+                }
             }
             other => return Err(located(format!("unknown directive `{other}`"))),
         }
     }
     if let Some((loop_name, ..)) = open.last() {
-        return Err(format!("loop {loop_name} is never closed with `end`"));
+        return Err(format!("`{loop_name}` is never closed with `end`"));
     }
     let name = name.ok_or("a walk script starts with `name NAME`")?;
     let title = title.unwrap_or_else(|| name.clone());
@@ -869,8 +883,8 @@ pub fn macros(text: &str) -> Result<String> {
                 let _ = writeln!(out, "hold left until expr !({low} && $chaser_right) || i32(HK_PLAYER_X) <= {} timeout {timeout} # {label}: away from the right", ((lo + EDGE_BAND) * ONE as f64).round() as i64);
                 let _ = writeln!(out, "hold right until expr !({low} && $chaser_left) || i32(HK_PLAYER_X) >= {} timeout {timeout} # {label}: away from the left", ((hi - EDGE_BAND) * ONE as f64).round() as i64);
             }
-            // `clear NAME TX TY [LO HI]`: before a hop that ends at (TX, TY), react while a live actor is in the hop's box:
-            // the arc from where the Knight stands to the landing, 4 units either side, 2 below and 6 above. A Mosquito that
+            // `clear NAME TX TY [LO HI]`: before a hop that ends at (TX, TY), react (at most CLEAR_ROUNDS rounds) while a live actor is in the hop's box:
+            // the arc from where the Knight stands to the landing, 7 units either side (a Mosquito hunts from further than a jump is long), 4 below and 8 above. A Mosquito that
             // hangs over the arc dives at a Knight who jumps into it, and a hit in the air drops him a floor that no retry
             // climbs back; waiting does not move it (it idles until he is close), so each pass is a round of `fight` (LO and
             // HI: the floor he stands on; without them a strike in place) and `snipe`, which lures it down and kills it.
@@ -885,11 +899,17 @@ pub fn macros(text: &str) -> Result<String> {
                     _ => return Err(located("clear NAME TX TY [LO HI]".into())),
                 };
                 let hot = format!(
-                    "any(i in 0..33: let ax = i32($row), ay = i32($row + 4), x0 = (i32(HK_PLAYER_X) < {tx} ? i32(HK_PLAYER_X) : {tx}) - 262144, x1 = (i32(HK_PLAYER_X) > {tx} ? i32(HK_PLAYER_X) : {tx}) + 262144, y0 = (i32(HK_PLAYER_Y) < {ty} ? i32(HK_PLAYER_Y) : {ty}) - 131072, y1 = (i32(HK_PLAYER_Y) > {ty} ? i32(HK_PLAYER_Y) : {ty}) + 393216 in $live && ax != 2147483647 && ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1)"
+                    "any(i in 0..33: let ax = i32($row), ay = i32($row + 4), x0 = (i32(HK_PLAYER_X) < {tx} ? i32(HK_PLAYER_X) : {tx}) - 458752, x1 = (i32(HK_PLAYER_X) > {tx} ? i32(HK_PLAYER_X) : {tx}) + 458752, y0 = (i32(HK_PLAYER_Y) < {ty} ? i32(HK_PLAYER_Y) : {ty}) - 262144, y1 = (i32(HK_PLAYER_Y) > {ty} ? i32(HK_PLAYER_Y) : {ty}) + 524288 in $live && ax != 2147483647 && ax >= x0 && ax <= x1 && ay >= y0 && ay <= y1)"
                 );
-                let _ = writeln!(out, "loop {name} until expr !({hot}) || (u32(HK_INPUT_POLLS) & 127) == 0 max 200 timeout 1500 # {label}");
-                out.push_str(&macros(&format!("{round}snipe\nwait 1\n"))?);
-                let _ = writeln!(out, "end");
+                // Rounds are unrolled behind `if`, not looped: a loop's end test at a multiple of 128 polls is skipped by any
+                // round longer than a poll (a 1500 tick timeout aborted the walk at a Mosquito that hung out of reach), and a
+                // loop that runs out of passes aborts too. A foe that is still there after the last round is left to the hop.
+                let rounds = macros(&format!("{round}snipe\nwait 1\n"))?;
+                for pass in 1..=CLEAR_ROUNDS {
+                    let _ = writeln!(out, "if expr {hot} # {name}: round {pass}");
+                    out.push_str(&rounds);
+                    let _ = writeln!(out, "end");
+                }
             }
             ["strike"] => strike_both(&mut out, label),
             ["snipe"] => snipe(&mut out, label),
@@ -1110,9 +1130,9 @@ mod tests {
     #[test]
     fn a_clear_reacts_while_the_hop_box_is_occupied_and_always_ends() {
         let toml = compile_text("name t\nat 10 5.39\nclear d1-arc 21.5 9.75 8.5 14.5\nwalk 12\n").unwrap();
-        assert!(toml.contains("name = \"d1-arc\""), "{toml}");
-        assert!(toml.contains("HK_INPUT_POLLS"), "{toml}");
-        assert!(toml.contains("max_iter = 200"), "{toml}");
+        // Rounds behind guards, not a loop: it ends after its last round whatever the foe does.
+        assert_eq!(toml.matches("[step.when]").count(), CLEAR_ROUNDS as usize, "{toml}");
+        assert!(!toml.contains("max_iter") && !toml.contains("HK_INPUT_POLLS"), "{toml}");
         assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nclear a 1\n").unwrap_err().contains("clear"));
     }
@@ -1224,6 +1244,20 @@ mod tests {
         assert!(compile_text("name t\nloop a until x ge 1 max 3 timeout 9\n").unwrap_err().contains("never closed"));
         assert!(compile_text("name t\nend\n").unwrap_err().contains("without"));
         assert!(compile_text("name t\nloop a until x ge 1 max 3 timeout 9\nprobe p x\nend\n").unwrap_err().contains("no probe"));
+    }
+
+    #[test]
+    fn an_if_is_a_block_run_once_behind_a_when_and_may_nest_in_a_loop() {
+        let toml = compile_text(
+            "name t\nloop pass until x ge 5 max 3 timeout 900\nif expr u32(HK_X) == 1\nhold left for 3\nend\nhold right for 2\nend\n",
+        )
+        .unwrap();
+        assert!(toml.contains("[[block]]\nname = \"if-3\""), "{toml}");
+        assert!(toml.contains("block = \"if-3\"\n[block.step.when]\nkind = \"expr\""), "{toml}");
+        assert!(!toml.contains("name = \"if-3\"\nmax_iter"), "{toml}");
+        assert!(toml.contains("block = \"pass\"\nmax_iter = 3"), "{toml}");
+        assert!(compile_text("name t\nif x ge 1\nprobe p x\nend\n").unwrap_err().contains("no probe"));
+        assert!(compile_text("name t\nif x ge 1\nhold left for 3\n").unwrap_err().contains("never closed"));
     }
 
     #[test]
