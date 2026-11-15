@@ -13,6 +13,7 @@
 //! bank does not hold (not cooked for this scene, or refused for room) is a
 //! no-op, counted in `HK_SCENE_SFX_MISSED`, so a call site never has to know
 //! which scenes carry which sounds.
+use psx_fx::NrLcg;
 use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path = "volume.rs"]
 mod volume;
@@ -258,7 +259,7 @@ pub fn myla_strike(camera: (i32, i32), at: [i32; 2], frame: usize) {
         return;
     }
     let event = unsafe {
-        RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+        RANDOM = NrLcg::step(RANDOM);
         if RANDOM >> 31 == 0 {
             MYLA_PICKAXE_1
         } else {

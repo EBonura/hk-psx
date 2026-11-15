@@ -1,6 +1,7 @@
 //! Source-order events for the frame's certified opaque tile owners.
 //! Each (source draw, occupied row) gets one node. Reaching the source clears
 //! every cell it owns in that row, leaving only strictly later draw owners.
+
 const FRONT_OFFSET: usize = 1024;
 pub struct Events<const DRAWS: usize> {
     heads: [u16; 2048],
@@ -60,6 +61,7 @@ impl<const DRAWS: usize> Events<DRAWS> {
 }
 #[cfg(test)]
 mod tests {
+    use psx_fx::NrLcg;
     use super::*;
     #[test]
     fn events_match_strict_owner_order_through_both_source_passes() {
@@ -68,7 +70,7 @@ mod tests {
         for round in 0..200 {
             let front: [bool; 480] = core::array::from_fn(|i| (i * 7 + round) % 5 == 0);
             let owners = core::array::from_fn(|_| {
-                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                seed = NrLcg::step(seed);
                 if seed & 3 == 0 {
                     0
                 } else {

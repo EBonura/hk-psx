@@ -1,4 +1,5 @@
 //! Source one-shots resident in SPU RAM. No CD seek at a gameplay event.
+use psx_fx::NrLcg;
 use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 #[path = "movement_audio.rs"]
 mod movement;
@@ -185,9 +186,7 @@ pub fn shared_clip(address: u32, rate: u32, gain: i16, pitch: u16) {
 /// sample for the distinct destruction sound at stages4,8 and13.
 pub fn great_door_hit() {
     let random = unsafe {
-        GREAT_DOOR_RANDOM = GREAT_DOOR_RANDOM
-            .wrapping_mul(1664525)
-            .wrapping_add(1013904223);
+        GREAT_DOOR_RANDOM = NrLcg::step(GREAT_DOOR_RANDOM);
         GREAT_DOOR_RANDOM >> 16
     };
     let [low, high] = GREAT_DOOR_HIT_PITCH;
@@ -233,7 +232,7 @@ fn world_play(index: usize) {
         low
     } else {
         let random = unsafe {
-            WORLD_RANDOM = WORLD_RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+            WORLD_RANDOM = NrLcg::step(WORLD_RANDOM);
             WORLD_RANDOM >> 16
         };
         (low as u32 + random * (high as u32 - low as u32 + 1) / 65536) as u16

@@ -10,6 +10,7 @@
 //! scene actor bank, like the arena gates', drawn after the back scenery on
 //! the gameplay plane the drips use.
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/drips.rs"));
+use psx_fx::NrLcg;
 use hk_format::Room;
 
 /// Drip sprites drawn, and drips left out for want of an animation slot (must
@@ -56,7 +57,7 @@ static mut NOW: Scene = Scene {
 /// Random.Range(idleTimeMin, idleTimeMax) in ticks, from one LCG per scene so a
 /// replayed route drips the same.
 fn idle(rng: &mut u32) -> u16 {
-    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+    *rng = NrLcg::step(rng);
     IDLE_MIN + ((*rng >> 16) * (IDLE_MAX - IDLE_MIN) as u32 >> 16) as u16
 }
 

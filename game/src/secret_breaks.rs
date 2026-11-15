@@ -6,6 +6,7 @@
 //!
 //! Hits taken are FSM variables in the source (`Hits`), not saved: leaving the
 //! scene or dying starts every unbroken secret over, as a reload does there.
+use psx_fx::NrLcg;
 use hk_format::world_meta::{self as meta, KIND_SECRET};
 use hk_sim::ONE;
 
@@ -212,7 +213,7 @@ impl Hits {
 static mut RANDOM: u32 = 0x5ec2_e75b;
 fn random() -> u32 {
     unsafe {
-        RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+        RANDOM = NrLcg::step(RANDOM);
         RANDOM >> 16
     }
 }

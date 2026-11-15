@@ -15,6 +15,7 @@
 //!
 //! Not presented: `Hit Crack` and `Hit Pt 1/2` (Unity Animator and particle systems rather than
 //! tk2d), the low-health burst and the leak, the sword and head the death throws.
+use psx_fx::NrLcg;
 use crate::ability_art;
 
 /// A slash clip's length in ticks: 18 fps, six frames for the first and five for the second.
@@ -65,7 +66,7 @@ fn burst() -> &'static mut Burst {
 /// A value in `low..=high` from a fixed-seed generator: the same input tape gives the same slashes.
 fn random(low: i32, high: i32) -> i32 {
     unsafe {
-        SEED = SEED.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        SEED = NrLcg::step(SEED);
         low + ((SEED >> 16) as i32 * (high - low + 1)) / 65536
     }
 }

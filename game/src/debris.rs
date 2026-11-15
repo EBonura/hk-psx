@@ -4,6 +4,7 @@
 //! Uniform polygon inertia and implicit angular damping approximate native Box2D.
 //! Contact impulses approximate native Box2D; source bounce cache/threshold and
 //! sleep tolerances remain explicit and no visual lifetime is invented.
+use psx_fx::NrLcg;
 use hk_format::world_meta::{Object, KIND_FRAGMENT};
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::ONE;
@@ -184,7 +185,7 @@ pub struct Body {
     pub bounces: u16,
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+    *seed = NrLcg::step(seed);
     *seed
 }
 #[inline(always)]

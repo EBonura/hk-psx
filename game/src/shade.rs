@@ -4,6 +4,7 @@
 //! are not in any room's atlas: they live in linked RAM and reach VRAM through
 //! the shared 64x64 animation slots under keys above `SCENE_TEXTURE_CAPACITY`.
 //! Only its CLUTs are resident. Behaviour is hk_sim::shade; see docs/SHADE.md.
+use psx_fx::NrLcg;
 use hk_sim::shade::{Action, Clip as Pose, Phase, Senses, Shade};
 use psx_math::Wide;
 use hk_sim::{Params, Player, ONE};
@@ -164,7 +165,7 @@ impl World {
     /// SceneManager::Start instantiates the Shade when the scene matches.
     pub fn enter_scene(&mut self, scene: usize) {
         self.live = if self.record.present && self.record.scene as usize == scene && !waits_for_hornet(scene) {
-            self.seed = self.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            self.seed = NrLcg::step(self.seed);
             Some(Live {
                 control: Shade::new(self.record.position, self.seed),
                 position: self.record.position,

@@ -1,5 +1,6 @@
 //! Source Breakable particle families sharing the fixed particle pool.
 //! Fixed-step motion, sampled curves and radius/edge contacts approximate Unity.
+use psx_fx::NrLcg;
 use super::{dot3, length3, mulq, range, Particle, Pool};
 use hk_sim::ONE;
 use psx_math::{Wide, WideU};
@@ -1617,7 +1618,7 @@ mod tests {
         let mut rng = 0x12345678u32;
         for _ in 0..20000 {
             let v = core::array::from_fn(|_| {
-                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                rng = NrLcg::step(rng);
                 (rng as i32) / 4
             });
             assert_eq!(length3(v), length3_reference(v), "{v:?}");
@@ -1645,7 +1646,7 @@ mod tests {
         let mut rng = 0x9e3779b9u32;
         for _ in 0..50000 {
             let pair = core::array::from_fn(|_| {
-                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                rng = NrLcg::step(rng);
                 (rng as i32) / 4
             });
             let seed = (rng >> 24) as u8;
@@ -1706,11 +1707,11 @@ mod tests {
     fn narrowed_velocity_division_keeps_signed_extremes_and_general_fallback() {
         let mut seed = 0x218f937au32;
         for i in 0..300000 {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            seed = NrLcg::step(seed);
             let v = seed as i32;
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            seed = NrLcg::step(seed);
             let speed = (seed & 0x7fffffff).max(1) as i32;
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            seed = NrLcg::step(seed);
             let scale = if i % 4 == 0 {
                 seed as i32
             } else {

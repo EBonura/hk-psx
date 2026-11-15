@@ -8,6 +8,7 @@ include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../data/soul_totems.rs"
 ));
+use psx_fx::NrLcg;
 use crate::persist::{self, Kind};
 use hk_sim::polygon_hits_box;
 
@@ -40,7 +41,7 @@ pub fn strike(scene: usize, polygon: &[[i32; 2]], swing: u32) -> u16 {
             }
             COOLDOWN[i] = t.wait_ticks;
             SWING[i] = swing;
-            RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+            RANDOM = NrLcg::step(RANDOM);
             let span = (t.orbs[1] - t.orbs[0]) as u32 + 1;
             let orbs = t.orbs[0] as u16 + ((RANDOM >> 16) % span) as u16;
             soul += orbs * SOUL_PER_ORB;

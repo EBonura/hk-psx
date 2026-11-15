@@ -2,6 +2,7 @@
 //! Actors use their own resident collision view, independently of the camera.
 //! Actors outside all loaded views are suspended. Full Unity activation, Box2D
 //! solver parity and global FSM events remain outside this bounded runtime.
+use psx_fx::NrLcg;
 use crate::world::{terrain, Region, State};
 use hk_format::{i32_at, u32_at, Room};
 #[cfg(feature = "hornet")]
@@ -209,7 +210,7 @@ struct RunnerRuntime {
 }
 impl RunnerRuntime {
     fn draw(rng: &mut u32) -> u32 {
-        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        *rng = NrLcg::step(rng);
         *rng
     }
     fn choose(rng: &mut u32, _wait: hk_sim::runner::Wait, [hi, lo]: [u16; 2]) -> u16 {
@@ -1047,7 +1048,7 @@ impl ZombieShieldRuntime {
     /// `Shield Start`'s `RandomInt(60, 100)`, inclusive at both ends, from the
     /// per-actor generator rather than a claim on Unity's global sequence.
     fn counter(rng: &mut u32, [hi, lo]: [u16; 2]) -> u16 {
-        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        *rng = NrLcg::step(rng);
         lo + (*rng % (hi - lo + 1) as u32) as u16
     }
 }
@@ -1096,7 +1097,7 @@ fn husk_guard_sound(clip: hk_sim::husk_guard::Clip) {
         }
         Clip::Anticipate | Clip::StompAntic => {
             let r = unsafe {
-                RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+                RANDOM = NrLcg::step(RANDOM);
                 RANDOM >> 8
             };
             husk_guard_heard(HG_PREPARE);
@@ -1180,7 +1181,7 @@ impl BlockerRuntime {
     /// `WaitRandom(0.8, 1.2)` and `RandomFloat(X Speed Min, X Speed Max)`, both
     /// inclusive, from the per-actor generator rather than Unity's own.
     fn sample(rng: &mut u32, [lo, hi]: [i32; 2]) -> i32 {
-        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        *rng = NrLcg::step(rng);
         lo + (*rng % (hi - lo + 1) as u32) as i32
     }
 }

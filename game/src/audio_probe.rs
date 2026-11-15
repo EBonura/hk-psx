@@ -14,6 +14,7 @@
 //!    VBlanks and records how far from the pause point the resumed position
 //!    is. This is the cost of sharing the drive between XA music and room
 //!    reads: what a gate load would cut out of an area song.
+use psx_fx::NrLcg;
 use psx_io::cd;
 use psx_math::fmt::{u32_dec, U32_DEC_MAX};
 use psx_spu::{self as spu, CdVolume};
@@ -120,7 +121,7 @@ fn probe_a(cache: &mut crate::disc::Cache, fb: &mut psx_gpu::display::DoubleBuff
     while now().wrapping_sub(start) < PROBE_A_TICKS {
         crate::input::checkpoint();
         if now().wrapping_sub(next) < u32::MAX / 2 {
-            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            seed = NrLcg::step(seed);
             crate::disc::begin_load();
             match cache.probe_read_group((seed >> 8) as usize) {
                 Ok(sectors) => unsafe {

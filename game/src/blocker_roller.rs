@@ -14,6 +14,7 @@
 //! air/land/end clips (it is removed on the killing hit, with the ordinary
 //! enemy death sound and kill shake), Recoil's vertical part, and the line of
 //! sight half of `Idle`'s alert (the range box alone restarts a roll).
+use psx_fx::NrLcg;
 use crate::shaman::{MapFrame, ROLLER_CLIPS, ROLLER_FRAMES};
 use hk_sim::{baldur, Params, Player, ONE};
 
@@ -67,7 +68,7 @@ pub fn can_spawn() -> bool {
 /// `Fire` from the `Roller` branch.
 pub fn spawn(scene: usize, at: [i32; 2], velocity: [i32; 2], moving_right: bool) {
     let seed = unsafe {
-        SEED = SEED.wrapping_mul(1664525).wrapping_add(1013904223);
+        SEED = NrLcg::step(SEED);
         SEED
     };
     *me() = Some(Roller {

@@ -1,6 +1,7 @@
 //! Source HealthCocoon/ScuttlerControl subset. Two authored bugs, no heap.
 //! Run/land/activation/heal timings come from the installed CIL. Terrain uses
 //! the existing 60Hz swept-box solver rather than claiming native Box2D parity.
+use psx_fx::NrLcg;
 use crate::sine::sin;
 use hk_sim::{polygon_hits_box, Params, Player, ONE};
 #[derive(Clone, Copy, Debug)]
@@ -295,7 +296,7 @@ fn mul(a: i32, b: i32) -> i32 {
 }
 fn range(rng: &mut u32, span: [i32; 2]) -> i32 {
     assert!(span[1] >= span[0]);
-    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+    *rng = NrLcg::step(rng);
     span[0] + psx_math::WideU::mul(*rng, (span[1] - span[0]) as u32).high() as i32
 }
 #[cfg(not(test))]

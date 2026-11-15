@@ -1,4 +1,5 @@
 //! Source Geo one-shots, resident above ambience. No event-time CD access.
+use psx_fx::NrLcg;
 use psx_spu::{self as spu, Adsr, SpuAddr, Voice, Volume};
 #[path = "volume.rs"]
 mod volume;
@@ -80,7 +81,7 @@ pub fn set_volume(level: u8) {
 fn choice(count: u32) -> usize {
     // Separate deterministic PRNG: audio never perturbs gameplay's random state.
     unsafe {
-        RANDOM = RANDOM.wrapping_mul(1664525).wrapping_add(1013904223);
+        RANDOM = NrLcg::step(RANDOM);
         psx_math::WideU::mul(RANDOM, count).high() as usize
     }
 }

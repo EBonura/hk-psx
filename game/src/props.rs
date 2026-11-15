@@ -312,6 +312,7 @@ fn segment_hits_terrain(
 // The guest links the enemies' own segment test once; the host tests,
 // which compile this module alone, keep this copy of it.
 #[cfg(not(test))]
+use psx_fx::NrLcg;
 use crate::enemies::segment_crosses as crosses;
 /// Whether segment `a`-`b` crosses edge `e`.
 #[cfg(test)]
@@ -487,7 +488,7 @@ impl World {
     }
     /// 0 to `span - 1`.
     fn random(&mut self, span: u32) -> u32 {
-        self.rng = self.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.rng = NrLcg::step(self.rng);
         (self.rng >> 8) % span
     }
     /// `FlingObjects` for the stalactite an upward slash broke at `at`: each

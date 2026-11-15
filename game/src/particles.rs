@@ -1,5 +1,6 @@
 //! Bounded source grass/death particle systems. Source art/curves are cooked;
 //! 60Hz integration, finite RNG precision and native damping remain approximations.
+use psx_fx::NrLcg;
 use core::num::NonZeroU16;
 use hk_format::{u32_at, Room};
 use hk_sim::ONE;
@@ -503,7 +504,7 @@ impl Pool {
     }
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+    *seed = NrLcg::step(seed);
     *seed
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {

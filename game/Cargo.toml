@@ -58,6 +58,7 @@ route-input = []
 bank-timing = []
 [dependencies]
 psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
+psx-fx = { path = "../.psoxide/sdk/crates/psx-fx" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }
 # 256 trampoline words: with every delay-slot filler search on, the ordinary
 # guest needs 117 and pgo's profiling build 147; psx-rt's default holds 96.

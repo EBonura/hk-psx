@@ -3,6 +3,7 @@
 //! ObjectBounce's four-step cache and randomized reflection are retained.
 //! Room-view changes never clear state. Actual scene exits discard loose Geo;
 //! rock hits persist. Death removes the wallet; Shade recovery is not invented.
+use psx_fx::NrLcg;
 use crate::sine::sin;
 use hk_sim::{polygon_hits_box, ONE};
 /// The coin edge copy: the edge cache's length.
@@ -778,7 +779,7 @@ fn mul(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_trunc_i32(a, b, 16)
 }
 fn random(seed: &mut u32) -> u32 {
-    *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+    *seed = NrLcg::step(seed);
     *seed
 }
 fn range(seed: &mut u32, b: [i32; 2]) -> i32 {

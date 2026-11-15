@@ -1,4 +1,5 @@
 //! Exact fixed-numerator particle perspective division for the R3000 divider.
+use psx_fx::NrLcg;
 use psx_math::WideU;
 const DISTANCE: i32 = 2496922;
 const NUMERATOR: WideU = WideU::mul(crate::KNIGHT_SCALE as u32, DISTANCE as u32);
@@ -123,7 +124,7 @@ mod tests {
         }
         let mut seed = 0x659abb31u32;
         for _ in 0..100000 {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            seed = NrLcg::step(seed);
             check((seed % (i32::MAX as u32 - 65536) + 65537) as i32);
         }
     }
