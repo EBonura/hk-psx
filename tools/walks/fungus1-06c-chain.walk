@@ -3,7 +3,7 @@ at 115.79 4.35
 clear d06c-h001-arc 108.870 7.390
 loop d06c-h001 until expr (abs(i32(HK_PLAYER_X) - 7134904) <= 58982 || (i32(HK_PLAYER_X) >= 7059107 && i32(HK_PLAYER_X) <= 7219766)) && abs(i32(HK_PLAYER_Y) - 484311) <= 19661 max 3 timeout 900
 if expr i32(HK_PLAYER_X) >= 6868532 && i32(HK_PLAYER_X) <= 7064781 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d06c-h001: back from the floor at y 3.39 (x 104.9 to 107.8)
-walk 104.99
+walk 104.86
 drop 102.50 1.38
 end
 walk 114.68

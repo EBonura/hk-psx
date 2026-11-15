@@ -67,7 +67,7 @@ const WALK_PER_TICK: f64 = 0.138;
 /// 2026-11-15: a landing 0.00006 inside the bound, one step, a 13 unit fall).
 const EDGE_BAND: f64 = 0.15;
 /// Rounds of `fight`/`snipe` a `clear` makes at most.
-const CLEAR_ROUNDS: u32 = 6;
+const CLEAR_ROUNDS: u32 = 10;
 /// How far before its take-off a leap lets go of the walk (see `macros`).
 const LEAP_EARLY: f64 = 0.3;
 
@@ -904,7 +904,7 @@ pub fn macros(text: &str) -> Result<String> {
                 // Rounds are unrolled behind `if`, not looped: a loop's end test at a multiple of 128 polls is skipped by any
                 // round longer than a poll (a 1500 tick timeout aborted the walk at a Mosquito that hung out of reach), and a
                 // loop that runs out of passes aborts too. A foe that is still there after the last round is left to the hop.
-                let rounds = macros(&format!("{round}snipe\nwait 1\n"))?;
+                let rounds = macros(&format!("{round}snipe\nwait 6\n"))?;
                 for pass in 1..=CLEAR_ROUNDS {
                     let _ = writeln!(out, "if expr {hot} # {name}: round {pass}");
                     out.push_str(&rounds);
