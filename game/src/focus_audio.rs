@@ -44,7 +44,9 @@ pub fn upload(bytes: &[u8]) -> bool {
     if SPU_BASE < end {
         return false;
     }
-    let checksum = psx_pack::fnv1a32(bytes);
+    let mut hash = psx_pack::Fnv32::new();
+    hash.update_bulk(bytes);
+    let checksum = hash.finish();
     if checksum != BANK_CHECKSUM {
         return false;
     }
