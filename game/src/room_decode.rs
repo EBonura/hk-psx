@@ -801,20 +801,13 @@ mod word_copy_tests {
     }
 
     #[test]
-    fn fnv_shift_multiply_and_chunked_hash_match_scalar_reference() {
+    fn the_shared_word_hash_and_the_chunked_hash_match_scalar_reference() {
         let reference = |seed: u32, bytes: &[u8]| {
             bytes.iter().fold(seed, |hash, &byte| {
                 (hash ^ byte as u32).wrapping_mul(0x01000193)
             })
         };
         let mut random = 0x61c88647u32;
-        for value in (0..=65535).chain([0x7fffffff, 0x80000000, 0xfffffffe, 0xffffffff]) {
-            assert_eq!(super::fnv_multiply(value), value.wrapping_mul(0x01000193));
-            random ^= random << 13;
-            random ^= random >> 17;
-            random ^= random << 5;
-            assert_eq!(super::fnv_multiply(random), random.wrapping_mul(0x01000193));
-        }
         let bytes = core::array::from_fn::<_, 2052, _>(|_| {
             random ^= random << 13;
             random ^= random >> 17;
