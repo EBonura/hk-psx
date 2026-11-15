@@ -19,9 +19,9 @@ wait until HK_WALK_READY == 1 timeout 300
 include fungus1-04.walk
 wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
 wait until expr u8(HK_HERO_LOCK) == 1 timeout 300                      # her greeting has taken hold of the Knight (the lock can come a few ticks after the encounter count)
-loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting holds the Knight: a press lands whenever its box is ready, not at a fixed phase
+loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800   # her greeting panel turns a page on each Cross edge (hornet.rs convo_tick), so each press needs the pad seen released again: wait for the game to consume the release, not a count of ticks
 press cross
-wait 45
+wait until expr (u32(HK_SIM_PAD) & 16384) == 0 timeout 60
 end
 wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
 include hornet-defs.walk

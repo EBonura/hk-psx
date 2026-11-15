@@ -1,14 +1,21 @@
-# Fungus1_06 from the fallen platform of vine 1 (x 33.2, y 3.9) over the high route to the fourth vine's platform (x 115.8, y 23.8).
-# Planned with hk-walkplan room on the disc (HK_WALKPLAN_MARGIN=0.4, sync poll) with the whole run before it as the pre, 2026-11-03.
+# Fungus1_06 from the fallen platform of vine 1 (x 33.2, y 3.9) over the high route to the fourth vine's platform (x 115.8, y 23.8). Planned by hk-walkplan room from fungus1-06-entry.mcd with 06a and the first cut before it.
 at 33.16 3.93
 clear d06b-h001-arc 40.770 9.390
-loop d06b-h001 until expr (abs(i32(HK_PLAYER_X) - 2671903) <= 58982 || (i32(HK_PLAYER_X) >= 2601779 && i32(HK_PLAYER_X) <= 3070362)) && abs(i32(HK_PLAYER_Y) - 615383) <= 19661 max 3 timeout 900
+loop d06b-h001 until expr (abs(i32(HK_PLAYER_X) - 2671903) <= 58982 || (i32(HK_PLAYER_X) >= 2605171 && i32(HK_PLAYER_X) <= 3067085)) && abs(i32(HK_PLAYER_Y) - 615383) <= 19661 max 6 timeout 1800
+if expr i32(HK_PLAYER_X) >= 2374398 && i32(HK_PLAYER_X) <= 2673869 && abs(i32(HK_PLAYER_Y) - 156672) <= 19661   # d06b-h001: back from the floor at y 2.39 (x 36.3 to 40.8)
+walk 37.92   # run-up
+walk 37.49   # take-off
+hold left+cross for 8
+hold left for 8
+wait until HK_WALK_READY == 1 timeout 300
+end
+clear d06b-h001-tight 40.770 9.390
+heal
 walk 35.65
 walk 35.22   # run-up
 walk 35.65   # take-off
 hold right+cross for 34
 hold right for 3
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
 fight 4 40.30 46.25
@@ -16,13 +23,13 @@ snipe
 guard 2
 retreat 40.30 46.25
 heal
-clear d06b-h002-arc 46.580 14.390 40.30 46.25
-loop d06b-h002 until expr (abs(i32(HK_PLAYER_X) - 3052667) <= 58982 || (i32(HK_PLAYER_X) >= 3000893 && i32(HK_PLAYER_X) <= 3358065)) && abs(i32(HK_PLAYER_Y) - 943063) <= 19661 max 3 timeout 900
-walk 40.34   # run-up
-walk 40.77   # take-off
+clear d06b-h002-arc 47.410 14.390 40.30 46.25
+loop d06b-h002 until expr (abs(i32(HK_PLAYER_X) - 3107062) <= 58982 || (i32(HK_PLAYER_X) >= 3004070 && i32(HK_PLAYER_X) <= 3355094)) && abs(i32(HK_PLAYER_Y) - 943063) <= 19661 max 3 timeout 900
+walk 41.60
+walk 41.17   # run-up
+walk 41.60   # take-off
 hold right+cross for 34
 hold right for 8
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
 fight 4 46.39 50.64
@@ -30,28 +37,74 @@ snipe
 guard 2
 retreat 46.39 50.64
 heal
-clear d06b-h003-arc 55.150 9.390 46.39 50.64
-loop d06b-h003 until expr (abs(i32(HK_PLAYER_X) - 3614310) <= 58982 || (i32(HK_PLAYER_X) >= 3472097 && i32(HK_PLAYER_X) <= 3666084)) && abs(i32(HK_PLAYER_Y) - 615383) <= 19661 max 3 timeout 900
-walk 46.29   # run-up
-walk 46.58   # take-off
-hold right+cross for 20
-hold right for 42
-wait 6
+clear d06b-h003-arc 50.040 14.390 46.39 50.64
+loop d06b-h003 until expr (abs(i32(HK_PLAYER_X) - 3279421) <= 58982 || (i32(HK_PLAYER_X) >= 2995129 && i32(HK_PLAYER_X) <= 3355218)) && abs(i32(HK_PLAYER_Y) - 943063) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 3291131 && i32(HK_PLAYER_X) <= 4929385 && abs(i32(HK_PLAYER_Y) - 287744) <= 19661   # d06b-h003: back from the floor at y 4.39 (x 50.3 to 75.2)
+walk 50.82
+walk 50.82   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 54.87   # run-up
+walk 54.44   # take-off
+hold left+cross for 34
+hold left for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 47.80
+end
+if expr i32(HK_PLAYER_X) >= 3481496 && i32(HK_PLAYER_X) <= 3669350 && abs(i32(HK_PLAYER_Y) - 615366) <= 19661   # d06b-h003: back from the floor at y 9.39 (x 53.2 to 55.9)
+walk 53.73
+walk 54.16   # run-up
+walk 53.73   # take-off
+hold left+cross for 28
+hold left for 9
+wait until HK_WALK_READY == 1 timeout 300
+walk 47.79
+end
+walk 46.98   # run-up
+walk 47.41   # take-off
+hold right+cross for 5
+hold right for 14
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 53.58 55.34
+fight 4 46.25 50.65
 snipe
 guard 2
-retreat 53.58 55.34
+retreat 46.25 50.65
 heal
-clear d06b-h004-arc 61.930 11.130 53.58 55.34
-loop d06b-h004 until expr (abs(i32(HK_PLAYER_X) - 4058644) <= 58982 || (i32(HK_PLAYER_X) >= 3852861 && i32(HK_PLAYER_X) <= 4146463)) && abs(i32(HK_PLAYER_Y) - 729416) <= 19661 max 3 timeout 900
-walk 55.43
+clear d06b-h004-arc 60.130 11.130 46.25 50.65
+loop d06b-h004 until expr (abs(i32(HK_PLAYER_X) - 3940680) <= 58982 || (i32(HK_PLAYER_X) >= 3855818 && i32(HK_PLAYER_X) <= 4143387)) && abs(i32(HK_PLAYER_Y) - 729416) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 3289907 && i32(HK_PLAYER_X) <= 4925981 && abs(i32(HK_PLAYER_Y) - 287744) <= 19661   # d06b-h004: back from the floor at y 4.39 (x 50.2 to 75.1)
+walk 58.24
+walk 58.67   # run-up
+walk 58.24   # take-off
+hold left+cross for 28
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
 walk 55.00   # run-up
-walk 55.43   # take-off
-hold right+cross for 24
-hold right for 23
-wait 6
+walk 54.57   # take-off
+hold left+cross for 28
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 3763297 && i32(HK_PLAYER_X) <= 3787981 && abs(i32(HK_PLAYER_Y) - 1307680) <= 19661   # d06b-h004: back from the floor at y 19.95 (x 57.5 to 57.8)
+walk 57.47
+drop 50.25 4.39
+walk 50.25   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 54.87   # run-up
+walk 54.44   # take-off
+hold left+cross for 28
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 50.31
+walk 49.88   # run-up
+walk 50.31   # take-off
+hold right+cross for 34
+hold right for 37
 wait until HK_WALK_READY == 1 timeout 300
 end
 fight 4 59.39 62.67
@@ -59,176 +112,559 @@ snipe
 guard 2
 retreat 59.39 62.67
 heal
-clear d06b-h005-arc 68.290 9.230 59.39 62.67
-loop d06b-h005 until expr (abs(i32(HK_PLAYER_X) - 4475453) <= 58982 || (i32(HK_PLAYER_X) >= 4436132 && i32(HK_PLAYER_X) <= 4735631)) && abs(i32(HK_PLAYER_Y) - 604897) <= 19661 max 3 timeout 900
-walk 62.76
-walk 62.33   # run-up
-walk 62.76   # take-off
-hold right+cross for 12
-hold right for 28
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 68.29 71.66
-snipe
-guard 2
-retreat 68.29 71.66
-heal
-clear d06b-h006-arc 73.270 14.390 68.29 71.66
-loop d06b-h006 until expr (abs(i32(HK_PLAYER_X) - 4801823) <= 58982 || (i32(HK_PLAYER_X) >= 4762501 && i32(HK_PLAYER_X) <= 5036442)) && abs(i32(HK_PLAYER_Y) - 943063) <= 19661 max 3 timeout 900
-walk 68.29   # take-off
-hold right+cross for 28
+clear d06b-h005-arc 68.850 9.230 59.39 62.67
+loop d06b-h005 until expr (abs(i32(HK_PLAYER_X) - 4512154) <= 58982 || (i32(HK_PLAYER_X) >= 4445422 && i32(HK_PLAYER_X) <= 4732991)) && abs(i32(HK_PLAYER_Y) - 604897) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 3289907 && i32(HK_PLAYER_X) <= 4931688 && abs(i32(HK_PLAYER_Y) - 287744) <= 19661   # d06b-h005: back from the floor at y 4.39 (x 50.2 to 75.2)
+walk 65.93
+walk 65.50   # run-up
+walk 65.93   # take-off
+hold right+cross for 24
 hold right for 8
-wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 68.29
+walk 68.72   # run-up
+walk 68.29   # take-off
+hold left+cross for 34
+hold left for 22
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 73.27 76.25
+walk 59.70   # run-up
+walk 60.13   # take-off
+hold right+cross for 28
+hold right for 35
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 68.38 71.67
 snipe
 guard 2
-retreat 73.27 76.25
+retreat 68.38 71.67
 heal
-clear d06b-h007-arc 78.390 19.390 73.27 76.25
-loop d06b-h007 until expr (abs(i32(HK_PLAYER_X) - 5137367) <= 58982 || (i32(HK_PLAYER_X) >= 5031199 && i32(HK_PLAYER_X) <= 6376653)) && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
-walk 73.27   # take-off
+clear d06b-h006-arc 74.380 14.390 68.38 71.67
+loop d06b-h006 until expr (abs(i32(HK_PLAYER_X) - 4874568) <= 58982 || (i32(HK_PLAYER_X) >= 4771576 && i32(HK_PLAYER_X) <= 5031950)) && abs(i32(HK_PLAYER_Y) - 943063) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 4928307 && i32(HK_PLAYER_X) <= 6016205 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d06b-h006: back from the floor at y 3.39 (x 75.2 to 91.8)
+walk 77.53   # run-up
+walk 77.10   # take-off
+hold left+cross for 8
+hold left for 13
+wait until HK_WALK_READY == 1 timeout 300
+walk 74.63   # run-up
+walk 74.20   # take-off
+hold left+cross for 28
+hold left for 10
+wait until HK_WALK_READY == 1 timeout 300
+walk 69.29
+end
+if expr i32(HK_PLAYER_X) >= 4797235 && i32(HK_PLAYER_X) <= 5033165 && abs(i32(HK_PLAYER_Y) - 856809) <= 19661   # d06b-h006: back from the floor at y 13.07 (x 73.2 to 76.8)
+walk 73.37
+walk 73.92
+walk 73.65
+drop 72.14 9.23
+walk 69.10
+end
+if expr i32(HK_PLAYER_X) >= 5059379 && i32(HK_PLAYER_X) <= 5119767 && abs(i32(HK_PLAYER_Y) - 863451) <= 19661   # d06b-h006: back from the floor at y 13.18 (x 77.2 to 78.1)
+walk 77.93
+drop 78.75 12.39
+walk 73.77
+drop 72.14 9.23
+walk 69.10
+end
+walk 68.42   # run-up
+walk 68.85   # take-off
+hold right+cross for 34
+hold right for 6
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 73.36 76.23
+snipe
+guard 2
+retreat 73.36 76.23
+heal
+clear d06b-h007-arc 78.820 19.390 73.36 76.23
+loop d06b-h007 until expr (abs(i32(HK_PLAYER_X) - 5165548) <= 58982 || (i32(HK_PLAYER_X) >= 5035361 && i32(HK_PLAYER_X) <= 6374470)) && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 5176679 && i32(HK_PLAYER_X) <= 5509573 && abs(i32(HK_PLAYER_Y) - 1185619) <= 19661   # d06b-h007: back from the floor at y 18.09 (x 79.0 to 84.0)
+walk 79.18
+drop 78.55 17.02
+walk 77.79
+walk 78.07
+drop 78.75 12.39
+walk 73.77
+drop 72.14 9.23
+walk 71.04
+walk 70.61   # run-up
+walk 71.04   # take-off
+hold right+cross for 34
+hold right for 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 74.69
+end
+if expr i32(HK_PLAYER_X) >= 5170986 && i32(HK_PLAYER_X) <= 5177540 && abs(i32(HK_PLAYER_Y) - 1128296) <= 19661   # d06b-h007: back from the floor at y 17.22 (x 79.0 to 79.0)
+walk 77.85
+walk 78.12
+drop 78.75 12.39
+walk 73.77
+drop 72.14 9.23
+walk 71.04
+walk 70.61   # run-up
+walk 71.04   # take-off
+hold right+cross for 34
+hold right for 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 74.69
+end
+if expr i32(HK_PLAYER_X) >= 5159764 && i32(HK_PLAYER_X) <= 5229773 && abs(i32(HK_PLAYER_Y) - 943104) <= 19661   # d06b-h007: back from the floor at y 14.39 (x 78.8 to 79.8)
+walk 78.92
+drop 78.29 12.39
+walk 78.75
+walk 73.77
+drop 72.14 9.23
+walk 71.04
+walk 70.61   # run-up
+walk 71.04   # take-off
+hold right+cross for 34
+hold right for 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 74.69
+end
+walk 73.95   # run-up
+walk 74.38   # take-off
 hold right+cross for 28
 hold right for 9
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 77.37 96.70
+fight 4 77.38 96.72
 snipe
 guard 2
-retreat 77.37 96.70
+retreat 77.38 96.72
 heal
-clear d06b-h008-arc 84.480 24.290 77.37 96.70
-loop d06b-h008 until expr (abs(i32(HK_PLAYER_X) - 5536481) <= 58982 || (i32(HK_PLAYER_X) >= 5375918 && i32(HK_PLAYER_X) <= 5575803)) && abs(i32(HK_PLAYER_Y) - 1591869) <= 19661 max 3 timeout 900
-walk 78.67
-walk 78.24   # run-up
-walk 78.67   # take-off
+clear d06b-h008-arc 85.740 19.390 77.38 96.72
+loop d06b-h008 until expr (abs(i32(HK_PLAYER_X) - 5619057) <= 58982 || (i32(HK_PLAYER_X) >= 5035620 && i32(HK_PLAYER_X) <= 6374729)) && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
+walk 81.31
+walk 80.88   # run-up
+walk 81.31   # take-off
+hold right+cross for 12
+hold right for 20
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 77.39 96.72
+snipe
+guard 2
+retreat 77.39 96.72
+heal
+clear d06b-h009-arc 94.180 19.390 77.39 96.72
+loop d06b-h009 until expr (abs(i32(HK_PLAYER_X) - 6172180) <= 58982 || (i32(HK_PLAYER_X) >= 5026713 && i32(HK_PLAYER_X) <= 6374887)) && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 6370099 && i32(HK_PLAYER_X) <= 6835052 && abs(i32(HK_PLAYER_Y) - 1074176) <= 19661   # d06b-h009: back from the floor at y 16.39 (x 97.2 to 104.2)
+walk 97.88
+walk 98.31   # run-up
+walk 97.88   # take-off
+hold left+cross for 16
+hold left for 13
+wait until HK_WALK_READY == 1 timeout 300
+walk 94.62
+walk 95.05   # run-up
+walk 94.62   # take-off
+hold left+cross for 34
+hold left for 27
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 85.31   # run-up
+walk 85.74   # take-off
 hold right+cross for 34
-hold right for 8
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 82.63 84.48
-snipe
-guard 2
-retreat 82.63 84.48
-heal
-walk 84.75
-drop 88.63 19.39
-fight 4 77.37 96.71
-snipe
-guard 2
-retreat 77.37 96.71
-heal
-clear d06b-h010-arc 95.400 19.390 77.37 96.71
-loop d06b-h010 until expr (abs(i32(HK_PLAYER_X) - 6252134) <= 58982 || (i32(HK_PLAYER_X) >= 5030543 && i32(HK_PLAYER_X) <= 6376653)) && abs(i32(HK_PLAYER_Y) - 1270743) <= 19661 max 3 timeout 900
-walk 88.90
-walk 88.47   # run-up
-walk 88.90   # take-off
-hold right+cross for 20
 hold right for 27
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 77.36 96.70
+fight 4 77.25 96.72
 snipe
 guard 2
-retreat 77.36 96.70
+retreat 77.25 96.72
 heal
-clear d06b-h011-arc 102.040 23.340 77.36 96.70
-loop d06b-h011 until expr (abs(i32(HK_PLAYER_X) - 6687293) <= 58982 || (i32(HK_PLAYER_X) >= 6453985 && i32(HK_PLAYER_X) <= 6748242)) && abs(i32(HK_PLAYER_Y) - 1529610) <= 19661 max 3 timeout 900
-walk 94.97   # run-up
-walk 95.40   # take-off
+clear d06b-h010-arc 101.090 23.340 77.25 96.72
+loop d06b-h010 until expr (abs(i32(HK_PLAYER_X) - 6625034) <= 58982 || (i32(HK_PLAYER_X) >= 6458587 && i32(HK_PLAYER_X) <= 6737091)) && abs(i32(HK_PLAYER_Y) - 1529610) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 6371048 && i32(HK_PLAYER_X) <= 6830852 && abs(i32(HK_PLAYER_Y) - 1074176) <= 19661   # d06b-h010: back from the floor at y 16.39 (x 97.3 to 104.2)
+walk 98.25   # run-up
+walk 97.82   # take-off
+hold left+cross for 16
+hold left for 13
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 6828851 && i32(HK_PLAYER_X) <= 7486953 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h010: back from the floor at y 13.39 (x 104.2 to 114.2)
+walk 104.92
+walk 105.35   # run-up
+walk 104.92   # take-off
+hold left+cross for 24
+hold left for 19
+wait until HK_WALK_READY == 1 timeout 300
+walk 99.41
+walk 99.84   # run-up
+walk 99.41   # take-off
+hold left+cross for 16
+hold left for 13
+wait until HK_WALK_READY == 1 timeout 300
+walk 94.84
+end
+walk 94.46
+walk 94.03   # run-up
+walk 94.46   # take-off
 hold right+cross for 34
 hold right for 14
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 99.08 102.37
+fight 4 99.10 102.25
 snipe
 guard 2
-retreat 99.08 102.37
+retreat 99.10 102.25
 heal
-clear d06b-h012-arc 112.420 13.390 99.08 102.37
-loop d06b-h012 until expr (abs(i32(HK_PLAYER_X) - 7367557) <= 58982 || (i32(HK_PLAYER_X) >= 6826230 && i32(HK_PLAYER_X) <= 7492076)) && abs(i32(HK_PLAYER_Y) - 877527) <= 19661 max 3 timeout 900
-walk 101.61   # run-up
-walk 102.04   # take-off
-hold right+cross for 20
-hold right for 55
-wait 6
+clear d06b-h011-arc 111.750 13.390 99.10 102.25
+loop d06b-h011 until expr (abs(i32(HK_PLAYER_X) - 7323648) <= 58982 || (i32(HK_PLAYER_X) >= 6828851 && i32(HK_PLAYER_X) <= 7490095)) && abs(i32(HK_PLAYER_Y) - 877527) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 2995675 && i32(HK_PLAYER_X) <= 3355764 && abs(i32(HK_PLAYER_Y) - 943104) <= 19661   # d06b-h011: back from the floor at y 14.39 (x 45.8 to 51.2)
+walk 51.02
+drop 55.03 9.39
+walk 55.30
+walk 54.87   # run-up
+walk 55.30   # take-off
+hold right+cross for 16
+hold right for 19
 wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 104.76 113.72
-snipe
-guard 2
-retreat 104.76 113.72
-heal
-clear d06b-h013-arc 120.990 13.230 104.76 113.72
-loop d06b-h013 until expr (abs(i32(HK_PLAYER_X) - 7929201) <= 58982 || (i32(HK_PLAYER_X) >= 7823032 && i32(HK_PLAYER_X) <= 7980974)) && abs(i32(HK_PLAYER_Y) - 867041) <= 19661 max 3 timeout 900
-walk 111.99   # run-up
-walk 112.42   # take-off
+walk 59.72   # run-up
+walk 60.15   # take-off
+hold right+cross for 28
+hold right for 35
+wait until HK_WALK_READY == 1 timeout 300
+walk 68.43   # run-up
+walk 68.86   # take-off
 hold right+cross for 34
-hold right for 28
-wait 6
+hold right for 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 73.96   # run-up
+walk 74.39   # take-off
+hold right+cross for 28
+hold right for 9
+wait until HK_WALK_READY == 1 timeout 300
+walk 81.31
+walk 80.88   # run-up
+walk 81.31   # take-off
+hold right+cross for 12
+hold right for 20
+wait until HK_WALK_READY == 1 timeout 300
+walk 85.31   # run-up
+walk 85.74   # take-off
+hold right+cross for 34
+hold right for 27
+wait until HK_WALK_READY == 1 timeout 300
+walk 93.75   # run-up
+walk 94.18   # take-off
+hold right+cross for 34
+hold right for 14
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 119.97 121.18
-snipe
-guard 2
-retreat 119.97 121.18
-heal
-clear d06b-h014-arc 122.980 17.280 119.97 121.18
-loop d06b-h014 until expr (abs(i32(HK_PLAYER_X) - 8059617) <= 58982 || (i32(HK_PLAYER_X) >= 8020296 && i32(HK_PLAYER_X) <= 8184136)) && abs(i32(HK_PLAYER_Y) - 1132462) <= 19661 max 3 timeout 900
-walk 120.56   # run-up
-walk 120.99   # take-off
-hold right+cross for 22   # was 16 + 1: the apex of that jump (17.07 at the lip x 122.9) was 0.2 under the ledge top (17.28), and a take-off 0.1 off stopped him against its face; 22 clears it by about 0.4 and lands near x 124.1
-wait 6
+walk 100.66   # run-up
+walk 101.09   # take-off
+hold right+cross for 20
+hold right for 57
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 122.98 124.28
+fight 4 104.75 113.74
 snipe
 guard 2
-retreat 122.98 124.28
+retreat 104.75 113.74
 heal
-clear d06b-h015-arc 126.580 21.390 122.98 124.28
-loop d06b-h015 until expr (abs(i32(HK_PLAYER_X) - 8295547) <= 58982 || (i32(HK_PLAYER_X) >= 8243773 && i32(HK_PLAYER_X) <= 8378778)) && abs(i32(HK_PLAYER_Y) - 1401815) <= 19661 max 3 timeout 900
-walk 123.26
-walk 123.26   # take-off
+clear d06b-h012-arc 120.600 13.230 104.75 113.74
+loop d06b-h012 until expr (abs(i32(HK_PLAYER_X) - 7903642) <= 58982 || (i32(HK_PLAYER_X) >= 7818780 && i32(HK_PLAYER_X) <= 7979439)) && abs(i32(HK_PLAYER_Y) - 867041) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 7978990 && i32(HK_PLAYER_X) <= 8178893 && abs(i32(HK_PLAYER_Y) - 287744) <= 19661   # d06b-h012: back from the floor at y 4.39 (x 121.8 to 124.8)
+walk 122.89   # run-up
+walk 123.32   # take-off
 hold right+cross for 20
 hold right for 4
-wait 6
+wait until HK_WALK_READY == 1 timeout 300
+walk 125.58
+walk 126.01   # run-up
+walk 125.58   # take-off
+hold left+cross for 28
+hold left for 10
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.75   # run-up
+walk 120.32   # take-off
+hold left+cross for 28
+hold left for 29
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 126.39 127.25
+if expr i32(HK_PLAYER_X) >= 8238760 && i32(HK_PLAYER_X) <= 8535394 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h012: back from the floor at y 13.39 (x 125.8 to 130.2)
+walk 126.59
+walk 127.02   # run-up
+walk 126.59   # take-off
+hold left+cross for 20
+hold left for 27
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.34
+walk 120.77   # run-up
+walk 120.34   # take-off
+hold left+cross for 28
+hold left for 29
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 112.02
+walk 111.59   # run-up
+walk 112.02   # take-off
+hold right+cross for 34
+hold right for 28
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 119.86 121.21
 snipe
 guard 2
-retreat 126.39 127.25
+retreat 119.86 121.21
 heal
-clear d06b-h016-arc 121.600 23.310 126.39 127.25
-loop d06b-h016 until expr (abs(i32(HK_PLAYER_X) - 7969178) <= 58982 || (i32(HK_PLAYER_X) >= 7889879 && i32(HK_PLAYER_X) <= 8084521)) && abs(i32(HK_PLAYER_Y) - 1527644) <= 19661 max 3 timeout 900
-walk 126.30
-walk 126.73   # run-up
-walk 126.30   # take-off
+clear d06b-h013-arc 123.920 17.280 119.86 121.21
+loop d06b-h013 until expr (abs(i32(HK_PLAYER_X) - 8121221) <= 58982 || (i32(HK_PLAYER_X) >= 8054489 && i32(HK_PLAYER_X) <= 8187953)) && abs(i32(HK_PLAYER_Y) - 1132462) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 8241882 && i32(HK_PLAYER_X) <= 8538516 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h013: back from the floor at y 13.39 (x 125.8 to 130.2)
+walk 127.07   # run-up
+walk 126.64   # take-off
+hold left+cross for 20
+hold left for 27
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 8305337 && i32(HK_PLAYER_X) <= 8375346 && abs(i32(HK_PLAYER_Y) - 1193040) <= 19661   # d06b-h013: back from the floor at y 18.20 (x 126.8 to 127.7)
+walk 126.78
+drop 126.15 13.39
+walk 126.93   # run-up
+walk 126.50   # take-off
+hold left+cross for 20
+hold left for 27
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 7980504 && i32(HK_PLAYER_X) <= 8178893 && abs(i32(HK_PLAYER_Y) - 287744) <= 19661   # d06b-h013: back from the floor at y 4.39 (x 121.8 to 124.8)
+walk 122.36   # run-up
+walk 122.79   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 126.29   # run-up
+walk 125.86   # take-off
+hold left+cross for 28
+hold left for 10
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 8173499 && i32(HK_PLAYER_X) <= 8375501 && abs(i32(HK_PLAYER_Y) - 549888) <= 19661   # d06b-h013: back from the floor at y 8.39 (x 124.8 to 127.8)
+walk 125.18
+walk 125.61   # run-up
+walk 125.18   # take-off
+hold left+cross for 24
+hold left for 8
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 120.17   # run-up
+walk 120.60   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 123.45 124.39
+snipe
+guard 2
+retreat 123.45 124.39
+heal
+clear d06b-h014-arc 126.720 21.390 123.45 124.39
+loop d06b-h014 until expr (abs(i32(HK_PLAYER_X) - 8304722) <= 58982 || (i32(HK_PLAYER_X) >= 8237990 && i32(HK_PLAYER_X) <= 8375501)) && abs(i32(HK_PLAYER_Y) - 1401815) <= 19661 max 6 timeout 1800
+if expr i32(HK_PLAYER_X) >= 8173870 && i32(HK_PLAYER_X) <= 8375501 && abs(i32(HK_PLAYER_Y) - 549888) <= 19661   # d06b-h014: back from the floor at y 8.39 (x 124.8 to 127.8)
+walk 125.19
+walk 125.62   # run-up
+walk 125.19   # take-off
+hold left+cross for 24
+hold left for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.33   # run-up
+walk 120.76   # take-off
+hold right+cross for 34
+hold right for 18
+wait until HK_WALK_READY == 1 timeout 300
+walk 127.56   # run-up
+walk 127.13   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+clear d06b-h014-tight 126.720 21.390 123.45 124.39
+heal
+walk 123.49   # run-up
+walk 123.92   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+fight 4 126.25 127.25
+snipe
+guard 2
+retreat 126.25 127.25
+heal
+clear d06b-h015-arc 121.740 23.310 126.25 127.25
+loop d06b-h015 until expr (abs(i32(HK_PLAYER_X) - 7978353) <= 58982 || (i32(HK_PLAYER_X) >= 7893491 && i32(HK_PLAYER_X) <= 8081345)) && abs(i32(HK_PLAYER_Y) - 1527644) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 8180689 && i32(HK_PLAYER_X) <= 8375501 && abs(i32(HK_PLAYER_Y) - 549888) <= 19661   # d06b-h015: back from the floor at y 8.39 (x 124.9 to 127.8)
+walk 125.85
+walk 126.28   # run-up
+walk 125.85   # take-off
+hold left+cross for 28
+hold left for 10
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.16   # run-up
+walk 120.59   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.48   # run-up
+walk 123.91   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 8053779 && i32(HK_PLAYER_X) <= 8187243 && abs(i32(HK_PLAYER_Y) - 1132516) <= 19661   # d06b-h015: back from the floor at y 17.28 (x 122.9 to 124.9)
+walk 124.32
+walk 123.89   # run-up
+walk 124.32   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 7488328 && i32(HK_PLAYER_X) <= 7775897 && abs(i32(HK_PLAYER_Y) - 1561662) <= 19661   # d06b-h015: back from the floor at y 23.83 (x 114.3 to 118.6)
+walk 118.05
+walk 117.62   # run-up
+walk 118.05   # take-off
+hold right+cross for 8
+hold right for 20
+wait until HK_WALK_READY == 1 timeout 300
+walk 122.20
+walk 121.77   # run-up
+walk 122.20   # take-off
+hold right+cross for 8
+hold right for 25
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 7518349 && i32(HK_PLAYER_X) <= 7775897 && abs(i32(HK_PLAYER_Y) - 1455212) <= 19661   # d06b-h015: back from the floor at y 22.20 (x 114.8 to 118.6)
+drop 125.75 8.39
+walk 125.19
+walk 125.62   # run-up
+walk 125.19   # take-off
+hold left+cross for 24
+hold left for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.34   # run-up
+walk 120.77   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.52   # run-up
+walk 123.95   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 7818830 && i32(HK_PLAYER_X) <= 7979489 && abs(i32(HK_PLAYER_Y) - 866902) <= 19661   # d06b-h015: back from the floor at y 13.23 (x 119.4 to 121.7)
+walk 120.19
+walk 119.76   # run-up
+walk 120.19   # take-off
+hold right+cross for 24
+hold right for 28
+wait until HK_WALK_READY == 1 timeout 300
+walk 127.10
+walk 127.53   # run-up
+walk 127.10   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.37   # run-up
+walk 123.80   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 8238760 && i32(HK_PLAYER_X) <= 8535394 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h015: back from the floor at y 13.39 (x 125.8 to 130.2)
+walk 127.15
+walk 127.58   # run-up
+walk 127.15   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.40   # run-up
+walk 123.83   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 126.44
+walk 126.87   # run-up
+walk 126.44   # take-off
 hold left+cross for 16
 hold left for 18
-wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 120.99 122.76
+fight 4 121.00 122.76
 snipe
 guard 2
-retreat 120.99 122.76
+retreat 121.00 122.76
 heal
-clear d06b-h017-arc 116.620 23.830 120.99 122.76
-loop d06b-h017 until expr (abs(i32(HK_PLAYER_X) - 7642808) <= 58982 || (i32(HK_PLAYER_X) >= 7491420 && i32(HK_PLAYER_X) <= 7776502)) && abs(i32(HK_PLAYER_Y) - 1561723) <= 19661 max 3 timeout 900
-walk 121.04
-walk 121.47   # run-up
-walk 121.04   # take-off
-hold left+cross for 12
-hold left for 20
-wait 6
+clear d06b-h016-arc 116.340 23.830 121.00 122.76
+loop d06b-h016 until expr (abs(i32(HK_PLAYER_X) - 7624458) <= 58982 || (i32(HK_PLAYER_X) >= 7494271 && i32(HK_PLAYER_X) <= 7772775)) && abs(i32(HK_PLAYER_Y) - 1561723) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 6828851 && i32(HK_PLAYER_X) <= 7485811 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h016: back from the floor at y 13.39 (x 104.2 to 114.2)
+walk 113.34
+walk 112.91   # run-up
+walk 113.34   # take-off
+hold right+cross for 24
+hold right for 28
+wait until HK_WALK_READY == 1 timeout 300
+walk 120.11   # run-up
+walk 120.54   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.43   # run-up
+walk 123.86   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 127.15   # run-up
+walk 126.72   # take-off
+hold left+cross for 16
+hold left for 18
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 7818083 && i32(HK_PLAYER_X) <= 7978742 && abs(i32(HK_PLAYER_Y) - 866902) <= 19661   # d06b-h016: back from the floor at y 13.23 (x 119.3 to 121.7)
+walk 120.73
+walk 120.30   # run-up
+walk 120.73   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.52   # run-up
+walk 123.95   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 127.15   # run-up
+walk 126.72   # take-off
+hold left+cross for 16
+hold left for 18
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 8238760 && i32(HK_PLAYER_X) <= 8535394 && abs(i32(HK_PLAYER_Y) - 877568) <= 19661   # d06b-h016: back from the floor at y 13.39 (x 125.8 to 130.2)
+walk 127.15
+walk 127.58   # run-up
+walk 127.15   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 123.40   # run-up
+walk 123.83   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 127.15   # run-up
+walk 126.72   # take-off
+hold left+cross for 16
+hold left for 18
+wait until HK_WALK_READY == 1 timeout 300
+end
+walk 122.17   # run-up
+walk 121.74   # take-off
+hold left+cross for 16
+hold left for 23
 wait until HK_WALK_READY == 1 timeout 300
 end
 fight 4 114.91 118.06
@@ -237,5 +673,4 @@ guard 2
 retreat 114.91 118.06
 heal
 walk 115.79
-wait 1
 wait until HK_GAME_MODE == 1 timeout 1800

@@ -1,0 +1,17 @@
+name walk-fungus1-31
+title from a seeded card at Fungus1_31's arrival (fungus1-31-entry.mcd, Vengeful Spirit owned, 60 Geo, no cheat): down to the left Toll Machine, the 50 Geo paid, across, the bench and its save, and the climb to the top gate into Fungus1_32
+max_ticks 60000
+sync poll
+# One segment of walk-new-game-to-hornet that starts from a known save (docs/ROUTES.md, "Why the walk to Hornet moves with the build"). The hops are the planner's
+# own (hk-walkplan room): landing margins, a guard on foes in each hop's box, the way back from the floors a miss can end on.
+# fungus1-31-entry.mcd is a seeded record (tools/seed_card.py --scene 63 --region 1013 --x 24 --y 3.39 --geo 60 --fireball 1, based on fungus1-06-entry.mcd).
+card fungus1-31-entry.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-31a-chain.walk
+include fungus1-31-toll-chain.walk
+include fungus1-31b-chain.walk
+check in-32 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_BENCH_RESTS >= 1

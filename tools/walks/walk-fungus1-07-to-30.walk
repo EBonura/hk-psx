@@ -1,0 +1,16 @@
+name walk-fungus1-07-to-30
+title from the seeded card at the top of Fungus1_07 (arrival from Fungus1_06) through 07, 19, 10 and 30 to the arrival in Fungus1_31, with the same room fragments walk-new-game-to-hornet runs (no cheat)
+max_ticks 40000
+sync poll
+# One segment of walk-new-game-to-hornet that starts from a known save. fungus1-07-top.mcd is a seeded record at the gate Fungus1_06 leads into 07 by (x 36, y 62).
+card fungus1-07-top.mcd
+wait 300
+press cross
+wait 40
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-07-chain.walk
+include fungus1-19-chain.walk
+include fungus1-10-chain.walk
+include fungus1-30-chain.walk
+check in-31 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1

@@ -1,20 +1,22 @@
-# Fungus1_06 from the Activated Plat of vine 4 (x 115.8, y 4.35) to the gap in the floor at x 101 to 105, which is the exit to Fungus1_07.
-# Planned with hk-walkplan room on the disc (HK_WALKPLAN_MARGIN=0.4, sync poll) with the whole run before it as the pre, 2026-11-03.
+# Fungus1_06 from the Activated Plat of vine 4 (x 115.8, y 4.35) to the gap in the floor at x 101 to 105, which is the exit to Fungus1_07. Planned by hk-walkplan room with the run before it as the pre.
 at 115.79 4.35
-clear d06c-h001-arc 108.600 7.390
-loop d06c-h001 until expr (abs(i32(HK_PLAYER_X) - 7117210) <= 58982 || (i32(HK_PLAYER_X) >= 7056261 && i32(HK_PLAYER_X) <= 7223378)) && abs(i32(HK_PLAYER_Y) - 484311) <= 19661 max 3 timeout 900
+clear d06c-h001-arc 108.870 7.390
+loop d06c-h001 until expr (abs(i32(HK_PLAYER_X) - 7134904) <= 58982 || (i32(HK_PLAYER_X) >= 7059107 && i32(HK_PLAYER_X) <= 7219766)) && abs(i32(HK_PLAYER_Y) - 484311) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 6868532 && i32(HK_PLAYER_X) <= 7064781 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d06c-h001: back from the floor at y 3.39 (x 104.9 to 107.8)
+walk 104.99
+drop 102.50 1.38
+end
 walk 114.68
 walk 115.11   # run-up
 walk 114.68   # take-off
-hold left+cross for 28
-hold left for 16
-wait 6
+hold left+cross for 24
+hold left for 18
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 108.27 109.62
+fight 4 108.26 109.61
 snipe
 guard 2
-retreat 108.27 109.62
+retreat 108.26 109.61
 heal
 walk 107.77
 hold left until expr abs(i32(HK_PLAYER_X) - 2359296) <= 327680 && abs(i32(HK_PLAYER_Y) - 4063232) <= 393216 timeout 900

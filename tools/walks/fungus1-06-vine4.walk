@@ -1,4 +1,5 @@
 # Fungus1_06, on the fourth hanging platform (x 115.8, y 23.83): one swing to the right cuts vine 4 (Vine Platform (4), hit box x 116.41 to 116.77), and the Knight drops onto its Activated Plat at the acid (y 4.35).
+clear d06-vine4-arc 115.79 23.83 114.91 118.06   # a Mosquito that follows the platform down knocks him off it: kill or wait it out first
 hold right for 2
 press square
 wait until y between 4.0 4.8 timeout 400
