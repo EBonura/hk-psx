@@ -4,6 +4,8 @@ extern crate self as psx_pad;
 extern crate self as psx_rt;
 extern crate self as psx_io;
 use std::sync::atomic::{AtomicU32, Ordering};
+// Both tests drive the one game input module and its statics: they take turns, whichever cargo starts first.
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 static CLOCK: AtomicU32 = AtomicU32::new(100);
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
 static POLLS: AtomicU32 = AtomicU32::new(0);
@@ -159,6 +161,7 @@ mod input_queue;
 mod input_sampler;
 #[test]
 fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
+    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     input::checkpoint(); // Boot never owns pad polling.
     input::start(100);
     input::checkpoint();
@@ -225,6 +228,7 @@ fn hardware_wrapper_closes_clock_read_race_and_preserves_pending_pulse() {
 }
 #[test]
 fn the_left_stick_is_a_second_d_pad_and_digital_pads_are_untouched() {
+    let _turn = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use button::*;
     // The game's own poll: the buttons the stub pad holds with its stick folded in by the SDK's rule.
     let with_stick = |buttons: u16, x: u8, y: u8| {
@@ -244,6 +248,8 @@ fn the_left_stick_is_a_second_d_pad_and_digital_pads_are_untouched() {
     // Full deflection, a diagonal, and a stick beside a pressed button.
     assert_eq!(with_stick(0, 0x00, 0xFF), LEFT | DOWN);
     assert_eq!(with_stick(SQUARE | UP, 0xFF, 0x80), SQUARE | UP | RIGHT);
+    // Leave the stub as found: the other test counts polls from zero.
     BUTTONS.store(0, Ordering::SeqCst);
     STICKS.store(0x8080, Ordering::SeqCst);
+    POLLS.store(0, Ordering::SeqCst);
 }
