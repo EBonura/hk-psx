@@ -1162,7 +1162,8 @@ impl Cache {
     /// check above has finished with.
     #[inline(never)]
     fn find_xa(&mut self) -> Option<(u32, u32)> {
-        let mut lba = psx_fmv::iso::PVD_LBA;
+        let le32 = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let mut lba = 16;
         for step in 0..2 {
             if !unsafe { self.reader.start_read_seek_first(lba, SEEK_POLL) }
                 || !header_sector(&mut self.reader, 0)
@@ -1176,9 +1177,21 @@ impl Cache {
                 core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>(), SECTOR_BYTES)
             };
             if step == 0 {
-                lba = psx_fmv::iso::root_directory(s)?.0;
+                // ISO 9660: "CD001" after the type byte, the root directory record at 156.
+                if &s[1..6] != b"CD001" {
+                    return None;
+                }
+                lba = le32(&s[158..]);
             } else {
-                return psx_fmv::iso::find_in_directory(s, crate::music::XA_NAME);
+                let name = crate::music::XA_NAME.as_bytes();
+                let mut at = 0;
+                while at + 34 <= SECTOR_BYTES && s[at] != 0 {
+                    let (len, n) = (s[at] as usize, s[at + 32] as usize);
+                    if s[at + 33..].starts_with(name) && n >= name.len() {
+                        return Some((le32(&s[at + 2..]), le32(&s[at + 10..])));
+                    }
+                    at += len;
+                }
             }
         }
         None
