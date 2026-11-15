@@ -1,7 +1,7 @@
 """rustc arguments that give a standalone `rustc --test` build of game sources the crates they name.
 
 The runtime harnesses include game modules by `#[path]` and compile them with plain rustc. Game code
-reaches the SDK's `psx_math` (the one sanctioned wide arithmetic) and the shared simulation crate's
+reaches the SDK's `psx_math` (the one sanctioned wide arithmetic), `psx_pack` (the shared FNV) and the shared simulation crate's
 `hk_sim::fixed`, so both rlibs have to be on the command line.
 """
 import json, subprocess
@@ -21,9 +21,9 @@ def externs():
             if artifact.get('reason') != 'compiler-artifact':
                 continue
             name = artifact['target']['name']
-            if name in ('hk_sim', 'psx_math'):
+            if name in ('hk_sim', 'psx_math', 'psx_pack'):
                 libraries[name] = [Path(f) for f in artifact['filenames'] if f.endswith('.rlib')][0]
-        assert set(libraries) == {'hk_sim', 'psx_math'}, libraries
+        assert set(libraries) == {'hk_sim', 'psx_math', 'psx_pack'}, libraries
         args = []
         for name, library in sorted(libraries.items()):
             args += ['--extern', f'{name}={library}']

@@ -109,8 +109,12 @@ def main():
     (work/'inputs.json').write_text(json.dumps({'metadata':str(args.metadata),'route':route,'ticks':args.ticks,'sha256':hashes}, indent=2)+'\n')
     # The guest already keeps its PS1 presentation behind cfg(test) and reads
     # its world bank from a thread local there, which is exactly the native
-    # shape this probe needs; no guest file is edited to suit the probe.
-    env = dict(os.environ, RUSTFLAGS=os.environ.get('RUSTFLAGS', '')+' --cfg test')
+    # shape this probe needs; no guest file is edited to suit the probe. The cfg
+    # is set for the probe crate alone (its build script), not through RUSTFLAGS:
+    # a global cfg(test) also compiles the SDK crates' own test modules, and
+    # psx-pack's need a dev-dependency a dependency build does not have.
+    (work/'build.rs').write_text('fn main() { println!("cargo:rustc-check-cfg=cfg(test)"); println!("cargo:rustc-cfg=test"); }\n')
+    env = dict(os.environ)
     subprocess.run(['cargo', 'build', '--offline', '--release', '--manifest-path', str(work/'Cargo.toml')], check=True, env=env)
     target = Path(env['CARGO_TARGET_DIR']) if env.get('CARGO_TARGET_DIR') else work/'target'
     probe = [str(target/'release/hk-native-route-probe'), route, str(args.ticks)]

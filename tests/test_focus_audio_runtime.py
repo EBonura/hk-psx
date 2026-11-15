@@ -15,10 +15,10 @@ class FocusAudioRuntimeTests(unittest.TestCase):
             record=json.loads(line)
             if record.get('reason')!='compiler-artifact':continue
             name=record['target']['name']
-            if name in ('hk_sim','hk_format'):
+            if name in ('hk_sim','hk_format','psx_pack'):
                 files=[Path(p) for p in record['filenames'] if p.endswith('.rlib')]
                 self.assertEqual(len(files),1);libraries[name]=files[0]
-        self.assertEqual(set(libraries),{'hk_sim','hk_format'})
+        self.assertEqual(set(libraries),{'hk_sim','hk_format','psx_pack'})
         executable=output/'focus-audio-runtime-tests'
         command=['rustc','--edition=2021','-Awarnings','--test',str(ROOT/'tests/focus_audio_runtime.rs')]
         for name,path in sorted(libraries.items()):command+=['--extern',f'{name}={path}']
