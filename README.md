@@ -198,7 +198,7 @@ Ordinary `hk-psx-build build` / `host/build_guest.py` builds now run the Rust
 `hk-module-publish` pipeline: same-ELF batch composition, complete dependency
 hazard/stack guards, hardened publication, then exact transport chunk binding.
 Set `HK_OVERLAY_SDK` to a clean complete SDK checkout at
-`e02467b06666a6da0c8c62d8c096dcfe6919c267` (`SDK_TOOL_REVISION`) before building. The driver builds
+`b05a64760cea6edc5291b57b3ef4ddfc171b76dd` (`SDK_TOOL_REVISION`) before building. The driver builds
 `overlay-compose`, `hazard-patch`, `hazard-scan` and `stack-guard` from that
 checkout into its private `CARGO_TARGET_DIR/overlay-sdk-tools`. Missing or
 different host-tool source fails before guest compilation.
