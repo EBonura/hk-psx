@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |816,040|
-| Code-to-data alignment |88|
+| Linked code |815,584|
+| Code-to-data alignment |32|
 | Linked data, including menu and HUD |244,712|
 | BSS, including shared scene arena and runtime pools |796,072|
-| Total static span |1,856,920|
+| Total static span |1,856,408|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |125,288|
+| Unallocated gap before reserved stack |125,800|
 | Room module pool, inside that gap |110,592|
-| Free RAM below the module pool |14,696|
+| Free RAM below the module pool |15,208|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d5598`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d5398`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -672,4 +672,4 @@ On the architecture gate (PSoXide 091551541), the program's exceptions to it are
 
 The 2026-11-14 present-path pass (the SDK's presenter at PSoXide 9bb3045b, `game/src/presentation.rs`; the old queue entry points are deprecated and refused by the gate) took the free RAM below the module pool from 22,460 to 15,336: linked code grew 7,064 bytes (the presenter, `begin_frame`, `present_drawn`, the kick and the direct-access guard checks in the GPU write sites are the SDK's; about 1,900 bytes are the game's two checkpoint functions and the services they share, which exist once each), the alignment fell by 24 and BSS grew by 84. The repo's bar for free RAM is 8,192 bytes (docs/CITY_ROUTE.md), so 7,144 remain above it.
 
-The 2026-11-15 pass after the present path (SDK pins up to e02467b0, `trim_policy` with a 32-frame window, the SDK's ISO lookup for MUSIC.XA, one sine module for geo and lifeblood) left linked code at 816,040 bytes (+652), BSS where it was (796,072) and the free RAM below the module pool at 14,696 (from 15,336; static end 0x801d5598): the ISO lookup is 456 bytes larger than the thirty lines it replaced, the trim policy's wider history and doc-tested rules the rest, the pin to e02467b0 returned 40 bytes and the single sine module another 40.
+The 2026-11-15 pass after the present path (SDK pins up to e02467b0, `trim_policy` with a 32-frame window and a 16-slow-frames return, one sine module for geo and lifeblood) left BSS where it was (796,072) and the linked code at 815,584 bytes (+196), so the free RAM below the module pool is 14,696 + 512 = 15,208 (from 15,336; static end 0x801d5398). The pin to e02467b0 returned 40 bytes and the single sine module another 40; the wider trim history and its rules cost the rest. The SDK's ISO lookup for MUSIC.XA was tried and not taken: it is 456 bytes larger than the thirty lines it replaces.
