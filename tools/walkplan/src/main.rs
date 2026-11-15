@@ -25,6 +25,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::path::{Path, PathBuf};
 
+mod hop;
 mod room;
 
 use hk_sim::{Player, ONE};
@@ -40,7 +41,53 @@ enum Act {
     Start,
     Walk { dir: i32 },
     Fall { dir: i32, hold: bool, ledge_x: i32 },
-    Jump { dir: i32, held: u32, steer: u32, from_x: i32 },
+    Jump { dir: i32, held: u32, steer: u32, from_x: i32, tight: Tight },
+}
+
+/// A nail hit's recoil carries the Knight this far (world units; docs/ROUTES.md, 2026-11-15): a landing is wide when it
+/// stands at least the recoil plus one walking step inside the floor on both sides, so a hit at the landing does not carry
+/// him off.
+pub const RECOIL: f64 = 0.7;
+/// How far a foe's hit throws the Knight sideways (world units): `recoil_speed` 983040 for `recoil_ticks` 12 of `VITAL_PARAMS`.
+pub const HIT_THROW: f64 = 3.0;
+/// How far the Knight walks in one tick (world units).
+pub const WALK_STEP: f64 = 0.138;
+/// The room a landing wants on each side (world units).
+pub const LAND_MARGIN: f64 = RECOIL + WALK_STEP;
+/// How far (world units) the apex of a jump onto a ledge must clear the ledge top (the landing height): one tick less of
+/// holding the button must still reach it.
+pub const APEX_MARGIN: f64 = 0.4;
+/// Ticks of cost a tight hop pays over a wide one, and per world unit of the margin it lacks.
+const TIGHT_PENALTY: u32 = 400;
+const TIGHT_SLOPE: f64 = 150.0;
+
+/// Why a planned jump is not steady: the hops that are, are planned in a plain way; a tight one gets a closed-loop recipe
+/// (`hop.rs`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Tight {
+    /// The landing is closer than `LAND_MARGIN` to an end of its floor (or the floor is narrower than two margins).
+    pub edge: bool,
+    /// The apex clears the ledge it lands on by less than `APEX_MARGIN`.
+    pub apex: bool,
+    /// The take-off is steady only within the fine margin (`HK_WALKPLAN_FINE`).
+    pub fragile: bool,
+}
+
+impl Tight {
+    pub fn any(self) -> bool {
+        self.edge || self.apex || self.fragile
+    }
+
+    /// `edge,apex,fragile` (those that hold), or `-`.
+    pub fn flags(self) -> String {
+        let all = [(self.edge, "edge"), (self.apex, "apex"), (self.fragile, "fragile")];
+        let named: Vec<&str> = all.iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect();
+        if named.is_empty() { "-".to_string() } else { named.join(",") }
+    }
+
+    pub fn from_flags(text: &str) -> Tight {
+        Tight { edge: text.contains("edge"), apex: text.contains("apex"), fragile: text.contains("fragile") }
+    }
 }
 
 struct Node {
@@ -81,6 +128,34 @@ fn fine_margin() -> Option<i32> {
 
 /// Extra ticks of cost for a jump that is steady only within the fine margin.
 const FRAGILE_PENALTY: u32 = 600;
+
+/// A jump the plan must not take again: where it starts (a cell) and the pad it is given. A hop that missed on the disc,
+/// even with its retries, is banned and the room is planned again from the same place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ban {
+    pub cell: (i32, i32),
+    pub dir: i32,
+    pub held: u32,
+    pub steer: u32,
+}
+
+thread_local! {
+    /// How many states a search may expand before it gives up: the room's own plan gets 400,000; the way back from a floor a miss
+    /// can end on gets far fewer (`hop.rs`), since a floor with no way back would otherwise be searched through whole.
+    pub(crate) static EXPAND_LIMIT: std::cell::Cell<usize> = const { std::cell::Cell::new(400_000) };
+}
+
+thread_local! {
+    static BANNED: std::cell::RefCell<Vec<Ban>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn set_banned(bans: Vec<Ban>) {
+    BANNED.with(|b| *b.borrow_mut() = bans);
+}
+
+fn is_banned(player: &Player, dir: i32, held: u32, steer: u32) -> bool {
+    BANNED.with(|b| b.borrow().iter().any(|x| x.cell == cell(player) && x.dir == dir && x.held == held && x.steer == steer))
+}
 
 thread_local! {
     /// A gate's trigger box (Q16): a state whose body overlaps it has reached the goal, whatever the goal point says.
@@ -148,7 +223,7 @@ fn step(player: &mut Player, edges: &[Edge], dir: i32, jump: bool) {
 }
 
 /// A state's cell: a quarter unit each way.
-fn cell(player: &Player) -> (i32, i32) {
+pub(crate) fn cell(player: &Player) -> (i32, i32) {
     ((units(player.x) * 4.0).round() as i32, (units(player.y) * 4.0).round() as i32)
 }
 
@@ -254,26 +329,94 @@ fn room_edges(bytes: &[u8]) -> Option<Vec<Edge>> {
     Some((0..count(5)).map(|i| [0, 1, 2, 3].map(|k| word(first + i * 16 + k * 4))).collect())
 }
 
-/// Where a jump lands: the state and the ticks it took.
-fn simulate_jump(from: &Player, edges: &[Edge], dir: i32, held: u32, steer: u32) -> Option<(Player, u32)> {
+/// Where a jump lands: the state, the ticks it took and the highest the Knight's origin got.
+struct Flight {
+    player: Player,
+    ticks: u32,
+    apex: i32,
+}
+
+/// What can happen to a jump on its way: a shove (a nail hit's recoil, a foe's knock) at one tick, a body in a hazard box.
+#[derive(Clone, Copy, Default)]
+struct Disturbance {
+    /// The tick the Knight is moved sideways at, and by how much (Q16).
+    shove: Option<(u32, i32)>,
+}
+
+/// How a flight ended when it did not land cleanly.
+enum Ending {
+    Landed(Flight),
+    /// The body touched a hazard box on the way (the disc costs a mask and respawns him at the marker).
+    Hazard,
+    /// It never came down on a floor (the room's bottom, or a jump that did not leave the ground).
+    Lost,
+}
+
+fn fly(from: &Player, edges: &[Edge], dir: i32, held: u32, steer: u32, shove: Disturbance) -> Ending {
     let mut player = *from;
-    let mut airborne = false;
+    let (mut airborne, mut apex) = (false, player.y);
     clear_touch();
     for tick in 0..260u32 {
         let pad = if tick < steer { dir } else { 0 };
+        if let Some((at, dx)) = shove.shove {
+            if tick == at {
+                player.x += dx;
+            }
+        }
         step(&mut player, edges, pad, tick < held);
         if touched() {
-            return None;
+            return Ending::Hazard;
         }
+        apex = apex.max(player.y);
         airborne |= !player.grounded;
         if airborne && player.grounded {
-            return Some((player, tick + 1));
+            return Ending::Landed(Flight { player, ticks: tick + 1, apex });
         }
         if (!airborne && tick > 4) || units(player.y) < -30.0 {
-            return None;
+            return Ending::Lost;
         }
     }
-    None
+    Ending::Lost
+}
+
+fn simulate_jump(from: &Player, edges: &[Edge], dir: i32, held: u32, steer: u32) -> Option<Flight> {
+    match fly(from, edges, dir, held, steer, Disturbance::default()) {
+        Ending::Landed(flight) => Some(flight),
+        _ => None,
+    }
+}
+
+/// The room (world units) a standing Knight has to the left and to the right on his floor: how far he can walk each way
+/// before the floor ends, a wall stops him or the floor steps.
+fn floor_ends(edges: &[Edge], player: &Player) -> (f64, f64) {
+    let reach = |dir: i32| {
+        let mut now = *player;
+        for _ in 0..4000 {
+            let mut next = now;
+            step(&mut next, edges, dir, false);
+            if !next.grounded || (next.y - now.y).abs() > ONE / 8 || (next.x - now.x).abs() < ONE / 50 {
+                break;
+            }
+            now = next;
+        }
+        units((now.x - player.x).abs())
+    };
+    (reach(-1), reach(1))
+}
+
+/// Whether a landing with `left` and `right` of floor to either side is tight: it lacks `LAND_MARGIN` on a side. (A floor
+/// narrower than two margins is tight wherever he lands; the plan prefers its middle by the cost below.)
+fn landing_margin_lacks(left: f64, right: f64) -> f64 {
+    (LAND_MARGIN - left.min(right)).max(0.0)
+}
+
+/// How much the apex of a jump onto a higher ledge lacks of `APEX_MARGIN` over the ledge top (the landing height); a jump
+/// that does not climb lacks nothing.
+fn apex_margin_lacks(from_y: i32, landed_y: i32, apex: i32) -> f64 {
+    if units(landed_y - from_y) <= 0.3 {
+        return 0.0;
+    }
+    (APEX_MARGIN - units(apex - landed_y)).max(0.0)
 }
 
 /// The distance the Knight can walk away from a take-off (up to 0.8) and still stand on the same floor.
@@ -303,6 +446,8 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
     let mut best: HashMap<(i32, i32), u32> = HashMap::from([(cell(&start), 0)]);
     let mut heap = BinaryHeap::from([Reverse((0u32, 0usize))]);
     let mut expanded = 0;
+    // The room a landing has either side, by cell: the same landing cells come up over and over.
+    let mut extents: HashMap<(i32, i32), (f64, f64)> = HashMap::new(); // the floor's ends (world x) by landing cell
     while let Some(Reverse((cost, index))) = heap.pop() {
         if cost > nodes[index].cost {
             continue;
@@ -312,7 +457,7 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
             return Some(Plan { nodes, goal: index, expanded });
         }
         expanded += 1;
-        if expanded > 400_000 {
+        if expanded > EXPAND_LIMIT.with(|l| l.get()) {
             report_nearest(&nodes, goal);
             return None;
         }
@@ -353,7 +498,10 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                     if senseless {
                         continue;
                     }
-                    let Some((landed, ticks)) = simulate_jump(&player, edges, dir, held, steer) else { continue };
+                    let Some(Flight { player: landed, ticks, apex }) = simulate_jump(&player, edges, dir, held, steer) else { continue };
+                    if is_banned(&player, dir, held.min(ticks), steer.min(ticks)) {
+                        continue;
+                    }
                     if (landed.x - player.x).abs() < ONE / 4 && (landed.y - player.y).abs() < ONE / 8 {
                         continue;
                     }
@@ -368,8 +516,8 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                             if !early.grounded {
                                 return false;
                             }
-                            simulate_jump(&early, edges, dir, held, steer).is_some_and(|(l, _)| {
-                                (l.y - landed.y).abs() < ONE / 3 && (l.x - landed.x).abs() < ONE
+                            simulate_jump(&early, edges, dir, held, steer).is_some_and(|f| {
+                                (f.player.y - landed.y).abs() < ONE / 3 && (f.player.x - landed.x).abs() < ONE
                             })
                         })
                     };
@@ -379,10 +527,28 @@ fn search(edges: &[Edge], start: Player, goal: (f64, f64), tolerance: f64, robus
                     let steady = !robust || steady_within(margin());
                     let fragile = !steady && fine_margin().is_some_and(|fine| steady_within(fine));
                     let steady = steady || fragile;
-                    let extra = if fragile { FRAGILE_PENALTY } else { 0 };
+                    let mut extra = if fragile { FRAGILE_PENALTY } else { 0 };
+                    // A landing (and an apex) with room to spare: a jump that lacks it costs more, in proportion to what it
+                    // lacks, so a plan takes the wide one whenever the room has one; the tight ones that remain are marked.
+                    let mut tight = Tight { fragile, ..Tight::default() };
+                    if robust && steady && !touches_goal_box(&landed) {
+                        let (lo, hi) = *extents.entry(cell(&landed)).or_insert_with(|| {
+                            let (left, right) = floor_ends(edges, &landed);
+                            (units(landed.x) - left, units(landed.x) + right)
+                        });
+                        let (left, right) = ((units(landed.x) - lo).max(0.0), (hi - units(landed.x)).max(0.0));
+                        let (lack_edge, lack_apex) = (landing_margin_lacks(left, right), apex_margin_lacks(player.y, landed.y, apex));
+                        tight.edge = lack_edge > 0.0;
+                        tight.apex = lack_apex > 0.0;
+                        for lack in [lack_edge, lack_apex] {
+                            if lack > 0.0 {
+                                extra += TIGHT_PENALTY + (lack * TIGHT_SLOPE) as u32;
+                            }
+                        }
+                    }
                     // The pad is only held until the landing: a longer hold would walk on along the floor.
                     if steady {
-                        found.push((landed, cost + ticks + 1 + extra, Act::Jump { dir, held: held.min(ticks), steer: steer.min(ticks), from_x: player.x }));
+                        found.push((landed, cost + ticks + 1 + extra, Act::Jump { dir, held: held.min(ticks), steer: steer.min(ticks), from_x: player.x, tight }));
                     }
                 }
             }
@@ -460,11 +626,12 @@ fn walk_lines(plan: &Plan, edges: &[Edge], start: &Player) -> Vec<String> {
                 let x = if hold { units(node.player.x) } else { units(ledge_x) + 0.35 * f64::from(dir) };
                 out.push(format!("drop {x:.2} {:.2}", units(node.player.y)));
             }
-            Act::Jump { dir, held, steer, from_x } => {
+            Act::Jump { dir, held, steer, from_x, tight } => {
                 flush(&mut walking, &mut out);
+                let from = &plan.nodes[node.parent].player;
                 // Reversing at the take-off costs a jump its first ticks on the disc: come in moving the way it goes.
                 if dir != 0 {
-                    let run = run_up(&plan.nodes[node.parent].player, edges, -dir);
+                    let run = run_up(from, edges, -dir);
                     // Stop the run-up 0.4 short of the edge or wall: the walk's positioning is a tenth to a fifth
                     // of a unit off, and a run-up that overshoots the floor walks the Knight off it.
                     if run > 0.6 {
@@ -481,13 +648,18 @@ fn walk_lines(plan: &Plan, edges: &[Edge], start: &Player) -> Vec<String> {
                     }
                 }
                 let y = units(node.player.y);
+                // The jump's own numbers ride on the landing line (`hop::JumpSpec::parse` reads them back): the stand it
+                // starts from, its pad and what makes it tight. No tick count: the next line the walk waits for is the
+                // ground (`HK_WALK_READY`), not a rest.
                 out.push(format!(
-                    "wait until y between {:.2} {:.2} timeout 240   # land at x {:.2}",
+                    "wait until y between {:.2} {:.2} timeout 240   # land at x {:.2} jump {dir} {held} {steer} from {:.3} {:.3} tight {}",
                     y - 0.15,
                     y + 0.15,
-                    units(node.player.x)
+                    units(node.player.x),
+                    units(from_x),
+                    units(from.y),
+                    tight.flags()
                 ));
-                out.push("wait 6".to_string());
                 out.push("wait until HK_WALK_READY == 1 timeout 300".to_string());
             }
         }
@@ -696,5 +868,118 @@ mod tests {
         let edges = room();
         let open = [[4.9, 1.9, 8.1, 4.1]];
         assert_eq!(edges.iter().filter(|e| inside_any(e, &open)).count(), 3);
+    }
+
+    /// A room of a floor at y 2 and one block (x `from` to `to`, top at `top`), as the cooked packs draw it.
+    fn block_room(from: f64, to: f64, top: f64) -> Vec<Edge> {
+        let line = |a: (f64, f64), b: (f64, f64)| [q(a.0), q(a.1), q(b.0), q(b.1)];
+        vec![
+            line((30.0, 2.0), (to, 2.0)),
+            line((to, top), (to, 2.0)),
+            line((to, top), (from, top)),
+            line((from, 2.0), (from, top)),
+            line((from, 2.0), (-10.0, 2.0)),
+        ]
+    }
+
+    /// The jumps of a plan, in order.
+    fn jumps(plan: &Plan) -> Vec<Act> {
+        let mut out = Vec::new();
+        let mut at = plan.goal;
+        while at != 0 {
+            if matches!(plan.nodes[at].act, Act::Jump { .. }) {
+                out.push(plan.nodes[at].act);
+            }
+            at = plan.nodes[at].parent;
+        }
+        out.reverse();
+        out
+    }
+
+    fn tightness(act: Act) -> Tight {
+        match act {
+            Act::Jump { tight, .. } => tight,
+            _ => Tight::default(),
+        }
+    }
+
+    #[test]
+    fn a_landing_with_room_for_a_recoil_is_wide_and_a_narrow_ledge_is_marked_tight() {
+        // A block 6 wide: a landing can stand a recoil and a step inside both ends of it.
+        let wide = block_room(5.0, 11.0, 4.0);
+        let start = standing(0.0, &wide);
+        let plan = search(&wide, start, (8.0, 5.39), 3.0, true).expect("a path onto the block");
+        let tight = tightness(*jumps(&plan).last().expect("a jump"));
+        assert!(!tight.edge && !tight.apex, "{tight:?}");
+        let landed = plan.nodes[plan.goal].player;
+        let (left, right) = floor_ends(&wide, &landed);
+        assert!(left >= LAND_MARGIN && right >= LAND_MARGIN, "{left} {right}");
+        // A block a unit wide has no room for a recoil whatever the jump: the plan still lands on it, marked tight.
+        let narrow = block_room(5.0, 6.0, 4.0);
+        let start = standing(0.0, &narrow);
+        let plan = search(&narrow, start, (5.5, 5.39), 0.5, true).expect("a path onto the block");
+        let tight = tightness(*jumps(&plan).last().expect("a jump"));
+        assert!(tight.edge && tight.any(), "{tight:?}");
+    }
+
+    #[test]
+    fn a_wide_landing_is_taken_when_the_goal_allows_one() {
+        // The goal is anywhere on the block's top: a plan that lands in its middle costs less than one that lands at the end.
+        let block = block_room(5.0, 12.0, 4.0);
+        let start = standing(0.0, &block);
+        let plan = search(&block, start, (8.5, 5.39), 3.6, true).expect("a path onto the block");
+        let landed = plan.nodes[plan.goal].player;
+        let (left, right) = floor_ends(&block, &landed);
+        assert!(left >= LAND_MARGIN && right >= LAND_MARGIN, "landed {:.2}: {left} {right}", units(landed.x));
+    }
+
+    #[test]
+    fn a_jump_that_barely_clears_the_ledge_top_is_marked_for_its_apex() {
+        // The highest a standing jump goes, then a ledge a tenth under it: any jump onto it clears it by less than the margin.
+        let flat = block_room(5.0, 12.0, 4.0);
+        let stand = standing(0.0, &flat);
+        let apex = match fly(&stand, &flat, 0, 42, 0, Disturbance::default()) {
+            Ending::Landed(flight) => units(flight.apex - stand.y),
+            _ => panic!("a jump in the open lands"),
+        };
+        let top = 2.0 + apex - 0.1;
+        let ledge = block_room(5.0, 12.0, top);
+        let start = standing(0.0, &ledge);
+        let plan = search(&ledge, start, (8.5, top + 1.39), 3.6, true).expect("a path onto the ledge");
+        let tight = tightness(*jumps(&plan).last().expect("a jump"));
+        assert!(tight.apex, "apex {apex:.2}, ledge {top:.2}: {tight:?}");
+        assert!(apex_margin_lacks(stand.y, stand.y + q(top - 2.0), stand.y + q(apex)) > 0.0);
+        assert_eq!(apex_margin_lacks(stand.y, stand.y, stand.y + q(apex)), 0.0, "a jump that does not climb lacks nothing");
+    }
+
+    #[test]
+    fn a_banned_jump_is_not_planned_again() {
+        let block = block_room(5.0, 12.0, 4.0);
+        let start = standing(0.0, &block);
+        let first = search(&block, start, (8.5, 5.39), 3.6, true).expect("a path");
+        let act = *jumps(&first).first().expect("a jump");
+        let Act::Jump { dir, held, steer, from_x, .. } = act else { unreachable!() };
+        let node = first.nodes.iter().find(|n| matches!(n.act, Act::Jump { from_x: f, .. } if f == from_x)).expect("the node");
+        let from = first.nodes[node.parent].player;
+        set_banned(vec![Ban { cell: cell(&from), dir, held, steer }]);
+        let second = search(&block, start, (8.5, 5.39), 3.6, true);
+        set_banned(Vec::new());
+        let came_back = second.is_some_and(|p| {
+            jumps(&p).iter().any(|a| matches!(a, Act::Jump { dir: d, held: h, steer: s, from_x: f, .. } if (*d, *h, *s, *f) == (dir, held, steer, from_x)))
+        });
+        assert!(!came_back, "the banned jump came back");
+    }
+
+    #[test]
+    fn a_planned_jump_carries_its_numbers_on_its_landing_line_and_no_plan_line_is_a_tick_rest() {
+        let block = block_room(5.0, 12.0, 4.0);
+        let start = standing(0.0, &block);
+        let plan = search(&block, start, (8.5, 5.39), 3.6, true).expect("a path");
+        let lines = walk_lines(&plan, &block, &start);
+        let landing = lines.iter().find(|l| l.contains("land at x")).expect("a landing line");
+        let spec = hop::JumpSpec::parse(landing).expect("the jump's numbers");
+        assert!(spec.dir != 0 || spec.steer == 0);
+        let rests = lines.iter().filter(|l| l.split_whitespace().next() == Some("wait") && l.split_whitespace().nth(1).is_some_and(|n| n.parse::<u32>().is_ok())).count();
+        assert_eq!(rests, 0, "{lines:?}");
     }
 }

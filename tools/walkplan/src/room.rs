@@ -35,48 +35,121 @@ use std::process::Command;
 
 use hk_sim::ONE;
 
+use crate::hop::{self, Checkpoint, Floor, JumpSpec};
 use crate::{
-    floor_span, load_edges, load_hazards, search, set_goal_box, set_hazards, standing, walk_lines,
-    Edge,
+    floor_span, load_edges, load_hazards, search, set_banned, set_goal_box, set_hazards, standing,
+    walk_lines, Ban, Edge,
 };
 
-/// A hop is run again (at most `RETRIES` passes in `RETRY_TICKS` ticks) until the Knight is within `RETRY_X` and `RETRY_Y`
-/// of where the plan landed it: a little wider than `LAND_X`/`LAND_Y`, so a hop the planner accepted is never repeated.
+/// A wide hop is run again (at most `RETRIES` passes in `RETRY_TICKS` ticks) until the Knight stands where the plan landed
+/// him or anywhere on that floor; a tight one (a landing or an apex without its margin, `hop.rs`) gets `TIGHT_RETRIES` passes in
+/// `TIGHT_RETRY_TICKS`, a guard on its foes and a heal on every pass.
 const RETRIES: u32 = 3;
-/// Ticks of rest tried before a hop that missed, in turn (`--no-retry` leaves a miss as it fell).
-const WAITS: [u32; 4] = [6, 13, 21, 34];
+/// A room that bans more jumps than this is not planned: something other than the jumps is wrong.
+const MAX_BANS: usize = 24;
 const RETRY_TICKS: u32 = 900;
+const TIGHT_RETRIES: u32 = 6;
+const TIGHT_RETRY_TICKS: u32 = 1800;
+/// How near the planned landing counts as landed (a little wider than `LAND_X`/`LAND_Y`, so a hop the planner accepted is never
+/// repeated), and how far past the ends of the landing floor a standing Knight still counts as on it.
 const RETRY_X: f64 = 0.9;
 const RETRY_Y: f64 = 0.3;
+const FLOOR_SLACK: f64 = 0.05;
 
 /// True when a hop from (x, y) to (ex, ey) moves the Knight out of the retry band, so the loop's first test fails.
 fn leaves_band(x: f64, y: f64, ex: f64, ey: f64) -> bool {
     (x - ex).abs() > RETRY_X + 0.3 || (y - ey).abs() > RETRY_Y + 0.1
 }
 
-/// `body` with a retry loop around each hop that has a landing to wait for. The planner plays the plain hops (a miss
-/// must reach its probe so the next plan starts from the real place); the fragment a chain includes carries the loops.
+/// One hop of the script so far: where its lines sit in `body`, what its loop waits for and what it is.
+struct Hop {
+    start: usize,
+    end: usize,
+    /// The landing a retry loop waits for (None: not wrapped).
+    retry: Option<(f64, f64)>,
+    spec: Option<JumpSpec>,
+    /// The floor the Knight stands on before the hop: the bounds its `clear` fights inside (None: strike in place).
+    prev_span: Option<(f64, f64)>,
+    /// The hazard respawn markers a miss of this hop can send him to: the one before it and the one after.
+    markers: Vec<(f64, f64)>,
+    /// The marker after the hop.
+    marker_after: (f64, f64),
+}
+
+/// How a hop's lines are wrapped: the shipped fragment loops until landed; the play version the planner runs on the disc
+/// unrolls the same passes as guarded blocks, so a hop that never lands ends at a probe (and is banned) instead of aborting.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wrap {
+    Ship,
+    Play,
+}
+
+/// The gate expression that says the Knight landed: at the planned point or anywhere on the landing floor, at its height.
+fn landed(q: &impl Fn(f64) -> i64, (ex, ey): (f64, f64), floor: &Floor) -> String {
+    format!(
+        "(abs(i32(HK_PLAYER_X) - {}) <= {} || (i32(HK_PLAYER_X) >= {} && i32(HK_PLAYER_X) <= {})) && abs(i32(HK_PLAYER_Y) - {}) <= {}",
+        q(ex),
+        q(RETRY_X),
+        q(floor.lo - FLOOR_SLACK),
+        q(floor.hi + FLOOR_SLACK),
+        q(ey),
+        q(RETRY_Y),
+    )
+}
+
+/// `body` with every hop that has a landing to wait for wrapped (see `Wrap`): a `clear` while a foe is in the hop's box, then
+/// the passes, each starting with the recovery blocks (the way back from a floor a miss can end on). The planner plays the
+/// wrapped play version, so what is judged on the disc is what the fragment runs.
 fn retrying(
     body: &[String],
-    hops: &[(usize, usize, Option<(f64, f64)>)],
+    hops: &[Hop],
     name: &str,
     q: impl Fn(f64) -> i64,
+    room: &hop::Room,
+    wrap: Wrap,
 ) -> Vec<String> {
     let mut out = body.to_vec();
-    for (k, &(start, end, retry)) in hops.iter().enumerate().rev() {
-        let Some((ex, ey)) = retry else { continue };
-        out.insert(end, "end".to_string());
-        out.insert(
-            start,
-            format!(
-                "loop {name}-h{:03} until expr abs(i32(HK_PLAYER_X) - {}) <= {} && abs(i32(HK_PLAYER_Y) - {}) <= {} max {RETRIES} timeout {RETRY_TICKS}",
-                k + 1,
-                q(ex),
-                q(RETRY_X),
-                q(ey),
-                q(RETRY_Y),
-            ),
-        );
+    for (k, hop) in hops.iter().enumerate().rev() {
+        let Some((ex, ey)) = hop.retry else { continue };
+        let Ok(stand) = standing(room.edges, ex, ey) else { continue };
+        let floor = Floor::of(room.edges, stand);
+        let hop_name = format!("{name}-h{:03}", k + 1);
+        let tight = hop.spec.is_some_and(|s| s.tight.any());
+        let landed = landed(&q, (ex, ey), &floor);
+        let recovery = hop
+            .spec
+            .map(|spec| hop::recoveries(room, &hop_name, &spec, floor, &hop.markers, &q))
+            .unwrap_or_default();
+        let clear = match hop.prev_span {
+            Some((lo, hi)) => format!("clear {hop_name}-arc {ex:.3} {ey:.3} {lo:.2} {hi:.2}"),
+            None => format!("clear {hop_name}-arc {ex:.3} {ey:.3}"),
+        };
+        let mut pass: Vec<String> = Vec::new();
+        pass.extend(recovery);
+        if tight {
+            // A tight hop meets its foes again on every pass: clear the box and heal before each try.
+            pass.push(clear.replacen("-arc", "-tight", 1));
+            pass.push("heal".to_string());
+        }
+        pass.extend(body[hop.start..hop.end].iter().cloned());
+        let mut block: Vec<String> = vec![clear];
+        match wrap {
+            Wrap::Ship => {
+                let (max, ticks) = if tight { (TIGHT_RETRIES, TIGHT_RETRY_TICKS) } else { (RETRIES, RETRY_TICKS) };
+                block.push(format!("loop {hop_name} until expr {landed} max {max} timeout {ticks}"));
+                block.extend(pass);
+                block.push("end".to_string());
+            }
+            Wrap::Play => {
+                for attempt in 1..=RETRIES {
+                    block.push(format!("if expr !({landed})"));
+                    // Block names are the journey's: each unrolled pass has its own.
+                    block.extend(pass.iter().map(|l| l.replacen("-tight", &format!("-tight{attempt}"), 1)));
+                    block.push("end".to_string());
+                }
+            }
+        }
+        out.splice(hop.start..hop.end, block);
     }
     out
 }
@@ -213,10 +286,43 @@ fn numbers(value: &serde_json::Value) -> Vec<f64> {
         .unwrap_or_default()
 }
 
+/// The hazard respawn markers of a scene (`checkpoints` of its regions in `data/regions.json`), each once.
+fn load_checkpoints(root: &Path, name: &str) -> Result<Vec<Checkpoint>, String> {
+    let path = root.join("data/regions.json");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut out: Vec<Checkpoint> = Vec::new();
+    for region in json["regions"].as_array().into_iter().flatten().filter(|r| r["scene_name"] == name) {
+        for c in region["checkpoints"].as_array().into_iter().flatten() {
+            let (b, s) = (numbers(&c["bounds"]), numbers(&c["spawn"]));
+            if let ([x0, y0, x1, y1], [sx, sy]) = (b.as_slice(), s.as_slice()) {
+                let marker = Checkpoint { bounds: [*x0, *y0, *x1, *y1], spawn: (*sx, *sy) };
+                if !out.contains(&marker) {
+                    out.push(marker);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The first hop of a plan.
+struct First {
+    lines: Vec<String>,
+    /// Where it should end: x, and y when the plan knows it.
+    expect: Option<(f64, Option<f64>)>,
+    /// Whether it is the last one.
+    last: bool,
+    /// How many lines of the plan it took.
+    used: usize,
+    /// The jump it is, when it is one.
+    spec: Option<JumpSpec>,
+}
+
 /// The first hop of a plan: its lines, where it should end (x, and y when the plan knows it), and whether it is the
 /// last one. A jump's landing is waited for by `HK_WALK_READY` (never a timeout, which would abort the run).
-fn first_hop(plan: &[String]) -> (Vec<String>, Option<(f64, Option<f64>)>, bool, usize) {
-    let (mut group, mut expect) = (Vec::new(), None);
+fn first_hop(plan: &[String]) -> First {
+    let (mut group, mut expect, mut spec) = (Vec::new(), None, None);
     for (n, line) in plan.iter().enumerate() {
         let code = line.split('#').next().unwrap_or("");
         let t: Vec<&str> = code.split_whitespace().collect();
@@ -226,10 +332,12 @@ fn first_hop(plan: &[String]) -> (Vec<String>, Option<(f64, Option<f64>)>, bool,
                 let x = line
                     .split("land at x ")
                     .nth(1)
-                    .and_then(|r| r.trim().parse::<f64>().ok());
+                    .and_then(|r| r.split_whitespace().next())
+                    .and_then(|r| r.parse::<f64>().ok());
                 if let (Some(x), Ok(lo), Ok(hi)) = (x, lo.parse::<f64>(), hi.parse::<f64>()) {
                     expect = Some((x, Some((lo + hi) / 2.0)));
                 }
+                spec = JumpSpec::parse(line);
                 continue;
             }
             ["drop", x, y] => {
@@ -239,11 +347,11 @@ fn first_hop(plan: &[String]) -> (Vec<String>, Option<(f64, Option<f64>)>, bool,
                     .zip(y.parse().ok())
                     .map(|(x, y)| (x, Some(y)));
                 group.push(line.clone());
-                return (group, expect, last, n + 1);
+                return First { lines: group, expect, last, used: n + 1, spec };
             }
             ["wait", "until", "HK_WALK_READY", ..] => {
                 group.push(line.clone());
-                return (group, expect, last, n + 1);
+                return First { lines: group, expect, last, used: n + 1, spec };
             }
             _ => group.push(line.clone()),
         }
@@ -261,7 +369,7 @@ fn first_hop(plan: &[String]) -> (Vec<String>, Option<(f64, Option<f64>)>, bool,
     }) {
         expect = Some((x, None));
     }
-    (group, expect, true, plan.len())
+    First { lines: group, expect, last: true, used: plan.len(), spec }
 }
 
 /// What the probe after a hop read: the Knight's place and the words that say how it went.
@@ -519,10 +627,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
     // The script so far: every hop played with a probe after it, where each ended, and where it should have.
     let (mut body, mut ends): (Vec<String>, Vec<usize>) = (Vec::new(), Vec::new());
     let mut expect: Vec<Option<(f64, Option<f64>)>> = Vec::new();
-    // Where each hop's lines sit in `body`, and the landing a retry loop around it waits for (None: not wrapped).
-    let mut hops: Vec<(usize, usize, Option<(f64, f64)>)> = Vec::new();
-    // How many times each hop (by index) has been run again after a miss, each with a longer rest before it.
-    let mut delayed: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    // Where each hop's lines sit in `body`, and what wraps it.
+    let mut hops: Vec<Hop> = Vec::new();
+    // The jumps that missed on the disc even with their passes and recoveries: the plan does not take them again.
+    let mut bans: Vec<Ban> = Vec::new();
+    let checkpoints = load_checkpoints(&root, &o.scene)?;
+    let room = hop::Room { edges: &edges, checkpoints: &checkpoints, arrival: (sx, sy) };
     let (mut cx, mut cy) = (sx, sy);
     let mut done = false;
     // Where the room starts, and whether a hop has already taken the exit (a vertical exit is taken by touching its
@@ -546,7 +656,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 .filter(|l| !l.starts_with("at "))
                 .collect();
             loop {
-                let (mut hop, mut exp, last, used) = first_hop(&rest);
+                let First { lines: mut hop, expect: mut exp, last, used, spec } = first_hop(&rest);
                 rest.drain(..used);
                 // A bottom exit is a gap in the floor: the last hop walks off its edge and keeps the direction held
                 // until the next room has loaded, since a `drop` would wait for a floor that is not there.
@@ -581,7 +691,18 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 };
                 let hop_start = body.len();
                 body.extend(hop.iter().map(|l| l.replace("timeout 240", "timeout 400")));
-                hops.push((hop_start, body.len(), retry));
+                let marker = hops.last().map_or(room.arrival, |h| h.marker_after);
+                let marker_after = spec.map_or(marker, |s| hop::marker_after(&room, &edges, &s, marker));
+                let mut markers = vec![marker];
+                if marker_after != marker {
+                    markers.push(marker_after);
+                }
+                let prev_span = expect
+                    .last()
+                    .copied()
+                    .flatten()
+                    .and_then(|(px, py)| floor_span(&edges, px, py.unwrap_or(cy)).ok());
+                hops.push(Hop { start: hop_start, end: body.len(), retry, spec, prev_span, markers, marker_after });
                 body.push(format!(
                     "probe p{k:03} x y HK_HEALTH HK_REGION_ID HK_SCENE_LOADS HK_DEATHS"
                 ));
@@ -604,7 +725,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         }
         // The fragment: this room from its arrival to its exit (what a chain includes); the walk is a card start plus it.
         let mut frag: Vec<String> = vec![format!("at {sx:.2} {sy:.2}")];
-        frag.extend(body.iter().cloned());
+        frag.extend(retrying(&body, &hops, &name, q, &room, Wrap::Play));
         if finished {
             frag.extend(tail.iter().cloned());
         }
@@ -621,7 +742,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         if finished {
             let path = script_path.with_extension("frag");
             let mut chained = vec![format!("at {sx:.2} {sy:.2}")];
-            chained.extend(retrying(&body, &hops, &name, q));
+            chained.extend(retrying(&body, &hops, &name, q, &room, Wrap::Ship));
             chained.extend(tail.iter().cloned());
             let kept: Vec<&str> = chained
                 .iter()
@@ -670,11 +791,35 @@ pub fn run(args: &[String]) -> Result<(), String> {
                         .collect::<Vec<_>>()
                         .join("\n")
                 );
+                // The hop the run stopped in (a walk to its take-off that never arrived, a hold that timed out) is no way on:
+                // ban the jump and plan again from where the hop before it ended.
+                if j == reads.len() && o.retry && hops[j].spec.is_some() && bans.len() < MAX_BANS {
+                    let spec = hops[j].spec.expect("a jump");
+                    if let Ok(from) = standing(&edges, spec.from.0, spec.from.1) {
+                        bans.push(Ban { cell: crate::cell(&from), dir: spec.dir, held: spec.held, steer: spec.steer });
+                        set_banned(bans.clone());
+                        eprintln!("hop {} banned (the run stopped in it): {spec:?}", j + 1);
+                        body.truncate(hops[j].start);
+                        ends.truncate(j);
+                        expect.truncate(j);
+                        hops.truncate(j);
+                        stopped = true;
+                    }
+                }
                 break;
             };
             let exp = expect[j];
+            // Landed as planned: near the planned point, or anywhere on the planned landing floor (every hop starts with a
+            // walk to its own take-off, so where on the floor he stands does not matter).
             let ok = exp.is_none_or(|(ex, ey)| {
-                (read.x - ex).abs() <= LAND_X && ey.is_none_or(|ey| (read.y - ey).abs() <= LAND_Y)
+                let near = (read.x - ex).abs() <= LAND_X && ey.is_none_or(|ey| (read.y - ey).abs() <= LAND_Y);
+                let on_floor = ey.is_some_and(|ey| {
+                    standing(&edges, ex, ey).is_ok_and(|stand| {
+                        let floor = Floor::of(&edges, stand);
+                        (read.y - ey).abs() <= LAND_Y && read.x >= floor.lo - FLOOR_SLACK && read.x <= floor.hi + FLOOR_SLACK
+                    })
+                });
+                near || on_floor
             });
             eprintln!(
                 "round {round} hop {}: at ({:.2}, {:.2}) health {} (region {}, load {}) expected {:?} {}",
@@ -701,22 +846,22 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 expect.truncate(j + 1);
                 hops.truncate(j + 1);
                 // The exit hop's landing is in the next room: a retry loop would wait for it in the wrong scene.
-                hops[j].2 = None;
+                hops[j].retry = None;
                 exited = true;
                 stopped = true;
                 break;
             }
-            let attempts = delayed.get(&j).copied().unwrap_or(0);
-            if !ok && o.retry && (attempts as usize) < WAITS.len() && !body[hops[j].0..hops[j].1].iter().any(|l| l.starts_with("drop ")) {
-                // The hop missed: a foe hit the Knight in the air, or the take-off was a hair off. Run it again a few
-                // ticks later (the world is deterministic, so a different start settles it differently) before giving
-                // in and planning from where it fell: a fragment that carries a miss only works while the miss repeats.
-                body.truncate(hops[j].0);
-                if attempts > 0 && body.last().is_some_and(|l| l.starts_with("wait ")) {
-                    body.pop();
+            let jump = hops[j].spec;
+            if !ok && o.retry && jump.is_some() && bans.len() < MAX_BANS {
+                // The jump missed with all its passes and recoveries: it is no way over this gap on this disc. Ban it and plan
+                // the room again from where the hop before it ended; the lines of the hop go.
+                let spec = jump.expect("a jump");
+                if let Ok(from) = standing(&edges, spec.from.0, spec.from.1) {
+                    bans.push(Ban { cell: crate::cell(&from), dir: spec.dir, held: spec.held, steer: spec.steer });
+                    set_banned(bans.clone());
+                    eprintln!("hop {} banned: {spec:?}", j + 1);
                 }
-                body.push(format!("wait {}", WAITS[attempts as usize]));
-                delayed.insert(j, attempts + 1);
+                body.truncate(hops[j].start);
                 ends.truncate(j);
                 expect.truncate(j);
                 hops.truncate(j);
@@ -730,7 +875,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 expect.truncate(j + 1);
                 hops.truncate(j + 1);
                 // A hop that missed stays as it is: its replay is what the hops after it were planned from.
-                hops[j].2 = None;
+                hops[j].retry = None;
                 (cx, cy) = (read.x, read.y);
                 stopped = true;
                 break;
@@ -772,23 +917,104 @@ mod tests {
         lines.iter().map(|l| l.to_string()).collect()
     }
 
+    /// A floor at y 2 from x -10 to 20 and a ledge at y 5 from x 6 to 14, as the cooked packs draw them (a top surface
+    /// runs right to left), and the Knight's origin 1.39 above a floor.
+    fn two_floors() -> Vec<Edge> {
+        let line = |a: (f64, f64), b: (f64, f64)| {
+            let q = |v: f64| (v * 65536.0).round() as i32;
+            [q(a.0), q(a.1), q(b.0), q(b.1)]
+        };
+        vec![
+            line((20.0, 2.0), (-10.0, 2.0)),
+            line((14.0, 5.0), (6.0, 5.0)),
+            line((6.0, 5.0), (6.0, 2.0)),
+            line((14.0, 2.0), (14.0, 5.0)),
+        ]
+    }
+
+    fn q(v: f64) -> i64 {
+        (v * 65536.0).round() as i64
+    }
+
+    fn hop_of(start: usize, end: usize, ex: f64, ey: f64, spec: Option<JumpSpec>) -> Hop {
+        Hop {
+            start,
+            end,
+            retry: Some((ex, ey)),
+            spec,
+            prev_span: Some((1.0, 5.0)),
+            markers: vec![(0.0, 3.39)],
+            marker_after: (0.0, 3.39),
+        }
+    }
+
     #[test]
-    fn a_hop_that_landed_as_planned_gets_a_retry_loop_and_one_that_missed_stays_plain() {
+    fn a_hop_gets_a_clear_guard_and_a_floor_wide_landing_test_and_no_tick_rest() {
+        let edges = two_floors();
+        let room = hop::Room { edges: &edges, checkpoints: &[], arrival: (0.0, 3.39) };
         let body = strings(&[
             "probe start x y",
             "walk 1.00",
             "hold right+cross for 8",
+            "wait until HK_WALK_READY == 1 timeout 300",
             "probe p001 x y",
-            "walk 5.00",
-            "hold right+cross for 8",
-            "probe p002 x y",
         ]);
-        let hops = vec![(1, 3, Some((4.0, 2.0))), (4, 6, None)];
-        let out = retrying(&body, &hops, "x-t", |v| (v * 65536.0).round() as i64);
-        assert_eq!(out.len(), body.len() + 2, "{out:?}");
-        assert!(out[1].starts_with("loop x-t-h001 until expr abs(i32(HK_PLAYER_X) - 262144) <= 58982"));
-        assert_eq!(out[4], "end");
-        assert!(!out.iter().any(|l| l.contains("h002")), "{out:?}");
+        let hops = vec![hop_of(1, 4, 10.0, 6.39, None)];
+        let out = retrying(&body, &hops, "x-t", q, &room, Wrap::Ship);
+        assert_eq!(out[1], "clear x-t-h001-arc 10.000 6.390 1.00 5.00", "{out:?}");
+        let looped = &out[2];
+        assert!(looped.starts_with("loop x-t-h001 until expr (abs(i32(HK_PLAYER_X) - 655360) <= 58982 || (i32(HK_PLAYER_X) >= "), "{looped}");
+        // The whole landing floor is in the test, with the slack: the Knight can stand anywhere from its first to its last step.
+        let floor = Floor::of(&edges, standing(&edges, 10.0, 6.39).expect("the ledge"));
+        assert!(floor.lo < 6.5 && floor.hi > 13.5, "{} {}", floor.lo, floor.hi);
+        assert!(looped.contains(&format!("i32(HK_PLAYER_X) >= {} && i32(HK_PLAYER_X) <= {})", q(floor.lo - FLOOR_SLACK), q(floor.hi + FLOOR_SLACK))), "{looped}");
+        assert!(looped.ends_with("max 3 timeout 900"), "{looped}");
+        assert_eq!(out[out.len() - 2], "end");
+        assert!(!out.iter().any(|l| l.starts_with("wait ") && l.split_whitespace().nth(1).is_some_and(|n| n.parse::<u32>().is_ok())), "no tick-count rest: {out:?}");
+    }
+
+    #[test]
+    fn the_play_version_unrolls_the_passes_as_guards_so_a_miss_ends_at_a_probe() {
+        let edges = two_floors();
+        let room = hop::Room { edges: &edges, checkpoints: &[], arrival: (0.0, 3.39) };
+        let body = strings(&["walk 1.00", "hold right+cross for 8", "wait until HK_WALK_READY == 1 timeout 300", "probe p001 x y"]);
+        let hops = vec![hop_of(0, 3, 10.0, 6.39, None)];
+        let out = retrying(&body, &hops, "x-t", q, &room, Wrap::Play);
+        assert_eq!(out.iter().filter(|l| l.starts_with("if expr !(")).count(), RETRIES as usize, "{out:?}");
+        assert!(!out.iter().any(|l| l.starts_with("loop ")), "a loop that never lands aborts the run: {out:?}");
+        assert_eq!(out.last().map(String::as_str), Some("probe p001 x y"));
+    }
+
+    #[test]
+    fn a_tight_hop_gets_more_passes_and_a_clear_and_a_heal_on_each() {
+        let edges = two_floors();
+        let room = hop::Room { edges: &edges, checkpoints: &[], arrival: (0.0, 3.39) };
+        let body = strings(&["walk 1.00", "hold right+cross for 8", "wait until HK_WALK_READY == 1 timeout 300"]);
+        let spec = JumpSpec { dir: 1, held: 8, steer: 8, from: (1.0, 3.39), tight: crate::Tight { edge: true, ..Default::default() } };
+        let hops = vec![hop_of(0, 3, 10.0, 6.39, Some(spec))];
+        let out = retrying(&body, &hops, "x-t", q, &room, Wrap::Ship);
+        assert!(out.iter().any(|l| l.starts_with("loop x-t-h001 until") && l.ends_with("max 6 timeout 1800")), "{out:?}");
+        assert!(out.iter().any(|l| l.starts_with("clear x-t-h001-tight ")) && out.iter().any(|l| l == "heal"), "{out:?}");
+    }
+
+    #[test]
+    fn a_hop_that_did_not_move_him_is_not_wrapped_and_a_landing_line_carries_its_jump() {
+        let edges = two_floors();
+        let room = hop::Room { edges: &edges, checkpoints: &[], arrival: (0.0, 3.39) };
+        let body = strings(&["walk 1.00", "probe p001 x y"]);
+        let mut plain = hop_of(0, 1, 1.0, 3.39, None);
+        plain.retry = None;
+        assert_eq!(retrying(&body, &[plain], "x-t", q, &room, Wrap::Ship), body);
+        let hop = first_hop(&strings(&[
+            "walk 5.00   # take-off",
+            "hold right+cross for 34",
+            "wait until y between 5.24 5.54 timeout 240   # land at x 16.50 jump 1 34 37 from 5.000 3.390 tight apex",
+            "wait until HK_WALK_READY == 1 timeout 300",
+            "walk 20.00",
+        ]));
+        let spec = hop.spec.expect("the jump the landing line describes");
+        assert_eq!((spec.dir, spec.held, spec.steer, spec.from), (1, 34, 37, (5.0, 3.39)));
+        assert!(spec.tight.apex);
     }
 
     #[test]
@@ -797,16 +1023,11 @@ mod tests {
             "walk 10.00   # take-off",
             "hold right+cross for 20",
             "wait until y between 5.24 5.54 timeout 240   # land at x 16.50",
-            "wait 6",
             "wait until HK_WALK_READY == 1 timeout 300",
             "walk 20.00",
         ]);
-        let (hop, expect, last, _) = first_hop(&plan);
-        assert_eq!(
-            hop.len(),
-            4,
-            "the landing wait is replaced by the ready wait: {hop:?}"
-        );
+        let First { lines, expect, last, .. } = first_hop(&plan);
+        assert_eq!(lines.len(), 3, "the landing wait is replaced by the ready wait: {lines:?}");
         let (x, y) = expect
             .and_then(|(x, y)| y.map(|y| (x, y)))
             .expect("a landing");
@@ -816,14 +1037,14 @@ mod tests {
 
     #[test]
     fn a_drop_ends_its_hop_and_the_last_walk_is_the_last_hop() {
-        let (hop, expect, last, _) =
+        let First { lines, expect, last, .. } =
             first_hop(&strings(&["walk 4.00", "drop 5.00 2.39", "walk 9.00"]));
         assert_eq!(
-            (hop.len(), expect, last),
+            (lines.len(), expect, last),
             (2, Some((5.0, Some(2.39))), false)
         );
-        let (hop, expect, last, _) = first_hop(&strings(&["walk 4.00", "walk 9.00"]));
-        assert_eq!((hop.len(), expect, last), (2, Some((9.0, None)), true));
+        let First { lines, expect, last, .. } = first_hop(&strings(&["walk 4.00", "walk 9.00"]));
+        assert_eq!((lines.len(), expect, last), (2, Some((9.0, None)), true));
     }
 
     #[test]
