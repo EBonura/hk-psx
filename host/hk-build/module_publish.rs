@@ -3,7 +3,6 @@
 use psoxide_hazard::overlay_elf::{Elf, Symbol};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-#[path = "../hk-build/disc.rs"]
 mod disc;
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

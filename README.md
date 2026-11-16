@@ -78,6 +78,10 @@ The first build installs pinned host Python packages in .venv. Rust selects
 nightly-2026-03-25 and uses SDK components without the 3D engine.
 
 ```sh
+# A fresh clone first: the build driver links the cookers, which path-depend on the
+# pinned SDK snapshot in .psoxide, so cargo cannot load it before that snapshot exists.
+# Extract it once from the sibling PSoXide checkout (the driver then checks and records it):
+mkdir -p .psoxide && git -C ../PSoXide archive "$(sed -n 's/.*"revision": "\([0-9a-f]*\)".*/\1/p' sdk.lock.json)" | tar -x -C .psoxide
 # Cook (cached), build the guest, replace the sole disc pair, write the report
 # and replay the validation routes in tools/tapes against the final CUE:
 cargo hk-build build

@@ -219,7 +219,7 @@ static mut CARRIED: [(u8, u16); CARRY_SLOTS] = [(u8::MAX, u16::MAX); CARRY_SLOTS
 /// then `art_fx_spell`) fit in the pool beside the scene's own modules: bits 0 and 1 beside the Death
 /// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee), bits
 /// 4 and 5 beside the Death and respawn clips and the room less what its boss has given back (`retire_boss`).
-/// The build writes it into the image (host/hk-module-publish/main.rs).
+/// The build writes it into the image (host/hk-build/module_publish.rs).
 #[no_mangle]
 pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()];
 /// The optional packs that fit in `scene` now: `HK_FX_FIT`'s light row, or its full row while the
