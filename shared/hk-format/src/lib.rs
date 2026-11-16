@@ -148,15 +148,15 @@ impl Validation {
 // The SDK's checked readers (one length test, then one unaligned load); a truncated field panics.
 #[inline]
 pub fn u16_at(b: &[u8], i: usize) -> u16 {
-    psx_math::le::read_u16(b, i)
+    psx_math::le::get_u16(b, i).unwrap()
 }
 #[inline]
 pub fn u32_at(b: &[u8], i: usize) -> u32 {
-    psx_math::le::read_u32(b, i)
+    psx_math::le::get_u32(b, i).unwrap()
 }
 #[inline]
 pub fn i32_at(b: &[u8], i: usize) -> i32 {
-    psx_math::le::read_i32(b, i)
+    psx_math::le::get_i32(b, i).unwrap()
 }
 impl<'a> Room<'a> {
     /// Borrow an immutable payload that has already passed `parse`.
