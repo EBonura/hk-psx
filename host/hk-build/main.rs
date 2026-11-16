@@ -999,7 +999,10 @@ fn python_step_module(root: &Path, module: &str, function: &str) -> Result<()> {
 }
 
 fn prepare_cook(root: &Path, options: &Options) -> Result<()> {
-    std::fs::create_dir_all(root.join(".hkpsx"))?;
+    // A clean clone has none of the ignored output directories; the first cooker writes into data/.
+    for dir in [".hkpsx", "data", "build", "dist"] {
+        std::fs::create_dir_all(root.join(dir))?;
+    }
     let doctor = root.join("tools/doctor.py");
     let mut args = vec![doctor.to_str().unwrap()];
     if let Some(path) = &options.hollow_knight {
