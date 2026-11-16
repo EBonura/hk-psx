@@ -583,8 +583,7 @@ fn kinetic(v: [i32; 2], omega: i32, spec: Spec) -> Wide {
     hk_sim::fixed::sum_sq(v[0], v[1]).add_w(rotation.cast_signed())
 }
 fn length(v: [i32; 2]) -> i32 {
-    let (x, y) = (v[0].unsigned_abs(), v[1].unsigned_abs());
-    WideU::mul(x, x).mul_add(y, y).isqrt() as i32
+    hk_sim::fixed::hypot(v[0], v[1]) as i32
 }
 
 fn unit(v: [i32; 2]) -> [i32; 2] {
