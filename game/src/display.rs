@@ -14,31 +14,23 @@
 //! session (the title's page starts from what is set now). The save record is
 //! per profile and written only at a bench; a display setting belongs to the
 //! television, not to a save.
+use psx_display::{Brightness, BrightnessOverlay};
 use psx_gpu::{
     self as gpu,
     display::{DisplayConfig, Resolution, VideoMode},
-    material::BlendMode,
     ot::OrderingTable,
-    prim::QuadGouraudBlended,
     MAX_NODE_WORDS,
 };
 
 /// Brightness steps either side of the picture as drawn.
-pub const BRIGHT_STEPS: i8 = 5;
+pub const BRIGHT_STEPS: i8 = Brightness::STEP_COUNT;
 /// The screen position's reach either side of centre, in pixels.
 pub const SCREEN_RANGE: i8 = 16;
-/// Grey (of 255) added or taken off per step. Brighter lifts the blacks, so it
-/// adds a little more per step than darker takes off.
-const UP: u32 = 8;
-const DOWN: u32 = 6;
 
 static mut LEVEL: i8 = 0;
 static mut SCREEN: (i8, i8) = (0, 0);
-static mut OVERLAY: QuadGouraudBlended = QuadGouraudBlended::new(
-    [(0, 0), (320, 0), (0, 240), (320, 240)],
-    [(0, 0, 0); 4],
-    BlendMode::Subtract,
-);
+static mut OVERLAY: BrightnessOverlay =
+    BrightnessOverlay::new(Brightness::DEFAULT, Resolution::R320X240);
 
 /// The brightness step in force: -BRIGHT_STEPS (darker) to BRIGHT_STEPS.
 pub fn brightness() -> i8 {
@@ -46,22 +38,7 @@ pub fn brightness() -> i8 {
 }
 
 pub fn set_brightness(level: i8) {
-    unsafe { LEVEL = level.clamp(-BRIGHT_STEPS, BRIGHT_STEPS) };
-}
-
-/// How the overlay blends and the grey it carries for `level`, scaled by
-/// `gain` (128 is the frame at full strength, as a fade's gain is).
-fn grey(level: i8, gain: u32) -> (BlendMode, u8) {
-    let per = if level > 0 { UP } else { DOWN };
-    let grey = (level.unsigned_abs() as u32 * per * gain / 128).min(255) as u8;
-    (
-        if level > 0 {
-            BlendMode::Add
-        } else {
-            BlendMode::Subtract
-        },
-        grey,
-    )
+    unsafe { LEVEL = Brightness::new(level).level() };
 }
 
 /// Link `prim` into depth slot `z` of `ot`, `words` payload words after its tag
@@ -97,18 +74,12 @@ pub unsafe fn ot_add<T, const N: usize>(
 /// HUD and the panels.
 #[inline(never)]
 pub fn append(ot: &mut OrderingTable<1>) {
-    let level = brightness();
-    if level == 0 {
+    let Some(overlay) = Brightness::new(brightness()).overlay(Resolution::R320X240) else {
         return;
-    }
-    let (mode, g) = grey(level, 128);
+    };
     unsafe {
-        OVERLAY = QuadGouraudBlended::new(
-            [(0, 0), (320, 0), (0, 240), (320, 240)],
-            [(g, g, g); 4],
-            mode,
-        );
-        ot_add(ot, 0, &mut *(&raw mut OVERLAY), QuadGouraudBlended::WORDS);
+        OVERLAY = overlay;
+        ot_add(ot, 0, &mut *(&raw mut OVERLAY), BrightnessOverlay::WORDS);
     }
 }
 
@@ -118,16 +89,13 @@ pub fn append(ot: &mut OrderingTable<1>) {
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
 pub fn draw_direct(gain: u8) {
-    let level = brightness();
-    if level == 0 {
+    let Some(overlay) = Brightness::new(brightness()).faded_overlay(Resolution::R320X240, gain) else {
         return;
+    };
+    psx_io::gpu::wait_command_ready();
+    for word in overlay.words() {
+        psx_io::gpu::write_command(word);
     }
-    let (mode, g) = grey(level, gain as u32);
-    if g == 0 {
-        return;
-    }
-    gpu::draw_tri_flat_blended([(0, 0), (320, 0), (0, 240)], g, g, g, mode);
-    gpu::draw_tri_flat_blended([(320, 0), (0, 240), (320, 240)], g, g, g, mode);
 }
 
 /// Where the picture sits now: pixels right and down of centre.
