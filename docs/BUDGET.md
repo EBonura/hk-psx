@@ -7,17 +7,17 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |813,788|
-| Code-to-data alignment |36|
-| Linked data, including menu and HUD |244,712|
+| Linked code |807,468|
+| Code-to-data alignment |84|
+| Linked data, including menu and HUD |244,680|
 | BSS, including shared scene arena and runtime pools |796,056|
-| Total static span |1,854,600|
+| Total static span |1,848,296|
 | BIOS/kernel reservation |65,536|
 | Linker stack exclusion |49,152|
 | Space above initial stack pointer |256|
-| Unallocated gap before reserved stack |127,608|
+| Unallocated gap before reserved stack |133,912|
 | Room module pool, inside that gap |110,592|
-| Free RAM below the module pool |17,016|
+| Free RAM below the module pool |23,320|
 
 The 2026-10-16 no-64-bit pass (every `i64`/`u64`/`i128` in guest source moved onto `psx_math::Wide`, `WideU` and `Mask64`, and the shared `hk_sim::exact` divide helpers replaced by the SDK's `wide_div` ops) took linked code from 809,856 to 793,876 bytes, linked data from 278,792 to 278,568 and BSS from 797,612 to 797,588, so 17,948 bytes are free below the module pool (1,732 before).
 
@@ -169,7 +169,7 @@ The module pool (108,544 bytes, the top of the gap below the stack) is sized for
 
 Two cheaper-looking sources of RAM are not slack. `render::TILE_EVENTS`, `render::SCISSOR_SECONDARY` and `render::POOL_INFO` are rebuilt or read in every frame or view bind (they exist to make those faster), and `dialogue::GLYPHS` carries the Geo HUD every gameplay frame and the pause and shop panels, which can open in a fight. Aliasing any of them would switch off a speed cache or a screen. Idle pool bytes need no such trade, because a room that is not using them cannot be affected.
 
-Static data ends at `0x801d4c88`; the reserved stack begins at `0x801f3f00`.
+Static data ends at `0x801d33e8`; the reserved stack begins at `0x801f3f00`.
 The cheat HUD has nine red and22 blue packet slots, reusing existing art.
 There is no heap. The single scene arena occupies 423,936 bytes, replacing five
 256KiB room slots (1,310,720 bytes). Renderer template/cover arrays support
@@ -683,3 +683,5 @@ The 2026-11-16 repin to SDK d559ad157edd (the pad fix, the shared disc lookup fo
 The 2026-11-17 repin to SDK 6c0ed4ebd5ed (the Fnv32 assembly kernels) took linked code from 814,528 to 814,496 bytes (the alignment pad absorbs the 32, free RAM stays 16,248). The seed steps through `psx_fx::NrLcg::step` and the GP0 words from `psx_hw` change no size (same code and data bytes; the link order moves because the crate hash in every symbol changes). `focus_audio::upload` now hashes its 108 KB with `Fnv32::update_bulk`: code 814,064 (`Cache::prepare_ambience` is 444 bytes smaller; the two pad checkpoints added to the effect art load cost 12), alignment 16, data and BSS unchanged, so the free RAM below the module pool is 16,760.
 
 Wave 3 (same SDK pin): the byte-wise FNV loops of `disc.rs` and `wire.rs` now go through `Fnv32` and `fnv1a32`, and the remaining Numerical Recipes steps through `psx_fx::NrLcg::step`. Code 814,064 to 813,788, alignment 36, free RAM below the module pool 17,016. (`Fnv32::push` in the atlas fingerprint cost 524 bytes in `Cache::init`; `update` does not.)
+
+Wave 3 phase 2 (SDK 1c3133beae6975d2d7f3aaeeef9e6e3a8e1de131): the pin alone took code 813,788 to 813,760. `modules.rs` on `WordFnv32` is +36 bytes of code (free RAM unchanged, the alignment pad absorbs it). The `hk-format` and `break_effects`/`geo_render` little-endian readers on `psx_math::le::get_*` (with `unwrap`) save 5,004 and 1,076 bytes (the `read_*` form of the same readers inlines into every accessor: +6,172 bytes). The brightness overlay on `psx_display::Brightness` saves 268 bytes. Code 807,468, data 244,680, free RAM below the module pool 23,320.
