@@ -44,7 +44,7 @@ use psx_hw::gpu::{gp0, gp1, packet};
 use psx_io::gpu::write_display_control;
 use psx_io::periph::ControllerPort;
 use psx_pad::Port;
-use psx_rt::{interrupts, tty, Peripherals};
+use psx_rt::{interrupts, Peripherals};
 use psx_spu::{self as spu, Volume};
 use psx_vram::{Clut, TextureDepth, TexturePage};
 
@@ -376,7 +376,6 @@ impl Skip {
 fn play_movie(skip: &mut Skip, cooked: &Cooked, memory: &mut [u32]) -> Option<Stop> {
     skip.begin_movie();
     let Some((lba, _)) = player::find_root_file(cooked.file) else {
-        tty::println("hk-intro: a movie is missing from this disc");
         return None;
     };
     let movie = Movie {
@@ -401,60 +400,10 @@ fn play_movie(skip: &mut Skip, cooked: &Cooked, memory: &mut [u32]) -> Option<St
     };
     let words = player::memory_words(&movie, config.depth);
     let Some(memory) = memory.get_mut(..words) else {
-        tty::println("hk-intro: a movie's buffers do not fit the arena the game lent");
         return None;
     };
     let outcome = player::play(&movie, &config, memory, &mut || skip.poll());
-    report(cooked.file, &outcome);
     Some(outcome.stop)
-}
-
-fn report(file: &str, o: &player::Outcome) {
-    let stop = match o.stop {
-        Stop::End => "end",
-        Stop::Skipped => "skipped",
-        Stop::Stall => "stall",
-        Stop::CdError => "cd-error",
-        Stop::Wedged => "wedged",
-        Stop::Setup => "setup",
-    };
-    tty::print("INTRO ");
-    tty::print(file);
-    tty::print(" ");
-    tty::print(stop);
-    for (label, v) in [
-        ("shown", o.shown),
-        ("skipped", o.skipped),
-        ("late", o.late),
-        ("worst_late", o.worst_late_vblanks),
-        ("dropped", o.dropped),
-        ("errors", o.decode_errors),
-        ("last_frame", o.last_frame),
-        ("vblanks", o.vblanks),
-        ("kcyc_vlc", o.kcyc_vlc),
-        ("kcyc_mdec", o.kcyc_mdec),
-        ("kcyc_wait", o.kcyc_wait),
-    ] {
-        tty::print(" ");
-        tty::print(label);
-        tty::print("=");
-        print_decimal(v);
-    }
-    tty::println("");
-}
-
-pub(crate) fn print_decimal(mut v: u32) {
-    let mut digits = [0u8; 10];
-    let mut at = digits.len();
-    loop {
-        at -= 1;
-        digits[at] = b'0' + (v % 10) as u8;
-        v /= 10;
-        if v == 0 {
-            break;
-        }
-    }
-    tty::print(core::str::from_utf8(&digits[at..]).unwrap_or("?"));
 }
 
 /// Leave the GPU as the game's boot leaves it, for the game's first frame: reset, the display at the title's
@@ -482,7 +431,6 @@ fn hand_back_the_screen(gpu: &mut Gpu, display: DisplayConfig, skip: &mut Skip) 
 fn main() {
     let Some(handoff) = Handoff::read() else {
         // Only the game starts this program, and it writes the mailbox first.
-        tty::println("hk-intro: started without a hand-off");
         loop {
             core::hint::spin_loop();
         }
@@ -518,7 +466,7 @@ fn main() {
     let mut result = RESULT_DONE;
     if handoff.mode != Mode::Poem {
         // SAFETY: the block the game reserved for the poem's state.
-        poem::report_carried(unsafe { &mut *CARRY });
+        poem::forget_carried(unsafe { &mut *CARRY });
     }
     match handoff.mode {
         Mode::Poem => {

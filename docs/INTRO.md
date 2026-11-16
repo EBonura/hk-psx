@@ -187,8 +187,8 @@ never has them. `cargo hk-build intro-cook` cooks them and compiles the player a
 - The poem draws at 60 frames a second (1,715 frames in its 28.6 s), 230 textured rectangles at most a frame. While
   the loader runs the frames come from its checkpoints, which are further apart in places (an SPU bank upload or a
   clip's check is one stretch of 6 to 10 VBlanks), but then every line is fully up and nothing moves (the last fade-in
-  ends at 19.6 s, the cover starts closing at 23.6 s); the program prints the longest gap (`INTRO poem during the
-  load`, 10 VBlanks in the emulator).
+  ends at 19.6 s, the cover starts closing at 23.6 s); the longest gap measured was 10 VBlanks in the emulator, read from a debug print that no build enabled (now
+  removed).
 - Frame time in play: unchanged; nothing of the program runs during play.
 
 Console risk (not tested, the emulator cannot show it): the program returns into a game whose interrupt wrapper,
