@@ -7,8 +7,8 @@ are in `.hkpsx/build.json`; every build replaces the sole playable disc.
 
 | Main RAM allocation | Bytes |
 | --- | ---: |
-| Linked code |814,052|
-| Code-to-data alignment |28|
+| Linked code |814,064|
+| Code-to-data alignment |16|
 | Linked data, including menu and HUD |244,712|
 | BSS, including shared scene arena and runtime pools |796,056|
 | Total static span |1,854,856|
@@ -680,4 +680,4 @@ The repin to SDK 6e25f2ae (ten additive commits after b05a6476) left the ship bu
 
 The 2026-11-16 repin to SDK d559ad157edd (the pad fix, the shared disc lookup for MUSIC.XA, the Fnv32 hash adoption, the formatter family, the stack-reserve hook, two arctangents) left BSS at 796,056 and took linked code to 814,528 bytes and data to 244,712, so the free RAM below the module pool is 16,248 (static end 0x801d4f88). Against the 57b4212830cd pin (code 814,652, data 244,840, free 15,992) the coarse `atan2_q12` is back: 128 bytes of table data and 124 bytes of code (the Mosquito's lunge angle in `frame::render`) are gone, and `angle_deg` in the FSM module is 112 bytes smaller.
 
-The 2026-11-17 repin to SDK 6c0ed4ebd5ed (the Fnv32 assembly kernels) took linked code from 814,528 to 814,496 bytes (the alignment pad absorbs the 32, free RAM stays 16,248). The seed steps through `psx_fx::NrLcg::step` and the GP0 words from `psx_hw` change no size (same code and data bytes; the link order moves because the crate hash in every symbol changes). `focus_audio::upload` now hashes its 108 KB with `Fnv32::update_bulk`: code 814,052 (`Cache::prepare_ambience` is 444 bytes smaller), alignment 28, data and BSS unchanged, so the free RAM below the module pool is 16,760.
+The 2026-11-17 repin to SDK 6c0ed4ebd5ed (the Fnv32 assembly kernels) took linked code from 814,528 to 814,496 bytes (the alignment pad absorbs the 32, free RAM stays 16,248). The seed steps through `psx_fx::NrLcg::step` and the GP0 words from `psx_hw` change no size (same code and data bytes; the link order moves because the crate hash in every symbol changes). `focus_audio::upload` now hashes its 108 KB with `Fnv32::update_bulk`: code 814,064 (`Cache::prepare_ambience` is 444 bytes smaller; the two pad checkpoints added to the effect art load cost 12), alignment 16, data and BSS unchanged, so the free RAM below the module pool is 16,760.
