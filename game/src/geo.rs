@@ -800,8 +800,7 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
 }
 fn length(v: [i32; 2]) -> i32 {
-    let (x, y) = (v[0].unsigned_abs(), v[1].unsigned_abs());
-    psx_math::WideU::mul(x, x).mul_add(y, y).isqrt().min(i32::MAX as u32) as i32
+    hk_sim::fixed::hypot(v[0], v[1]).min(i32::MAX as u32) as i32
 }
 impl Coin {
     /// A coin leaving `at` at `angle` (Q16 degrees) and `speed`.
