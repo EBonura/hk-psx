@@ -32,7 +32,7 @@ struct Art {
     tpage: u16,
 }
 fn u16_at(data: &[u8], at: usize) -> usize {
-    usize::from(u16::from_le_bytes([data[at], data[at + 1]]))
+    usize::from(psx_math::le::get_u16(data, at).unwrap())
 }
 /// Upload the Geo bank of the scene whose effect chunk `chunk` is (host/geo.py `block_bytes`; the chunk's last word is the
 /// block's offset): the rectangles of coin and rock texels, and where each coin frame sits in them. Runs where the scene's

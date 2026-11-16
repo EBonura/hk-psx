@@ -278,13 +278,13 @@ const ART_BYTES: usize = 8;
 const UPLOAD_BYTES: usize = 12;
 const FRAME_BYTES: usize = 6;
 fn i32_at(b: &[u8], at: usize) -> i32 {
-    i32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+    psx_math::le::get_i32(b, at).unwrap()
 }
 fn u32_at(b: &[u8], at: usize) -> u32 {
-    u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
+    psx_math::le::get_u32(b, at).unwrap()
 }
 fn u16_at(b: &[u8], at: usize) -> u16 {
-    u16::from_le_bytes([b[at], b[at + 1]])
+    psx_math::le::get_u16(b, at).unwrap()
 }
 fn pair(b: &[u8], at: usize) -> [i32; 2] {
     [i32_at(b, at), i32_at(b, at + 4)]
