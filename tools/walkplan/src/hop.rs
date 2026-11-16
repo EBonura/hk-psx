@@ -20,7 +20,7 @@ use crate::{
 /// States a search for the way back from a miss may expand: a way back is a few hops, not the room.
 const RECOVERY_EXPANSIONS: usize = 1_500;
 /// Floors a hop gets a recovery for at most: the first few distinct ones its disturbed flights end on (sloped ground makes many).
-const MAX_MISS_FLOORS: usize = 4;
+const MAX_MISS_FLOORS: usize = 6;
 
 /// A jump as the planner wrote it on its landing line (`# land at x X jump DIR HELD STEER from X Y tight FLAGS`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -124,7 +124,8 @@ pub fn marker_after(room: &Room, edges: &[Edge], spec: &JumpSpec, before: (f64, 
     marker
 }
 
-/// The floors a hop can end on instead of its landing: every flight with a take-off off its mark, a pad a tick short or
+/// The floors a hop can end on instead of its landing: first those a hit between the hops can throw him to from the take-off
+/// floor (standing, shoved off either end), then every flight with a take-off off its mark, a pad a tick short or
 /// long and a recoil in the air that does not come down on `target` or on the take-off floor, and the island of each
 /// respawn marker in `markers` that a flight into a hazard box would send him to.
 pub fn misses(room: &Room, spec: &JumpSpec, target: Floor, markers: &[(f64, f64)]) -> Vec<Floor> {
@@ -142,6 +143,24 @@ pub fn misses(room: &Room, spec: &JumpSpec, target: Floor, markers: &[(f64, f64)
     let recoil = shift_q(RECOIL);
     // A foe's hit throws him this far sideways (`recoil_speed` over `recoil_ticks` of `VITAL_PARAMS`, 3 units).
     let hit = shift_q(HIT_THROW);
+    // A foe's hit between the hops (`fight`, `retreat` and `heal` run on the take-off floor) can throw him off it from anywhere on it:
+    // a body shoved at the first tick, standing, comes down on whatever lies under that edge.
+    let (left, right) = floor_ends(edges, &stand);
+    for at in [-left, 0.0, right] {
+        let mut from = stand;
+        from.x += shift_q(at);
+        step(&mut from, edges, 0, false);
+        if !from.grounded {
+            continue;
+        }
+        for dx in [-recoil, recoil, -hit, hit] {
+            match fly(&from, edges, 0, 0, 0, Disturbance { shove: Some((0, dx)) }) {
+                Ending::Landed(flight) => note(Floor::of(edges, flight.player), &mut out),
+                Ending::Hazard => hazard = true,
+                Ending::Lost => {}
+            }
+        }
+    }
     for shift in [0.0, -0.3, 0.3] {
         let mut from = stand;
         from.x += shift_q(shift);
@@ -271,6 +290,30 @@ mod tests {
         assert_eq!(blocks.last().map(String::as_str), Some("end"));
         assert!(blocks.iter().any(|l| l.starts_with("hold ") && l.contains("+cross")), "the way out of the pit is a jump: {blocks:?}");
         assert!(!blocks.iter().any(|l| l.starts_with("at ")), "{blocks:?}");
+    }
+
+    /// A narrow platform P (y 2.5, x 0 to 1) over a long floor (y 0), and a far ledge T (y 2.5, x 8 to 12).
+    fn platform() -> Vec<Edge> {
+        vec![
+            line((1.0, 2.5), (0.0, 2.5)),
+            line((20.0, 0.0), (-20.0, 0.0)),
+            line((12.0, 2.5), (8.0, 2.5)),
+            line((8.0, 2.5), (8.0, 0.0)),
+            line((12.0, 2.5), (12.0, 0.0)),
+        ]
+    }
+
+    #[test]
+    fn a_hit_between_the_hops_can_throw_him_off_a_narrow_take_off_floor_and_the_way_back_is_planned() {
+        let edges = platform();
+        let room = Room { edges: &edges, checkpoints: &[], arrival: (0.0, 3.89) };
+        let spec = JumpSpec { dir: 1, held: 30, steer: 60, from: (0.5, 3.89), tight: Tight::default() };
+        let target = Floor::of(&edges, standing(&edges, 10.0, 3.89).expect("far ledge"));
+        let floors = misses(&room, &spec, target, &[]);
+        assert!(floors.iter().any(|f| (f.y - 1.39).abs() < 0.1), "a body shoved off the platform ends on the long floor: {floors:?}");
+        let q = |v: f64| (v * 65536.0).round() as i64;
+        let blocks = recoveries(&room, "x-p-h001", &spec, target, &[], &q);
+        assert!(blocks.first().is_some_and(|l| l.starts_with("if expr ") && l.contains("back from the floor at y 1.39")), "{blocks:?}");
     }
 
     #[test]

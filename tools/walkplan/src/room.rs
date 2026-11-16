@@ -754,11 +754,12 @@ pub fn run(args: &[String]) -> Result<(), String> {
                 if marker_after != marker {
                     markers.push(marker_after);
                 }
-                let prev_span = expect
-                    .last()
-                    .copied()
-                    .flatten()
-                    .and_then(|(px, py)| floor_span(&edges, px, py.unwrap_or(cy)).ok());
+                // The floor the Knight stands on before the hop: where the last hop was to land, or for the first hop of a
+                // fragment the floor he starts on.
+                let prev_span = match expect.last().copied() {
+                    Some(landed) => landed.and_then(|(px, py)| floor_span(&edges, px, py.unwrap_or(cy)).ok()),
+                    None => floor_span(&edges, cx, cy).ok(),
+                };
                 hops.push(Hop { start: hop_start, end: body.len(), retry, spec, prev_span, markers, marker_after });
                 body.push(format!(
                     "probe p{k:03} x y HK_HEALTH HK_REGION_ID HK_SCENE_LOADS HK_DEATHS"
