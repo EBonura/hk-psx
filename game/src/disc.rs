@@ -4,15 +4,118 @@
 use crate::room_decode::{Decoder, Error as DecodeError};
 use hk_format::coverage::{CoverageValidation, CoverageView, Expected as CoverageExpected};
 use hk_format::{Room, Scene, WorldMeta};
-#[path = "cd_stream.rs"]
-mod cd_stream;
 use psx_pack::cd::{SectorReader, SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
-/// Called from every cooperative checkpoint: take a CD event the interrupt
-/// wrapper missed (see `cd_stream::recover_lost_edge`).
-#[inline]
-pub fn stream_checkpoint() {
-    cd_stream::recover_lost_edge();
+/// The loader's names for the SDK's one-transfer CD engine (`psx_cdstream::single`): one read
+/// or head park at a time, its progress while sectors land, cancel, and the hand-off of the
+/// controller to the polled XA player. The engine stores one sector per CD interrupt from the
+/// dispatcher, on the dispatcher's own stack, so a scene group's sectors keep landing while the
+/// loader decodes the ones before them.
+mod cd_stream {
+    use psx_cdstream::{single, Config, IrqMaskPolicy, Outcome, Request, RequestState, Ticket};
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Status {
+        Idle,
+        Busy,
+        Done,
+        Failed(u32),
+    }
+    /// 600 VBlanks without progress fail a transfer; Timer 2 times the handler
+    /// (`PSX_CD_STATS.max_irq_ticks`). The CD source is open only while a request runs, so
+    /// the polled XA player has the controller to itself whenever the engine is idle.
+    const CONFIG: Config = Config {
+        timeout_vblanks: 600,
+        irq_mask_policy: IrqMaskPolicy::OnlyWhileBusy,
+        time_handler: true,
+        ..Config::DEFAULT
+    };
+    /// The request in flight or the last one; `None` before the first.
+    static mut TICKET: Option<Ticket> = None;
+    /// `sectors_landed()` when that request was submitted.
+    static mut MARK: u32 = 0;
+    /// `sectors_landed()` already counted in `HK_CD_SECTORS_READ`.
+    static mut SEEN: u32 = 0;
+    /// The latest failure's code, kept for the gates (walks, pins, gatetool, hkperf); 0 while
+    /// no transfer has failed. `PSX_CD_STATS` holds the engine's own counters.
+    #[no_mangle]
+    pub static mut HK_CD_STREAM_ERROR: u32 = 0;
+    fn submit(request: Request) -> Result<(), u32> {
+        let mark = psx_cdstream::sectors_landed();
+        match single::submit(request) {
+            // SAFETY: one thread; the interrupt handler never touches these.
+            Ok(ticket) => unsafe {
+                TICKET = Some(ticket);
+                MARK = mark;
+                Ok(())
+            },
+            Err(psx_cdstream::SubmitError::QueueFull) => Err(0xfc00_0000),
+            Err(_) => Err(0xfd00_0000),
+        }
+    }
+    /// Read `count` sectors from program-relative `lba` into `destination`.
+    ///
+    /// # Safety
+    /// `destination` is word aligned, holds `count` sectors and is neither read nor written
+    /// until `status` leaves `Busy`.
+    pub unsafe fn start(destination: *mut u32, count: usize, lba: u32) -> Result<(), u32> {
+        // SAFETY: the caller's contract above is `new_raw`'s.
+        submit(unsafe { Request::new_raw(lba, count as u32, destination) })
+    }
+    /// Leave the head next to `lba` (reads the sector before it).
+    pub fn park(lba: u32) -> Result<(), u32> {
+        submit(Request::park(lba))
+    }
+    /// Sectors of the current request stored so far.
+    pub fn received() -> usize {
+        psx_cdstream::sectors_landed().wrapping_sub(unsafe { MARK }) as usize
+    }
+    /// Requests submitted so far, parks included.
+    pub fn starts() -> u32 {
+        single::submissions()
+    }
+    /// Stop the current request at its next sector; `status` stays `Busy` until the drive paused.
+    pub fn cancel() {
+        if let Some(ticket) = unsafe { TICKET } {
+            let _ = single::cancel(ticket);
+        }
+    }
+    /// `Done` (a cancel included) and `Failed` only once the drive has stopped, so the next
+    /// `start` is accepted.
+    pub fn status() -> Status {
+        // The handler's sectors join the polled ones in HK_CD_SECTORS_READ here, at the
+        // loader's next look (every load loop asks until the transfer is over).
+        let landed = psx_cdstream::sectors_landed();
+        // SAFETY: one thread; the interrupt handler never touches these.
+        unsafe {
+            super::HK_CD_SECTORS_READ =
+                super::HK_CD_SECTORS_READ.wrapping_add(landed.wrapping_sub(SEEN));
+            SEEN = landed;
+        }
+        let Some(ticket) = (unsafe { TICKET }) else {
+            return Status::Idle;
+        };
+        match single::state(ticket) {
+            RequestState::Finished(c) => match c.outcome {
+                Outcome::Failed(f) => {
+                    unsafe { HK_CD_STREAM_ERROR = f.code() };
+                    Status::Failed(f.code())
+                }
+                _ if single::is_idle() => Status::Done,
+                _ => Status::Busy,
+            },
+            RequestState::Unknown => Status::Idle,
+            _ => Status::Busy,
+        }
+    }
+    /// Take the engine over from the polled title-time reader.
+    pub fn install() {
+        let _ = single::ensure_installed(CONFIG);
+    }
+    /// Whether the polled XA player may use the controller: nothing in flight and the drive
+    /// stopped (the source is closed then).
+    pub fn idle() -> bool {
+        single::is_idle()
+    }
 }
 // The manifest with its atlas rows compacted to `AtlasRow` (host/hk-build/guest_manifest.rs); `atlas` expands a row.
 include!(concat!(
@@ -4824,16 +4927,13 @@ pub fn cdda_acquire() -> bool {
     if d.music || d.loading || d.prefetch || d.clip || d.pool || d.tail || crate::modules::fetch_pending() {
         return false;
     }
-    if d.installed {
-        cd_stream::suspend();
+    if d.installed && !cd_stream::idle() {
+        return false;
     }
     d.cdda = true;
     true
 }
 pub fn cdda_release() {
     let d = unsafe { &mut *(&raw mut DRIVE) };
-    if d.cdda && d.installed {
-        cd_stream::resume();
-    }
     d.cdda = false;
 }

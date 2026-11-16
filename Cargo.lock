@@ -29,6 +29,7 @@ dependencies = [
  "hk-cache",
  "hk-format",
  "hk-sim",
+ "psx-cdstream",
  "psx-display",
  "psx-fmv",
  "psx-fx",
@@ -60,6 +61,15 @@ dependencies = [
 [[package]]
 name = "psx-cache"
 version = "0.1.0"
+
+[[package]]
+name = "psx-cdstream"
+version = "0.1.0"
+dependencies = [
+ "psx-hw",
+ "psx-io",
+ "psx-rt",
+]
 
 [[package]]
 name = "psx-display"

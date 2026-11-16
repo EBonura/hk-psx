@@ -18,7 +18,7 @@ trim-force-on = []
 trim-force-off = []
 # Seamless-transition study: scripted gate tour and per-phase gate timing.
 # Gate phase timing (HK_GATE_LOG) in an otherwise ordinary build, for walking routes.
-gate-log = []
+gate-log = ["psx-cdstream/trace"]
 # Drive-event ring (HK_EVENT_LOG) for diagnosing one gate; 2 KB of BSS.
 gate-events = ["gate-log"]
 gate-tour = ["gate-log"]
@@ -77,5 +77,6 @@ hk-format = {path="../shared/hk-format"}
 hk-sim = {path="../shared/hk-sim"}
 hk-cache = {path="../shared/hk-cache"}
 psx-io = { path = "../.psoxide/sdk/crates/psx-io" }
+psx-cdstream = { path = "../.psoxide/sdk/crates/psx-cdstream" }
 psx-hw = { path = "../.psoxide/crates/psx-hw" }
 psx-fmv = { path = "../.psoxide/sdk/crates/psx-fmv" }
