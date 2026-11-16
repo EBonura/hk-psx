@@ -164,8 +164,9 @@ def stack_guard(exe,map_path,module=None):
     if status!=0:raise ValueError('Scratchpad stack guard failed:\n'+log)
     return log.splitlines()
 
-# The wrapper in game/src/cd_stream.rs enters hk_cd_interrupt with this much of HK_CD_IRQ_STACK reserved.
-IRQ_STACK_RESERVED=16
+# The CD interrupt handler (psx_cdstream's one-transfer engine) runs on psx-rt's dispatcher stack:
+# psx_rt::dispatch::STACK_BYTES (512) less the 112 bytes of saved context.
+DISPATCH_HANDLER_BUDGET=400
 
 def inline_gate(exe,map_path):
     """The SDK's `inline-gate` (sdk/docs/GATE.md, "Inlined frame-path functions"): a frame-path
@@ -176,18 +177,11 @@ def inline_gate(exe,map_path):
     if done.returncode!=0:raise ValueError('Inline gate failed:\n'+done.stdout+done.stderr)
 
 def irq_stack_guard(exe,map_path):
-    """Prove the CD interrupt's call tree fits HK_CD_IRQ_STACK, the stack the exception
-    wrapper switches to (game/src/cd_stream.rs). The same static walk as the scratchpad
-    stacks, rooted at `hk_cd_interrupt`, against the linked size of the stack less the
-    wrapper's reservation; recursion, a call through a register or a BIOS call fails it
-    like any other tree. Resident image only: the handler and everything it calls are resident.
-    Returns the guard's report lines; raises on any failure."""
-    size=None
-    for line in Path(map_path).read_text().splitlines():
-        fields=line.split()
-        if len(fields)==5 and fields[4]=='HK_CD_IRQ_STACK':size=int(fields[2],16);break
-    if size is None:raise ValueError('HK_CD_IRQ_STACK is not in the link map')
-    status,log=_run('stack-guard',exe,map_path,root=('^hk_cd_interrupt$',size-IRQ_STACK_RESERVED))
+    """Prove the CD interrupt's call tree fits what the dispatcher stack leaves it: the same
+    static walk as the scratchpad stacks, rooted at the SDK's handler; recursion, a call through
+    a register or a BIOS call fails it like any other tree. Returns the guard's report lines;
+    raises on any failure."""
+    status,log=_run('stack-guard',exe,map_path,root=('^psx_cdstream::console::on_single_interrupt$',DISPATCH_HANDLER_BUDGET))
     print(log,end='',flush=True)
     if status!=0:raise ValueError('CD interrupt stack guard failed:\n'+log)
     return log.splitlines()

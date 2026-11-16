@@ -6,13 +6,6 @@
 [[exception]]
 program = "hk-psx"
 kind = "cop0-asm"
-item = "game/src/cd_stream.rs"
-count = 1
-remove = "W5"
-
-[[exception]]
-program = "hk-psx"
-kind = "cop0-asm"
 item = "game/src/intro.rs"
 count = 3
 remove = "W5"
@@ -27,13 +20,6 @@ remove = "unscheduled"
 [[exception]]
 program = "hk-psx"
 kind = "register-literal"
-item = "game/src/cd_stream.rs"
-count = 1
-remove = "W5"
-
-[[exception]]
-program = "hk-psx"
-kind = "register-literal"
 item = "game/src/intro.rs"
 count = 11
 remove = "W5"
@@ -44,13 +30,6 @@ kind = "register-literal"
 item = "game/src/runner_audio.rs"
 count = 1
 remove = "unscheduled"
-
-[[exception]]
-program = "hk-psx"
-kind = "vector-write"
-item = "game/src/cd_stream.rs"
-count = 1
-remove = "W5"
 
 [[exception]]
 program = "hk-intro"
