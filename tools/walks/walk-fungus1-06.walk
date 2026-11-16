@@ -20,4 +20,4 @@ include fungus1-06b2-chain.walk
 include fungus1-06v4-chain.walk
 check vine-4 HK_BREAK_COUNT >= 2 ; HK_DEATHS == 0 ; HK_CHEATS == 0
 include fungus1-06c-chain.walk
-check in-07 x between 34 38 ; y between 60 64 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
+check in-07 x between 34 38 ; y between 60 64 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_INPUT_MISSED_VBLANKS == 0

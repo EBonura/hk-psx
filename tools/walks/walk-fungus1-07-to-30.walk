@@ -13,4 +13,4 @@ include fungus1-07-chain.walk
 include fungus1-19-chain.walk
 include fungus1-10-chain.walk
 include fungus1-30-chain.walk
-check in-31 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1
+check in-31 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_INPUT_MISSED_VBLANKS == 0

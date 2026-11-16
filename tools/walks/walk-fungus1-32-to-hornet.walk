@@ -44,4 +44,4 @@ press cross                                                          # closes th
 check pack-resident expr ((u8(HK_MODULE_RESIDENT + 4) >> 5) & 1) == 1   # art_fx (module 37) was read while the panel was up
 hold right+r2 for 20                                                 # the first dash, at once
 wait 40
-check dash HK_FX_DASH_RAISED >= 1 ; HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0
+check dash HK_FX_DASH_RAISED >= 1 ; HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0 ; HK_INPUT_MISSED_VBLANKS == 0

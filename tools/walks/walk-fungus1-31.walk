@@ -14,4 +14,4 @@ wait until HK_GAME_MODE == 1 timeout 1200
 include fungus1-31a-chain.walk
 include fungus1-31-toll-chain.walk
 include fungus1-31b-chain.walk
-check in-32 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_BENCH_RESTS >= 1
+check in-32 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_BENCH_RESTS >= 1 ; HK_INPUT_MISSED_VBLANKS == 0

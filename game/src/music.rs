@@ -319,6 +319,8 @@ enum Boss {
     Off,
     Starting,
     Playing,
+    /// The song is silent and the drive's Pause is out; `poll` is when it was sent.
+    Stopping,
 }
 struct BossState {
     want: bool,
@@ -328,10 +330,13 @@ struct BossState {
     fade_len: u16,
     track: u8,
     once: bool,
+    /// The controller's interrupt enable the Pause's dispatch saved, given back when it ends.
+    irq_enable: u8,
 }
 static mut BOSS: BossState = BossState {
     want: false,
     phase: Boss::Off,
+    irq_enable: 0,
     poll: 0,
     fade_start: 0,
     fade_len: 0,
@@ -788,7 +793,7 @@ pub fn service() {
 }
 fn boss_service(now: u32) {
     let b = unsafe { &mut *(&raw mut BOSS) };
-    if b.fade_len != 0 && b.phase != Boss::Off {
+    if b.fade_len != 0 && matches!(b.phase, Boss::Starting | Boss::Playing) {
         let elapsed = now.wrapping_sub(b.fade_start);
         if elapsed >= b.fade_len as u32 {
             b.want = false;
@@ -843,22 +848,77 @@ fn boss_service(now: u32) {
             }
         }
         (false, Boss::Starting | Boss::Playing) => {
+            // Silent at once; the drive's Pause then completes in the background
+            // (1.2 to 3.9 million clocks out of a read), one look a VBlank, so the
+            // frame loop and the pad poll carry on meanwhile.
             spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
             spu::enable_cd_audio(false);
-            player().stop();
-            if !crate::cd_token::cd().try_pause_until_complete(SPINS) {
-                unsafe {
-                    HK_MUSIC_ERROR = 4;
-                }
-            }
-            b.phase = Boss::Off;
-            unsafe {
-                HK_MUSIC_BOSS = 0;
-            }
-            crate::disc::cdda_release();
+            send_pause(b, now);
         }
+        (_, Boss::Stopping) => stopping(b, now),
         (false, Boss::Off) => {}
     }
+}
+/// The longest a fight's Pause has taken, in VBlanks (the frames it no longer blocks).
+#[no_mangle]
+pub static mut HK_MUSIC_PAUSE_VBLANKS: u32 = 0;
+/// VBlanks a Pause may take before the blocking protocol takes over (one second; the
+/// slowest completion measured on the console is 3.9 million clocks, under seven).
+const STOP_VBLANKS: u32 = 60;
+/// Send Pause without waiting for either answer.
+fn send_pause(b: &mut BossState, now: u32) {
+    // A Pause has no parameter, so the parameter FIFO wait cannot fail it.
+    b.irq_enable = crate::cd_token::cd()
+        .dispatch_command(psx_hw::cd::CMD_PAUSE, &[], 0)
+        .unwrap_or(0);
+    b.phase = Boss::Stopping;
+    b.poll = now;
+}
+/// One look at the controller while the Pause is out.
+fn stopping(b: &mut BossState, now: u32) {
+    use psx_hw::cd::irq;
+    let mut cd = crate::cd_token::cd();
+    let stopped = match cd.irq_flag_value() {
+        irq::COMPLETE => true,
+        // The first answer, or a sector of the read that was still on its way.
+        flag @ (irq::ACKNOWLEDGE | irq::DATA_READY) => {
+            cd.discard_response();
+            cd.acknowledge_irq(flag);
+            false
+        }
+        // Refused: the head is still seeking. Send it again (the seek ends within a third of a
+        // second); the enable saved by the first dispatch is the one given back.
+        irq::ERROR => {
+            cd.discard_response();
+            cd.acknowledge_irq(irq::ERROR);
+            let _ = cd.dispatch_command(psx_hw::cd::CMD_PAUSE, &[], 0);
+            false
+        }
+        _ => false,
+    };
+    let late = now.wrapping_sub(b.poll) > STOP_VBLANKS;
+    if !stopped && !late {
+        return;
+    }
+    cd.restore_irq_output(b.irq_enable);
+    unsafe {
+        HK_MUSIC_PAUSE_VBLANKS = HK_MUSIC_PAUSE_VBLANKS.max(now.wrapping_sub(b.poll));
+    }
+    if !stopped && !cd.try_pause_until_complete(SPINS) {
+        unsafe {
+            HK_MUSIC_ERROR = 4;
+        }
+    }
+    // The drive is paused: forget the song without the player's own (blocking) Pause.
+    // SAFETY: one thread, and no borrow of PLAYER lives across this call.
+    unsafe {
+        PLAYER = Player::new(crate::cd_token::cd());
+    }
+    b.phase = Boss::Off;
+    unsafe {
+        HK_MUSIC_BOSS = 0;
+    }
+    crate::disc::cdda_release();
 }
 /// Room loads stop XA first: a fight that ends in a death reloads.
 pub fn release_cdda() {
@@ -866,7 +926,9 @@ pub fn release_cdda() {
         BOSS.want = false;
         BOSS.fade_len = 0;
     }
-    if unsafe { BOSS.phase } != Boss::Off {
+    // The Pause completes over a few VBlanks; the load waits for it with the pad polled.
+    while unsafe { BOSS.phase } != Boss::Off {
         boss_service(psx_rt::interrupts::vblank_count());
+        crate::input::checkpoint();
     }
 }

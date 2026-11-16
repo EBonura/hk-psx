@@ -46,4 +46,4 @@ include fungus1-01-chain.walk
 include fungus1-01b-chain.walk
 include fungus1-02-chain.walk
 wait until HK_WALK_READY == 1 timeout 300
-check in-fungus1-06 x between 0 6 ; y between 14 19 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_GEO_WALLET >= 40
+check in-fungus1-06 x between 0 6 ; y between 14 19 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_GEO_WALLET >= 40 ; HK_INPUT_MISSED_VBLANKS == 0
