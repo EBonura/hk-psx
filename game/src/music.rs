@@ -865,7 +865,10 @@ pub static mut HK_MUSIC_PAUSE_VBLANKS: u32 = 0;
 /// VBlanks a Pause may take before the blocking protocol takes over (one second; the
 /// slowest completion measured on the console is 3.9 million clocks, under seven).
 const STOP_VBLANKS: u32 = 60;
-/// Send Pause without waiting for either answer.
+/// Send Pause without waiting for either answer. This and `stopping` run a few times a fight:
+/// they sit in the cold text, so the hot text after `boss_service` keeps its I-cache layout.
+#[inline(never)]
+#[link_section = ".psx_cold.hk_music_send_pause"]
 fn send_pause(b: &mut BossState, now: u32) {
     // A Pause has no parameter, so the parameter FIFO wait cannot fail it.
     b.irq_enable = crate::cd_token::cd()
@@ -875,6 +878,8 @@ fn send_pause(b: &mut BossState, now: u32) {
     b.poll = now;
 }
 /// One look at the controller while the Pause is out.
+#[inline(never)]
+#[link_section = ".psx_cold.hk_music_stopping"]
 fn stopping(b: &mut BossState, now: u32) {
     use psx_hw::cd::irq;
     let mut cd = crate::cd_token::cd();
