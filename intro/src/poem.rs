@@ -16,7 +16,7 @@ use psx_hw::gpu::{gp0, gp1, packet};
 use psx_io::cd::xa::{DriveSpeed, Event, File, Player};
 use psx_io::gpu::{try_wait_command_ready, write_command, write_display_control};
 use psx_io::periph::Cd;
-use psx_rt::{interrupts, tty};
+use psx_rt::interrupts;
 use psx_spu::CdVolume;
 use psx_vram::{upload_words, Clut, TextureDepth, TexturePage, VramRect};
 
@@ -198,14 +198,6 @@ impl Run {
         self.back ^= 1;
         None
     }
-
-    fn report(&self) {
-        tty::print("INTRO poem frames=");
-        crate::print_decimal(self.frames);
-        tty::print(" slowest_vblanks=");
-        crate::print_decimal(self.slowest);
-        tty::println("");
-    }
 }
 
 /// The two display buffers the poem alternates between: the first two of the movies' three.
@@ -271,7 +263,6 @@ pub fn play(skip: &mut Skip, cd: Cd, carry: &mut Carry) -> First {
             }
         }
     };
-    run.report();
     if let Some((mut player, _, _)) = piano {
         player.stop();
         let _ = player.release();
@@ -331,18 +322,12 @@ impl Carry {
     }
 }
 
-/// What the poem drew while the game loaded the first scene behind it: frames and the longest gap, in VBlanks,
-/// between two steps (the loader's checkpoints are not that regular). Printed when the program is called again.
-pub fn report_carried(carry: &mut Carry) {
-    if carry.valid != VALID || carry.started == 0 {
-        return;
+/// The load behind the poem is over: a carried poem that had started is not resumed if the program is
+/// called again.
+pub fn forget_carried(carry: &mut Carry) {
+    if carry.valid == VALID && carry.started != 0 {
+        carry.valid = 0;
     }
-    carry.valid = 0;
-    tty::print("INTRO poem during the load frames=");
-    crate::print_decimal(carry.frames);
-    tty::print(" slowest_vblanks=");
-    crate::print_decimal(carry.slowest);
-    tty::println("");
 }
 
 /// One step of the poem, called by the game from inside its loader (game/src/intro.rs) with the game's own
