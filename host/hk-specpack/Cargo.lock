@@ -11,12 +11,16 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "hk-format"
 version = "0.1.0"
+dependencies = [
+ "psx-math",
+]
 
 [[package]]
 name = "hk-sim"
 version = "0.1.0"
 dependencies = [
  "hk-format",
+ "psx-fx",
  "psx-math",
  "psx-pack",
 ]
@@ -26,6 +30,22 @@ name = "hk-specpack"
 version = "0.1.0"
 dependencies = [
  "hk-sim",
+]
+
+[[package]]
+name = "psx-fx"
+version = "0.1.0"
+dependencies = [
+ "psx-gpu",
+]
+
+[[package]]
+name = "psx-gpu"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "psx-hw",
+ "psx-io",
 ]
 
 [[package]]
@@ -40,6 +60,7 @@ name = "psx-io"
 version = "0.1.0"
 dependencies = [
  "psx-hw",
+ "psx-math",
 ]
 
 [[package]]
@@ -51,4 +72,5 @@ name = "psx-pack"
 version = "0.1.0"
 dependencies = [
  "psx-io",
+ "psx-math",
 ]
