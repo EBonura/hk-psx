@@ -461,7 +461,7 @@ pub static mut HK_COVERAGE_SCENE: u32 = 0;
 fn atlas_fingerprint(scene: usize) -> u32 {
     let (start, end) = SCENE_ATLAS_RANGES[scene];
     let (start, end) = (start as usize, end as usize);
-    let mut hash = 2166136261u32;
+    let mut hash = psx_pack::Fnv32::new();
     for a in (start..end).map(atlas) {
         for value in [
             a.kind as u32,
@@ -470,12 +470,10 @@ fn atlas_fingerprint(scene: usize) -> u32 {
             a.raw_len as u32,
             a.raw_fnv,
         ] {
-            for byte in value.to_le_bytes() {
-                hash = (hash ^ byte as u32).wrapping_mul(16777619);
-            }
+            hash.update(&value.to_le_bytes());
         }
     }
-    hash
+    hash.finish()
 }
 /// Manifest scene that owns each catalogue slot: the only per-view table the disc keeps. A slot's
 /// scene-local room index is not stored; `local_index` derives it, which holds because the views of
@@ -1727,16 +1725,14 @@ impl Cache {
             let bytes = unsafe {
                 core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(b.at), size)
             };
-            let mut hash = 0x811c9dc5u32;
+            let mut hash = psx_pack::Fnv32::new();
             let mut good = true;
             for (i, part) in bytes.chunks(SECTOR_BYTES).enumerate() {
                 crate::input::checkpoint();
                 good &= crate::runner_audio::validate_fragment(mossman, i * SECTOR_BYTES, part);
-                for &x in part {
-                    hash = (hash ^ u32::from(x)).wrapping_mul(0x01000193);
-                }
+                hash.update_bulk(part);
             }
-            if good && hash == checksum && crate::runner_audio::begin_overlay() {
+            if good && hash.finish() == checksum && crate::runner_audio::begin_overlay() {
                 for (i, part) in bytes.chunks(SECTOR_BYTES).enumerate() {
                     crate::input::checkpoint();
                     crate::runner_audio::upload_fragment(i * SECTOR_BYTES, part);
@@ -1761,7 +1757,7 @@ impl Cache {
                 return Err(LoadError::PayloadRead);
             }
             let result=(|| {
-                let mut hash=0x811c9dc5u32;
+                let mut hash=psx_pack::Fnv32::new();
                 let mut offset=0;
                 while offset<size {
                     checkpoint();
@@ -1769,11 +1765,11 @@ impl Cache {
                     let n=(size-offset).min(SECTOR_BYTES);
                     let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
                     if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
-                    for &b in bytes {hash=(hash^u32::from(b)).wrapping_mul(0x01000193);}
+                    hash.update_bulk(bytes);
                     if pass==1 {crate::runner_audio::upload_fragment(offset,bytes);}
                     offset+=n;
                 }
-                if hash!=checksum {return Err(LoadError::RoomMismatch);}
+                if hash.finish()!=checksum {return Err(LoadError::RoomMismatch);}
                 Ok(())
             })();
             unsafe{self.reader.stop();}
@@ -1798,14 +1794,12 @@ impl Cache {
         // The header entry was matched against this same pair at init(); this
         // checks the payload the drive actually delivered, as the scene, atlas
         // and coverage decoders do through the decoder's own checksum.
-        let mut hash = 0x811c9dc5u32;
+        let mut hash = psx_pack::Fnv32::new();
         for block in bytes.chunks(1024) {
             checkpoint();
-            for &byte in block {
-                hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
-            }
+            hash.update_bulk(block);
         }
-        if hash != checksum {
+        if hash.finish() != checksum {
             return Err(LoadError::Checksum);
         }
         Ok(bytes)
@@ -2036,18 +2030,16 @@ impl Cache {
         let bytes = unsafe {
             core::slice::from_raw_parts((&raw const BUFFERS.words).cast::<u8>().add(input), len)
         };
-        let mut hash = 0x811c9dc5u32;
-        if preverified(SCENE_SFX_INDEX + scene) {
-            hash = checksum;
-        } else {
+        let mut hash = psx_pack::Fnv32::new();
+        let mut sum = checksum;
+        if !preverified(SCENE_SFX_INDEX + scene) {
             for block in bytes.chunks(1024) {
                 checkpoint();
-                for &byte in block {
-                    hash = (hash ^ u32::from(byte)).wrapping_mul(0x01000193);
-                }
+                hash.update_bulk(block);
             }
+            sum = hash.finish();
         }
-        if hash != checksum {
+        if sum != checksum {
             return Err(LoadError::Checksum);
         }
         crate::scene_sfx::upload(id, bytes);
@@ -3754,9 +3746,9 @@ pub fn preverify_step(mut budget: usize) {
         if word {
             v.hash = crate::room_decode::word_hash(v.hash, &bytes[v.pos..v.pos + m]);
         } else {
-            for &b in &bytes[v.pos..v.pos + m] {
-                v.hash = (v.hash ^ u32::from(b)).wrapping_mul(0x01000193);
-            }
+            let mut h = psx_pack::Fnv32::from_state(v.hash);
+            h.update_bulk(&bytes[v.pos..v.pos + m]);
+            v.hash = h.finish();
         }
         v.pos += m;
         budget -= m;
