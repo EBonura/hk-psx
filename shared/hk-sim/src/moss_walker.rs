@@ -180,7 +180,7 @@ impl MossWalker {
         }
     }
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     fn play(&mut self, clip: Clip, step: &mut Step) {

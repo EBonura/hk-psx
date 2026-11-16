@@ -1051,7 +1051,7 @@ impl<'t, 'a> Ctx<'t, 'a> {
     pub fn rand(&mut self) -> u32 {
         unsafe {
             let p = self.t.mem.cast::<u32>();
-            let x = p.read().wrapping_mul(1664525).wrapping_add(1013904223);
+            let x = psx_fx::NrLcg::step(p.read());
             p.write(x);
             x
         }

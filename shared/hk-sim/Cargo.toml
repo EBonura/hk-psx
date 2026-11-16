@@ -13,7 +13,5 @@ boss = []
 [dependencies]
 psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
 psx-pack = { path = "../../.psoxide/sdk/crates/psx-pack" }
-hk-format={path="../hk-format"}
-[dev-dependencies]
-# The tests path-include game modules, which step their seeds through the SDK's psx-fx.
 psx-fx = { path = "../../.psoxide/sdk/crates/psx-fx" }
+hk-format={path="../hk-format"}

@@ -48,6 +48,7 @@ name = "hk-sim"
 version = "0.1.0"
 dependencies = [
  "hk-format",
+ "psx-fx",
  "psx-math",
  "psx-pack",
 ]

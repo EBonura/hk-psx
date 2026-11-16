@@ -123,7 +123,7 @@ impl Corpse {
         corpse
     }
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng
     }
     pub fn clip(self, spec: CorpseSpec) -> u16 {

@@ -358,7 +358,7 @@ pub fn fling(speed: i32, quarter_degrees: i32) -> [i32; 2] {
 /// controller hands it, so a replay fires the same shots.
 pub fn shot_velocity(rng: &mut u32, speed: [i32; 2], angles: [i32; 2]) -> [i32; 2] {
     let mut next = || {
-        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        *rng = psx_fx::NrLcg::step(*rng);
         *rng >> 8
     };
     let steps = ((speed[1] - speed[0]) >> 8) as u32 + 1;
@@ -486,7 +486,7 @@ impl Mawlek {
                 .any(|(p, _)| matches!(p, Arm::Antic | Arm::Swipe | Arm::Cooldown))
     }
     pub fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     /// Random.Range over a float interval, quantized to whole ticks.

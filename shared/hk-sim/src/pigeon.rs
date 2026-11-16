@@ -220,7 +220,7 @@ impl Pigeon {
         self.force = [0; 2];
     }
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     /// `RandomFloat(low, high)` over Q16 values, deterministic. Not Unity RNG
