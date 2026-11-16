@@ -1,5 +1,5 @@
 pacing = 374
-frame_time = 260
+frame_time = 265
 long_frames = 35
 card = kings-return.mcd
 # kings-return boots from the card kings-death itself wrote, so the Shade it spawns
