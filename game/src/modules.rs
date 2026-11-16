@@ -824,9 +824,9 @@ fn begin(pkg: Package, keep: Mods) -> Option<Install> {
 
 /// Word FNV-1a, as host/code_modules.py `word_hash`.
 fn hash(words: &[u32], h: u32) -> u32 {
-    words
-        .iter()
-        .fold(h, |h, &w| (h ^ w).wrapping_mul(0x0100_0193))
+    let mut hash = psx_pack::WordFnv32::from_state(h);
+    hash.update(words);
+    hash.finish()
 }
 
 // ---- background: install the predicted room's code from the prefetch.
