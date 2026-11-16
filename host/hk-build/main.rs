@@ -1102,6 +1102,7 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
         "shared/hk-format/Cargo.toml",
         "shared/hk-cache/Cargo.toml",
         "host/Cargo.toml",
+        "host/hk-module-publish/Cargo.toml",
     ] {
         // hk-sim's tests include game modules whose statics (the telemetry words, the camera) every test in a
         // binary shares: one test thread, or a parallel pair now and then reads the other's state.

@@ -1,0 +1,25 @@
+[package]
+name = "hk-module-publish"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+description = "Shared same-link module publisher for hk-psx: reads the guest ELF through the pinned SDK's tools"
+
+# Its own workspace: it path-depends on the hydrated SDK (.psoxide), which a clean clone does not have
+# until the build driver (host/hk-build) has run. The driver's workspace therefore never depends on it,
+# and host/shared_publish.py builds it after the driver has hydrated .psoxide.
+[workspace]
+
+[[bin]]
+name = "hk-module-publish"
+path = "main.rs"
+
+[dependencies]
+serde_json = "1"
+sha2 = "0.10"
+psx-library = { git = "https://github.com/EBonura/PSoXide.git", rev = "efdd3083c343d275d3c9cf39e2d6d3658ac3995d" }
+psoxide-hazard = { path = "../../.psoxide/tools/psoxide-hazard" }
+psx-residency = { path = "../../.psoxide/sdk/crates/psx-residency" }
+
+[profile.release]
+codegen-units = 1

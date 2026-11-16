@@ -72,7 +72,7 @@ ROOM_MODULE_IDS = 56
 # 111.75 KiB (0x1BF00) since Greenpath's Hornet (2026-10-18): her `hornet` module is 65,312 bytes, which only one window can hold,
 # the window [0x801D8000, 0x801E8000), so the pool starts exactly there (the pool's end is the stack reserve's). Her room is then
 # the module, 4,096 bytes of state and the carried Shade (99,796 bytes) in 114,432. At 100 KiB (base 0x801DAF00) the pool holds no
-# window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
+# window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-module-publish main.rs
 # now refuses a module wider than the widest window the pool holds).
 STACK_FLOOR = 0x801FFF00 - 0xC000
 # 0x1B000 (+2 KiB) at the repin to SDK main c75f63928 (2026-11-06): the same module sources compile larger (debris +740 B,

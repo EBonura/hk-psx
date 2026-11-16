@@ -24,7 +24,7 @@ def publish(root, elf, link_map, out, scene_code, art):
     env = dict(os.environ, CARGO_TARGET_DIR=str(sdk_target))
     subprocess.run(['cargo','build','--locked','--release','--manifest-path',str(sdk/'tools/psoxide-hazard/Cargo.toml'),
                     '--bin','overlay-compose','--bin','hazard-patch','--bin','hazard-scan','--bin','stack-guard'],check=True,env=env)
-    subprocess.run(['cargo','build','--locked','--release','--manifest-path',str(root/'host/hk-build/Cargo.toml'),
+    subprocess.run(['cargo','build','--locked','--release','--manifest-path',str(root/'host/hk-module-publish/Cargo.toml'),
                     '--bin','hk-module-publish'],check=True,env=dict(os.environ,CARGO_TARGET_DIR=str(target)))
     publisher = target/'release/hk-module-publish'
     declarations = out/'module-declarations.json'
