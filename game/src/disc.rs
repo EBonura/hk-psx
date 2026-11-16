@@ -2234,6 +2234,10 @@ impl Cache {
         }
         crate::gate_probe::set(crate::gate_probe::UPLOAD);
         psx_gpu::draw_sync();
+        // The last decoder step, the GPU drain and the two uploads below were one stretch between pad polls: on
+        // one build the Crossroads_07 load of journey-crossroads carried a poll over a VBlank (759,177 bus cycles
+        // in that tick against 571,236 a VBlank) when the loads' work moved by a tick.
+        checkpoint();
         if !crate::world::particles::break_effects::load_scene(
             SCENE_MANIFEST[scene].scene_id as usize,
             &arena[..f.raw_len],
@@ -2241,6 +2245,7 @@ impl Cache {
             return Err(LoadError::EffectArt);
         }
         // The scene's Geo bank (coins and rocks) follows the particle art in the same chunk.
+        checkpoint();
         if !crate::geo_render::upload_scene(&arena[..f.raw_len]) {
             return Err(LoadError::EffectArt);
         }
