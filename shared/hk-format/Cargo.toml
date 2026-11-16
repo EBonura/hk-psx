@@ -3,6 +3,8 @@ name="hk-format"
 version="0.1.0"
 edition="2021"
 [workspace]
+[dependencies]
+psx-math = { path = "../../.psoxide/sdk/crates/psx-math" }
 [dev-dependencies]
 psx-fx = { path = "../../.psoxide/sdk/crates/psx-fx" }
 psx-hw = { path = "../../.psoxide/crates/psx-hw" }

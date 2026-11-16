@@ -14,6 +14,7 @@ version = "0.1.0"
 dependencies = [
  "psx-fx",
  "psx-hw",
+ "psx-math",
  "psx-pack",
 ]
 
@@ -45,11 +46,17 @@ name = "psx-io"
 version = "0.1.0"
 dependencies = [
  "psx-hw",
+ "psx-math",
 ]
+
+[[package]]
+name = "psx-math"
+version = "0.1.0"
 
 [[package]]
 name = "psx-pack"
 version = "0.1.0"
 dependencies = [
  "psx-io",
+ "psx-math",
 ]

@@ -145,20 +145,18 @@ impl Validation {
         Ok(true)
     }
 }
-// Bounded fixed-width slices let the compiler combine byte reads without any
-// pointer alignment requirement. The suffix slice also avoids offset addition
-// overflow; invalid or truncated fields still panic before accessing bytes.
+// The SDK's checked readers (one length test, then one unaligned load); a truncated field panics.
 #[inline]
 pub fn u16_at(b: &[u8], i: usize) -> u16 {
-    u16::from_le_bytes(b[i..][..2].try_into().unwrap())
+    psx_math::le::read_u16(b, i)
 }
 #[inline]
 pub fn u32_at(b: &[u8], i: usize) -> u32 {
-    u32::from_le_bytes(b[i..][..4].try_into().unwrap())
+    psx_math::le::read_u32(b, i)
 }
 #[inline]
 pub fn i32_at(b: &[u8], i: usize) -> i32 {
-    u32_at(b, i) as i32
+    psx_math::le::read_i32(b, i)
 }
 impl<'a> Room<'a> {
     /// Borrow an immutable payload that has already passed `parse`.
