@@ -12,8 +12,25 @@ checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 name = "hk-format"
 version = "0.1.0"
 dependencies = [
+ "psx-fx",
  "psx-hw",
  "psx-pack",
+]
+
+[[package]]
+name = "psx-fx"
+version = "0.1.0"
+dependencies = [
+ "psx-gpu",
+]
+
+[[package]]
+name = "psx-gpu"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "psx-hw",
+ "psx-io",
 ]
 
 [[package]]
