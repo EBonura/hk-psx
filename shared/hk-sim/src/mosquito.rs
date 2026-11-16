@@ -195,7 +195,7 @@ impl Mosquito {
         self.velocity = [0; 2];
     }
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     fn range(&mut self, low: i32, high: i32) -> i32 {

@@ -289,7 +289,7 @@ struct Bouncer {
 }
 impl Bouncer {
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     /// RandomFloat over [low, high) degrees, then `Left or Right?`.
@@ -466,7 +466,7 @@ impl GruzMother {
         self.velocity = velocity;
     }
     pub fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     fn range(&mut self, [lo, hi]: [u16; 2]) -> u16 {

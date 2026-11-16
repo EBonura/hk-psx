@@ -526,11 +526,7 @@ pub const CHUNK_HEAD: usize = 20;
 
 /// FNV-1a, the chunk's own checksum (it covers the head and the payload, not the padding).
 pub fn fnv(bytes: &[u8]) -> u32 {
-    let mut hash = 0x811c9dc5u32;
-    for &b in bytes {
-        hash = (hash ^ u32::from(b)).wrapping_mul(0x01000193);
-    }
-    hash
+    psx_pack::fnv1a32(bytes)
 }
 
 /// What a scene's chunk says it holds.

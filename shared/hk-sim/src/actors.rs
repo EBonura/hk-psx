@@ -841,7 +841,7 @@ mod tests {
         }
         let mut seed = 18u32;
         let mut next = || {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            seed = psx_fx::NrLcg::step(seed);
             (seed % (1024 * crate::ONE) as u32) as i32 - 512 * crate::ONE
         };
         for i in 0..100000 {

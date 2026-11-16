@@ -152,7 +152,7 @@ impl Shade {
         !matches!(self.phase, Phase::DeathStart | Phase::Death | Phase::Gone)
     }
     fn random(&mut self) -> u32 {
-        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.rng = psx_fx::NrLcg::step(self.rng);
         self.rng >> 8
     }
     /// HealthManager death: the corpse FSM's Death Start owns the Geo return.

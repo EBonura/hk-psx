@@ -1958,10 +1958,7 @@ impl Actor {
     #[inline(never)]
     fn new(scene: usize, placement: &hk_sim::ActorPlacement, spec: &ActorSpec) -> Self {
         // Stable per-source seed, not a claim to reproduce Unity's global RNG.
-        let seed = placement
-            .source_id
-            .wrapping_mul(1664525)
-            .wrapping_add(1013904223);
+        let seed = psx_fx::NrLcg::step(placement.source_id);
         Self {
             scene,
             source_id: placement.source_id,
