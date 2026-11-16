@@ -9,7 +9,7 @@ sync poll
 card hornet-04-entry.mcd
 wait 300
 press cross
-wait 47                                       # phase-rest title: rest after the title: 40 loses this fight on the 2026-11-09 layout (phase class, docs/ROUTES.md); 5, 17, 31 and 47 extra ticks all win there. On the 35b285c78 pin with the Controllers change 57 and 17 lose it and 5, 31, 47 and 63 win
+wait 53                                       # phase-rest title: rest after the title: 40 loses this fight on the 2026-11-09 layout (phase class, docs/ROUTES.md); 5, 17, 31 and 47 extra ticks all win there. On the 35b285c78 pin with the Controllers change 57 and 17 lose it and 5, 31, 47 and 63 win. On SDK 6c0ed4ebd5ed 47 loses it (the Hornet stands in her wind-up while a hold waits 90 ticks) and 40, 41, 44, 45, 48, 49, 52, 53, 54, 55 win, 42, 43, 46, 50, 51 lose
 press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 include fungus1-04.walk
