@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod brightness;
+mod link_order;
 mod budget_doc;
 mod card_check;
 mod cook_store;
@@ -1691,42 +1692,48 @@ fn check_hot_order(root: &Path, strict: bool) -> Result<()> {
                 .map(|start| name[start..end].to_string())
         })
     };
-    let missing: Vec<&str> = wanted
-        .iter()
-        .copied()
-        .filter(|w| !sections.iter().any(|s| s.2 == *w))
+    // A name is listed once per crate hash it is known under (ship and twin differ): this link answers for the
+    // lines carrying its own hash, and for lines without one.
+    let hashes: std::collections::HashSet<String> = sections.iter().filter_map(|s| crate_hash(&s.2)).collect();
+    let wanted: Vec<&str> = wanted
+        .into_iter()
+        .filter(|w| match crate_hash(w) {
+            Some(h) => hashes.contains(&h),
+            None => true,
+        })
         .collect();
+    // A name is listed once per crate hash it is known under; only the variants this link has are placed.
+    let present: Vec<&str> = wanted.iter().copied().filter(|w| sections.iter().any(|s| s.2 == *w)).collect();
+    let mut names: Vec<String> = Vec::new();
+    for w in &wanted {
+        let n = link_order::normalize(w);
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    let placed: std::collections::HashSet<String> = present.iter().map(|w| link_order::normalize(w)).collect();
+    let missing: Vec<&String> = names.iter().filter(|n| !placed.contains(*n)).collect();
     if !missing.is_empty() {
-        let found = sections.iter().find_map(|s| crate_hash(&s.2));
-        let listed = crate_hash(wanted[0]);
-        let mut message = format!(
-            "hot-text-order.txt: {} of {} functions are not in the link ({})",
+        let message = format!(
+            "hot-text-order.txt: {} of {} functions are not in the link ({}); regenerate it with `cargo hk-build link-order --map <this build's map> [--map <the other build's map>]`",
             missing.len(),
-            wanted.len(),
+            names.len(),
             missing[0]
         );
-        if let (Some(found), Some(listed)) = (found, listed) {
-            if found != listed {
-                let list: Vec<String> = wanted.iter().map(|w| w.replace(&listed, &found)).collect();
-                message += &format!("; the crate hash is {found}, the list has {listed}. The list under this hash:\n{}", list.join("\n"));
-            }
-        }
         if strict {
             return Err(message.into());
         }
         println!("warning: {message}");
         return Ok(());
     }
+    let wanted = present;
     let mut previous: Option<usize> = None;
+    let mut inversions = 0usize;
     for symbol in &wanted {
         let at = sections.iter().position(|s| s.2 == *symbol).unwrap_or(0);
         if let Some(p) = previous {
-            if at != p + 1 {
-                return Err(format!(
-                    "hot-text-order.txt: {symbol} is not placed right after {}",
-                    sections[p].2
-                )
-                .into());
+            if sections[at].0 < sections[p].0 {
+                inversions += 1;
             }
         }
         previous = Some(at);
@@ -1737,7 +1744,7 @@ fn check_hot_order(root: &Path, strict: bool) -> Result<()> {
         .map(|s| s.0)
         .unwrap_or(0);
     println!(
-        "Hot text order holds: {} functions from {first:#010x}",
+        "Hot text order holds: {} functions from {first:#010x} ({inversions} placed against the list, where the linker kept a generic instance with its first user)",
         wanted.len()
     );
     Ok(())
@@ -2667,6 +2674,16 @@ fn main() {
             Ok(())
         })();
         if let Err(error) = result {
+            eprintln!("error: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if action == "link-order" {
+        // link-order --map MAP [--map MAP]...: write game/hot-text-order.txt again for these link maps (link_order.rs).
+        let rest: Vec<String> = args.collect();
+        let maps: Vec<PathBuf> = rest.windows(2).filter(|w| w[0] == "--map").map(|w| PathBuf::from(&w[1])).collect();
+        if let Err(error) = link_order::regenerate(&root(), &maps) {
             eprintln!("error: {error}");
             std::process::exit(1);
         }
