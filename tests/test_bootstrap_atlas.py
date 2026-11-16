@@ -63,7 +63,7 @@ mod texture_upload {
     }
 }
 pub mod gpu {
-    pub mod gp0{pub const CLEAR_CACHE:u32=0x01000000;}
+    pub mod gp0{pub const CLEAR_CACHE:u32=0x01000000;pub const COPY_VRAM_TO_CPU:u32=0xC0000000;}
     pub fn wait_command_ready(){super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Wait));}
     pub fn write_command(word:u32){assert_eq!(word,gp0::CLEAR_CACHE);super::LOG.with(|l|l.borrow_mut().events.push(super::Event::Clear));}
     pub struct Stat(pub u32);

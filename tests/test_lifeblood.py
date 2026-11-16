@@ -4,6 +4,7 @@ from PIL import Image
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'host'))
 from lifeblood import dense_positions,pack_art,LIFE_RECTS
+from hk_externs import psx_fx_args
 
 class LifebloodTests(unittest.TestCase):
  def test_dense_packing_is_deterministic_complete_disjoint_and_bounded(self):
@@ -38,7 +39,7 @@ class LifebloodTests(unittest.TestCase):
     args+=['--extern',crate.replace('-','_')+'='+str(lib),'-L','dependency='+str(deps)]
    # game/src/lifeblood.rs calls psx-math directly; hk-sim's build leaves it in its deps.
    deps=(Path(os.environ['CARGO_TARGET_DIR'])/'debug/deps' if os.environ.get('CARGO_TARGET_DIR') else ROOT/'shared/hk-sim/target/debug/deps');lib=max(deps.glob('libpsx_math-*.rlib'),key=lambda p:p.stat().st_mtime)
-   args+=['--extern','psx_math='+str(lib)]
+   args+=['--extern','psx_math='+str(lib),*psx_fx_args()]
    result=subprocess.run(args,env=dict(os.environ,CARGO_MANIFEST_DIR=str(ROOT/'game')),capture_output=True,text=True)
    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
    result=subprocess.run([temp+'/run'],capture_output=True,text=True);self.assertEqual(result.returncode,0,result.stdout+result.stderr)

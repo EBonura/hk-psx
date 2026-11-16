@@ -4,8 +4,9 @@ extern crate self as psx_pad;
 extern crate self as psx_vram;
 extern crate self as psx_rt;
 extern crate self as psx_io;
-// `psx_io::gpu::write_command`: the texture cache clear after a style's upload.
-pub mod gpu{pub fn write_command(_:u32){}}
+extern crate self as psx_hw;
+// `psx_io::gpu::write_command` and `psx_hw::gpu::gp0::CLEAR_CACHE`: the texture cache clear after a style's upload.
+pub mod gpu{pub fn write_command(_:u32){}pub mod gp0{pub const CLEAR_CACHE:u32=0x0100_0000;}}
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Mutex;

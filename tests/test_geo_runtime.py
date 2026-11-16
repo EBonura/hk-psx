@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import unittest
+from hk_externs import psx_fx_args
 ROOT=Path(__file__).resolve().parents[1]
 class GeoRuntime(unittest.TestCase):
     def test_native_runtime(self):
@@ -20,7 +21,7 @@ class GeoRuntime(unittest.TestCase):
         self.assertEqual(set(libs),{'hk_sim','hk_format','psx_math'})
         cmd=['rustc','--edition=2021','-Awarnings','--test',str(ROOT/'tests/geo_runtime.rs')]
         for name,path in libs.items():cmd+=['--extern',f'{name}={path}']
-        cmd+=['-L',f'dependency={output/"cargo/debug/deps"}','-o',str(output/'geo-tests')]
+        cmd+=['-L',f'dependency={output/"cargo/debug/deps"}',*psx_fx_args(),'-o',str(output/'geo-tests')]
         compiled=subprocess.run(cmd,cwd=ROOT,capture_output=True,text=True)
         self.assertEqual(compiled.returncode,0,compiled.stdout+compiled.stderr)
         tested=subprocess.run([str(output/'geo-tests'),'--test-threads=1'],cwd=ROOT,capture_output=True,text=True)

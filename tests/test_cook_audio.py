@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from hk_externs import psx_fx_args
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'host'))
 
@@ -43,7 +44,7 @@ class AudioTests(unittest.TestCase):
                 '(393312,8000,1000,743,743),(393344,11025,1000,1024,1024)];')
             binary=root/'test';env=dict(os.environ,CARGO_MANIFEST_DIR=str(root/'game'))
             source=Path(__file__).resolve().parents[1]/'tests/audio_runtime.rs'
-            compiled=subprocess.run(['rustc','--edition=2021','-Awarnings','--test',str(source),'-o',str(binary)],
+            compiled=subprocess.run(['rustc','--edition=2021','-Awarnings','--test',str(source),'-o',str(binary),*psx_fx_args()],
                 env=env,capture_output=True,text=True)
             self.assertEqual(compiled.returncode,0,compiled.stdout+compiled.stderr)
             result=subprocess.run([str(binary)],capture_output=True,text=True)

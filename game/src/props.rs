@@ -309,10 +309,10 @@ fn segment_hits_terrain(
         !hk_sim::empty_edge(&e) && crosses(a, b, e)
     })
 }
+use psx_fx::NrLcg;
 // The guest links the enemies' own segment test once; the host tests,
 // which compile this module alone, keep this copy of it.
 #[cfg(not(test))]
-use psx_fx::NrLcg;
 use crate::enemies::segment_crosses as crosses;
 /// Whether segment `a`-`b` crosses edge `e`.
 #[cfg(test)]
