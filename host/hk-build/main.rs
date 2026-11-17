@@ -501,6 +501,9 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
         }
     }
     build_hk_cook(root)?;
+    // host/npc_dialogue.py, run by regions.py, reads data/font-metrics.json, which only the
+    // dialogue-art cooker writes. It cooks from the source alone, so it can run first.
+    rust_step(root, "dialogue-art")?;
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
