@@ -61,18 +61,15 @@ const LOGO_Y: i16 = 97;
 /// Test discs only (`route-input`): held together while the save slot is chosen, the four shoulder
 /// buttons start a new game on the ledge instead of with the drop from the top gate (main.rs). The
 /// recorded routes (tools/tapes) press them so they begin where they were recorded. A shipping build
-/// does not read them.
+/// never sets the flag; it reads it all the same, so that `main`'s code is the same in both builds and the
+/// hot-text layout binds to both (docs/HOT-TEXT.md). An exported symbol, so that the compiler cannot fold a
+/// flag nothing in the shipping build writes into a constant.
 #[cfg(feature = "route-input")]
 const SKIP_DROP: u16 = button::L1 | button::R1 | button::L2 | button::R2;
-#[cfg(feature = "route-input")]
-static mut SKIP_DROP_HELD: bool = false;
-#[cfg(feature = "route-input")]
+#[no_mangle]
+static mut HK_SKIP_DROP_HELD: bool = false;
 pub fn skip_drop() -> bool {
-    unsafe { SKIP_DROP_HELD }
-}
-#[cfg(not(feature = "route-input"))]
-pub const fn skip_drop() -> bool {
-    false
+    unsafe { HK_SKIP_DROP_HELD }
 }
 /// Whether the title art reached VRAM: a retry screen whose read failed draws
 /// no background rather than whatever a scene left in those pages.
@@ -687,7 +684,7 @@ pub fn run(
             start = menu.step(bits);
             #[cfg(feature = "route-input")]
             if start {
-                unsafe { SKIP_DROP_HELD = bits & SKIP_DROP == SKIP_DROP };
+                unsafe { HK_SKIP_DROP_HELD = bits & SKIP_DROP == SKIP_DROP };
             }
             // MenuAudioController: startGame when a save is chosen, submit or
             // cancel (one clip) when a button changes the page, select for the

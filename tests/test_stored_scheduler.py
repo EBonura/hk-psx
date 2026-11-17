@@ -567,6 +567,7 @@ const VERIFY:bool=option_env!("HK_VERIFY_COOK").is_some();
         code = r'''
 #![allow(dead_code)]
 const EMPTY:usize=usize::MAX;
+const PRELOAD_NONE:u16=u16::MAX;
 const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
@@ -622,7 +623,7 @@ mod cd_stream {
         }
     }
 }
-struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize,ready:bool,header:[u32;4]}
+struct Cache{loaded_scenes:usize,loaded_atlases:usize,selected:usize,resident_scene:usize,atlas_scene:usize,coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize,ready:bool,header:[u32;4],preloaded:u16}
 impl Cache{METHODS
  fn revoke_metadata(&mut self){self.metadata_scene=EMPTY;self.metadata_len=0;}
 }
@@ -633,7 +634,7 @@ impl Cache{METHODS
         if scenes!=0&&atlases!=ATLAS_ROWS.len(){continue;}
         for terminal in [cd_stream::Status::Idle,cd_stream::Status::Done,cd_stream::Status::Failed(42)] {
             let mut cache=Cache{loaded_scenes:scenes,loaded_atlases:atlases,
-                selected:if scenes==0{EMPTY}else{0},resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,effect_scene:0,ready:true,header:[11,22,33,44]};
+                selected:if scenes==0{EMPTY}else{0},resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,effect_scene:0,ready:true,header:[11,22,33,44],preloaded:PRELOAD_NONE};
             unsafe{HK_COVERAGE_SCENE=1;HK_COVERAGE_BYTES=64;}
             cd_stream::setup(terminal,terminal);cache.reset_bootstrap();
             cd_stream::assert_quiescent(1);
@@ -649,7 +650,7 @@ impl Cache{METHODS
 }
 #[test]fn active_transport_is_cancelled_and_drained_before_reset_returns(){
     for terminal in [cd_stream::Status::Done,cd_stream::Status::Failed(9)] {
-        let mut cache=Cache{loaded_scenes:1,loaded_atlases:23,selected:0,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,effect_scene:0,ready:true,header:[1;4]};
+        let mut cache=Cache{loaded_scenes:1,loaded_atlases:23,selected:0,resident_scene:0,atlas_scene:0,coverage_scene:0,coverage_len:64,metadata_scene:0,metadata_len:160,effect_scene:0,ready:true,header:[1;4],preloaded:PRELOAD_NONE};
         unsafe{DRIVE.clip=true;CLIP_DROPPED=false;}
         cd_stream::setup(cd_stream::Status::Busy,terminal);cache.reset_bootstrap();
         cd_stream::assert_quiescent(3);

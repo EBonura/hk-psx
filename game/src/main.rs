@@ -3,6 +3,7 @@
 #![feature(asm_experimental_arch)]
 // Size over speed for code that runs a handful of times a tick (camera.rs).
 #![feature(optimize_attribute)]
+#![feature(fn_align)]
 extern crate psx_rt;
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::{Nail, Player, ONE};
@@ -81,6 +82,16 @@ mod dialogue;
 mod dialogue_art;
 #[cfg(feature = "intro")]
 mod intro;
+/// A disc without the opening movies (the test discs: `route-input` replays press New Game by poll count) makes
+/// the same call from `main` as the shipping disc, to a function that does nothing, so that `main`'s code is the
+/// shipping build's and the hot-text layout binds to both (docs/HOT-TEXT.md).
+#[cfg(not(feature = "intro"))]
+mod intro {
+    #[inline(never)]
+    pub fn play(boot: &[u8], fb: &mut psx_gpu::display::DoubleBuffer, screen: (i8, i8), load: fn()) {
+        core::hint::black_box((boot, fb, screen, load));
+    }
+}
 mod disc;
 mod display;
 mod draw_packet;
@@ -858,10 +869,11 @@ pub static mut HK_BOUNDARY_WAIT_TICKS: u32 = 0;
 pub static mut HK_BOUNDARY_WAIT_MAX: u32 = 0;
 #[no_mangle]
 pub static mut HK_PAD_POLL_MAX_VBLANK_GAP: u32 = 0;
-/// The first scene's load as far as the opening movies allow, run during the opening poem (intro.rs).
-#[cfg(feature = "intro")]
+/// The first scene's load as far as the opening movies allow, run during the opening poem (intro.rs); nothing on
+/// a disc without them.
 #[optimize(size)]
 fn preload_first_scene() {
+    #[cfg(feature = "intro")]
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
 }
 
@@ -879,7 +891,15 @@ fn publish_walk_senses(game: &frame::Game) {
     }
 }
 
+/// In a section of its own at the front of the text (`.psx_hot`, sdk/psoxide.ld): the game loop's code is not
+/// quite the same in the shipping build and the route-input twin (register allocation differs with the features),
+/// so the hot-text layout cannot bind it; placed here, it sits at the same address in both builds and ahead of the
+/// laid-out text, which `psoxide-pgo place` then lays out from where it really starts (docs/HOT-TEXT.md). Aligned
+/// to 1 KB, so that it starts at the same address whatever psx-rt's `_start` ahead of it weighs (956 bytes in the
+/// twin, 972 in the shipping build).
 #[no_mangle]
+#[link_section = ".psx_hot.00_main"]
+#[rustc_align(1024)]
 fn main() {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
     psx_rt::interrupts::install_vblank_counter();
@@ -975,7 +995,6 @@ fn main() {
     // The first scene's atlases go up while the poem plays: none of them may lie where the movies draw.
     #[cfg(feature = "intro")]
     const _: () = assert!(!disc::scene_clobbered(disc::scene_index(NEW_GAME_ENTRY.2)));
-    #[cfg(feature = "intro")]
     if saved.is_none() {
         if let Some(boot) = art {
             // While the poem plays the first scene's load goes as far as the movies allow (disc.rs `preload`).

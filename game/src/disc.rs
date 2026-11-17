@@ -806,14 +806,15 @@ pub struct Cache {
     /// Manifest index of the scene whose effect texels sit in the effect VRAM rects.
     effect_scene: usize,
     /// The scene whose sound effects, coverage, effect art and atlases `preload` put in place before the
-    /// opening movies took the arena, or `PRELOAD_NONE`. The scene's admission consumes it.
-    #[cfg(feature = "intro")]
+    /// opening movies took the arena, or `PRELOAD_NONE`. The scene's admission consumes it. Both fields exist
+    /// in every build, so that the cache's layout, and the code of every function that reads it, is the
+    /// shipping build's in the test discs too (docs/HOT-TEXT.md).
+    #[cfg_attr(not(feature = "intro"), allow(dead_code))]
     preloaded: u16,
     /// `preload` is running the admission: it stops after the atlases and leaves the code to the real one.
-    #[cfg(feature = "intro")]
+    #[cfg_attr(not(feature = "intro"), allow(dead_code))]
     early: bool,
 }
-#[cfg(feature = "intro")]
 const PRELOAD_NONE: u16 = u16::MAX;
 #[no_mangle]
 pub static mut HK_SCENE_LOADS: u32 = 0;
@@ -906,9 +907,11 @@ fn mark(state: u32, error: u32) {
 /// calls it: nothing a scratchpad stack entry reaches may, because the poem's frame is drawn by the opening
 /// program through a pointer, which the stack guard cannot bound. A call, not inline code, in the build that
 /// has the poem: the admission has a few dozen of them.
-#[cfg_attr(feature = "intro", inline(never))]
-#[cfg_attr(feature = "intro", optimize(size))]
-#[cfg_attr(not(feature = "intro"), inline(always))]
+///
+/// The same shape in every build (a test disc has no poem): the code of the frame path is then the shipping
+/// build's in the route-input twin too, which the hot-text layout binds to (docs/HOT-TEXT.md).
+#[inline(never)]
+#[optimize(size)]
 fn checkpoint() {
     crate::input::checkpoint();
     #[cfg(feature = "intro")]
@@ -982,9 +985,7 @@ impl Cache {
             split_b: None,
             metadata_view: None,
             effect_scene: EMPTY,
-            #[cfg(feature = "intro")]
             preloaded: PRELOAD_NONE,
-            #[cfg(feature = "intro")]
             early: false,
         }
     }
@@ -1914,8 +1915,8 @@ impl Cache {
     /// invariant. SPU order matters and is preserved: `audio::init` already
     /// reset the SPU before the title screen, and nothing below resets it, so
     /// the SFX bank goes first, then ambience, Focus, Geo and Runner above it.
-    #[cfg_attr(feature = "intro", inline(never))]
-    #[cfg_attr(all(feature = "intro", not(test)), optimize(size))]
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
     pub fn prepare_ambience(&mut self) -> Result<(), LoadError> {
         if crate::audio::ready()
             && crate::ambience::is_ready()
@@ -2284,7 +2285,7 @@ impl Cache {
     /// the fixed effect VRAM rects. Runs before the scene decode owns the arena;
     /// VRAM keeps the texels, so nothing stays resident in RAM.
     #[inline(never)]
-    #[cfg_attr(all(feature = "intro", not(test)), optimize(size))]
+    #[cfg_attr(not(test), optimize(size))]
     fn prepare_effect_art(&mut self, scene: usize, st: Stage) -> Result<(), LoadError> {
         self.init()?;
         let f = EFFECT_ART_MANIFEST[SCENE_MANIFEST[scene].scene_id as usize];
@@ -2594,10 +2595,7 @@ impl Cache {
         self.coverage_len = 0;
         self.revoke_metadata();
         self.effect_scene = EMPTY;
-        #[cfg(feature = "intro")]
-        {
-            self.preloaded = PRELOAD_NONE;
-        }
+        self.preloaded = PRELOAD_NONE;
         unsafe {
             HK_COVERAGE_SCENE = 0;
             HK_COVERAGE_BYTES = 0;
