@@ -183,6 +183,29 @@ fn run(program: impl AsRef<Path>, args: &[&str], cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Build the `hk-cook` binary that `host/regions.py` runs through `host/actor_bank.py`.
+///
+/// This driver links the cookers as a library and builds none of their binaries, so a fresh
+/// clone that cooks from scratch had no `host/target/release/hk-cook` when the region cook
+/// reached the first scene with an actor bank. Cargo does nothing when it is already current.
+fn build_hk_cook(root: &Path) -> Result<()> {
+    run(
+        "cargo",
+        &[
+            "build",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            "host/Cargo.toml",
+            "-p",
+            "hk-cook",
+            "--bin",
+            "hk-cook",
+        ],
+        root,
+    )
+}
+
 fn venv_python(root: &Path) -> PathBuf {
     root.join(".venv/bin/python")
 }
@@ -477,6 +500,7 @@ fn cook_cached(root: &Path, force: bool) -> Result<()> {
             None => println!("Cook cache miss: no record of the region report as the cook left it."),
         }
     }
+    build_hk_cook(root)?;
     python_step(root, "host/regions.py", region_cook_args(&provenance))?;
     hk_cook::mossman_scene::cook(root)?;
     hk_cook::shaman_runner_scene::cook(root)?;
