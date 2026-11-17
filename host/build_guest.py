@@ -178,6 +178,35 @@ def boot_art():
 # The I-cache layout of the hot text (the SDK's `psoxide-pgo layout` profile, collected over the frame-table
 # routes; docs/HOT-TEXT.md). Every ordinary build places it on its own first link and links again in that order.
 HOT_LAYOUT='game/hk.layout'
+def clone_names(resident_map):
+    """Give the link's numbered copies of a function the number the layout profile knows them by.
+    An `#[inline]` SDK function that two crates call out of line is linked twice, and LLVM numbers the second copy
+    (`psx_math::int32::isqrt_u64.2213`) by how many symbols came before it, which differs between the route-input twin
+    and the shipping build (.2213 and .2237): the profile, collected on the twin, then does not bind the copy in the
+    shipping link and the two builds are placed differently. Where the map holds exactly one numbered copy of a name
+    the profile lists with another number, the copy is renamed to the profile's number in the map `place` reads, and
+    back in the order it writes. Returns the (real, profiled) section symbols renamed."""
+    profiled={}
+    for line in (ROOT/HOT_LAYOUT).read_text().splitlines():
+        m=re.match(r'^f \S+ \d+ (.+)\.(\d+)$',line)
+        if m:profiled[m[1]]=m[2]
+    lines=resident_map.read_text().splitlines(keepends=True)
+    found={}
+    for i,line in enumerate(lines):
+        m=re.match(r'^(.{33} +)(.+) \(\.(\d+)\)\n?$',line)
+        if m and m[2] in profiled and i and lines[i-1].rstrip().endswith(f'.{m[3]})'):found.setdefault(m[2],[]).append((i,m[3]))
+    renamed=[]
+    for name,copies in found.items():
+        (i,number),want=copies[0],profiled[name]
+        if len(copies)!=1 or number==want:continue
+        section=re.search(r':\(\.text\.(\S+)\)$',lines[i-1].rstrip())
+        if not section:continue
+        real=section[1];alias=real[:-len(number)]+want
+        lines[i-1]=lines[i-1].replace(f'.text.{real})',f'.text.{alias})')
+        lines[i]=lines[i].replace(f' (.{number})',f' (.{want})')
+        renamed.append((real,alias))
+    resident_map.write_text(''.join(lines))
+    return renamed
 def place_hot_text(env,cmd,linked,link_map,out,scene_code,art):
     """Link the guest a second time with its hot functions where the layout profile puts them in the 4 KiB
     direct-mapped I-cache: `psoxide-pgo place` binds the profile (portable names and code hashes) onto the first
@@ -189,13 +218,16 @@ def place_hot_text(env,cmd,linked,link_map,out,scene_code,art):
     from shared_publish import publish
     first=out/'unplaced';first.mkdir(parents=True,exist_ok=True)
     publish(ROOT,linked,link_map,first,scene_code,art)
+    renamed=clone_names(first/'resident.map')
     order=out/'hot-text.order'
     host=dict(os.environ);host.pop('CARGO_ENCODED_RUSTFLAGS',None)
     # The resident map (the code modules cut out) and the SDK's own script: the layered script places the modules'
     # sections ahead of the resident text, and `place` would count them as the fixed text the order starts after.
     run(['cargo','run','-q','--release','--locked','--manifest-path',ROOT/'.psoxide/Cargo.toml','-p','psoxide-pgo','--',
          'place',ROOT/HOT_LAYOUT,first/'resident.map',first/'runtime.exe',ROOT/'.psoxide/sdk/psoxide.ld',order],env=host)
-    text=order.read_bytes()
+    text=order.read_text()
+    for real,profiled in renamed:text=re.sub(rf'^{re.escape(profiled)}$',real,text,flags=re.M)
+    text=text.encode()
     # A new order is a new file name, so cargo reruns game/build.rs and relinks.
     named=out/f'hot-text-{hashlib.sha256(text).hexdigest()[:16]}.order'
     named.write_bytes(text)
