@@ -300,25 +300,28 @@ def main():
             vals=[int(x[key]) for x in rows[10:]];stats[key]={'min':min(vals),'mean':statistics.mean(vals),'max':max(vals)}
     stack=[row for name in ('final-stack.csv','combat-stack.csv','doors-stack.csv','enemy-stack.csv') for row in csv.DictReader(open(state/name))]
     raw_stack_span=max(int(x['depth_bytes']) for x in stack)
-    # The CD handler deliberately switches to a separate static stack. The
-    # emulator's whole-run SP minimum therefore measures the distance between
-    # two allocations, not main-stack consumption. Keep that raw diagnostic,
-    # and measure the dedicated IRQ stack's initialized sentinel independently.
-    irq_match=re.search(r'^([0-9a-f]+)\s+.*\sHK_CD_IRQ_STACK$',link_map,re.MULTILINE)
+    # The CD handler runs on the SDK dispatcher's own static stack
+    # (__psx_rt_dispatch_stack, zeroed .bss), so the emulator's whole-run SP
+    # minimum measures the distance between two allocations, not main-stack
+    # consumption. Keep that raw diagnostic, and measure the dispatcher stack
+    # independently: it grows down, so the zero bytes left at its bottom are
+    # what no handler reached (a lower bound: a handler may store a zero).
+    irq_match=re.search(r'^([0-9a-f]+)\s+[0-9a-f]+\s+([0-9a-f]+)\s+\d+\s+__psx_rt_dispatch_stack$',link_map,re.MULTILINE)
     irq_stack_high=None
     if irq_match:
-        start=int(irq_match[1],16)-0x80000000
+        start=int(irq_match[1],16)-0x80000000;size=int(irq_match[2],16)
         untouched=[]
         for name in ('final-ram.bin','combat-ram.bin','doors-ram.bin','enemy-ram.bin'):
-            data=(state/name).read_bytes()[start:start+2048]
-            if len(data)!=2048 or data[:256]!=bytes([0xa5])*256:
-                raise ValueError('CD IRQ stack guard was overwritten or never initialized')
-            untouched.append(next((i for i,b in enumerate(data) if b!=0xa5),2048))
-        irq_stack_high=2048-min(untouched)
+            data=(state/name).read_bytes()[start:start+size]
+            if len(data)!=size:raise ValueError('Dispatcher stack lies outside captured RAM')
+            untouched.append(next((i for i,b in enumerate(data) if b),size))
+        if min(untouched)<size//8:
+            raise ValueError(f'CD interrupt reached the last {size//8} bytes of the dispatcher stack')
+        irq_stack_high=size-min(untouched)
     high=None if irq_match else raw_stack_span
     faults=word(state/'final-ram.bin','__psx_rt_fault_count')
     if faults:raise ValueError(f'Guest runtime reported {faults} unexpected exceptions')
     if digest(emu)!=emulator_sha:raise ValueError('Emulator changed during validation; rerun against one binary')
-    summary={'unexpected_guest_exceptions':faults,'artifact_hashes':build['outputs'],'emulator':str(emu),'emulator_sha256':emulator_sha,'telemetry':telemetry,'input_clock':'pad_poll (PXITAPE2)','region_count':len(selected['regions']),'packed_report':packed,'expected_initial_room_bytes':expected_room_bytes,'expected_initial_cd_sectors':initial_sectors,'title':title,'route':route,'repeats':repeats,'exe_missing_disc':exe,'exe_mounted_disc':mounted_exe,'corrupt_disc':corrupt,'combat':combat,'reset':reset,'doors':doors,'enemy':enemy,'hardware_renderer_image':image_stats,'stack_observed_bytes':high,'irq_stack_observed_bytes':irq_stack_high,'raw_stack_profiler_span_bytes':raw_stack_span,'stack_limitations':'Main-stack high-water unavailable from whole-run SP trace when dedicated CD IRQ stack is active. IRQ measurement is a sentinel lower-bound observation.','profile':stats,'commands':commands,'hardware_validated':False}
+    summary={'unexpected_guest_exceptions':faults,'artifact_hashes':build['outputs'],'emulator':str(emu),'emulator_sha256':emulator_sha,'telemetry':telemetry,'input_clock':'pad_poll (PXITAPE2)','region_count':len(selected['regions']),'packed_report':packed,'expected_initial_room_bytes':expected_room_bytes,'expected_initial_cd_sectors':initial_sectors,'title':title,'route':route,'repeats':repeats,'exe_missing_disc':exe,'exe_mounted_disc':mounted_exe,'corrupt_disc':corrupt,'combat':combat,'reset':reset,'doors':doors,'enemy':enemy,'hardware_renderer_image':image_stats,'stack_observed_bytes':high,'irq_stack_observed_bytes':irq_stack_high,'raw_stack_profiler_span_bytes':raw_stack_span,'stack_limitations':'Main-stack high-water unavailable from whole-run SP trace while the SDK dispatcher stack is in use. IRQ measurement is a lower-bound observation of the dispatcher stack.','profile':stats,'commands':commands,'hardware_validated':False}
     (state/'validation.json').write_text(json.dumps(summary,indent=2));print('Verified CUE, EXE, repeat display/RAM hashes. Captures:',out)
 if __name__=='__main__':main()
