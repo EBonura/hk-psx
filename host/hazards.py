@@ -164,10 +164,6 @@ def stack_guard(exe,map_path,module=None):
     if status!=0:raise ValueError('Scratchpad stack guard failed:\n'+log)
     return log.splitlines()
 
-# The CD interrupt handler (psx_cdstream's one-transfer engine) runs on psx-rt's dispatcher stack:
-# psx_rt::dispatch::STACK_BYTES (512) less the 112 bytes of saved context.
-DISPATCH_HANDLER_BUDGET=400
-
 def inline_gate(exe,map_path):
     """The SDK's `inline-gate` (sdk/docs/GATE.md, "Inlined frame-path functions"): a frame-path
     function the profile lists under [inline] (psx_gpu::chain::start_walk today) must not be linked
@@ -177,11 +173,14 @@ def inline_gate(exe,map_path):
     if done.returncode!=0:raise ValueError('Inline gate failed:\n'+done.stdout+done.stderr)
 
 def irq_stack_guard(exe,map_path):
-    """Prove the CD interrupt's call tree fits what the dispatcher stack leaves it: the same
-    static walk as the scratchpad stacks, rooted at the SDK's handler; recursion, a call through
-    a register or a BIOS call fails it like any other tree. Returns the guard's report lines;
-    raises on any failure."""
-    status,log=_run('stack-guard',exe,map_path,root=('^psx_cdstream::console::on_counted_interrupt$',DISPATCH_HANDLER_BUDGET))
+    """Prove the CD interrupt fits the dispatcher stack: the pinned SDK's `stack-guard` with no
+    root proves every handler registered with psx-rt's dispatcher against the stack the build
+    sets (PSX_DISPATCH_STACK_BYTES less the saved context), and this asks that the CD handler is
+    one of the handlers it proved, so a registration the guard stopped seeing fails the build too.
+    Returns the guard's report lines; raises on any failure."""
+    status,log=_run('stack-guard',exe,map_path)
     print(log,end='',flush=True)
-    if status!=0:raise ValueError('CD interrupt stack guard failed:\n'+log)
+    if status!=0:raise ValueError('Dispatcher stack guard failed:\n'+log)
+    if not re.search(r'^ok +dispatcher handler psx_cdstream::console::on_counted_interrupt\b',log,re.M):
+        raise ValueError('Dispatcher stack guard did not prove the CD handler:\n'+log)
     return log.splitlines()
