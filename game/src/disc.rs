@@ -1736,6 +1736,9 @@ impl Cache {
     }
     /// The destination is a private suffix; terminal Done includes Pause so
     /// no IRQ can continue writing when decoding or SPU upload begins.
+    /// Inlined into its loaders, as main's build had it: out of line it made each caller
+    /// larger, and the loaders sit in front of the hot text.
+    #[inline(always)]
     fn read(&mut self, entry: PackEntry, offset: usize) -> Result<(), LoadError> {
         crate::gate_probe::set(crate::gate_probe::DRIVE);
         room_drive();
