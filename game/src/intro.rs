@@ -178,7 +178,9 @@ pub fn play(
     load: fn(),
 ) {
     let screen = (i32::from(screen.0) as u32, i32::from(screen.1) as u32);
-    let (at, len) = crate::boot_art::INTRO_ART;
+    // Read as a value the compiler cannot see, so that a build without the movies (len 0) keeps this code and
+    // links what the shipping build links (main.rs `mod intro`).
+    let (at, len) = core::hint::black_box(crate::boot_art::INTRO_ART);
     if len == 0 {
         return;
     }

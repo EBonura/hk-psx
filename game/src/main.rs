@@ -80,27 +80,11 @@ mod cheats;
 mod decor;
 mod dialogue;
 mod dialogue_art;
-#[cfg(feature = "intro")]
+/// The opening movies' calls (intro.rs) are compiled into every build: a disc without the movies (the test discs:
+/// `route-input` replays press New Game by poll count) has no player in its boot art, and `intro::play` returns at
+/// once. The route-input twin then links the shipping build's code and data, so the hot-text layout binds and is
+/// placed alike in both (docs/HOT-TEXT.md).
 mod intro;
-/// A disc without the opening movies (the test discs: `route-input` replays press New Game by poll count) makes
-/// the same call from `main` as the shipping disc, to a function that does nothing, so that `main`'s code is the
-/// shipping build's and the hot-text layout binds to both (docs/HOT-TEXT.md). Like the shipping disc's, they are
-/// cold code (`.psx_cold`, after the hot text), so the two builds offer `psoxide-pgo place` the same functions to
-/// lay out and to fill its gaps with.
-#[cfg(not(feature = "intro"))]
-mod intro {
-    #[inline(never)]
-    #[link_section = ".psx_cold.hk_intro_play"]
-    pub fn play(boot: &[u8], fb: &mut psx_gpu::display::DoubleBuffer, screen: (i8, i8), load: fn()) {
-        core::hint::black_box((boot, fb, screen, load));
-    }
-    /// The loader's checkpoint calls it (disc.rs `checkpoint`), as it calls the poem's frame on the shipping disc.
-    #[inline(never)]
-    #[link_section = ".psx_cold.hk_intro_tick"]
-    pub fn tick() {
-        core::hint::black_box(());
-    }
-}
 mod disc;
 mod display;
 mod draw_packet;
