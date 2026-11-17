@@ -14,8 +14,7 @@ def clean_result():
         'optional_diagnostics': {
             name: {'final': value, 'maximum_observed': value}
             for name, value in [('HK_BOUNDARY_WAIT_TICKS', 0), ('HK_BOUNDARY_WAIT_MAX', 0),
-                                ('HK_PAD_POLL_MAX_VBLANK_GAP', 1), ('HK_CD_STREAM_ERROR', 0),
-                                ('PSX_CD_DISCARDED_SECTORS', 0)]
+                                ('HK_PAD_POLL_MAX_VBLANK_GAP', 1), ('HK_CD_STREAM_ERROR', 0)]
         },
         'observed_error_maxima': {'__psx_rt_fault_count': 0, 'HK_ROOM_LOAD_ERROR': 0, 'HK_CD_STREAM_ERROR': 0},
         'observed_poll_gaps': {'max_route_ticks': 1},

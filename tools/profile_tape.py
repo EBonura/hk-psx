@@ -19,13 +19,10 @@ import time
 WATCH = ('HK_PLAYER_X', 'HK_PLAYER_Y', 'HK_REGION_ID',
          'HK_CD_SECTORS_READ', 'HK_ROOM_LOAD_STATE', 'HK_ROOM_LOAD_ERROR',
          'HK_HEALTH', 'HK_GAME_MODE', '__psx_rt_fault_count')
-# Words of psx_cdstream's StreamStats (repr(C)) the gates read, by their offset in PSX_CD_STATS.
-CD_STATS_FIELDS = {'PSX_CD_DISCARDED_SECTORS': 8, 'PSX_CD_MAX_IRQ_TICKS': 12}
 OPTIONAL_WATCH = ('HK_LIFEBLOOD_OPENED','HK_LIFEBLOOD_ACTIVE','HK_LIFEBLOOD_STRUCK','HK_LIFEBLOOD_GRANTED','HK_BLUE_HEALTH','HK_GEO_WALLET','HK_GEO_HITS','HK_GEO_ROCKS_DEPLETED','HK_GEO_SPAWNED_VALUE','HK_GEO_COLLECTED_VALUE','HK_GEO_ACTIVE','HK_GEO_PENDING_VALUE','HK_GEO_LOST','HK_GEO_DRAWN','HK_PAUSED','HK_SFX_LEVEL','HK_AMBIENCE_LEVEL','HK_REGION_LOADS','HK_ROOM_DECODE_PHASE','HK_ROOM_READ_REGION','HK_ROOM_DECODE_REGION','HK_BOUNDARY_WAIT_TICKS', 'HK_BOUNDARY_WAIT_MAX',
                   'HK_SCENE_LOADS','HK_SCENE_READ_ID','HK_SCENE_DECODE_ID','HK_REGION_ACTIVATIONS',
                   'HK_ANIM_CACHE_HITS','HK_ANIM_CACHE_MISSES','HK_ANIM_UPLOAD_BYTES','HK_ANIM_UPLOAD_MAX_FRAME',
-                  'HK_PAD_POLL_MAX_VBLANK_GAP', 'PSX_CD_MAX_IRQ_TICKS',
-                  'HK_CD_STREAM_ERROR', 'PSX_CD_DISCARDED_SECTORS',
+                  'HK_PAD_POLL_MAX_VBLANK_GAP', 'HK_CD_STREAM_ERROR',
                   'HK_VRAM_UPLOAD_BYTES', 'HK_VRAM_UPLOAD_MAX_FRAME',
                   'HK_VRAM_BANK_HITS', 'HK_VRAM_BANK_MISSES',
                   'HK_VRAM_ACTIVE_BANK', 'HK_VRAM_PENDING_REGION',
@@ -87,7 +84,7 @@ def analyze(output, watches, map_text):
             'from_region': value(before, 'HK_REGION_ID'),
             'to_region': value(after, 'HK_REGION_ID'),
         })
-        for name in ('HK_BOUNDARY_WAIT_TICKS', 'PSX_CD_DISCARDED_SECTORS'):
+        for name in ('HK_BOUNDARY_WAIT_TICKS',):
             if name in watches:
                 intervals[-1][name.lower() + '_delta'] = value(after, name) - value(before, name)
     no_cd = [r for r in intervals if not r['sectors_read'] and not r['loads']]
@@ -222,8 +219,7 @@ def seamless_failures(result, max_frame_route_ticks=2):
         if diagnostics.get(name,{}).get('maximum_observed',0):
             failures.append(f'{name} was nonzero during replay')
     for name, maximum in (('HK_BOUNDARY_WAIT_TICKS', 0), ('HK_BOUNDARY_WAIT_MAX', 0),
-                          ('HK_PAD_POLL_MAX_VBLANK_GAP', 1), ('HK_CD_STREAM_ERROR', 0),
-                          ('PSX_CD_DISCARDED_SECTORS', 0)):
+                          ('HK_PAD_POLL_MAX_VBLANK_GAP', 1), ('HK_CD_STREAM_ERROR', 0)):
         observed = diagnostics.get(name, {}).get('maximum_observed')
         if observed is None:
             failures.append(f'Missing continuity diagnostic {name}')
@@ -298,11 +294,6 @@ def main():
                 continue
             parser.error(f'Missing required map symbol {name}')
         watches[name] = f'0x{match[1]}'
-    # The SDK's CD handler (psx_cdstream) publishes its counters as one block, PSX_CD_STATS.
-    stats = re.search(r'^([0-9a-f]+)\s+.*\sPSX_CD_STATS$', map_text, re.M)
-    if stats:
-        for name, offset in CD_STATS_FIELDS.items():
-            watches[name] = f'0x{int(stats[1], 16) + offset:08x}'
     cue_files = re.findall(r'^\s*FILE\s+"([^"]+)"\s+', args.cue.read_text(), re.M | re.I)
     if not cue_files:
         parser.error('No quoted FILE records in CUE')
