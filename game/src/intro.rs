@@ -105,7 +105,7 @@ core::arch::global_asm!(
     r#"
     .set noreorder
     .set noat
-    .section .text.hk_intro
+    .section .psx_cold.hk_intro_enter, "ax", @progbits
     .globl hk_intro_enter
     .globl hk_intro_leave
 hk_intro_enter:
@@ -170,6 +170,7 @@ hk_intro_leave:
 /// until the movies are over.
 #[inline(never)]
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_play"]
 pub fn play(
     boot: &[u8],
     fb: &mut psx_gpu::display::DoubleBuffer,
@@ -210,20 +211,14 @@ pub fn play(
     // The blob starts at psx-rt's `_start`, which on SDK main puts the machine in the documented entry state
     // (interrupts off, DMA, DPCR, DICR, root counters, SIO0 and the SPU's volumes and enables reset): the
     // program's own capture then runs too late to hold the game's. Take the game's here and put it back.
-    let call = |mode: u32| {
-        let state = Machine::capture();
-        let result = call_program(pc, gp, sp, mode);
-        state.restore();
-        result
-    };
-    if call(MODE_POEM) == RESULT_YIELD {
+    if call(pc, gp, sp, MODE_POEM) == RESULT_YIELD {
         begin_ticks(sp);
         load();
         finish_ticks();
     }
     // Each part skips on its own (the poem, then each movie), so the game never needs to know which was:
     // the movies follow the poem whether it ran out or was skipped.
-    call(MODE_MOVIES);
+    call(pc, gp, sp, MODE_MOVIES);
     // The mailbox is done with: a later session must not find a stale hand-off.
     // SAFETY: as above.
     unsafe { core::ptr::write_volatile(hand!(h, magic), 0) };
@@ -263,6 +258,7 @@ const DICR: u32 = 0x1F80_10F4;
 impl Machine {
     #[inline(never)]
     #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_capture"]
     fn capture() -> Machine {
         let status: u32;
         // SAFETY: reads COP0 SR into $8; the nop covers MFC0's load delay.
@@ -283,6 +279,7 @@ impl Machine {
 
     #[inline(never)]
     #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_restore"]
     fn restore(&self) {
         // SAFETY: the blob has returned: no DMA running, the drive quiet, the game's exception vector back
         // in place (the program restores it); interrupts stay off until everything else is back.
@@ -309,9 +306,21 @@ impl Machine {
     }
 }
 
+/// One call of the program in `mode` with the game's machine state taken before and put back after; what it reports.
+#[inline(never)]
+#[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_call"]
+fn call(pc: u32, gp: u32, sp: u32, mode: u32) -> u32 {
+    let state = Machine::capture();
+    let result = call_program(pc, gp, sp, mode);
+    state.restore();
+    result
+}
+
 /// One call of the program in `mode`; what it reports.
 #[inline(never)]
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_call_program"]
 fn call_program(pc: u32, gp: u32, sp: u32, mode: u32) -> u32 {
     // SAFETY: the blob is a program built for this call (intro/src/main.rs): it keeps to its own stack,
     // returns through `hk_intro_leave` with the stack pointer it was given, and restores the interrupt and
@@ -327,6 +336,7 @@ fn call_program(pc: u32, gp: u32, sp: u32, mode: u32) -> u32 {
 
 /// The poem goes on from the loader: the program's step entry is in the mailbox, its stack in `sp`.
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_begin_ticks"]
 fn begin_ticks(sp: u32) {
     let h = hand_base();
     // SAFETY: the hand-off block.
@@ -342,6 +352,7 @@ fn begin_ticks(sp: u32) {
 /// word's test is not worth a dozen bytes of the RAM below the pool at every one.
 #[inline(never)]
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_tick"]
 pub fn tick() {
     let now = psx_rt::interrupts::vblank_count();
     let h = hand_base();
@@ -366,6 +377,7 @@ pub fn tick() {
 
 /// The load is over: let the poem run out (or be skipped), a VBlank at a time.
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_intro_finish_ticks"]
 fn finish_ticks() {
     let h = hand_base();
     // SAFETY: the hand-off block.

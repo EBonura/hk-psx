@@ -268,6 +268,12 @@ pub fn load(
     restored.is_some()
 }
 /// The profile's board plus whatever the boot Cheats page already asked for.
+///
+/// Placed right after `main` in `.psx_hot` (main.rs) and aligned to 64 bytes: `main` is 4 bytes longer in the
+/// route-input twin than in the shipping build, and this function, the same in both, absorbs that, so the
+/// laid-out hot text that follows starts at the same address in both builds (docs/HOT-TEXT.md).
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", link_section = ".psx_hot.01_charms_boot", rustc_align(64))]
 pub fn boot(saved: Option<(psx_math::Mask64, psx_math::Mask64, u8, bool)>, grant: bool) -> bool {
     let loaded = match saved {
         Some((owned, equipped, notches, over)) => load(owned, equipped, notches, over),

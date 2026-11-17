@@ -84,15 +84,19 @@ mod dialogue_art;
 mod intro;
 /// A disc without the opening movies (the test discs: `route-input` replays press New Game by poll count) makes
 /// the same call from `main` as the shipping disc, to a function that does nothing, so that `main`'s code is the
-/// shipping build's and the hot-text layout binds to both (docs/HOT-TEXT.md).
+/// shipping build's and the hot-text layout binds to both (docs/HOT-TEXT.md). Like the shipping disc's, they are
+/// cold code (`.psx_cold`, after the hot text), so the two builds offer `psoxide-pgo place` the same functions to
+/// lay out and to fill its gaps with.
 #[cfg(not(feature = "intro"))]
 mod intro {
     #[inline(never)]
+    #[link_section = ".psx_cold.hk_intro_play"]
     pub fn play(boot: &[u8], fb: &mut psx_gpu::display::DoubleBuffer, screen: (i8, i8), load: fn()) {
         core::hint::black_box((boot, fb, screen, load));
     }
     /// The loader's checkpoint calls it (disc.rs `checkpoint`), as it calls the poem's frame on the shipping disc.
     #[inline(never)]
+    #[link_section = ".psx_cold.hk_intro_tick"]
     pub fn tick() {
         core::hint::black_box(());
     }
@@ -875,8 +879,9 @@ pub static mut HK_BOUNDARY_WAIT_MAX: u32 = 0;
 #[no_mangle]
 pub static mut HK_PAD_POLL_MAX_VBLANK_GAP: u32 = 0;
 /// The first scene's load as far as the opening movies allow, run during the opening poem (intro.rs); nothing on
-/// a disc without them.
+/// a disc without them. Cold code (`.psx_cold`), as the opening movies' calls are (intro.rs).
 #[optimize(size)]
+#[link_section = ".psx_cold.hk_preload_first_scene"]
 fn preload_first_scene() {
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
 }
