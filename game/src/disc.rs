@@ -6,13 +6,13 @@ use hk_format::coverage::{CoverageValidation, CoverageView, Expected as Coverage
 use hk_format::{Room, Scene, WorldMeta};
 use psx_pack::cd::{SectorReader, SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
-/// The loader's names for the SDK's one-transfer CD engine (`psx_cdstream::single`): one read
-/// or head park at a time, its progress while sectors land, cancel, and the hand-off of the
-/// controller to the polled XA player. The engine stores one sector per CD interrupt from the
-/// dispatcher, on the dispatcher's own stack, so a scene group's sectors keep landing while the
-/// loader decodes the ones before them.
+/// The loader's names for the SDK's one-transfer CD engine with a sector count
+/// (`psx_cdstream::counted`): one read or head park at a time, its progress while sectors land,
+/// cancel, and the hand-off of the controller to the polled XA player. The engine stores one
+/// sector per CD interrupt from the dispatcher, on the dispatcher's own stack, so a scene group's
+/// sectors keep landing while the loader decodes the ones before them.
 mod cd_stream {
-    use psx_cdstream::{single, Config, IrqMaskPolicy, Outcome, Request, RequestState, Ticket};
+    use psx_cdstream::{counted, Config, IrqMaskPolicy, Request, SubmitError};
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     pub enum Status {
         Idle,
@@ -20,35 +20,31 @@ mod cd_stream {
         Done,
         Failed(u32),
     }
-    /// 600 VBlanks without progress fail a transfer; Timer 2 times the handler
-    /// (`PSX_CD_STATS.max_irq_ticks`). The CD source is open only while a request runs, so
-    /// the polled XA player has the controller to itself whenever the engine is idle.
+    /// 600 VBlanks without progress fail a transfer. The CD source is open only while a request
+    /// runs, so the polled XA player has the controller to itself whenever the engine is idle.
     const CONFIG: Config = Config {
         timeout_vblanks: 600,
         irq_mask_policy: IrqMaskPolicy::OnlyWhileBusy,
-        time_handler: true,
         ..Config::DEFAULT
     };
-    /// The request in flight or the last one; `None` before the first.
-    static mut TICKET: Option<Ticket> = None;
-    /// `sectors_landed()` when that request was submitted.
+    /// `sectors_landed()` when the current request was submitted.
     static mut MARK: u32 = 0;
     /// `sectors_landed()` already counted in `HK_CD_SECTORS_READ`.
     static mut SEEN: u32 = 0;
     /// The latest failure's code, kept for the gates (walks, pins, gatetool, hkperf); 0 while
-    /// no transfer has failed. `PSX_CD_STATS` holds the engine's own counters.
+    /// no transfer has failed. The engine's own `last_error()` clears at the next submit.
     #[no_mangle]
     pub static mut HK_CD_STREAM_ERROR: u32 = 0;
     fn submit(request: Request) -> Result<(), u32> {
-        let mark = psx_cdstream::sectors_landed();
-        match single::submit(request) {
-            // SAFETY: one thread; the interrupt handler never touches these.
-            Ok(ticket) => unsafe {
-                TICKET = Some(ticket);
-                MARK = mark;
+        // The previous request is over when a submit is accepted: no sector is in flight here.
+        let mark = counted::sectors_landed();
+        match counted::submit(request) {
+            Ok(()) => {
+                // SAFETY: one thread; the interrupt handler never touches it.
+                unsafe { MARK = mark };
                 Ok(())
-            },
-            Err(psx_cdstream::SubmitError::QueueFull) => Err(0xfc00_0000),
+            }
+            Err(SubmitError::QueueFull) => Err(0xfc00_0000),
             Err(_) => Err(0xfd00_0000),
         }
     }
@@ -67,54 +63,51 @@ mod cd_stream {
     }
     /// Sectors of the current request stored so far.
     pub fn received() -> usize {
-        psx_cdstream::sectors_landed().wrapping_sub(unsafe { MARK }) as usize
+        counted::sectors_landed().wrapping_sub(unsafe { MARK }) as usize
     }
-    /// Requests submitted so far, parks included.
+    /// Requests accepted so far, parks included.
     pub fn starts() -> u32 {
-        single::submissions()
+        counted::submissions()
     }
     /// Stop the current request at its next sector; `status` stays `Busy` until the drive paused.
     pub fn cancel() {
-        if let Some(ticket) = unsafe { TICKET } {
-            let _ = single::cancel(ticket);
-        }
+        counted::cancel();
     }
     /// `Done` (a cancel included) and `Failed` only once the drive has stopped, so the next
     /// `start` is accepted.
     pub fn status() -> Status {
         // The handler's sectors join the polled ones in HK_CD_SECTORS_READ here, at the
         // loader's next look (every load loop asks until the transfer is over).
-        let landed = psx_cdstream::sectors_landed();
+        let landed = counted::sectors_landed();
         // SAFETY: one thread; the interrupt handler never touches these.
         unsafe {
             super::HK_CD_SECTORS_READ =
                 super::HK_CD_SECTORS_READ.wrapping_add(landed.wrapping_sub(SEEN));
             SEEN = landed;
         }
-        let Some(ticket) = (unsafe { TICKET }) else {
-            return Status::Idle;
-        };
-        match single::state(ticket) {
-            RequestState::Finished(c) => match c.outcome {
-                Outcome::Failed(f) => {
-                    unsafe { HK_CD_STREAM_ERROR = f.code() };
-                    Status::Failed(f.code())
+        match counted::status() {
+            psx_cdstream::Status::Idle => Status::Idle,
+            psx_cdstream::Status::Done => Status::Done,
+            // A cancel ends Failed with no error code: the loader counts it as Done.
+            psx_cdstream::Status::Failed => match counted::last_error() {
+                0 => Status::Done,
+                code => {
+                    // SAFETY: one thread; the interrupt handler never touches it.
+                    unsafe { HK_CD_STREAM_ERROR = code };
+                    Status::Failed(code)
                 }
-                _ if single::is_idle() => Status::Done,
-                _ => Status::Busy,
             },
-            RequestState::Unknown => Status::Idle,
             _ => Status::Busy,
         }
     }
-    /// Take the engine over from the polled title-time reader.
+    /// Take the engine over from the polled title-time reader (once, from the main stack).
     pub fn install() {
-        let _ = single::ensure_installed(CONFIG);
+        let _ = counted::ensure_installed(CONFIG);
     }
     /// Whether the polled XA player may use the controller: nothing in flight and the drive
     /// stopped (the source is closed then).
     pub fn idle() -> bool {
-        single::is_idle()
+        counted::is_idle()
     }
 }
 // The manifest with its atlas rows compacted to `AtlasRow` (host/hk-build/guest_manifest.rs); `atlas` expands a row.

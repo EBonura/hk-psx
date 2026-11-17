@@ -181,7 +181,7 @@ def irq_stack_guard(exe,map_path):
     static walk as the scratchpad stacks, rooted at the SDK's handler; recursion, a call through
     a register or a BIOS call fails it like any other tree. Returns the guard's report lines;
     raises on any failure."""
-    status,log=_run('stack-guard',exe,map_path,root=('^psx_cdstream::console::on_single_interrupt$',DISPATCH_HANDLER_BUDGET))
+    status,log=_run('stack-guard',exe,map_path,root=('^psx_cdstream::console::on_counted_interrupt$',DISPATCH_HANDLER_BUDGET))
     print(log,end='',flush=True)
     if status!=0:raise ValueError('CD interrupt stack guard failed:\n'+log)
     return log.splitlines()
