@@ -61,7 +61,9 @@ mod cd_stream {
     pub fn park(lba: u32) -> Result<(), u32> {
         submit(Request::park(lba))
     }
-    /// Sectors of the current request stored so far.
+    /// Sectors of the current request stored so far. Out of line, as `status`: each is called
+    /// from a dozen places in the loader.
+    #[inline(never)]
     pub fn received() -> usize {
         counted::sectors_landed().wrapping_sub(unsafe { MARK }) as usize
     }
@@ -75,6 +77,7 @@ mod cd_stream {
     }
     /// `Done` (a cancel included) and `Failed` only once the drive has stopped, so the next
     /// `start` is accepted.
+    #[inline(never)]
     pub fn status() -> Status {
         // The handler's sectors join the polled ones in HK_CD_SECTORS_READ here, at the
         // loader's next look (every load loop asks until the transfer is over).
@@ -2036,6 +2039,7 @@ impl Cache {
     }
     /// Bytes `from..to` of the title chunk (`from` on a sector boundary), staged `at` bytes into the arena and
     /// checked against `checksum`.
+    #[inline(never)]
     fn stage_menu(&mut self, from: usize, to: usize, at: usize, checksum: u32) -> Result<&[u8], LoadError> {
         self.init()?;
         if self.loaded_scenes != 0 {
