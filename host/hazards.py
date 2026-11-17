@@ -164,6 +164,14 @@ def stack_guard(exe,map_path,module=None):
     if status!=0:raise ValueError('Scratchpad stack guard failed:\n'+log)
     return log.splitlines()
 
+def inline_gate(exe,map_path):
+    """The SDK's `inline-gate` (sdk/docs/GATE.md, "Inlined frame-path functions"): a frame-path
+    function the profile lists under [inline] (psx_gpu::chain::start_walk today) must not be linked
+    as a function. Raises on a refusal."""
+    done=subprocess.run([str(_tools()/'inline-gate'),str(exe),'--map',str(map_path),'--profile',str(ROOT/'.psoxide/sdk/profile.toml')],capture_output=True,text=True)
+    print(done.stdout+done.stderr,end='',flush=True)
+    if done.returncode!=0:raise ValueError('Inline gate failed:\n'+done.stdout+done.stderr)
+
 def irq_stack_guard(exe,map_path):
     """Prove the CD interrupt fits the dispatcher stack: the pinned SDK's `stack-guard` with no
     root proves every handler registered with psx-rt's dispatcher against the stack the build
