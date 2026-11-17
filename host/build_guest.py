@@ -253,6 +253,14 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # supplies a target directory, including builds from a managed worktree.
     base_target=os.environ.get('CARGO_TARGET_DIR')
     guest_target=(Path(base_target)/'hk-guest'/hashlib.sha256(str(out).encode()).hexdigest()[:12]) if base_target else out/'guest'
+    # `.psoxide` is a git archive whose files carry their commit's time, so a move to an older SDK leaves its
+    # sources older than the last guest build and cargo keeps the stale rlibs. The guest build is keyed on the
+    # hydrated snapshot's record (.hkpsx/sdk.json, a hash of every file), as the intro's is: when it changes, the
+    # guest is compiled from scratch.
+    snapshot=hashlib.sha256((ROOT/'.hkpsx/sdk.json').read_bytes()).hexdigest()
+    stamp=guest_target/'hk-sdk-snapshot.sha256'
+    if guest_target.exists() and (not stamp.is_file() or stamp.read_text()!=snapshot):shutil.rmtree(guest_target)
+    guest_target.mkdir(parents=True,exist_ok=True);stamp.write_text(snapshot)
     env=dict(os.environ,CARGO_TARGET_DIR=str(guest_target))
     link_map=out/'hk-psx-link.map' if work else link_map_path(telemetry,candidate)
     from stack_budget import prepare_linker, check_main_frame
