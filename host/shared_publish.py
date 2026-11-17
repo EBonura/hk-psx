@@ -3,7 +3,7 @@ import hashlib, json, os, subprocess
 from pathlib import Path
 import code_modules as cm
 
-SDK_TOOL_REVISION = 'c124c2fb7aa6a69a716ebfd03611680a3b14acca'
+SDK_TOOL_REVISION = '3779d464513f2342d86bb7343e7891d389cb958b'
 
 def tool_source():
     value = os.environ.get('HK_OVERLAY_SDK')
