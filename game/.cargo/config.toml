@@ -10,7 +10,7 @@ build-std-features = ["compiler-builtins-mem"]
 # The program's exceptions to the SDK architecture gate (sdk/docs/GATE.md), at the repository root.
 [env]
 PSX_GATE_FILE = { value = "../psx-gate.toml", relative = true }
-PSX_HAZARD_TRAMPOLINE_WORDS = "258"
+PSX_HAZARD_TRAMPOLINE_WORDS = "256"
 # The dispatcher's stack (psx-rt; 512 unset): the saved context (112) and the deepest handler
 # host/hazards.py's stack guard proves (the CD engine's, 80 bytes), with 32 bytes to spare.
 PSX_DISPATCH_STACK_BYTES = "224"
