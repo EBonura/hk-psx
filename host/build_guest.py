@@ -175,6 +175,32 @@ def boot_art():
     if not path.is_file() or path.read_text()!=text:path.write_text(text)
     if at['read_font.hk'][0]!=len((ROOT/'data/menu.hk').read_bytes()):raise ValueError('the glyphs must follow the title art')
 
+# The I-cache layout of the hot text (the SDK's `psoxide-pgo layout` profile, collected over the frame-table
+# routes; docs/HOT-TEXT.md). Every ordinary build places it on its own first link and links again in that order.
+HOT_LAYOUT='game/hk.layout'
+def place_hot_text(env,cmd,linked,link_map,out,scene_code,art):
+    """Link the guest a second time with its hot functions where the layout profile puts them in the 4 KiB
+    direct-mapped I-cache: `psoxide-pgo place` binds the profile (portable names and code hashes) onto the first
+    link's map and patched resident image, places the hot functions at the cache offsets that cost least against
+    each other (filling the gaps with code the routes never ran) and writes an ordering file, which game/build.rs
+    hands to the linker (PSOXIDE_LINK_ORDER). The placement is computed from this link, so code ahead of the hot
+    text that changes size (an SDK pin) moves nothing in the cache. `place` fails when the profile does not bind
+    (code it measured has changed): collect it again (tools/hot-layout.sh)."""
+    from shared_publish import publish
+    first=out/'unplaced';first.mkdir(parents=True,exist_ok=True)
+    publish(ROOT,linked,link_map,first,scene_code,art)
+    order=out/'hot-text.order'
+    host=dict(os.environ);host.pop('CARGO_ENCODED_RUSTFLAGS',None)
+    # The resident map (the code modules cut out) and the SDK's own script: the layered script places the modules'
+    # sections ahead of the resident text, and `place` would count them as the fixed text the order starts after.
+    run(['cargo','run','-q','--release','--locked','--manifest-path',ROOT/'.psoxide/Cargo.toml','-p','psoxide-pgo','--',
+         'place',ROOT/HOT_LAYOUT,first/'resident.map',first/'runtime.exe',ROOT/'.psoxide/sdk/psoxide.ld',order],env=host)
+    text=order.read_bytes()
+    # A new order is a new file name, so cargo reruns game/build.rs and relinks.
+    named=out/f'hot-text-{hashlib.sha256(text).hexdigest()[:16]}.order'
+    named.write_bytes(text)
+    shutil.rmtree(first)
+    run(cmd,cwd=ROOT/'game',env=dict(env,PSOXIDE_LINK_ORDER=str(named)))
 def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=True, profile=None, work=None, elf_only=False):
     """profile: None for the ordinary build, 'collect' for the profiling flat
     image, 'elf' for the same code linked as an ELF that keeps its DWARF
@@ -283,6 +309,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if features:cmd+=['--features',','.join(features)]
     run(cmd,cwd=ROOT/'game',env=env)
     linked=guest_target/'mipsel-sony-psx/release/hk-psx.exe'
+    if profile is None and not elf_only and os.environ.get('HK_HOT_LAYOUT','1')!='0' and (ROOT/HOT_LAYOUT).is_file():
+        place_hot_text(env,cmd,linked,link_map,out,scene_code,art)
     # No 64-bit integer, 128-bit or soft-float helper may be linked, with no opt-out.
     run(['sh',ROOT/'.psoxide/tools/guest_symbol_gate.sh',link_map],env={k:v for k,v in os.environ.items() if k!='GUEST_GATE_ALLOW'})
     if profile=='elf' or elf_only:
