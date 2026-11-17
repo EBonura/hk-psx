@@ -18,8 +18,8 @@
 //!
 //! No DMA channel reaches the scratchpad, and neither exception path writes
 //! below the interrupted `$sp`: psx-rt's handler uses only `$k0`/`$k1`, and
-//! `cd_stream`'s wrapper saves registers to `HK_CD_IRQ_CONTEXT` and runs on
-//! `HK_CD_IRQ_STACK`. `host/hazards.py::stack_guard` proves after every link
+//! its dispatcher (the CD handler's caller) saves registers to and runs on its
+//! own stack. `host/hazards.py::stack_guard` proves after every link
 //! that each call tree fits `SimStack::BUDGET`, has no call it cannot bound
 //! and never flushes the I-cache (which unmaps the scratchpad).
 use psx_rt::scratchpad::{assert_disjoint, ScratchpadStack};
