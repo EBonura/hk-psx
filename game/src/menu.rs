@@ -761,7 +761,7 @@ pub fn run(
         draw_menu(&menu, view, slots, fault);
         present_samples(fb, |_| crate::music::tick());
     }
-    assert!(crate::music::stop(), "CD music did not release drive");
+    crate::music::stop();
     // The arena is the next scene's now.
     unsafe {
         EXTRA = &[];

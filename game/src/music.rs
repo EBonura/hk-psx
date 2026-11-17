@@ -88,8 +88,6 @@ pub static mut HK_MUSIC_ERROR: u32 = 0;
 pub static mut HK_MUSIC_LEVEL: u32 = 10;
 #[no_mangle]
 pub static mut HK_MUSIC_POSITION_SECTORS: u32 = 0;
-/// Spins the drive gets to answer a pause.
-const SPINS: u32 = 4_000_000;
 // Called from the title menu and the resume from the opening movies: one copy, not one in each.
 #[inline(never)]
 pub fn set_volume(level: u8) {
@@ -197,23 +195,16 @@ pub fn suspend() -> bool {
     playing
 }
 /// Release the drive before any room/data command; Pause completion keeps its
-/// motor spinning. Never confuse an accepted Stop with completed hardware stop.
-pub fn stop() -> bool {
+/// motor spinning. A data read follows, so this waits for the Pause to complete.
+pub fn stop() {
     unsafe {
         ENABLED = false;
         HK_MUSIC_PLAYING = 0;
     }
     spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
     spu::enable_cd_audio(false);
-    // The player's pause is refused while a read is still seeking; this one waits.
-    player().stop();
-    let okay = crate::cd_token::cd().try_pause_until_complete(SPINS);
-    if !okay {
-        unsafe {
-            HK_MUSIC_ERROR = 2;
-        }
-    }
-    okay
+    // Sent again while a read is still seeking, and waited for.
+    player().stop_and_wait();
 }
 
 // ---------------------------------------------------------------------------
@@ -330,13 +321,10 @@ struct BossState {
     fade_len: u16,
     track: u8,
     once: bool,
-    /// The controller's interrupt enable the Pause's dispatch saved, given back when it ends.
-    irq_enable: u8,
 }
 static mut BOSS: BossState = BossState {
     want: false,
     phase: Boss::Off,
-    irq_enable: 0,
     poll: 0,
     fade_start: 0,
     fade_len: 0,
@@ -847,14 +835,7 @@ fn boss_service(now: u32) {
                 b.want = false;
             }
         }
-        (false, Boss::Starting | Boss::Playing) => {
-            // Silent at once; the drive's Pause then completes in the background
-            // (1.2 to 3.9 million clocks out of a read), one look a VBlank, so the
-            // frame loop and the pad poll carry on meanwhile.
-            spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
-            spu::enable_cd_audio(false);
-            send_pause(b, now);
-        }
+        (false, Boss::Starting | Boss::Playing) => send_stop(b, now),
         (_, Boss::Stopping) => stopping(b, now),
         (false, Boss::Off) => {}
     }
@@ -862,62 +843,28 @@ fn boss_service(now: u32) {
 /// The longest a fight's Pause has taken, in VBlanks (the frames it no longer blocks).
 #[no_mangle]
 pub static mut HK_MUSIC_PAUSE_VBLANKS: u32 = 0;
-/// VBlanks a Pause may take before the blocking protocol takes over (one second; the
-/// slowest completion measured on the console is 3.9 million clocks, under seven).
-const STOP_VBLANKS: u32 = 60;
-/// Send Pause without waiting for either answer. This and `stopping` run a few times a fight:
-/// they sit in the cold text, so the hot text after `boss_service` keeps its I-cache layout.
+/// Silent at once; the player's Pause then completes in the background (1.2 to 3.9 million
+/// clocks out of a read), one look a VBlank, so the frame loop and the pad poll carry on
+/// meanwhile. This and `stopping` run a few times a fight: they sit in the cold text, so the
+/// hot text after `boss_service` keeps its I-cache layout.
 #[inline(never)]
-#[link_section = ".psx_cold.hk_music_send_pause"]
-fn send_pause(b: &mut BossState, now: u32) {
-    // A Pause has no parameter, so the parameter FIFO wait cannot fail it.
-    b.irq_enable = crate::cd_token::cd()
-        .dispatch_command(psx_hw::cd::CMD_PAUSE, &[], 0)
-        .unwrap_or(0);
+#[link_section = ".psx_cold.hk_music_send_stop"]
+fn send_stop(b: &mut BossState, now: u32) {
+    spu::set_cd_volume(CdVolume::SILENCE, CdVolume::SILENCE);
+    spu::enable_cd_audio(false);
+    player().stop();
     b.phase = Boss::Stopping;
     b.poll = now;
 }
-/// One look at the controller while the Pause is out.
+/// One look at the Pause while it is out (the player finishes it itself after 60 looks).
 #[inline(never)]
 #[link_section = ".psx_cold.hk_music_stopping"]
 fn stopping(b: &mut BossState, now: u32) {
-    use psx_hw::cd::irq;
-    let mut cd = crate::cd_token::cd();
-    let stopped = match cd.irq_flag_value() {
-        irq::COMPLETE => true,
-        // The first answer, or a sector of the read that was still on its way.
-        flag @ (irq::ACKNOWLEDGE | irq::DATA_READY) => {
-            cd.discard_response();
-            cd.acknowledge_irq(flag);
-            false
-        }
-        // Refused: the head is still seeking. Send it again (the seek ends within a third of a
-        // second); the enable saved by the first dispatch is the one given back.
-        irq::ERROR => {
-            cd.discard_response();
-            cd.acknowledge_irq(irq::ERROR);
-            let _ = cd.dispatch_command(psx_hw::cd::CMD_PAUSE, &[], 0);
-            false
-        }
-        _ => false,
-    };
-    let late = now.wrapping_sub(b.poll) > STOP_VBLANKS;
-    if !stopped && !late {
+    if player().poll_stop() {
         return;
     }
-    cd.restore_irq_output(b.irq_enable);
     unsafe {
         HK_MUSIC_PAUSE_VBLANKS = HK_MUSIC_PAUSE_VBLANKS.max(now.wrapping_sub(b.poll));
-    }
-    if !stopped && !cd.try_pause_until_complete(SPINS) {
-        unsafe {
-            HK_MUSIC_ERROR = 4;
-        }
-    }
-    // The drive is paused: forget the song without the player's own (blocking) Pause.
-    // SAFETY: one thread, and no borrow of PLAYER lives across this call.
-    unsafe {
-        PLAYER = Player::new(crate::cd_token::cd());
     }
     b.phase = Boss::Off;
     unsafe {
