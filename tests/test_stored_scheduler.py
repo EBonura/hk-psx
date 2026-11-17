@@ -201,6 +201,7 @@ METHODS
         code=r"""
 #![allow(dead_code)]
 const EMPTY:usize=usize::MAX;
+const PRELOAD_NONE:u16=u16::MAX;
 const DECODE_STEP:usize=1024;
 const SCENE_GATE_LOAD:bool=EXCLUSIVE;
 const SCENE_COUNT:usize=2;
@@ -285,9 +286,9 @@ impl<'a> Scene<'a>{
  fn chunk_id(&self,index:usize)->Option<usize>{(index<self.room_count()&&index<2).then(||self.word(index+4))}
 }
 #[derive(Debug,PartialEq)]enum LoadError{RoomMismatch,Checksum,Decompress,RoomFormat,Coverage}
-struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize}
+struct Cache{loaded_scenes:usize,resident_scene:usize,selected:usize,entries:[usize;2],coverage_scene:usize,coverage_len:usize,metadata_scene:usize,metadata_len:usize,effect_scene:usize,preloaded:u16,early:bool}
 impl Cache{
- fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY}}
+ fn new()->Self{Self{loaded_scenes:0,resident_scene:EMPTY,selected:EMPTY,entries:[0,1],coverage_scene:EMPTY,coverage_len:0,metadata_scene:EMPTY,metadata_len:0,effect_scene:EMPTY,preloaded:PRELOAD_NONE,early:false}}
  fn tail_lba(&self,_:usize)->Result<u32,LoadError>{Ok(0)}
  // Production rebuilds each directory entry from the manifests instead of
  // keeping the table; the harness only needs a chunk index to stand in for one.

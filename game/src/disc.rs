@@ -809,10 +809,8 @@ pub struct Cache {
     /// opening movies took the arena, or `PRELOAD_NONE`. The scene's admission consumes it. Both fields exist
     /// in every build, so that the cache's layout, and the code of every function that reads it, is the
     /// shipping build's in the test discs too (docs/HOT-TEXT.md).
-    #[cfg_attr(not(feature = "intro"), allow(dead_code))]
     preloaded: u16,
     /// `preload` is running the admission: it stops after the atlases and leaves the code to the real one.
-    #[cfg_attr(not(feature = "intro"), allow(dead_code))]
     early: bool,
 }
 const PRELOAD_NONE: u16 = u16::MAX;
@@ -914,7 +912,6 @@ fn mark(state: u32, error: u32) {
 #[optimize(size)]
 fn checkpoint() {
     crate::input::checkpoint();
-    #[cfg(feature = "intro")]
     crate::intro::tick();
 }
 /// The pad poll a seek or a sector wait takes between looks (a named function so the
@@ -2642,13 +2639,11 @@ impl Cache {
         }
         // What `preload` put in place before the opening movies took the arena is used once, by this
         // admission; the rest of the group is read chunk by chunk, as a group too large for the arena is.
-        #[cfg(feature = "intro")]
+        // (A disc without the movies runs the same code: nothing ever sets either.)
         let (early, preloaded) = (
             self.early,
             core::mem::replace(&mut self.preloaded, PRELOAD_NONE) == wanted as u16,
         );
-        #[cfg(not(feature = "intro"))]
-        let (early, preloaded) = (false, false);
         let st = if early || preloaded {
             Stage::Read
         } else if self.loaded_scenes == 0 {
@@ -2667,7 +2662,6 @@ impl Cache {
         self.prepare_coverage(wanted, st)?;
         self.prepare_effect_art(wanted, st)?;
         self.prepare_atlases(wanted, st)?;
-        #[cfg(feature = "intro")]
         if early {
             self.preloaded = wanted as u16;
             return Ok(());
@@ -2811,8 +2805,8 @@ impl Cache {
     /// the opening poem plays (intro.rs): the bootstrap's sound banks, the scene's ambience, sound effects,
     /// coverage, effect art and atlases. The movies then take the arena, and the admission itself (`select`)
     /// finds this done and reads what is left: the scene, its metadata and its code. Every step checks what
-    /// it reads as the admission does; a failure leaves the rest to it.
-    #[cfg(feature = "intro")]
+    /// it reads as the admission does; a failure leaves the rest to it. In every build (a disc without the movies
+    /// never calls it), so that the loader's call graph and code are the shipping build's (docs/HOT-TEXT.md).
     #[inline(never)]
     #[cfg_attr(not(test), optimize(size))]
     pub fn preload(&mut self, scene: usize) -> Result<(), LoadError> {

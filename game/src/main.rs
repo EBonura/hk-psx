@@ -91,6 +91,11 @@ mod intro {
     pub fn play(boot: &[u8], fb: &mut psx_gpu::display::DoubleBuffer, screen: (i8, i8), load: fn()) {
         core::hint::black_box((boot, fb, screen, load));
     }
+    /// The loader's checkpoint calls it (disc.rs `checkpoint`), as it calls the poem's frame on the shipping disc.
+    #[inline(never)]
+    pub fn tick() {
+        core::hint::black_box(());
+    }
 }
 mod disc;
 mod display;
@@ -873,7 +878,6 @@ pub static mut HK_PAD_POLL_MAX_VBLANK_GAP: u32 = 0;
 /// a disc without them.
 #[optimize(size)]
 fn preload_first_scene() {
-    #[cfg(feature = "intro")]
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.preload(disc::scene_index(NEW_GAME_ENTRY.2));
 }
 
