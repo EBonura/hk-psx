@@ -8,7 +8,10 @@
 //! Moving every sound sector later by the same time puts them together; the
 //! cook does that here, since the drive plays what it reads when it reads it.
 
-use crate::xa::{SECTOR, SUBMODE_AUDIO};
+/// Bytes of a raw sector record: 8-byte subheader and 2328 bytes.
+pub const SECTOR: usize = 2336;
+/// The subheader submode bit of a sound sector.
+pub const SUBMODE_AUDIO: u8 = 0x04;
 
 /// Sectors the drive keeps reading past the end of an XA file (psx-hw `END_GUARD_SECTORS`), so that a
 /// player's poll still finds the head inside the file when the sound has ended.

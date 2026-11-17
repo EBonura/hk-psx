@@ -470,11 +470,22 @@ pub fn package(
         &staged.with_extension("cue"),
         library,
         psx_library::Source::from_git(root, REPOSITORY)?,
-        &pins(root)?,
+        &provenance_base(root, intro)?,
     )?;
     std::fs::remove_dir_all(&temp)?;
     std::fs::remove_dir_all(&chunks)?;
     Ok(())
+}
+
+/// What the installed provenance records beyond the disc itself: the component pins and, for a
+/// disc with the opening movies, the intro cook's record (the encoder, the ffmpeg that decoded the
+/// install's movies and the SHA-256 of every input and stream, `.hkpsx/intro/cook-record.json`).
+fn provenance_base(root: &Path, intro: Option<&Intro>) -> Result<Value> {
+    let mut base = pins(root)?;
+    if let Some(dir) = intro.and_then(|i| i.movies.first()).and_then(|m| m.parent()) {
+        base["intro_cook"] = json(&dir.join("cook-record.json"))?;
+    }
+    Ok(base)
 }
 
 /// The component revisions the disc was built with, for the provenance record: the guest SDK,

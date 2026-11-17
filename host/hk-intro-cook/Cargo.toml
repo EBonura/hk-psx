@@ -3,7 +3,7 @@ name = "hk-intro-cook"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-2.0-or-later"
-description = "Encodes the two opening cinematics of the user's own Hollow Knight install for the PS1 intro program"
+description = "Encodes the two opening cinematics and the poem's piano of the user's own Hollow Knight install for the PS1 intro program, with the SDK's encoders"
 
 # Its own workspace: the repository root is the PS1 game's, and ../Cargo.toml
 # is the host tools' (this cooker needs the SDK, which they do not).
@@ -13,6 +13,12 @@ description = "Encodes the two opening cinematics of the user's own Hollow Knigh
 # The movies are measured with the SDK's own bitstream decoder, so a stream
 # the player cannot decode fails the build rather than the console.
 psx-fmv = { path = "../../.psoxide/sdk/crates/psx-fmv" }
+# The SDK's own encoders: the STR picture stream (psx-str-cook, which checks every frame it
+# writes with the SDK's decoder) and the XA-ADPCM sound and resampler (psx-audio-cook). ffmpeg
+# only decodes the install's MP4s.
+psx-str-cook = { path = "../../.psoxide/crates/psx-str-cook" }
+psx-audio-cook = { path = "../../.psoxide/crates/psx-audio-cook" }
+sha2 = "0.10"
 # The clips are read out of the install through the repository's Unity reader.
 hk-unity = { path = "../hk-unity" }
 

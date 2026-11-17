@@ -36,15 +36,20 @@ pub fn dir(repository: &Path) -> PathBuf {
 /// The cooked movies, if this checkout has them.
 pub fn cooked(repository: &Path) -> Option<PathBuf> {
     let dir = dir(repository);
-    // `sound.json` is written last, by a cook that put the install's own sound under the movies.
+    // `sound.json` and `cook-record.json` are written last, by a cook that put the install's own
+    // sound under the movies with the SDK's encoders (a cook by the external encoder this
+    // replaced has no record and is cooked again).
     (MOVIE_FILES.iter().all(|name| dir.join(name).is_file())
         && dir.join("movie.rs").is_file()
         && std::fs::read_to_string(dir.join("sound.json"))
-            .is_ok_and(|text| text.contains("install AudioClips")))
+            .is_ok_and(|text| text.contains("install AudioClips"))
+        && std::fs::read_to_string(dir.join("cook-record.json"))
+            .is_ok_and(|text| text.contains("psx-str-cook")))
     .then_some(dir)
 }
 
-/// Encode the install's two opening movies. Without the encoder or the clips
+/// Encode the install's two opening movies and the poem's piano with the SDK's encoders
+/// (`host/hk-intro-cook`; ffmpeg decodes the MP4s). Without ffmpeg or the clips
 /// the stage is dropped (and any earlier one removed, so the disc cannot
 /// carry a movie that no longer matches the install).
 pub fn cook(repository: &Path, data_dir: &Path) -> Result<bool> {
@@ -52,7 +57,7 @@ pub fn cook(repository: &Path, data_dir: &Path) -> Result<bool> {
     let mut build = Command::new("cargo");
     build
         .current_dir(repository)
-        .args(["build", "--release", "--manifest-path"])
+        .args(["build", "--release", "--locked", "--manifest-path"])
         .arg(&manifest);
     run_command(&mut build, "build the intro movie cooker")?;
     let out = dir(repository);
@@ -558,10 +563,21 @@ pub fn compile(repository: &Path, psoxide: &Path) -> Result<PathBuf> {
     let target = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| psoxide.join("target"));
+    // The intro's own target directory outlives a change of the hydrated SDK, and cargo does not
+    // always see one: `.psoxide` is a git archive, whose files carry their commit's time, so a move
+    // to an older SDK leaves sources older than the last build and the stale intro stays (a gated
+    // disc once carried an intro built under another SDK than the clean clone's). The build is
+    // keyed on the hydrated snapshot's record (`.hkpsx/sdk.json`, a hash of every file) instead:
+    // when it changes, the intro is compiled from scratch.
+    let snapshot = sha256_file(&repository.join(".hkpsx/sdk.json"))?;
+    let stamp = intro.join("target/hk-sdk-snapshot.sha256");
+    if std::fs::read_to_string(&stamp).ok().as_deref() != Some(snapshot.as_str()) {
+        let _ = std::fs::remove_dir_all(intro.join("target"));
+    }
     let mut command = Command::new("cargo");
     command
         .current_dir(&intro)
-        .args(["build", "--release"])
+        .args(["build", "--release", "--locked"])
         .env("PSOXIDE", psoxide)
         .env("HK_INTRO_LOAD_ADDR", format!("{LOAD_ADDR:#x}"))
         .env("HKPSX_LINK_MAP", &map)
@@ -571,6 +587,7 @@ pub fn compile(repository: &Path, psoxide: &Path) -> Result<PathBuf> {
         command.env("PSOXIDE_REPRO_INNER", inner);
     }
     run_command(&mut command, "compile the hk-psx intro for PlayStation")?;
+    std::fs::write(&stamp, &snapshot)?;
     let exe = intro.join("target/mipsel-sony-psx/release/hk-intro.exe");
     if !exe.is_file() {
         return Err(format!("the intro build did not produce {}", exe.display()).into());

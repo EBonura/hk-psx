@@ -102,7 +102,10 @@ name = "hk-intro-cook"
 version = "0.1.0"
 dependencies = [
  "hk-unity",
+ "psx-audio-cook",
  "psx-fmv",
+ "psx-str-cook",
+ "sha2",
 ]
 
 [[package]]
@@ -136,12 +139,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "psx-audio-cook"
+version = "0.1.0"
+dependencies = [
+ "psx-hw",
+ "psxed-format",
+]
+
+[[package]]
 name = "psx-fmv"
 version = "0.1.0"
 dependencies = [
  "psx-gpu",
  "psx-hw",
  "psx-io",
+ "psx-math",
  "psx-pack",
  "psx-rt",
  "psx-spu",
@@ -169,21 +181,30 @@ name = "psx-io"
 version = "0.1.0"
 dependencies = [
  "psx-hw",
+ "psx-math",
 ]
+
+[[package]]
+name = "psx-math"
+version = "0.1.0"
 
 [[package]]
 name = "psx-pack"
 version = "0.1.0"
 dependencies = [
  "psx-io",
+ "psx-math",
 ]
 
 [[package]]
 name = "psx-rt"
 version = "0.1.0"
 dependencies = [
+ "psx-gpu",
  "psx-hw",
  "psx-io",
+ "psx-math",
+ "psx-tick",
 ]
 
 [[package]]
@@ -195,12 +216,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "psx-str-cook"
+version = "0.1.0"
+dependencies = [
+ "psx-audio-cook",
+ "psx-fmv",
+ "psx-hw",
+]
+
+[[package]]
+name = "psx-tick"
+version = "0.1.0"
+
+[[package]]
 name = "psx-vram"
 version = "0.1.0"
 dependencies = [
  "psx-hw",
  "psx-io",
+ "psx-math",
 ]
+
+[[package]]
+name = "psxed-format"
+version = "0.1.0"
 
 [[package]]
 name = "rayon"

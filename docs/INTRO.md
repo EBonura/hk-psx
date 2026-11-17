@@ -118,7 +118,7 @@ The picture (host/hk-intro-cook `prepare_picture`): the MDEC's 15-bit output tru
 no dither of its own, so a smooth gradient came out as flat bands with contour rings around the lamps and
 colour patches in dark skies. The cook scales the clip to 320x180 with an area average, corrects its tone, reduces
 it to 5 bits per channel against a 16x16 ordered (Bayer) threshold, and pads it to 192 lines (8 above, 4 below)
-before `psxavenc` sees it; the pattern survives the encode and the truncation then leaves a fine mesh instead of
+before the encoder sees it; the pattern survives the encode and the truncation then leaves a fine mesh instead of
 bands. The matrix starts somewhere else for every picture (`dither::phase`, the R2 low-discrepancy sequence), so
 no pixel keeps its threshold from one picture to the next: over a moving picture a mesh fixed to the screen
 reads as a shower door, a mesh that changes at 15 pictures a second reads as grain. It costs nothing in the
@@ -143,20 +143,27 @@ luma, `review/movies/luma_bands_before_after.txt` in the lane's review folder).
 Encoder budget and mux: the encoder gets a stereo sound parameter set so that it budgets the picture at 8.75 sectors
 a frame (9 chunks at most; the mono default budgets 9.4, which makes the busiest frame bigger than the arena
 holds), and `mux::interleave_paced` then lays each frame into exactly 10 slots (150 sectors a second), its last
-sector in the last free slot, sound in every 16th slot from 31 slots in, filler elsewhere. Measured on the
+sector in the last free slot, sound in every 16th slot from 21 slots in, filler elsewhere. Measured on the
 emulator (SPU output against the clips' sound, display flips against the clips' frames, screenshots naming the
-frame each flip shows) the sound is then within 2 ms of the picture; it was 49 ms early at 24 slots (the picture
-runs a frame behind the clip, which the delay had not counted), steadily over both movies. Frame pacing is then even
-and the player's memory is 411,552 B (Prologue) and 409,248 B (Intro), against the 415,000 B limit of the cook and
+frame each flip shows) the sound was within 2 ms of the picture at 31 slots with the external encoder used then,
+whose picture ran a frame behind the clip (it was 49 ms early at 24 slots and 68 ms at 21). The SDK's encoder
+shows the clip's frame k as frame k (`psx-str-cook compare` against the clip: the old stream's frame k matched
+the clip's k-1 or k-2), so the frame of lag left the sum and the delay is 21 slots. Frame pacing is then even
+and the player's memory is 410,016 B (Prologue) and 410,528 B (Intro), against the 415,000 B limit of the cook and
 the arena's 415,052 B (the guest build asserts it; the cook refuses a movie over the limit). A 24-bit decode would
-need 495 KB. The picture is one frame behind the clip (the encoder puts the first frame in twice). `ffmpeg` is a
-cook dependency beside `psxavenc`; a machine without it builds without the poem and the movies.
+need 495 KB. `ffmpeg` is the
+cook's one dependency outside the SDK (it decodes the MP4s); a machine without it builds without the poem and the
+movies.
 
 Cook: `hk-cook intro-audio` decodes the three clips with FMOD (the cooker every other clip goes through),
-`hk-intro-cook --audio-dir` encodes the movies with `psxavenc`, masters each sound to the install's loudness
-(+0.9 dB for the player's path, through a limiter) and interleaves it with the picture, and does the same to the
-piano for `HKPOEM.XA`. Nothing the cook writes is in the repository (`.hkpsx/intro/`). A machine without the
-install's clips or `psxavenc` builds the shipping disc without the poem and the movies and says so.
+`hk-intro-cook --audio-dir` encodes the pictures with the SDK's `psx-str-cook` (ffmpeg decodes the MP4s), mixes
+each sound to mono and resamples it to 37.8 kHz with the SDK's `psx-audio-cook`, masters it to the install's
+loudness (+0.9 dB for the player's path, through a limiter), codes it with the SDK's XA encoder and interleaves it
+with the picture, and does the same to the piano for `HKPOEM.XA`. No encoder outside the SDK is used.
+`cook-record.json` names the SDK revision and the ffmpeg version and holds the SHA-256 of every input (the MP4 cut
+from the install, the AudioClip WAV, what ffmpeg decoded) and of every stream; the build copies it into the
+installed disc's provenance (`intro_cook`). Nothing the cook writes is in the repository (`.hkpsx/intro/`). A
+machine without the install's clips or ffmpeg builds the shipping disc without the poem and the movies and says so.
 
 Builds: the shipping disc (no guest feature) carries them by default (`--no-intro` leaves them out, `--intro`
 insists on them). A test disc (any guest feature, such as `route-input`, whose tapes press New Game by poll count)
