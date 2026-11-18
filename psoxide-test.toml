@@ -8,11 +8,20 @@ schema = 1
 name = "Hollow Knight (hk-psx)"
 repository = "EBonura/hk-psx"
 
+# The region cook (`cargo hk-build cook`: the store restore or the cook of 693 regions, 2 h from
+# empty), a build of its own with no disc, keyed on the cooker code and scripts (host/, tools/) and
+# the retail files, so its receipt skips it when only game code changed. The asset stage that
+# follows the region cook runs inside `build` (its own cache, keyed by host/*.py and tools/*.py).
+[[build]]
+name = "cook"
+out = "build/harness/cook"
+commands = [["cargo", "hk-build", "cook", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}"]]
+env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}" }
+env_remove = ["HK_GUEST_FEATURES", "HK_HOT_LAYOUT", "HK_INTRO"]
+inputs = ["host/", "tools/", "sdk.lock.json", "rust-toolchain.toml"]
+
 # The shipping disc (what the library gets): opening movies, hot text placed by game/hk.layout.
 # Its walks compile to gate journeys in tests/walk-*.toml (git-ignored) for this disc.
-# The cook is not a build of its own: the harness wants a disc from every [[build]], and the
-# game's own cook caches (cook store, region, menu and asset caches, keyed on the cooker code
-# and the retail files) already skip it; a code change re-runs only the guest and the disc.
 [[build]]
 name = "ship"
 out = "build/harness/ship"
@@ -82,11 +91,13 @@ build = "twin"
 command = ["cargo", "hk-build", "validate", "--library", "{out}", "--prune", "--jobs", "1", "--frontend", "{tool:frontend}", "--gate", "{tool:gate}", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}"]
 env = { HK_VALIDATE_NO_WALKS = "1", HK_PSX_GATE_SHA256 = "b41120e3674dd584478b2d0a92928c7de807b07fce52c78171f00375f6bfc4f3", HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
 env_remove = ["HK_HOT_LAYOUT", "HK_INTRO", "HK_VALIDATE_ONLY"]
+exclusive = "tree"
 
 # Load-delay hazards in guest asm (fleet rule since SDK 580daa02), with the pin's own scanner.
 [[host]]
 name = "check-mfc0"
 command = ["cargo", "run", "-q", "--release", "--locked", "--manifest-path", ".psoxide/tools/psoxide-hazard/Cargo.toml", "--bin", "check-mfc0", "--", "game", "shared", "intro"]
+exclusive = "tree"
 
 [clean]
 build = "ship"
