@@ -100,6 +100,14 @@ command = ["cargo", "hk-build", "validate", "--library", "{out}", "--prune", "--
 env = { HK_VALIDATE_NO_WALKS = "1", HK_PSX_GATE_SHA256 = "{tool_sha256:gate}", HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
 env_remove = ["HK_HOT_LAYOUT", "HK_INTRO", "HK_VALIDATE_ONLY"]
 exclusive = "tree"
+# Keyed on what validate reads: the driver and its scripts, tapes and cards (host/, tools/), the game
+# sources it cooks from, the twin build's bytes (build), the SDK's guest sources, the gate and the
+# frontend. sdk.lock.json is left out on purpose: a pin to another commit with the same guest tree
+# changes nothing validate sees (uses "sdk" follows the guest sources), so it does not run again.
+inputs = ["host/", "tools/", "shared/", "game/", "intro/", "xa-encoder.lock.json", "rust-toolchain.toml"]
+uses = ["sdk", "gate", "frontend"]
+# It replays routes with --jobs 1: hold one machine emulator slot while it runs.
+emulators = 1
 
 # Load-delay hazards in guest asm (fleet rule since SDK 580daa02), with the pin's own scanner.
 [[host]]
