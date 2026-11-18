@@ -1,0 +1,97 @@
+# Hollow Knight's test description for psoxide-test (the SDK's harness, tools/psoxide-test).
+# It declares what to build and check; the harness decides how. Baseline: psoxide-test.baseline.toml.
+# Original files (user config [inputs]): `hollow-knight`, the Windows Steam install the cook reads
+# (CrossOver bottle); `hk-cook-store`, the cook store (docs/COOK-STORE.md) a build restores its
+# cooked state from by key; `sdk`, a clean SDK checkout at the pin (sdk.lock.json), the
+# --sdk-source and the overlay host tools (HK_OVERLAY_SDK).
+schema = 1
+name = "Hollow Knight (hk-psx)"
+repository = "EBonura/hk-psx"
+
+# The shipping disc (what the library gets): opening movies, hot text placed by game/hk.layout.
+# Its walks compile to gate journeys in tests/walk-*.toml (git-ignored) for this disc.
+# The cook is not a build of its own: the harness wants a disc from every [[build]], and the
+# game's own cook caches (cook store, region, menu and asset caches, keyed on the cooker code
+# and the retail files) already skip it; a code change re-runs only the guest and the disc.
+[[build]]
+name = "ship"
+out = "build/harness/ship"
+commands = [
+  ["cargo", "hk-build", "build", "--no-validate", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}", "--library", "{out}"],
+  ["cargo", "hk-build", "walk-compile", "--library", "{out}"],
+]
+collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json" }
+env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_WALK_SYNC = "poll" }
+env_remove = ["HK_GUEST_FEATURES", "HK_HOT_LAYOUT", "HK_INTRO"]
+disc = "Hollow Knight (hk-psx).cue"
+map = "game.map"
+
+# The route-input twin: what the route tapes replay (validate) and the speed windows measure.
+# It runs last, so the tree's dist/, .hkpsx and build/ hold its artifacts, which validate reads.
+# The memory cards the speed windows boot from are copied into its out (a replay writes its card).
+[[build]]
+name = "twin"
+out = "build/harness/twin"
+commands = [
+  ["cargo", "hk-build", "build", "--no-validate", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}", "--library", "{out}"],
+]
+collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "build.json" = ".hkpsx/build.json", "card-secret-c37.mcd" = "tools/cards/secret-c37.mcd", "card-kings-return.mcd" = "tools/cards/kings-return.mcd" }
+env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
+env_remove = ["HK_HOT_LAYOUT", "HK_INTRO"]
+disc = "Hollow Knight (hk-psx).cue"
+map = "game.map"
+
+[[size]]
+build = "ship"
+
+# Two of the frame table's 16-shift routes (tools/hot-layout.sh weighs the layout by them), from
+# after the save's load to the tape's end; offsets are the phase shifts in pad polls.
+[[speed]]
+name = "c37-stand"
+build = "twin"
+tape = "tools/tapes/c37-stand.pxtape"
+polls = [700, 2900]
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+launch_args = ["--embedded-playtest", "--memcard", "build/harness/twin/card-secret-c37.mcd"]
+
+[[speed]]
+name = "kings-return"
+build = "twin"
+tape = "tools/tapes/kings-return.pxtape"
+polls = [700, 1900]
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+launch_args = ["--embedded-playtest", "--memcard", "build/harness/twin/card-kings-return.mcd"]
+
+# The walks (tools/walks, compiled by the ship build) and the smoke.
+[journeys]
+files = "tests/walk-*.toml"
+precheck = ["walk-smoke", "walk-fungus1-06"]
+
+[cross]
+smoke = ["tests/walk-smoke.toml"]
+
+# The route tapes, the closed-loop routes (journey-kings, journey-crossroads) and the power-cut
+# check, on the twin, with the game's own judge (pins, pacing ceilings, brightness, scene gates).
+# The walks are the journeys stage's. One replay at a time keeps it inside the emulator budget.
+# HK_PSX_GATE_SHA256 is the sha256 of the configured gate (gate-477d, emulator 477d8b21): validate
+# refuses a gate it cannot check, and the harness has no placeholder for a tool's digest yet
+# (harness-core/REQUESTS.md, hm-hk).
+[[host]]
+name = "validate-routes"
+build = "twin"
+command = ["cargo", "hk-build", "validate", "--library", "{out}", "--prune", "--jobs", "1", "--frontend", "{tool:frontend}", "--gate", "{tool:gate}", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}"]
+env = { HK_VALIDATE_NO_WALKS = "1", HK_PSX_GATE_SHA256 = "b41120e3674dd584478b2d0a92928c7de807b07fce52c78171f00375f6bfc4f3", HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
+env_remove = ["HK_HOT_LAYOUT", "HK_INTRO", "HK_VALIDATE_ONLY"]
+
+# Load-delay hazards in guest asm (fleet rule since SDK 580daa02), with the pin's own scanner.
+[[host]]
+name = "check-mfc0"
+command = ["cargo", "run", "-q", "--release", "--locked", "--manifest-path", ".psoxide/tools/psoxide-hazard/Cargo.toml", "--bin", "check-mfc0", "--", "game", "shared", "intro"]
+
+[clean]
+build = "ship"
+seed = [".psoxide"]
+compare = ["Hollow Knight (hk-psx).bin", "Hollow Knight (hk-psx).cue", "hk-psx.exe"]
+
+[[install]]
+build = "ship"

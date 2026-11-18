@@ -1,0 +1,153 @@
+# Cross-emulator smoke (psoxide-test [cross]) on the shipping disc: the title with its music
+# streaming, the Options page and back, Start Game, a new game in profile 1, the opening, the first
+# scene load, the Knight landing in King's Pass, and the pad moving him. Closed loop only: every
+# press is held until the game's own state says it took, every wait ends on game state, every
+# checkpoint reads RAM. The same file runs on PSoXide (the gate), PCSX-ReARMed and PCSX-Redux.
+# Words (all published by the shipping build): HK_MENU_MUSIC is the music setting the title's menu
+# publishes every frame it runs (10 on a fresh card); HK_MENU_PAGE 0 main, 1 options, 4 profiles;
+# HK_MENU_ROW the highlighted row; HK_WORLD_SFX +12 counts the start-game sound, played when a
+# profile is chosen (the title then waits for the button's release before the opening);
+# HK_MUSIC_POSITION_SECTORS is the XA music's head on the disc (75 a second), so a stream that
+# stalls stops it; HK_GAME_MODE 0 title, 1 gameplay, 2 loading; HK_PLAYER_X/Y are Q16 world units.
+# The load is the first scene's (title to King's Pass). King's Pass's first doorway, the Great
+# Door, lies behind six breakable walls, a Crawler and the shaft: no button hold reaches it.
+name = "walk-smoke"
+title = "Hollow Knight smoke: title music, a menu, a new game, a load, in play, input moves the Knight"
+disc = "build/harness/ship/Hollow Knight (hk-psx).cue"
+symbols = "build/harness/ship/game.map"
+pad = "dualshock"
+
+[[step]]
+label = "boot to the title's menu"
+wait_until = { kind = "ram", sym = "HK_MENU_MUSIC", op = "eq", value = 10 }
+timeout = 4000
+
+[[step]]
+label = "the title music streams three seconds"
+wait_until = { kind = "ram", sym = "HK_MUSIC_POSITION_SECTORS", op = "ge", value = 225 }
+timeout = 1800
+
+[[step]]
+checkpoint = "title"
+golden = false
+[[step.assert]]
+kind = "ram"
+sym = "HK_GAME_MODE"
+value = 0
+[[step.assert]]
+kind = "ram"
+sym = "HK_MENU_PAGE"
+value = 0
+[[step.assert]]
+kind = "ram"
+sym = "HK_MUSIC_PLAYING"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_MUSIC_ERROR"
+value = 0
+
+[[step]]
+label = "the cursor moves to Options"
+press = ["down"]
+hold_until = { kind = "ram", sym = "HK_MENU_ROW", op = "eq", value = 1 }
+timeout = 600
+
+[[step]]
+press = ["cross"]
+hold_until = { kind = "ram", sym = "HK_MENU_PAGE", op = "eq", value = 1 }
+timeout = 600
+
+[[step]]
+checkpoint = "menu"
+golden = false
+[[step.assert]]
+kind = "ram"
+sym = "HK_MENU_PAGE"
+value = 1
+
+[[step]]
+label = "back to the main page"
+press = ["circle"]
+hold_until = { kind = "ram", sym = "HK_MENU_PAGE", op = "eq", value = 0 }
+timeout = 600
+
+[[step]]
+press = ["up"]
+hold_until = { kind = "ram", sym = "HK_MENU_ROW", op = "eq", value = 0 }
+timeout = 600
+
+# Start, not Cross: the profile's Cross then has a fresh edge, no fixed rest.
+[[step]]
+label = "Start Game opens the profiles"
+press = ["start"]
+hold_until = { kind = "ram", sym = "HK_MENU_PAGE", op = "eq", value = 4 }
+timeout = 600
+
+[[step]]
+label = "profile 1, an empty one: a new game"
+press = ["cross"]
+hold_until = { kind = "ram", sym = "HK_WORLD_SFX", offset = 12, op = "ge", value = 1 }
+timeout = 600
+
+[[step]]
+label = "the opening plays and the first scene loads"
+wait_until = { kind = "ram", sym = "HK_GAME_MODE", op = "eq", value = 1 }
+timeout = 30000
+
+[[step]]
+checkpoint = "load"
+golden = false
+[[step.assert]]
+kind = "ram"
+sym = "HK_SCENE_LOADS"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_REGION_ID"
+value = 79
+[[step.assert]]
+kind = "ram"
+sym = "HK_ROOM_LOAD_ERROR"
+value = 0
+
+[[step]]
+label = "the Knight drops in from the top gate"
+wait_until = { kind = "ram", sym = "HK_PLAYER_Y", op = "gt", value = 3001548 }
+timeout = 600
+
+[[step]]
+label = "and lands on the ledge (y under 12.2)"
+wait_until = { kind = "ram", sym = "HK_PLAYER_Y", op = "lt", value = 799539 }
+timeout = 1200
+
+[[step]]
+checkpoint = "in-play"
+golden = false
+[[step.assert]]
+kind = "ram"
+sym = "HK_GAME_MODE"
+value = 1
+[[step.assert]]
+kind = "ram"
+sym = "HK_DEATHS"
+value = 0
+
+[[step]]
+label = "right walks him a world unit along the corridor (he lands at x 34.5)"
+press = ["right"]
+hold_until = { kind = "ram", sym = "HK_PLAYER_X", op = "ge", value = 2326528 }
+timeout = 600
+
+[[step]]
+checkpoint = "input-moves-the-knight"
+golden = false
+[[step.assert]]
+kind = "ram"
+sym = "HK_PLAYER_X"
+op = "ge"
+value = 2326528
+[[step.assert]]
+kind = "ram"
+sym = "HK_INPUT_MISSED_VBLANKS"
+value = 0
