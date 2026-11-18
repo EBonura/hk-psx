@@ -1,0 +1,200 @@
+# Written by `psoxide-test bless`; edit only by blessing again (decision 4: a bar changes by editing
+# psoxide-test.toml with a reason, never by hand-editing these numbers).
+schema = 1
+blessed_commit = "555b3e9af3493b29f7c0e8a06e055d21a24db3d3"
+sdk_pin = "unknown"
+
+[size.ship]
+text = 804020
+data = 244680
+bss = 795996
+free = 137428
+
+[speed.c37-stand]
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+flips = [930, 932, 933, 935, 936, 938, 940, 940]
+work_per_frame = [1297394, 1295201, 1293227, 1291050, 1289086, 1286340, 1284756, 1284756]
+frame_work_p99 = [2196715, 2196715, 2196715, 2196715, 2196696, 2196696, 2196696, 2196696]
+vblanks = ["2:644,3:231,4:54", "2:648,3:230,4:53", "2:652,3:228,4:52", "2:656,3:228,4:50", "2:659,3:227,4:49", "2:663,3:226,4:48", "2:667,3:225,4:47", "2:666,3:227,4:46"]
+
+[speed.kings-return]
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+flips = [546, 548, 549, 550, 552, 553, 555, 557]
+work_per_frame = [1205063, 1200673, 1198490, 1196315, 1191988, 1189837, 1185557, 1181307]
+frame_work_p99 = [1648757, 1648757, 1648757, 1648757, 1648757, 1648757, 1648471, 1648464]
+vblanks = ["2:444,3:96,4:5", "2:449,3:93,4:5", "2:452,3:91,4:5", "2:456,3:88,4:5", "2:460,3:86,4:5", "2:465,3:82,4:5", "2:470,3:80,4:4", "2:476,3:76,4:4"]
+
+[journeys.walk-ability-dash]
+ticks = 1212
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-ability-wings]
+ticks = 1173
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-baldur-spell]
+ticks = 5457
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-crest-save-reload]
+ticks = 20423
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-crossroads-shortcut]
+ticks = 1687
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-earned-focus]
+ticks = 4824
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-false-knight-from-bench-47]
+ticks = 17281
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-fungus1-06]
+ticks = 3275
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-fungus1-07-to-30]
+ticks = 6454
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-fungus1-22-gate]
+ticks = 1301
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-fungus1-31]
+ticks = 4125
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-fungus1-32-to-hornet]
+ticks = 17297
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-geo-rock-05]
+ticks = 1512
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-geo-rock-05-restore]
+ticks = 1238
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-geo-rock-21]
+ticks = 1382
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-greenpath-east]
+ticks = 6861
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-greenpath-west]
+ticks = 11438
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-hornet-counter-31]
+ticks = 1239
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-hornet-fight]
+ticks = 12401
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-husk-hits]
+ticks = 4707
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-mound-exit]
+ticks = 3133
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-mound-spell]
+ticks = 1831
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-new-game-to-crest]
+ticks = 35573
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-new-game-to-greenpath]
+ticks = 51376
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-new-game-to-hornet]
+ticks = 79263
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-plant-trap-kill]
+ticks = 1687
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-secret-c03-reload]
+ticks = 929
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-shaker-fight]
+ticks = 1076
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-shortcut-reload]
+ticks = 967
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-smoke]
+ticks = 7112
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-toll-31-pay]
+ticks = 1146
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-toll-31-refuse]
+ticks = 1139
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-toll-31-reload]
+ticks = 2479
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-vine-platform]
+ticks = 992
+open_loop = 0
+clock_waits = 0
+
+[host]
+
+[maps]
+ship = "153e53d27bb462470c3b1efb3dc020bd95befc849ab7a61e27e940c39cafde56"
