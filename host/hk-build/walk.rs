@@ -491,6 +491,9 @@ pub fn compile(text: &str, setup: &Setup) -> Result<String> {
     let _ = writeln!(toml, "name = \"{}\"\ntitle = \"{}\"", escape(&name), escape(&title));
     let _ = writeln!(toml, "disc = [\"{}\"]", setup.disc.display());
     let _ = writeln!(toml, "symbols = [\"{}\"]\nmax_ticks = {max_ticks}", setup.symbols.display());
+    // The pad a player has: a DualShock, digital until the game asks for analog (the gate's default
+    // is a forced analog pad, which no console starts with).
+    let _ = writeln!(toml, "pad = \"dualshock\"");
     if let Some((path, sha)) = card {
         let _ = writeln!(toml, "card_fixture = {{ path = \"{}\", sha256 = \"{sha}\" }}", path.display());
     }
