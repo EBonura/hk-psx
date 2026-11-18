@@ -2356,6 +2356,24 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
 /// Play the walk scripts of `tools/walks` (docs/ROUTES.md, Walks) and report each. The walks play the
 /// shipping disc (no route-input feature): `HK_WALK_LIBRARY` names its library when `library` is the
 /// route-input twin the tapes need, otherwise they play `library`. Returns the names that failed.
+/// `walk-compile`: compile every walk script of `tools/walks` for the disc in `library` into
+/// `tests/<name>.toml`, the same journey `play_walks` hands the gate.
+fn walk_compile(root: &Path, library: &Path) -> Result<()> {
+    let cue = disc::disc_cue(library);
+    let map = library.join("game.map");
+    let cards = root.join("tools/cards");
+    let out = root.join("tests");
+    let mut written = 0;
+    for (name, script) in walk::scripts(root)? {
+        let setup = walk::Setup { disc: &cue, symbols: &map, cards: &cards };
+        let toml = walk::compile(&walk::expand(&script)?, &setup).map_err(|e| format!("{name}: {e}"))?;
+        std::fs::write(out.join(format!("{name}.toml")), toml)?;
+        written += 1;
+    }
+    println!("walk-compile: {written} journeys in {} for {}", out.display(), cue.display());
+    Ok(())
+}
+
 fn play_walks(root: &Path, gate: &Path, library: &Path, out: &Path, only: Option<&[String]>) -> Result<Vec<String>> {
     let walk_library = std::env::var_os("HK_WALK_LIBRARY").map(PathBuf::from).unwrap_or_else(|| library.to_path_buf());
     let map = if walk_library.join("game.map").is_file() {
@@ -2475,7 +2493,7 @@ fn closed_routes(root: &Path, options: &Options, measure: bool) -> Result<()> {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|phase-sweep|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|scene-specs|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
+        "usage: cargo hk-build <cook|build|pgo|validate|routes|cuts|tape-hold|tape-stall|tape-extend|phase-sweep|pace-pins|earned-focus|gate-receipt|disc|card-check|intro-cook|walk-compile|scene-specs|store|determinism|help> [--recook] [--telemetry] [--no-validate]\n       \
          [--hollow-knight DIR] [--sdk-source DIR] [--emulator-source DIR] [--frontend PATH] [--tape PATH]... [--jobs N] [--prune] [--repin] [--resume]\n\
          cook      verify source and SDK, then cook regions only; stop before guest work\n\
          build     cook (cached), build the guest, replace 'Hollow Knight (hk-psx)'.bin/.cue in --library, report, then validate\n\
@@ -2508,7 +2526,8 @@ fn usage() -> ! {
          disc built with guest features, the replay gates' route-input one, or --no-intro, has not)\n\
          store status|key|restore [--force]|publish [--label L]|dedupe|gc [--keep N] [--apply]|verify|phys DIR...  the shared cook store\n          \
          (HK_COOK_STORE=DIR; docs/COOK-STORE.md): restore exits 3 when it holds no snapshot for this checkout\n\
-         scene-specs cut the ActorSpec statics out of data/regions.rs and pack them (data/scene-specs, data/scene_specs.rs,\n          data/regions_guest.rs; a build does this itself, after the asset stage)\n         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe"
+         scene-specs cut the ActorSpec statics out of data/regions.rs and pack them (data/scene-specs, data/scene_specs.rs,\n          data/regions_guest.rs; a build does this itself, after the asset stage)\n         intro-cook  encode the install's Prologue and Intro clips into .hkpsx/intro (host/hk-intro-cook; --recook\n          cooks again) and compile the player into data/intro.exe\n\
+         walk-compile  compile every walk script into tests/<name>.toml (git-ignored), the gate journey for the disc in --library\n          (its link map as <library>/game.map), for psoxide-test to play"
     );
     std::process::exit(2)
 }
@@ -2843,6 +2862,9 @@ fn main() {
         }
         // Cut the spec statics out of data/regions.rs and pack them (a build does this itself).
         "scene-specs" => scene_specs::pack(&root).and_then(|()| guest_manifest::pack(&root)),
+        // Every walk script as the gate journey it compiles to, for the disc in --library (its link map
+        // as <library>/game.map), written to tests/<name>.toml (ignored by git): psoxide-test plays them.
+        "walk-compile" => walk_compile(&root, &selected_library(&options)),
         "intro-cook" => {
             if options.recook {
                 let _ = std::fs::remove_dir_all(intro::dir(&root));

@@ -19,3 +19,7 @@ __pycache__/
 # Local managed test-tool build intermediates.
 /tools/hkref/patcher/obj/
 /tools/hkref/patcher/bin/
+
+# Gate journeys compiled from tools/walks by `cargo hk-build walk-compile` (psoxide-test.toml).
+/tests/walk-*.toml
+!/tests/walk-smoke.toml
