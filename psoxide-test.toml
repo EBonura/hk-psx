@@ -92,14 +92,12 @@ smoke = ["tests/walk-smoke.toml"]
 # The route tapes, the closed-loop routes (journey-kings, journey-crossroads) and the power-cut
 # check, on the twin, with the game's own judge (pins, pacing ceilings, brightness, scene gates).
 # The walks are the journeys stage's. One replay at a time keeps it inside the emulator budget.
-# HK_PSX_GATE_SHA256 is the sha256 of the configured gate (gate-477d, emulator 477d8b21): validate
-# refuses a gate it cannot check, and the harness has no placeholder for a tool's digest yet
-# (harness-core/REQUESTS.md, hm-hk).
+# HK_PSX_GATE_SHA256 is the sha256 of the configured gate: validate refuses a gate it cannot check.
 [[host]]
 name = "validate-routes"
 build = "twin"
 command = ["cargo", "hk-build", "validate", "--library", "{out}", "--prune", "--jobs", "1", "--frontend", "{tool:frontend}", "--gate", "{tool:gate}", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}"]
-env = { HK_VALIDATE_NO_WALKS = "1", HK_PSX_GATE_SHA256 = "b41120e3674dd584478b2d0a92928c7de807b07fce52c78171f00375f6bfc4f3", HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
+env = { HK_VALIDATE_NO_WALKS = "1", HK_PSX_GATE_SHA256 = "{tool_sha256:gate}", HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
 env_remove = ["HK_HOT_LAYOUT", "HK_INTRO", "HK_VALIDATE_ONLY"]
 exclusive = "tree"
 
