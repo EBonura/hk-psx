@@ -2341,6 +2341,12 @@ fn validate(root: &Path, options: &Options) -> Result<()> {
         // The long save journey deliberately grants invincibility. The walks play without a cheat or a
         // recorded input: the whole road from the title, and the earned Focus proof on game state (the
         // tape proof `earned-focus` went red when new games moved to the top-gate drop).
+        // HK_VALIDATE_NO_WALKS: psoxide-test plays the walks itself, as journeys on every model
+        // (walk-compile), so its validate check stops after the routes and the power-cut check.
+        if std::env::var_os("HK_VALIDATE_NO_WALKS").is_some_and(|v| v == "1") {
+            println!("walks not played here (HK_VALIDATE_NO_WALKS=1): psoxide-test plays them as journeys");
+            return Ok(());
+        }
         let gate = gate.as_ref().ok_or("the walks need psoxide-gate (--gate, or HK_PSX_GATE and HK_PSX_GATE_SHA256)")?;
         let failed = play_walks(root, &gate.binary, &library, &out.join("walks"), None)?;
         if failed.is_empty() {
