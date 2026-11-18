@@ -1170,10 +1170,12 @@ fn build(root: &Path, options: &Options, mode: BuildMode) -> Result<()> {
     if options.validate {
         validate(root, options)?;
     }
-    if !pgo {
-        // docs/BUDGET.md pins the ordinary build's figures, so it is checked
+    if !pgo && shipping {
+        // docs/BUDGET.md pins the shipping build's figures, so it is checked
         // against the report this build wrote, after the replays, so a stale
-        // table never hides their verdict.
+        // table never hides their verdict. A disc built with guest features (the
+        // route-input twin) has other figures by design: checking it against the
+        // doc made every such build exit 1 after writing a complete disc.
         run(
             venv_python(root),
             &["-m", "unittest", "tests.test_budget_doc"],
