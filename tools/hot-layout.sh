@@ -43,9 +43,15 @@ for route in $routes; do
   stop=$(($1 + $2))
   replay() {
     mkdir -p "$work/emu"
-    cp "$root/tools/cards/$card" "$work/card.mcd"
+    # A pin file may name a card the repository does not hold (kings-death): the replay then starts on a
+    # freshly formatted card, as validate's does (no --memcard).
+    rm -f "$work/card.mcd"
+    if [ -n "$card" ] && [ -f "$root/tools/cards/$card" ]; then
+      cp "$root/tools/cards/$card" "$work/card.mcd"
+      set -- --memcard "$work/card.mcd" "$@"
+    fi
     "$frontend" launch --path "$disc/Hollow Knight (hk-psx).cue" --embedded-playtest --config-dir "$work/emu" \
-      --steps 400000000000 --input-tape "$tape" --stop-at-poll "$stop" --memcard "$work/card.mcd" "$@" \
+      --steps 400000000000 --input-tape "$tape" --stop-at-poll "$stop" "$@" \
       > "$work/replay.log" 2>&1
   }
   replay --route-log "$work/route.csv"
