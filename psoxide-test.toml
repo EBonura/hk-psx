@@ -53,6 +53,13 @@ env_remove = ["HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
 map = "game.map"
 
+# The original files by content (the digest is the build stage's input:NAME fact): the retail
+# install the cook read, and the SDK checkout at the pin. The cook store is not pinned: it is a
+# cache that a cook publishes into.
+[originals]
+hollow-knight = "3521cb92cf9d68f48de9063aa3d3fabf75b0670b7451c519079e43c9723496de"
+sdk = "9107aecaae4fbfcf55d67747aa3339181584a2bb442d5bb39ea07364cf9b9939"
+
 [[size]]
 build = "ship"
 
