@@ -37,14 +37,17 @@ map = "game.map"
 
 # The route-input twin: what the route tapes replay (validate) and the speed windows measure.
 # It runs last, so the tree's dist/, .hkpsx and build/ hold its artifacts, which validate reads.
-# The memory cards the speed windows boot from are copied into its out (a replay writes its card).
+# The memory cards the speed windows boot from are copied into its out (a replay writes its card
+# back; a collect source must be written by the build, so they are copied by a command).
 [[build]]
 name = "twin"
 out = "build/harness/twin"
 commands = [
   ["cargo", "hk-build", "build", "--no-validate", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}", "--library", "{out}"],
+  ["cp", "tools/cards/secret-c37.mcd", "{out}/card-secret-c37.mcd"],
+  ["cp", "tools/cards/kings-return.mcd", "{out}/card-kings-return.mcd"],
 ]
-collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "build.json" = ".hkpsx/build.json", "card-secret-c37.mcd" = "tools/cards/secret-c37.mcd", "card-kings-return.mcd" = "tools/cards/kings-return.mcd" }
+collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "build.json" = ".hkpsx/build.json" }
 env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
 env_remove = ["HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
