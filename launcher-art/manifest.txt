@@ -3,3 +3,4 @@
 id hollow
 front hollowknight.png
 back hollowknight.png
+shots hollowknight.png
