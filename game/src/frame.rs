@@ -834,6 +834,9 @@ pub fn interact(
             game.pause_menu.controls,
             game.pause_menu.cheats,
         );
+        // The charm board's own cursor and whether it is up: the same select and submit
+        // clips the pause list answers with (the inventory's own clips are not cooked).
+        let board = (game.pause_menu.charms.open, game.pause_menu.charms.row);
         if game.pause_menu.step(
             pad.bits(),
             &mut game.settings.sfx,
@@ -847,16 +850,23 @@ pub fn interact(
         }
         // A sub-screen opened or closed is the source's submit/cancel; a row
         // move is its select.
-        if game.paused && (screen.1, screen.2) != (game.pause_menu.controls, game.pause_menu.cheats)
+        if game.paused
+            && (screen.1, screen.2, board.0)
+                != (
+                    game.pause_menu.controls,
+                    game.pause_menu.cheats,
+                    game.pause_menu.charms.open,
+                )
         {
             audio::ui_confirm();
         } else if game.paused
-            && screen
+            && (screen
                 != (
                     game.pause_menu.row,
                     game.pause_menu.controls,
                     game.pause_menu.cheats,
                 )
+                || board.1 != game.pause_menu.charms.row)
         {
             audio::ui_select();
         } else if game.paused
@@ -876,6 +886,10 @@ pub fn interact(
             VITAL_PARAMS,
             game.pause_menu.action,
         );
+        if game.pause_menu.action == cheats::Action::AddGeo {
+            game.geo.add_quietly(cheats::GEO_GRANT, geo::GEO_PARAMS);
+            cheats::mark_geo_granted();
+        }
         if before
             != (
                 game.settings.sfx,
@@ -1152,8 +1166,10 @@ pub fn simulate(
         ability_fx::clear();
         // The screen is already black; the load carries on from there (exit_fade.rs).
         exit_fade::arm(255, 1);
-        // A fight lost ends its XA song; the arena resets for the next try.
+        // A fight lost ends its XA song (faded since the killing blow); the arena resets for the
+        // next try, and the respawn scene's music is applied afresh.
         music::boss(false);
+        music::respawn();
         // Hero Death Anim: Remove Geo moves the wallet into the pool the
         // Shade carries and Set Shade records where and how strong it is.
         // The source also saves here; this port never writes the card on
@@ -1357,7 +1373,24 @@ pub fn simulate(
             cross: pressed(button::CROSS),
             circle: pressed(button::CIRCLE),
         };
-        if game.save_ui.step(edges).is_some() {
+        let prompt = game.save_ui;
+        let agreed = game.save_ui.step(edges).is_some();
+        // The bench's "Save game?" answers with the menu clips: a row move is a select, a
+        // choice (Yes, No, or closing a failure) a submit.
+        match (prompt, game.save_ui) {
+            (save_ui::Ui::Ask(a), save_ui::Ui::Ask(b)) | (save_ui::Ui::Format(a), save_ui::Ui::Format(b))
+                if a != b =>
+            {
+                audio::ui_select()
+            }
+            (save_ui::Ui::Ask(_) | save_ui::Ui::Format(_) | save_ui::Ui::Failed(_), now)
+                if now != prompt =>
+            {
+                audio::ui_confirm()
+            }
+            _ => {}
+        }
+        if agreed {
             let stand = [game.bench.seat()[0], game.player.y];
             game.save_requested = Some(save_record(
                 game,

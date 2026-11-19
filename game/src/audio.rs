@@ -115,6 +115,7 @@ pub fn upload(bank: &[u8]) {
     assert!(BANK_BYTES <= 0x14000 - 0x1010);
     spu::upload_adpcm(SpuAddr::new(0x1010), bank);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
+        let volume = sample_gain(index, volume);
         // Pinned SDK fast release + reserved silence repeat address avoid
         // percussive sustain truncation and sample()'s indefinite release.
         Voice::new(VOICES[index]).configure_sample(
@@ -151,13 +152,26 @@ pub fn set_volume(level: u8) {
         LEVEL = level.min(10);
     }
     for (index, &(_, _, source)) in SAMPLES.iter().enumerate() {
-        let gain = Volume(volume::scale(source, level));
+        let gain = Volume(volume::scale(sample_gain(index, source), level));
         Voice::new(VOICES[index]).set_volume(gain, gain);
     }
     let gain = Volume(volume::scale(SAMPLES[0].2, level));
     Voice::new(SHARED_VOICE).set_volume(gain, gain);
 }
 
+/// The hard landing's slot in `SAMPLES`.
+const HARD_LAND: usize = 6;
+/// A dedicated voice's gain. The cook gives every hero clip a third of its source volume
+/// (`volume_q14`, mix headroom); `hero_land_hard` is a low thump 6 to 8 dB under a nail swing
+/// at the same volume, and at a third it was masked by the ambience stems, which key at full
+/// gain. It plays at its source volume, 1.0, unscaled.
+fn sample_gain(index: usize, cooked: i16) -> i16 {
+    if index == HARD_LAND {
+        0x3fff
+    } else {
+        cooked
+    }
+}
 /// Retrigger the shared voice on one clip. Two owners take turns on it, so the
 /// address and rate are written every time rather than left from `init`.
 fn play_shared(address: u32, rate: u32, gain: i16, pitch: Option<u16>) {

@@ -246,6 +246,27 @@ pub fn arena_entry(scene: usize, activated: bool) {
         publish();
     }
 }
+/// The Knight leaves `scene` (a gate, or a death that respawns him). The next load of the
+/// scene recreates every `BG Control` at its placement state, so its gates go back there now,
+/// and its fight ends: an arena whose runtime never calls `arena_entry` (Hornet's, whose
+/// `Encounter` only closes and opens) would otherwise keep the gates its last visit shut, and
+/// a death mid-fight left the way in walled up. The arenas that do call `arena_entry` then
+/// quick-open a won arena on entry as before.
+pub fn leave_scene(scene: usize) {
+    let mask = scene_mask(scene);
+    if mask == 0 {
+        return;
+    }
+    unsafe {
+        CLOSED = (CLOSED & !mask) | (PLACEMENT_CLOSED & mask);
+        if FIGHTING as usize == scene + 1 {
+            FIGHTING = 0;
+        }
+    }
+    set_poses(mask & PLACEMENT_CLOSED, CLIP_CLOSED);
+    set_poses(mask & !PLACEMENT_CLOSED, CLIP_OPENED);
+    publish();
+}
 /// `CRACK`: the last slam of the second rage.
 pub fn floor_crack() {
     unsafe {

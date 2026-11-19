@@ -5127,6 +5127,10 @@ pub static mut HK_ARENA_WAVES: u32 = 0;
 pub static mut HK_ARENA_LANDED: u32 = 0;
 #[no_mangle]
 pub static mut HK_ARENA_WAVE_DEATHS: u32 = 0;
+/// Wave members that landed in the slot of a dead actor because every slot was taken
+/// (`land_member`'s guard).
+#[no_mangle]
+pub static mut HK_ARENA_EVICTIONS: u32 = 0;
 /// A wave member waiting to land, standing, or counted out.
 #[derive(Clone, Copy)]
 struct Seat {
@@ -5199,6 +5203,11 @@ pub static mut HK_FK_PHASE: u32 = 0;
 #[no_mangle]
 pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS] = [[ACT_NONE, 0]; MAX_ACTORS];
 pub const ACT_NONE: i32 = i32::MAX;
+/// The corpse of the loaded scene's last slot that holds one: `{x, y}` (Q16 world units, the corpse's origin)
+/// and its phase (0 none, 1 in the air, 2 landing, 3 at rest, 4 removed). For walks that check where a body
+/// comes to rest (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_CORPSE: [i32; 3] = [ACT_NONE, 0, 0];
 /// Where the False Knight stands (Q16 world units), his body box from there, his Head box being `hk_sim::false_knight::HEAD_BOX`,
 /// and bit 0: the armour refuses a nail, bit 1: he rages (a stagger won in a rage never ends it). Read-only, for walk expressions.
 #[no_mangle]
@@ -5585,7 +5594,17 @@ impl EnemyWorld {
     #[cfg_attr(not(test), optimize(size))]
     pub fn publish_walk_words(&self, scene: usize, x: i32) {
         let (mut boss_dx, mut boss_phase) = (FOE_NO_BOSS, 0);
+        let mut corpse = [ACT_NONE, 0, 0];
         for (slot, entry) in self.actors.iter().enumerate() {
+            if let Some(body) = entry.as_ref().filter(|a| a.scene == scene).and_then(|a| a.corpse) {
+                let phase = match body.phase {
+                    hk_sim::CorpsePhase::Air => 1,
+                    hk_sim::CorpsePhase::Land => 2,
+                    hk_sim::CorpsePhase::Rest => 3,
+                    hk_sim::CorpsePhase::Removed => 4,
+                };
+                corpse = [body.x, body.y, phase];
+            }
             let mut row = [ACT_NONE, 0];
             let live = entry.as_ref().filter(|a| {
                 a.scene == scene && !a.health.dead && !matches!(a.runtime, Runtime::Static { .. })
@@ -5613,6 +5632,7 @@ impl EnemyWorld {
         unsafe {
             HK_FK_DX = boss_dx;
             HK_FK_PHASE = boss_phase;
+            HK_CORPSE = corpse;
         }
         // The slam waves: x and direction (0 when the slot is empty or the wave has stopped).
         for (i, wave) in self.waves.iter().enumerate() {
@@ -5681,6 +5701,14 @@ impl EnemyWorld {
         (live, written as u32)
     }
     pub fn reset_scene(&mut self, scene: usize) {
+        // A Husk Guard dropped mid-`Run` takes the flag that would have stopped its footstep loop
+        // with it: stop the scene voice's loop here, or it plays on through the death and the load.
+        let guard_running = self.actors.iter().flatten().any(|a| {
+            a.scene == scene && matches!(a.runtime, Runtime::HuskGuard(g) if g.run_loop)
+        });
+        if guard_running {
+            crate::scene_sfx::loop_stop();
+        }
         for slot in &mut self.actors {
             if slot.as_ref().is_some_and(|a| a.scene == scene) {
                 *slot = None;
@@ -5690,6 +5718,7 @@ impl EnemyWorld {
         if self.arena.is_some_and(|a| a.scene as usize == scene) {
             self.arena = None;
         }
+        crate::battle_gates::leave_scene(scene);
         self.clear_shots(scene);
         // A death or a gate leaves the arena: no roar or arena end outlives it.
         unsafe {
@@ -5858,7 +5887,7 @@ impl EnemyWorld {
                 SeatState::Waiting => {
                     let wait = seat.wait.saturating_sub(1);
                     rt.seats[i].wait = wait;
-                    if wait == 0 && self.land_member(region, seat.source_id) {
+                    if wait == 0 && self.land_member(region, seat.source_id, &rt.seats) {
                         rt.seats[i].state = SeatState::Alive;
                         unsafe { HK_ARENA_LANDED = HK_ARENA_LANDED.wrapping_add(1) }
                     }
@@ -5885,9 +5914,12 @@ impl EnemyWorld {
     }
     /// A summoned member standing at its place: `summon`'s `Summon` state, which
     /// moves it there, activates it and sends ALERT (the cooker seats it alert).
-    /// False when no slot is free or the region does not list it; it tries again.
+    /// False when the region does not list it; it tries again. With every slot taken the
+    /// member takes the slot of a dead actor of the room that no seat still has to count (a
+    /// spent corpse or a fallen hatchling): a wave that cannot land can never be counted out,
+    /// and `BG OPEN` would never come, the gates staying shut for good.
     #[inline(never)]
-    fn land_member(&mut self, region: &Region, source_id: u32) -> bool {
+    fn land_member(&mut self, region: &Region, source_id: u32, seats: &[Seat]) -> bool {
         let mut found = None;
         for index in 0..crate::world::region_actor_count(region) {
             if let Some((placement, spec)) = crate::world::region_actor(region, index) {
@@ -5895,9 +5927,24 @@ impl EnemyWorld {
             }
         }
         let Some((index, placement, spec)) = found else { return false; };
-        let Some(slot) = self.actors.iter().position(Option::is_none) else {
+        let free = self.actors.iter().position(Option::is_none);
+        let Some(slot) = free.or_else(|| {
+            self.actors.iter().position(|a| {
+                a.as_ref().is_some_and(|a| {
+                    a.scene == region.scene
+                        && a.health.dead
+                        && !seats.iter().any(|s| {
+                            s.state == SeatState::Alive && s.source_id == a.source_id
+                        })
+                })
+            })
+        }) else {
             return false;
         };
+        if free.is_none() {
+            self.drop_slot(slot);
+            unsafe { HK_ARENA_EVICTIONS = HK_ARENA_EVICTIONS.wrapping_add(1) }
+        }
         assert!(
             index < NO_PLACEMENT as usize,
             "placement index past the table"
