@@ -61,6 +61,11 @@ pub struct Game {
     // The hazard respawn marker, which a checkpoint volume moves.
     pub safe: (i32, i32, usize),
     pub safe_facing: i32,
+    /// The Knight came in through a top gate and is still falling: `safe` moves to where he lands.
+    /// The original sets the entry gate's `respawnMarker` (HeroController.FinishedEnteringScene)
+    /// and respawns on `FindGroundPoint` under it; a top gate's marker stands under the gate, so
+    /// its ground point is the floor the drop lands on, not the entry point in mid-air.
+    pub safe_on_landing: bool,
     pub attacks: u32,
     // Ticks since the current scene started (source Delay Collider gates).
     pub scene_ticks: u32,
@@ -1215,6 +1220,7 @@ pub fn simulate(
         game.player.facing = facing;
         game.safe = (spawn.0, spawn.1, slot);
         game.safe_facing = facing;
+        game.safe_on_landing = false;
         game.bench.reset();
         // A bench respawn wakes asleep on the bench (Bench Control's `Init Resting`); the new-game
         // spawn gets up from the ground (`HeroController.Respawn`'s `Wake Up Ground`).
@@ -2179,10 +2185,17 @@ pub fn simulate(
                 hazard,
             );
         }
+        if game.safe_on_landing && game.player.grounded {
+            game.safe_on_landing = false;
+            if let Some(id) = cache.locate(r.scene, game.player.x, game.player.y) {
+                game.safe = (game.player.x, game.player.y, id);
+            }
+        }
         if let Some((spawn, facing)) = game.state.checkpoint(bank_region, &game.player, PARAMS) {
             if let Some(id) = cache.locate(r.scene, spawn[0], spawn[1]) {
                 game.safe = (spawn[0], spawn[1], id);
                 game.safe_facing = facing;
+                game.safe_on_landing = false;
             }
         }
         if game.gate_cooldown == 0
@@ -2403,6 +2416,7 @@ fn take_gate(
     *target = Some(id);
     game.safe = (game.player.x, game.player.y, id);
     game.safe_facing = game.player.facing;
+    game.safe_on_landing = g.entry_vy < 0;
     game.gate_cooldown = 90;
 }
 

@@ -483,6 +483,9 @@ pub static mut HK_DEATHS: u32 = 0;
 pub static mut HK_PLAYER_X: i32 = 0;
 #[no_mangle]
 pub static mut HK_PLAYER_Y: i32 = 0;
+/// The hazard respawn point in force (`Game::safe`): x, y (Q16 world units).
+#[no_mangle]
+pub static mut HK_SAFE: [i32; 2] = [0; 2];
 /// Harness telemetry for side-by-side runs, published with the Knight's
 /// position at the end of each simulated tick so a trace row never pairs one
 /// tick's count with another's position: the Knight's facing (1 right, -1
@@ -1073,6 +1076,7 @@ fn main() {
         respawn: None,
         safe: (SPAWN.0, SPAWN.1, 0usize),
         safe_facing: 1,
+        safe_on_landing: false,
         attacks: 0,
         scene_ticks: 0,
         gate_cooldown: 0,
@@ -1464,6 +1468,7 @@ fn main() {
                         HK_SIM_PAD = input::CONSUMED_PAD;
                         HK_PLAYER_X = game.player.x;
                         HK_PLAYER_Y = game.player.y;
+                        HK_SAFE = [game.safe.0, game.safe.1];
                         HK_PLAYER_FACING = game.player.facing;
                         HK_WALK_READY = u32::from(
                             game.player.grounded && game.player.hard_land == 0 && !game.door.pending(),

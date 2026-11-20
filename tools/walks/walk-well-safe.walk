@@ -1,0 +1,12 @@
+name walk-well-safe
+title down Dirtmouth's well into Crossroads_01's top gate: the hazard respawn point moves to where the drop lands, not the entry point in mid-air
+max_ticks 9000
+sync poll
+# The original sets the entry gate's respawnMarker and respawns on FindGroundPoint under it (hk-next p9: Crossroads_01's top1 marker
+# 52.5, 22.5; the entry point is 52.5, 31.0). HK_SAFE is the point in force (Q16).
+card town-continue.mcd
+include title-continue.walk
+hold right until HK_SCENE_GATE_LOADS ge 1 timeout 1500        # along the street and down the well
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 600
+check landed HK_DEATHS == 0 ; HK_CHEATS == 0 ; expr i32(HK_SAFE + 4) == i32(HK_PLAYER_Y) && i32(HK_SAFE) == i32(HK_PLAYER_X) ; expr i32(HK_SAFE + 4) < 25 * 65536 && abs(i32(HK_SAFE) - 52 * 65536 - 32768) < 65536
