@@ -1,12 +1,17 @@
 //! Area and boss title cards (host/title_cards.py).
 //!
 //! Entering a scene whose `Area Title Controller` announces an area other than
-//! the one last announced arms the card; a controller that waits for its
-//! trigger holds it until the Knight is inside that box; then the source's
-//! pause (first visit or later visit) runs and the card fades in, holds and
-//! fades out. `Only On Revisit` controllers stay silent until the area has been
-//! seen once. Areas seen are kept in the world store, as the source's visited
-//! bools are. Bosses call `show_boss` with their own title.
+//! the current one arms the card; a controller that waits for its trigger
+//! holds it until the Knight is inside that box; then the source's pause (first
+//! visit or later visit) runs and the card fades in, holds and fades out
+//! (AreaTitleController.Finish). The current area is PlayerData `currentArea`,
+//! saved with the game (`persist::CURRENT_AREA`), so a Continue does not announce
+//! the area the save was made in again. A sub-area (King's Pass, the shaman
+//! temple) always shows its small card and never becomes the current area, so
+//! coming back out of it announces nothing. `Only On Revisit` controllers stay
+//! silent until the area has been seen once. Areas seen are kept in the world
+//! store, as the source's visited bools are. Bosses call `show_boss` with their
+//! own title.
 //!
 //! The text uses the dialogue font the disc already has for the small lines; the main line is
 //! the card strip's glyphs (font_strip.rs `cook_cards`): Perpetua rasterised at 40 px, grid
@@ -54,7 +59,6 @@ const fn timing(style: Style) -> (u16, u16, u16, u16) {
 const ITEM: u8 = NONE - 1;
 static mut ITEM_NAME: &str = "";
 struct State {
-    last: u8,
     armed: Option<usize>,
     triggered: bool,
     wait: u16,
@@ -75,7 +79,6 @@ const AREA_TAIL: u16 = 30;
 /// Disappear). The first-visit card has no such transition: it stays up through a conversation.
 const QUICK: u16 = 30;
 static mut STATE: State = State {
-    last: NONE,
     armed: None,
     triggered: false,
     wait: 0,
@@ -98,6 +101,10 @@ fn state() -> &'static mut State {
 fn visited(title: u8) -> bool {
     persist::get(Kind::Visited, title as usize, 0).is_some()
 }
+/// PlayerData `currentArea`: the title index plus one, 0 for none.
+fn current_area() -> u8 {
+    persist::store().levels[persist::CURRENT_AREA]
+}
 fn show(title: u8, style: Style, delay: u16) {
     let s = state();
     s.showing = title;
@@ -115,7 +122,7 @@ pub fn enter_scene(scene: usize) {
     let s = state();
     s.armed = None;
     if let Some(i) = AREAS.iter().position(|a| a.scene as usize == scene) {
-        if AREAS[i].title != s.last {
+        if AREAS[i].sub_area || AREAS[i].title + 1 != current_area() {
             s.armed = Some(i);
             s.triggered = AREAS[i].trigger.is_none();
             s.wait = if visited(AREAS[i].title) {
@@ -143,7 +150,6 @@ pub fn show_item(name: &'static str) {
 /// A new session or the development reset: nothing announced yet.
 pub fn reset() {
     *state() = State {
-        last: NONE,
         armed: None,
         triggered: false,
         wait: 0,
@@ -198,12 +204,17 @@ pub fn tick(body: [i32; 4]) {
         return;
     }
     s.armed = None;
-    s.last = area.title;
-    let seen = visited(area.title);
-    persist::set(Kind::Visited, area.title as usize, 0, 1);
-    if area.only_on_revisit && !seen {
+    // AreaTitleController.Finish: a sub-area's small card, the current area untouched.
+    if area.sub_area {
+        show(area.title, Style::Seen, timing(Style::Seen).0);
         return;
     }
+    let seen = visited(area.title);
+    if (area.only_on_revisit && !seen) || area.title + 1 == current_area() {
+        return;
+    }
+    persist::set_level(persist::CURRENT_AREA, area.title + 1);
+    persist::set(Kind::Visited, area.title as usize, 0, 1);
     let style = if seen { Style::Seen } else { Style::Area };
     show(area.title, style, timing(style).0);
 }

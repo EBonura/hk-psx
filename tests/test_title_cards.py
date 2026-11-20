@@ -17,11 +17,12 @@ class TitleCardTests(unittest.TestCase):
         areas = [{'scene': 1, 'event': 'DIRTMOUTH', 'trigger': [0.0, 0.0, 1.0, 1.0], 'unvisited_ticks': 0,
                   'visited_ticks': 120, 'only_on_revisit': False},
                  {'scene': 0, 'event': 'KINGSPASS', 'trigger': None, 'unvisited_ticks': 120,
-                  'visited_ticks': 120, 'only_on_revisit': False}]
+                  'visited_ticks': 120, 'only_on_revisit': False, 'sub_area': True}]
         text = title_cards.rust(areas, ['DIRTMOUTH', 'KINGSPASS', 'FALSE_KNIGHT'],
                                 [['', 'Dirtmouth', 'The Fading Town'], ['', "King's Pass", ''], ['', 'False Knight', '']])
         self.assertIn('pub const FALSE_KNIGHT:u8=2;', text)
-        self.assertIn('Area{scene:1,title:0,trigger:Some([0,0,65536,65536]),unvisited_ticks:0,visited_ticks:120,only_on_revisit:false},', text)
+        self.assertIn('Area{scene:1,title:0,trigger:Some([0,0,65536,65536]),unvisited_ticks:0,visited_ticks:120,only_on_revisit:false,sub_area:false},', text)
+        self.assertIn('only_on_revisit:false,sub_area:true},', text)
         self.assertIn('Area{scene:0,title:1,trigger:None,', text)
 
 

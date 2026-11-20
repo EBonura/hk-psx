@@ -142,12 +142,14 @@ pub const SHAMAN_HIGH: u32 = 25;
 /// Mothwing Cloak) is offered once it is set.
 pub const HORNET_1_DEFEATED: u32 = 26;
 /// PlayerData small integers, by index: `fireballLevel`, `quakeLevel`,
-/// `screamLevel`. The fourth byte is zero and reserved.
+/// `screamLevel`, and `currentArea` (title_card.rs: the title index plus one of the area last
+/// announced, 0 for none; a record from before it reads 0).
 pub const FIREBALL_LEVEL: usize = 0;
 #[allow(dead_code)]
 pub const QUAKE_LEVEL: usize = 1;
 #[allow(dead_code)]
 pub const SCREAM_LEVEL: usize = 2;
+pub const CURRENT_AREA: usize = 3;
 pub const LEVELS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
