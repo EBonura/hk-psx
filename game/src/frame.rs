@@ -876,6 +876,10 @@ pub fn interact(
             VITAL_PARAMS,
             game.pause_menu.action,
         );
+        if game.pause_menu.action == cheats::Action::AddGeo {
+            game.geo.add_quietly(cheats::GEO_GRANT, geo::GEO_PARAMS);
+            cheats::mark_geo_granted();
+        }
         if before
             != (
                 game.settings.sfx,

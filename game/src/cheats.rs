@@ -6,7 +6,7 @@ use hk_sim::{Hurt, VitalParams, Vitals};
 pub const PURE_NAIL_DAMAGE: u16 = 21;
 pub const MAX_MASKS: u16 = 9;
 pub const BLUE_CHEAT_CAP: u16 = 20;
-/// Toggle rows on the Cheats page, ahead of Restore, Add Lifeblood, Reset and Back.
+/// Toggle rows on the Cheats page, ahead of Restore, Add Lifeblood, Add Geo, Reset and Back.
 pub const CHEAT_ROWS: usize = 12;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
@@ -34,7 +34,22 @@ pub enum Action {
     None,
     Restore,
     AddBlue,
+    /// Add `GEO_GRANT` to the wallet (`geo::Wallet::add_quietly`, no coins spawned).
+    AddGeo,
     Reset,
+}
+/// What the Cheats page's Add Geo row puts in the wallet.
+pub const GEO_GRANT: u32 = 1_000;
+/// `HK_CHEATS` bit of a session that used Add Geo. It is not a toggle, so Reset All leaves it: a
+/// walk that asserts `HK_CHEATS == 0` still proves no Geo was handed out.
+pub const GEO_GRANTED_BIT: u32 = 1 << 12;
+static mut GEO_GRANTED: bool = false;
+/// Mark the session as one that used Add Geo (for `HK_CHEATS`).
+pub fn mark_geo_granted() {
+    // SAFETY: the guest is single-threaded and no interrupt handler touches this flag.
+    unsafe {
+        GEO_GRANTED = true;
+    }
 }
 impl Settings {
     pub const fn new() -> Self {
@@ -208,8 +223,9 @@ pub static mut HK_CHEAT_NAIL_DAMAGE: u32 = 0;
 pub static mut HK_CHEAT_MASK_CAP: u32 = 0;
 pub fn publish(settings: Settings, base: VitalParams) {
     let p = settings.params(base);
+    // SAFETY: the guest is single-threaded; the telemetry words are only read by the host.
     unsafe {
-        HK_CHEATS = settings.bits();
+        HK_CHEATS = settings.bits() | if GEO_GRANTED { GEO_GRANTED_BIT } else { 0 };
         HK_CHEAT_NAIL_DAMAGE = p.nail_damage as u32;
         HK_CHEAT_MASK_CAP = p.max_health as u32;
     }

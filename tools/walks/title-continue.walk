@@ -1,0 +1,9 @@
+# The title to a saved game, closed loop (a fragment for walks that boot a `card`): every press is held until the menu's
+# own words say it took (HK_MENU_ROW, HK_MENU_PAGE: the cursor moves only once the title reads the pad), the profile is
+# held until the start-game sound has played (HK_WORLD_SFX +12), and the load is waited for by HK_GAME_MODE.
+hold down until HK_MENU_ROW == 1 timeout 4000  # the title's menu reads the pad
+hold up until HK_MENU_ROW == 0 timeout 600
+hold start until HK_MENU_PAGE == 4 timeout 600   # Start Game opens the profiles
+hold cross until expr u32(HK_WORLD_SFX + 12) >= 1 timeout 600   # profile 1: the save
+wait until HK_GAME_MODE == 1 timeout 3000
+wait until HK_WALK_READY == 1 timeout 900

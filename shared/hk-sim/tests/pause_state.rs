@@ -116,6 +116,10 @@ fn actions_are_edges_and_back_does_not_resume() {
     assert_eq!(p.action, cheats::Action::AddBlue);
     tap(&mut p, &mut c, 0x40);
     tap(&mut p, &mut c, 0x4000);
+    assert_eq!(p.action, cheats::Action::AddGeo);
+    assert!(c.invincible, "Add Geo is an action, not a toggle reset");
+    tap(&mut p, &mut c, 0x40);
+    tap(&mut p, &mut c, 0x4000);
     assert_eq!(p.action, cheats::Action::Reset);
     assert_eq!(c, cheats::Settings::new());
     assert!(!tap(&mut p, &mut c, 0x2000));
@@ -156,7 +160,7 @@ fn music_volume_and_adjacent_pages_preserve_each_other() {
     assert!(p.cheats);
     // Up from row 0 wraps to the last row, which is Back.
     tap(&mut p, &mut c, 0x10);
-    assert_eq!(p.row, cheats::CHEAT_ROWS + 4);
+    assert_eq!(p.row, cheats::CHEAT_ROWS + pause::CHEAT_ACTIONS - 1);
     assert!(!tap(&mut p, &mut c, 0x4000));
     // Down from Cheats passes through Charms before wrapping to Resume.
     assert!(!p.cheats);

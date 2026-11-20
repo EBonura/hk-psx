@@ -1,0 +1,21 @@
+name walk-cheat-geo
+title the pause Cheats page's Add 1,000 Geo on the Dirtmouth card: the wallet grows by exactly 1,000, HK_CHEATS carries bit 12 (4096) and no toggle moves
+max_ticks 9000
+sync poll
+card town-continue.mcd
+include title-continue.walk
+check dirtmouth HK_CHEATS == 0 ; HK_GEO_WALLET == 6 ; HK_PAUSED == 0
+hold start until HK_PAUSED == 1 timeout 60       # the pause menu
+repeat 2 press up rest 3                       # Resume wraps to Charms, then Cheats
+press cross rest 3                             # the Cheats page, cursor on the first toggle
+repeat 4 press up rest 3                       # Back, Reset session, Turn all cheats off, Add 1,000 Geo
+press cross rest 3
+check granted HK_PAUSED == 1 ; HK_CHEATS == 4096 ; HK_GEO_WALLET == 1006
+press cross rest 3                             # a second press: another 1,000, the marker stays one bit
+check granted-twice HK_CHEATS == 4096 ; HK_GEO_WALLET == 2006
+press down rest 3                              # Turn all cheats off (Reset All): it leaves the marker
+press cross rest 3
+repeat 2 press circle rest 3                   # leave the page and the pause menu
+wait until HK_PAUSED == 0 timeout 60
+wait until HK_WALK_READY == 1 timeout 300
+check resumed HK_PAUSED == 0 ; HK_CHEATS == 4096 ; HK_GEO_WALLET == 2006 ; HK_DEATHS == 0

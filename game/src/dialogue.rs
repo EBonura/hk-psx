@@ -498,14 +498,14 @@ pub fn prepare(
             } else if p.charms.open {
                 crate::charms::panel(&p.charms);
             } else if p.cheats {
-                // Thirteen rows do not leave room for the crest: the dim and the glow only.
+                // The rows do not leave room for the crest: the dim and the glow only.
                 pause_backdrop(4, false, 0);
                 caps_text(160 - caps_width("Cheats") / 2, 12, "Cheats", 0x80);
-                // Seventeen rows at the font's size do not fit: a window of eleven follows the cursor.
+                // Eighteen rows at the font's size do not fit: a window of eleven follows the cursor.
                 const WINDOW: usize = 11;
                 const TOP: i16 = 32;
                 const CHEAT_PITCH: i16 = 14;
-                let total = crate::menu::state::CHEAT_ITEMS.len() + 5;
+                let total = crate::menu::state::CHEAT_ITEMS.len() + crate::pause::CHEAT_ACTIONS;
                 let first = p.row.saturating_sub(WINDOW / 2).min(total - WINDOW);
                 row_glow(TOP + (p.row - first) as i16 * CHEAT_PITCH - 1, CHEAT_PITCH);
                 for (i, line) in crate::menu::state::CHEAT_ITEMS
@@ -514,6 +514,7 @@ pub fn prepare(
                         [
                             "Restore health + SOUL",
                             "Add 5 Lifeblood masks",
+                            "Add 1,000 Geo",
                             "Turn all cheats off",
                             "Reset session",
                             "Back",

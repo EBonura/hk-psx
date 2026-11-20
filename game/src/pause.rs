@@ -20,6 +20,9 @@ const _: () = assert!(
 /// index; the cheats page returns to its own row by number.
 pub const ROWS: usize = 7;
 const CHARMS_ROW: usize = 6;
+/// Rows on the Cheats page after the toggles: Restore, Add Lifeblood, Add Geo, Reset All, Reset
+/// session, Back (the labels are `dialogue.rs`'s, in the same order).
+pub const CHEAT_ACTIONS: usize = 6;
 pub struct State {
     pub row: usize,
     pub controls: bool,
@@ -98,10 +101,10 @@ impl State {
                 self.row = 5;
                 return false;
             }
-            // Toggles, then Restore, Add Lifeblood, Reset All, Reset session and Back. Derived
-            // so a new ability row cannot silently land on one of the actions.
+            // Toggles, then Restore, Add Lifeblood, Add Geo, Reset All, Reset session and Back.
+            // Derived so a new ability row cannot silently land on one of the actions.
             const TOGGLES: usize = crate::cheats::CHEAT_ROWS;
-            const ROWS: usize = TOGGLES + 5;
+            const ROWS: usize = TOGGLES + CHEAT_ACTIONS;
             if press & UP != 0 {
                 self.row = (self.row + ROWS - 1) % ROWS;
             }
@@ -120,11 +123,12 @@ impl State {
                     }
                     r if r == TOGGLES => self.action = crate::cheats::Action::Restore,
                     r if r == TOGGLES + 1 => self.action = crate::cheats::Action::AddBlue,
-                    r if r == TOGGLES + 2 => {
+                    r if r == TOGGLES + 2 => self.action = crate::cheats::Action::AddGeo,
+                    r if r == TOGGLES + 3 => {
                         *cheats = crate::cheats::Settings::new();
                         self.action = crate::cheats::Action::Reset;
                     }
-                    r if r == TOGGLES + 3 => self.confirm_reset = true,
+                    r if r == TOGGLES + 4 => self.confirm_reset = true,
                     _ => {
                         self.cheats = false;
                         self.row = 5;
@@ -341,7 +345,7 @@ mod tests {
         assert!(p.cheats);
         tap(&mut p, UP);
         tap(&mut p, UP);
-        assert_eq!(p.row, crate::cheats::CHEAT_ROWS + 3);
+        assert_eq!(p.row, crate::cheats::CHEAT_ROWS + 4);
         assert!(!tap(&mut p, CROSS));
         assert!(p.confirm_reset && !p.reset_requested);
         // O backs out of the question, to the cheats page, and does not resume.
@@ -354,6 +358,29 @@ mod tests {
         // A fresh pause forgets a request nobody took.
         p.enter(0);
         assert!(!p.reset_requested);
+    }
+    #[test]
+    fn the_add_geo_row_asks_for_geo_and_toggles_nothing() {
+        let mut p = State::new();
+        let (mut a, mut b) = (10, 10);
+        let mut c = crate::cheats::Settings::new();
+        let mut tap = |p: &mut State, c: &mut crate::cheats::Settings, bits: u16| {
+            p.step(0, &mut a, &mut b, &mut 10, c);
+            p.step(bits, &mut a, &mut b, &mut 10, c)
+        };
+        tap(&mut p, &mut c, UP);
+        tap(&mut p, &mut c, UP);
+        tap(&mut p, &mut c, CROSS);
+        assert!(p.cheats);
+        // Back, Reset session, Reset All, then Add Geo: four rows up from the first toggle.
+        for _ in 0..4 {
+            tap(&mut p, &mut c, UP);
+        }
+        assert_eq!(p.row, crate::cheats::CHEAT_ROWS + 2);
+        tap(&mut p, &mut c, CROSS);
+        assert_eq!(p.action, crate::cheats::Action::AddGeo);
+        assert_eq!(c, crate::cheats::Settings::new());
+        assert!(p.cheats && !p.confirm_reset);
     }
     #[test]
     fn the_inventory_button_opens_the_charm_board() {
