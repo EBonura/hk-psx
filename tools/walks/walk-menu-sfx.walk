@@ -1,0 +1,27 @@
+name walk-menu-sfx
+title the bench's Save game? question and the pause charm board answer with the menu clips: a row move is a select (HK_UI_SFX), a choice or a screen opened or closed a submit (HK_WORLD_SFX[2])
+max_ticks 6000
+sync poll
+include continue-47.walk
+wait until HK_WALK_READY == 1 timeout 300
+press up                                       # sit: the bench asks Save game?
+wait until HK_SAVE_UI == 1 timeout 600
+check ask-up HK_UI_SFX == 0 ; expr u32(HK_WORLD_SFX + 8) == 1
+press down rest 3                              # Yes to No: a select
+check ask-moved HK_UI_SFX == 1 ; expr u32(HK_WORLD_SFX + 8) == 1
+press cross rest 3                             # No: a submit, the question closes
+wait until HK_SAVE_UI == 0 timeout 60
+check ask-closed HK_UI_SFX == 1 ; expr u32(HK_WORLD_SFX + 8) == 2
+check no-write HK_SAVE_WRITES == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
+hold start until HK_PAUSED == 1 timeout 60     # the pause menu
+check paused HK_UI_SFX == 1 ; expr u32(HK_WORLD_SFX + 8) == 2
+press up rest 3                                # Resume wraps to Charms
+press cross rest 3                             # the charm board opens: a submit
+check board-open HK_UI_SFX == 2 ; expr u32(HK_WORLD_SFX + 8) == 3
+press right rest 3                             # the board's cursor: a select
+check board-moved HK_UI_SFX == 3 ; expr u32(HK_WORLD_SFX + 8) == 3
+press circle rest 3                            # the board closes: a submit
+check board-closed HK_UI_SFX == 3 ; expr u32(HK_WORLD_SFX + 8) == 4
+press circle rest 3
+wait until HK_PAUSED == 0 timeout 60
+check resumed HK_PAUSED == 0 ; HK_DEATHS == 0 ; HK_CHEATS == 0
