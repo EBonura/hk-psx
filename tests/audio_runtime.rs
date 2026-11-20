@@ -193,7 +193,8 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     // Great Door; keying an event after exact mute cannot restore its gain.
     for level in [5,255,0] {
         audio::set_volume(level);let mut expected=Vec::new();
-        for (i,v) in physical.iter().enumerate(){expected.push(Event::Gain(*v,((i as i32+1)*1000*level.min(10) as i32/10) as i16));}
+        // The hard landing (slot 6, voice 16) plays at its source volume, not the cooked third.
+        for (i,v) in physical.iter().enumerate(){let g=if i==6{0x3fff}else{(i as i32+1)*1000};expected.push(Event::Gain(*v,(g*level.min(10) as i32/10) as i16));}
         expected.push(Event::Gain(15,1000*level.min(10) as i16/10));assert_eq!(take(),expected);
     }
     audio::great_door_hit();assert_eq!(take().last(),Some(&Event::On(1<<15,0)));
