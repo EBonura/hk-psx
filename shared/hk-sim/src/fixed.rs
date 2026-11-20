@@ -76,6 +76,47 @@ pub fn hypot(dx: i32, dy: i32) -> u32 {
     psx_math::WideU::mul(x, x).mul_add(y, y).isqrt()
 }
 
+/// One AudioSource's rolloff: full volume to `near`, a Hermite segment from 1 down to 0 at `far`
+/// (both in 1/16 units of distance from the camera), with the curve's end tangents `m0` and `m1`
+/// in thousandths of the segment. A linear rolloff is `m0 = m1 = -1000`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rolloff {
+    pub near: i32,
+    pub far: i32,
+    pub m0: i32,
+    pub m1: i32,
+}
+
+/// The rolloff of the source's audio actor prefab (the `Audio Player Actor` AudioSource every
+/// `RandomAudioClipTable.SpawnAndPlayOneShot` spawns, and `WaterDrip`'s own): max distance 50, custom
+/// curve 1 at 0.78 of it (39 units), 0 at 0.941 (47.06), slopes -4.5455 and -9.5996.
+pub const ACTOR_ROLLOFF: Rolloff = Rolloff { near: 39 * 16, far: 753, m0: -733, m1: -1547 };
+/// `GrassBehaviour`'s own AudioSource: linear from 39 to 50 units.
+pub const GRASS_ROLLOFF: Rolloff = Rolloff { near: 39 * 16, far: 50 * 16, m0: -1000, m1: -1000 };
+
+/// What `rolloff` leaves of a source `dx`, `dy` (Q16 units) from the listener, in 4096ths, the
+/// camera 38 units in front of the play plane (as `source_rolloff`).
+pub fn rolloff_at(dx: i32, dy: i32, rolloff: Rolloff) -> i32 {
+    let (x, y) = ((dx >> 12).abs().min(1000), (dy >> 12).abs().min(1000));
+    let d2 = x * x + y * y + (38 * 16) * (38 * 16);
+    let mut d = 38 * 16 + x.max(y);
+    for _ in 0..6 {
+        d = (d + d2 / d) / 2;
+    }
+    if d <= rolloff.near {
+        return 4096;
+    }
+    if d >= rolloff.far {
+        return 0;
+    }
+    let u = (d - rolloff.near) * 4096 / (rolloff.far - rolloff.near);
+    let (u2, u3) = (u * u / 4096, u * u / 4096 * u / 4096);
+    let h00 = 2 * u3 - 3 * u2 + 4096;
+    let h10 = u3 - 2 * u2 + u;
+    let h11 = u3 - u2;
+    (h00 + h10 * rolloff.m0 / 1000 + h11 * rolloff.m1 / 1000).clamp(0, 4096)
+}
+
 /// What Unity's AudioSource rolloff leaves of a source `dx`, `dy` (Q16 units) from the
 /// listener, in 4096ths. The listener is the camera, 38 units in front of the play plane
 /// (CAM_Z), so the source is `sqrt(dx^2 + dy^2 + 38^2)` away: full volume to `min` (39 units),
@@ -110,8 +151,28 @@ pub fn source_rolloff(dx: i32, dy: i32, min: i32, max: i32) -> i32 {
 
 #[cfg(test)]
 mod rolloff_tests {
-    use super::source_rolloff;
+    use super::{rolloff_at, source_rolloff, ACTOR_ROLLOFF, GRASS_ROLLOFF};
     const ONE: i32 = 65536;
+    #[test]
+    fn a_linear_rolloff_is_half_way_down_half_way_across() {
+        // 44.5 units from the camera is 23.16 across the play plane.
+        let half = rolloff_at(23 * ONE + 10_486, 0, GRASS_ROLLOFF);
+        assert!((half - 2048).abs() < 40, "{half}");
+        assert_eq!(rolloff_at(0, 0, GRASS_ROLLOFF), 4096);
+        assert_eq!(rolloff_at(33 * ONE, 0, GRASS_ROLLOFF), 0); // 50.3 units away
+    }
+    #[test]
+    fn the_actor_curve_is_silent_past_47_units() {
+        assert_eq!(rolloff_at(8 * ONE, 0, ACTOR_ROLLOFF), 4096);
+        // 47.1 units from the camera is 27.8 across.
+        assert_eq!(rolloff_at(28 * ONE, 0, ACTOR_ROLLOFF), 0);
+        let mut last = 4096;
+        for x in 9..28 {
+            let v = rolloff_at(x * ONE, 0, ACTOR_ROLLOFF);
+            assert!(v <= last, "{x}: {v} > {last}");
+            last = v;
+        }
+    }
     #[test]
     fn full_volume_inside_the_minimum_distance_silent_beyond_the_maximum() {
         // The listener sits 38 units off the play plane, so 39 units is 8.8 units across it.
