@@ -1,51 +1,56 @@
 # Written by `psoxide-test bless`; edit only by blessing again (decision 4: a bar changes by editing
 # psoxide-test.toml with a reason, never by hand-editing these numbers).
 schema = 1
-blessed_commit = "e7c8476278eea630478549ce131ab51ef9f082c7"
+blessed_commit = "769f585837a5f8812f1bcb6efd9c68db8080b945"
 sdk_pin = "0187c5f4fab876cbeaa9a99a37df305ccae1e4a3"
 
 [size.ship]
-text = 804020
-data = 244680
-bss = 795996
-free = 137428
+text = 807960
+data = 245368
+bss = 796028
+free = 132740
 
 [speed.c37-stand]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
-flips = [930, 932, 933, 935, 936, 938, 940, 940]
-work_per_frame = [1297394, 1295201, 1293227, 1291050, 1289086, 1286340, 1284756, 1284756]
-frame_work_p99 = [2196715, 2196715, 2196715, 2196715, 2196696, 2196696, 2196696, 2196696]
-vblanks = ["2:644,3:231,4:54", "2:648,3:230,4:53", "2:652,3:228,4:52", "2:656,3:228,4:50", "2:659,3:227,4:49", "2:663,3:226,4:48", "2:667,3:225,4:47", "2:666,3:227,4:46"]
+flips = [930, 931, 933, 936, 937, 939, 940, 943]
+work_per_frame = [1298674, 1296103, 1293327, 1290358, 1287812, 1285647, 1283689, 1280755]
+frame_work_p99 = [2196732, 2196732, 2196732, 2196732, 2196732, 2196732, 2196732, 2196732]
+vblanks = ["2:642,3:233,4:54", "2:646,3:232,4:52", "2:651,3:230,4:51", "2:656,3:229,4:50", "2:660,3:227,4:49", "2:664,3:227,4:47", "2:668,3:225,4:46", "2:673,3:224,4:45"]
 
 [speed.kings-return]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
-flips = [546, 548, 549, 550, 552, 553, 555, 557]
-work_per_frame = [1205063, 1200673, 1198490, 1196315, 1191988, 1189837, 1185557, 1181307]
-frame_work_p99 = [1648757, 1648757, 1648757, 1648757, 1648757, 1648757, 1648471, 1648464]
-vblanks = ["2:444,3:96,4:5", "2:449,3:93,4:5", "2:452,3:91,4:5", "2:456,3:88,4:5", "2:460,3:86,4:5", "2:465,3:82,4:5", "2:470,3:80,4:4", "2:476,3:76,4:4"]
+flips = [550, 551, 551, 553, 554, 555, 555, 556]
+work_per_frame = [1197321, 1195152, 1195152, 1190837, 1188693, 1186555, 1186552, 1184422]
+frame_work_p99 = [2195806, 2195806, 2195806, 2195806, 2195806, 2195806, 2195806, 2195806]
+vblanks = ["2:457,3:84,4:7,5:1", "2:461,3:81,4:7,5:1", "2:462,3:80,4:7,5:1", "2:466,3:78,4:7,5:1", "2:469,3:76,4:7,5:1", "2:473,3:73,4:7,5:1", "2:473,3:73,4:7,5:1", "2:475,3:72,4:7,5:1"]
 
 [journeys.walk-ability-dash]
-ticks = 1212
+ticks = 1213
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-ability-wings]
-ticks = 1173
+ticks = 1174
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-baldur-spell]
-ticks = 5457
+ticks = 5441
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-cheat-geo]
+ticks = 549
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crest-save-reload]
-ticks = 20423
+ticks = 20493
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crossroads-shortcut]
-ticks = 1687
+ticks = 1688
 open_loop = 0
 clock_waits = 0
 
@@ -55,22 +60,22 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-false-knight-from-bench-47]
-ticks = 17281
+ticks = 17351
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-06]
-ticks = 3275
+ticks = 3269
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-07-to-30]
-ticks = 6454
+ticks = 6639
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-22-gate]
-ticks = 1301
+ticks = 1314
 open_loop = 0
 clock_waits = 0
 
@@ -80,77 +85,87 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-32-to-hornet]
-ticks = 17297
+ticks = 16670
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05]
-ticks = 1512
+ticks = 1514
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05-restore]
-ticks = 1238
-open_loop = 0
-clock_waits = 0
-
-[journeys.walk-geo-rock-21]
-ticks = 1382
-open_loop = 0
-clock_waits = 0
-
-[journeys.walk-greenpath-east]
-ticks = 6861
-open_loop = 0
-clock_waits = 0
-
-[journeys.walk-greenpath-west]
-ticks = 11438
-open_loop = 0
-clock_waits = 0
-
-[journeys.walk-hornet-counter-31]
 ticks = 1239
 open_loop = 0
 clock_waits = 0
 
+[journeys.walk-geo-rock-21]
+ticks = 1383
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-greenpath-east]
+ticks = 6860
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-greenpath-west]
+ticks = 11452
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-hornet-counter-31]
+ticks = 1240
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-hornet-death]
+ticks = 4400
+open_loop = 0
+clock_waits = 0
+
 [journeys.walk-hornet-fight]
-ticks = 12401
+ticks = 11999
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-husk-hits]
-ticks = 4707
+ticks = 4697
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-menu-sfx]
+ticks = 895
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-exit]
-ticks = 3133
+ticks = 3137
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-spell]
-ticks = 1831
+ticks = 1832
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-crest]
-ticks = 35573
+ticks = 35559
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-greenpath]
-ticks = 51376
+ticks = 51075
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-hornet]
-ticks = 79263
+ticks = 77764
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-plant-trap-kill]
-ticks = 1687
+ticks = 1752
 open_loop = 0
 clock_waits = 0
 
@@ -160,7 +175,7 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-shaker-fight]
-ticks = 1076
+ticks = 1075
 open_loop = 0
 clock_waits = 0
 
@@ -170,31 +185,46 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-smoke]
-ticks = 7112
+ticks = 7111
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-tiktik-ceiling]
+ticks = 794
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-title-cards]
+ticks = 2647
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-pay]
-ticks = 1146
+ticks = 1147
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-refuse]
-ticks = 1139
+ticks = 1140
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-reload]
-ticks = 2479
+ticks = 2480
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-vine-platform]
-ticks = 992
+ticks = 993
+open_loop = 0
+clock_waits = 0
+
+[journeys.walk-well-safe]
+ticks = 973
 open_loop = 0
 clock_waits = 0
 
 [host]
 
 [maps]
-ship = "153e53d27bb462470c3b1efb3dc020bd95befc849ab7a61e27e940c39cafde56"
+ship = "e6149d975e5033fe6a94d911f0161a84750fd869e0e83a0350ac7ad86f71af98"
