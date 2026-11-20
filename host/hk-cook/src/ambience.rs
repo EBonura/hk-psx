@@ -54,11 +54,13 @@ const TAIL_BANKS: [&str; 3] = [
 /// A source Atmos gain above unity clamps to full scale rather than lifting one
 /// stem's ceiling above the 16,383 every other bank in this port mixes against.
 const BOOST_CEILING_DB: f64 = 6.0;
-/// Stems a scene's cue enables but which the scene does not keep resident.
-/// Crossroads_04 (Gruz Mother's arena): its cue plays `Rain Indoor` through the
-/// `at Cave` snapshot at -60.4 dB, voice gain 16 of 16383. Only a stem at -60 dB
-/// or quieter (gain 16 or less) may be listed; the cook refuses anything louder.
-const UNLOADED_STEMS: [(&str, &str); 1] = [("level40", "ruins_rain_indoor_loop")];
+/// Stems a cue may enable without the scene keeping them resident: wherever a cue plays
+/// one at INAUDIBLE_GAIN or quieter, it is left out of that cue. `Rain Indoor` is
+/// keyed through the `at Cave` snapshot at -60.4 dB (voice gain 16 of 16383) in every
+/// Cave cue (41 scenes, Crossroads_04 among them) and in Dirtmouth's two, and under
+/// their wind and cave loops it cannot be heard (hk-sound 2026-11-20, mixed output with
+/// and without it); a cue that plays it louder (the City of Tears) keeps it.
+const INAUDIBLE_STEMS: [&str; 1] = ["ruins_rain_indoor_loop"];
 const INAUDIBLE_GAIN: i64 = 16;
 
 // ---------------------------------------------------------------- Json access
@@ -205,6 +207,22 @@ fn pool_pressure(cues: &[Cue]) -> i64 {
         .flat_map(|a| masks.iter().map(move |b| (a | b).count_ones() as i64))
         .max()
         .unwrap_or(0)
+}
+
+/// Leave every INAUDIBLE_STEMS stem out of each cue that plays it at INAUDIBLE_GAIN or
+/// quieter, and record it as unloaded there. A stem the bank does not hold is skipped.
+fn unload_inaudible(cues: &mut [Cue], clips: &[Clip]) {
+    for name in INAUDIBLE_STEMS {
+        let Some(stem) = clips.iter().position(|k| k.name == name) else {
+            continue;
+        };
+        for c in cues.iter_mut() {
+            if c.mask >> stem & 1 == 1 && c.gains[stem] <= INAUDIBLE_GAIN {
+                c.mask &= !(1 << stem);
+                c.unloaded = Some(c.unloaded.unwrap_or(0) | (1 << stem));
+            }
+        }
+    }
 }
 
 /// `neighbour_masks`: per scene, the stems of every scene one resolved gate away.
@@ -503,33 +521,16 @@ fn assemble(
         });
     }
     let pairs = conflicts(&cues, edges);
+    // Residency drops, applied after the conflict pairs above so every stem keeps
+    // the address it had. The scene's one-shot bank then sees the stem's bytes as
+    // a gap, and ambience::forget cuts the stem if it is still fading in from the
+    // previous scene when the bank lands.
+    unload_inaudible(&mut cues, &clips);
+    // The prefetch is what the neighbours keep after the drops: a stem no
+    // neighbour keeps resident is never read on its way.
     let near = neighbour_masks(&cues, edges);
     for c in &mut cues {
         c.prefetch = near[&c.scene] & !c.mask;
-    }
-    // Scoped residency drops, applied after the conflict pairs above so every
-    // stem keeps the address it had. The scene's one-shot bank then sees the
-    // stem's bytes as a gap, and ambience::forget cuts the stem if it is still
-    // fading in from the previous scene when the bank lands.
-    for c in &mut cues {
-        for (scene, name) in UNLOADED_STEMS {
-            if c.source_scene != scene {
-                continue;
-            }
-            let stem = clips
-                .iter()
-                .position(|k| k.name == name)
-                .ok_or("unloaded stem is not resident")?;
-            if c.gains[stem] > INAUDIBLE_GAIN {
-                return err(format!(
-                    "{name} is audible in {}; it may not be dropped from residency",
-                    c.source_scene
-                ));
-            }
-            c.mask &= !(1 << stem);
-            c.prefetch &= !(1 << stem);
-            c.unloaded = Some(c.unloaded.unwrap_or(0) | (1 << stem));
-        }
     }
     let sizes: Vec<i64> = clips.iter().map(|c| c.byte_len).collect();
     for (clip, address) in clips.iter_mut().zip(allocate(&sizes, &pairs, SPU_START)) {
@@ -1555,6 +1556,56 @@ mod tests {
             Json::Obj(vec![(first.to_string(), Json::Float(1.35545))])
         );
         assert_eq!(cues[1].clamped_boost_db, Json::Obj(vec![]));
+    }
+
+    #[test]
+    fn a_stem_at_inaudible_gain_is_left_out_of_its_cue_and_kept_where_audible() {
+        let names = ["cave_wind_loop", INAUDIBLE_STEMS[0]];
+        let clips: Vec<Clip> = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| Clip {
+                source: String::new(),
+                name: name.to_string(),
+                source_channel: i as i64,
+                rate: 4000,
+                pitch: 372,
+                byte_len: 16,
+                checksum: 0,
+                sha256: String::new(),
+                valid_frames: 0,
+                padding_samples: 0,
+                converted_payload_sha256: String::new(),
+                profile: Json::Null,
+                payload: Vec::new(),
+                spu_address: SPU_START + 16 * i as i64,
+                shares_spu_with: Vec::new(),
+            })
+            .collect();
+        let cue = |scene: i64, gains: Vec<i64>| Cue {
+            scene,
+            source_scene: String::new(),
+            name: String::new(),
+            source: String::new(),
+            mask: 3,
+            gains,
+            fade_ticks: 30,
+            source_fade_seconds: 0.5,
+            source_ambience: Json::Null,
+            clamped_boost_db: Json::Null,
+            all_channel_snapshot_gains: Json::Null,
+            prefetch: 0,
+            unloaded: None,
+        };
+        let mut cues = vec![
+            cue(0, vec![16383, INAUDIBLE_GAIN]),
+            cue(1, vec![16383, INAUDIBLE_GAIN + 1]),
+        ];
+        unload_inaudible(&mut cues, &clips);
+        assert_eq!((cues[0].mask, cues[0].unloaded), (1, Some(2)));
+        assert_eq!((cues[1].mask, cues[1].unloaded), (3, None));
+        let near = neighbour_masks(&cues, &BTreeSet::from([(0, 1)]));
+        assert_eq!(near[&0] & !cues[0].mask, 2, "a neighbour that plays it aloud still prefetches it");
     }
 
     #[test]

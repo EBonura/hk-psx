@@ -1463,6 +1463,16 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         "data/door.adpcm",
         &bank[door.offset as usize..(door.offset + door.bytes) as usize],
     )?;
+    // `hero_land_soft` has a source volume of 0.5, so its cooked gain is half the other hero clips';
+    // it is the most frequent sound after the footsteps and plays at their gain, a third of full
+    // scale like every hero clip (Manny, 2026-11-20). Its provenance keeps the source's own volume.
+    let gain_of = |r: &Record| -> i64 {
+        if r.event == "land" {
+            py_round(0x3fff as f64 / 3.0)
+        } else {
+            r.volume_q14
+        }
+    };
     let rows_of = |wanted: &[&str]| -> String {
         records
             .iter()
@@ -1472,7 +1482,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
                     "    ({},{},{}), // {}\n",
                     SPU_BASE + r.offset,
                     r.sample_rate,
-                    r.volume_q14,
+                    gain_of(r),
                     r.event
                 )
             })

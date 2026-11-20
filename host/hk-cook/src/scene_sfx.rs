@@ -567,7 +567,7 @@ pub const EVENTS: &[Event] = &[
     // (LATE_IN, priorities 60 and 61). Crossroads_04's own gaps (16,656 bytes)
     // are full with the bench, secret and wall clips this scene had; the room
     // for these is the inaudible Rain Indoor stem the scene no longer keeps
-    // resident (host/ambience.py UNLOADED_STEMS). They are still admitted after
+    // resident (host/hk-cook/src/ambience.rs INAUDIBLE_STEMS). They are still admitted after
     // every earlier clip (priority 62 on) and never displace one: a clip that
     // does not fit is refused and its play is a counted miss. Appended last so
     // every earlier event keeps its index.
