@@ -9,6 +9,10 @@ mod existing_sfx {
     pub fn rock_break() -> (u32, u32, i16) {
         SAMPLES[0]
     }
+    /// The rock break clip runs up to the next clip of the SFX bank.
+    pub fn rock_break_bytes() -> u32 {
+        SAMPLES[1].0 - SAMPLES[0].0
+    }
 }
 const BASE: u32 = 0x14000;
 static mut LEVEL: u8 = 10;
@@ -73,10 +77,9 @@ pub fn set_volume(level: u8) {
     if unsafe { HK_GEO_AUDIO_READY == 0 } {
         return;
     }
+    // Voice 12 only: the rock clips play on the shared pool (`audio::pool_play`).
     let gain = Volume(volume::scale(5461, level));
-    for voice in 12..=14 {
-        Voice::new(voice).set_volume(gain, gain);
-    }
+    Voice::new(12).set_volume(gain, gain);
 }
 
 fn choice(count: u32) -> usize {
@@ -115,8 +118,19 @@ pub fn pickup(value: u32) {
         HK_GEO_PICKUP_SFX = HK_GEO_PICKUP_SFX.saturating_add(1);
     }
 }
+/// Bytes of Geo clip `index`: up to the next clip, the last up to the end of the bank.
+fn clip_bytes(index: usize) -> u32 {
+    let end = match SAMPLES.get(index + 1) {
+        Some(next) => next.0,
+        None => BASE + BANK_BYTES as u32,
+    };
+    end - SAMPLES[index].0
+}
+/// A rock struck: one of three clips on a pool voice, at the world's weight.
 pub fn hit() {
-    play(13, SAMPLES[3 + choice(3)]);
+    assert!(unsafe { HK_GEO_AUDIO_READY != 0 });
+    let index = 3 + choice(3);
+    crate::audio::pool_play(crate::audio::Weight::World, SAMPLES[index], None, clip_bytes(index));
     unsafe {
         HK_GEO_ROCK_HIT_SFX = HK_GEO_ROCK_HIT_SFX.saturating_add(1);
     }
@@ -124,7 +138,13 @@ pub fn hit() {
 pub fn break_rock() {
     // Source Destroy has two variants. This exact first clip already resides in
     // the SFX bank; the second complete clip cannot fit the remaining SPU budget.
-    play(14, existing_sfx::rock_break());
+    assert!(unsafe { HK_GEO_AUDIO_READY != 0 });
+    crate::audio::pool_play(
+        crate::audio::Weight::World,
+        existing_sfx::rock_break(),
+        None,
+        existing_sfx::rock_break_bytes(),
+    );
     unsafe {
         HK_GEO_ROCK_BREAK_SFX = HK_GEO_ROCK_BREAK_SFX.saturating_add(1);
     }

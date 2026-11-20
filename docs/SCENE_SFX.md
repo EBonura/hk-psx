@@ -20,10 +20,17 @@ resident banks, which are full. The model is ambience's.
   its cooked address after the scene's ambience stems are in. A resident stem
   the bank lands on is forgotten (`ambience::forget`) and reloads when a cue
   next wants it.
-- Playback is on SPU voice 11 (`ambience::SCENE_SFX_VOICE`), which left the
-  ambience pool for this: the admitted cues keep at most four stems audible
-  across a transition, and `host/hk-cook/src/ambience.rs` refuses a catalogue that needs
-  five. A new play retriggers the voice.
+- Playback is on a pool of five SPU voices shared by weight (`audio::POOL_VOICES`:
+  11, ambience's `SCENE_SFX_VOICE`; 13 and 14, the Geo rocks'; 10, which ambience no
+  longer needs since no transition keeps four stems audible; 16, the hard landing's).
+  The Geo rock clips and the hard landing play on it too. A new sound takes a voice
+  whose clip has ended (its length in simulation ticks from its bytes and pitch);
+  when all five are sounding it cuts the lightest one (`scene_sfx::weight`: ambient,
+  world, enemy, boss; the oldest of equals), never one heavier than itself, which
+  is then not played and counted in `HK_POOL_DROPS` (cuts in `HK_POOL_CUTS`). A
+  loop (`loop_tick`) holds its voice until it stops or a heavier sound takes it.
+  `host/hk-cook/src/ambience.rs` refuses a catalogue whose cues need more than
+  ambience's three pool voices (7, 8, 9) across a transition.
 
 ## API (guest)
 

@@ -81,7 +81,7 @@ const LATE_PRIORITY: i64 = 60;
 /// The encoder never resamples: the PCM goes in and out at one nominal rate.
 const NOMINAL_RATE: u32 = 22050;
 const LIMITATIONS: [&str; 2] = [
-    "Every scene clip plays at source gain 1.0 and pitch 1.0 on one voice; a new play retriggers it.",
+    "Every scene clip plays at source gain 1.0 and pitch 1.0 on a voice of the shared pool (game/src/audio.rs POOL_VOICES); when every pool voice is sounding, the lightest sound is cut, never a heavier one.",
     "Arena gate sounds are cooked only for the arena the port drives (the False Knight).",
 ];
 

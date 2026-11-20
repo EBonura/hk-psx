@@ -12,7 +12,7 @@ pub struct Adsr;
 impl Adsr {pub fn sample_one_shot()->Self{Self}}
 pub struct Voice(u8);
 
-const ALLOWED:u32=0x3803f; // 0..5,15,16,17; never ambience6..11 or Geo12..14.
+const ALLOWED:u32=0x3ec3f; // 0..5,15,17 and the shared pool 10,11,13,14,16; never ambience 6..9 or Geo 12.
 #[derive(Clone,Copy,Debug,PartialEq)]enum Event {
     Init,Upload(u32,usize),Configure(u8,u32,u32,i16),Gain(u8,i16),
     Off(u32),Pitch(u8,u16),On(u32,i16),
@@ -77,6 +77,9 @@ static WORLD:World=World(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/..
 fn descent(ticks:usize){for _ in 0..ticks{audio::movement_tick(false,false,false,false);}}
 fn run(){audio::movement_tick(true,true,true,false);}
 fn pair(index:u8,gain:i16)->Vec<Event>{vec![Event::Off(1<<index),Event::On(1<<index,gain)]}
+// The hard landing (slot 6) plays at its source volume on the first free voice of the shared pool
+// (voice 11 here: the fixture's clip lasts one tick), pointed at its clip on every play.
+fn hard_land(gain:i16)->Vec<Event>{vec![Event::Off(1<<11),Event::Configure(11,0x1010+6*32,22050,gain),Event::On(1<<11,gain)]}
 
 #[test]
 fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
@@ -90,7 +93,8 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     assert_eq!(events[1],Event::Upload(0x1010,320));
     let physical=[0,1,2,3,4,5,16,17];
     let mut expected=vec![Event::Init,Event::Upload(0x1010,320)];
-    for (i,v) in physical.iter().enumerate(){expected.push(Event::Configure(*v,0x1010+i as u32*32,if i==7{11025}else{22050},0));}
+    // The hard landing's slot (6) is a pool voice, pointed at its clip on every play instead.
+    for (i,v) in physical.iter().enumerate(){if i==6{continue;}expected.push(Event::Configure(*v,0x1010+i as u32*32,if i==7{11025}else{22050},0));}
     // The shared voice is configured by each play, never by the upload: the
     // title's start clip can still be sounding on it when this bank arrives.
     assert_eq!(events,expected);
@@ -168,7 +172,7 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     // The simulation's verdict picks the landing sound; the audio keeps no fall count of its own.
     audio::reset_movement();assert_eq!(take(),[Event::Off(1<<17)]);
     descent(67);assert!(take().is_empty());
-    audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
+    audio::movement_tick(false,true,false,true);assert_eq!(take(),hard_land(0));
     audio::movement_tick(true,true,false,true);assert!(take().is_empty());
     audio::reset_movement();take();descent(66);
     audio::movement_tick(false,true,false,false);assert_eq!(take(),pair(2,0));
@@ -187,7 +191,7 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
 
     // Pausing stops the footsteps and nothing else; a scene reset starts the next landing soft.
     audio::reset_movement();take();descent(67);audio::stop_footsteps();take();
-    audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
+    audio::movement_tick(false,true,false,true);assert_eq!(take(),hard_land(0));
     audio::reset_movement();take();
     audio::movement_tick(false,true,false,false);assert_eq!(take(),pair(2,0));
 
@@ -195,12 +199,12 @@ fn actual_audio_owns_only_reserved_voices_and_routes_source_events(){
     // Great Door; keying an event after exact mute cannot restore its gain.
     for level in [5,255,0] {
         audio::set_volume(level);let mut expected=Vec::new();
-        // The hard landing (slot 6, voice 16) plays at its source volume, not the cooked third.
-        for (i,v) in physical.iter().enumerate(){let g=if i==6{0x3fff}else{(i as i32+1)*1000};expected.push(Event::Gain(*v,(g*level.min(10) as i32/10) as i16));}
+        // The hard landing (slot 6) is a pool voice: set_volume leaves it to each play.
+        for (i,v) in physical.iter().enumerate(){if i==6{continue;}let g=(i as i32+1)*1000;expected.push(Event::Gain(*v,(g*level.min(10) as i32/10) as i16));}
         expected.push(Event::Gain(15,1000*level.min(10) as i16/10));assert_eq!(take(),expected);
     }
     audio::great_door_hit();assert_eq!(take().last(),Some(&Event::On(1<<15,0)));
     audio::reset_movement();take();run();assert_eq!(take(),pair(17,0));
-    descent(67);take();audio::movement_tick(false,true,false,true);assert_eq!(take(),pair(16,0));
+    descent(67);take();audio::movement_tick(false,true,false,true);assert_eq!(take(),hard_land(0));
     let t=TRACE.lock().unwrap();for v in physical.into_iter().chain([15]){assert_eq!(t.gains[v as usize],0);}
 }
