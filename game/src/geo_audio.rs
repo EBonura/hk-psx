@@ -58,9 +58,10 @@ pub fn upload(bank: &[u8]) {
             }
         }
     }
-    spu::upload_adpcm(SpuAddr::new(BASE), bank);
+    // A bank whose upload timed out is never played (the SDK latches the fault).
+    let landed = spu::upload_adpcm(SpuAddr::new(BASE), bank).is_ok();
     unsafe {
-        HK_GEO_AUDIO_READY = 1;
+        HK_GEO_AUDIO_READY = u32::from(landed);
     }
 }
 

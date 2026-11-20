@@ -134,7 +134,8 @@ pub fn prefetch_done(ok: bool) {
     crate::scene_sfx::overwritten(at, at + bytes as u32);
     // 1 KiB at a time: the SPU port stalls the CPU on every write (see UPLOAD_SLICE).
     for (i, part) in data.chunks(1024).enumerate() {
-        spu::upload_adpcm(
+        // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+        let _ = spu::upload_adpcm(
             SpuAddr::new(clip.spu_address + (p.offset + i * 1024) as u32),
             part,
         );
@@ -304,7 +305,8 @@ pub fn upload(index: usize, bytes: &[u8]) -> bool {
         // In slices, servicing the pad between them: a scene gate still polls
         // it every VBlank, and one 49 KiB transfer outlasts one.
         for (slice, part) in bytes.chunks(UPLOAD_SLICE).enumerate() {
-            spu::upload_adpcm(SpuAddr::new(start + (slice * UPLOAD_SLICE) as u32), part);
+            // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+            let _ = spu::upload_adpcm(SpuAddr::new(start + (slice * UPLOAD_SLICE) as u32), part);
             // The full checkpoint (the music and drive services) as often as it was
             // when slices were 4 KiB; the slices between take the pad poll only.
             if slice % (4096 / UPLOAD_SLICE) == 3 {

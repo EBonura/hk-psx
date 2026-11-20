@@ -85,7 +85,8 @@ pub fn upload(bytes: &[u8]) -> bool {
             return false;
         }
     }
-    spu::upload_adpcm(SpuAddr::new(SPU_BASE), bytes);
+    // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+    let _ = spu::upload_adpcm(SpuAddr::new(SPU_BASE), bytes);
     Voice::new(CHARGE).configure_sample(
         SpuAddr::new(SPU_BASE),
         CHARGE_RATE,

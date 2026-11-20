@@ -300,7 +300,8 @@ mod hardware {
         // runs from inside a checkpoint, and 8 KiB on top of a heavy tick has
         // carried a poll over a VBlank (journey-crossroads, Crossroads_07).
         for (slice, part) in bytes.chunks(SECTOR).enumerate() {
-            psx_spu::upload_adpcm(
+            // A timed-out upload is latched by psx_spu (first_upload_fault); no per-game retry.
+            let _ = psx_spu::upload_adpcm(
                 unsafe { SpuAddr::new(BASE + (half * HALF_BYTES + slice * SECTOR) as u32) },
                 part,
             );

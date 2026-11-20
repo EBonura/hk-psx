@@ -14,7 +14,8 @@ impl Adsr {pub fn sample_one_shot()->Self{Self{lower:15,upper:37}}}
 static TRACE:Mutex<Vec<Event>>=Mutex::new(Vec::new());
 fn record(e:Event){TRACE.lock().unwrap().push(e);}
 fn take()->Vec<Event>{std::mem::take(&mut *TRACE.lock().unwrap())}
-pub fn upload_adpcm(a:SpuAddr,b:&[u8]){record(Event::Upload(a.0,b.len()));}
+// SDK fce1f6855bc1: the upload returns its timeout as a Result; these fixtures always land.
+pub fn upload_adpcm(a:SpuAddr,b:&[u8])->Result<(),()>{record(Event::Upload(a.0,b.len()));Ok(())}
 pub struct Voice(u8);
 impl Voice {
  pub fn new(n:u8)->Self{Self(n)}

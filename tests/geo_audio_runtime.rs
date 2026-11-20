@@ -15,7 +15,8 @@ impl Voice {
  pub fn release(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().off|=mask;}
  pub fn start(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().on|=mask;}
 }
-pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;}
+// SDK fce1f6855bc1: the upload returns its timeout as a Result; these fixtures always land.
+pub fn upload_adpcm(address:SpuAddr,bytes:&[u8])->Result<(),()>{assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;Ok(())}
 #[path="../game/src/geo_audio.rs"]mod geo_audio;
 // The bank now arrives as a slice from the disc loader. Word alignment is the
 // loader's guarantee (the scene arena it stages through), so the fixture keeps

@@ -48,7 +48,8 @@ pub fn begin_overlay() -> bool {
 }
 pub fn upload_fragment(offset:usize,data:&[u8]) {
     assert!(offset%16==0 && data.len()%16==0 && offset+data.len()<=20464);
-    spu::upload_adpcm(SpuAddr::new(BANK_BASE+offset as u32),data);
+    // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+    let _ = spu::upload_adpcm(SpuAddr::new(BANK_BASE+offset as u32),data);
 }
 pub fn finish_overlay(mossman:bool) {unsafe{HK_RUNNER_AUDIO_READY=if mossman{2}else{1};}}
 #[no_mangle]
@@ -81,9 +82,10 @@ pub fn upload(bank: &[u8]) {
     // Bootstrap and scene overlays use the same complete manifest and ADPCM
     // contract, including the reserved tail and authored loop/terminal flags.
     assert!(bank.len() == BANK_BYTES && validate_fragment(false, 0, bank));
-    spu::upload_adpcm(SpuAddr::new(BANK_BASE), bank);
+    // A bank whose upload timed out is never played (the SDK latches the fault).
+    let landed = spu::upload_adpcm(SpuAddr::new(BANK_BASE), bank).is_ok();
     unsafe {
-        HK_RUNNER_AUDIO_READY = 1;
+        HK_RUNNER_AUDIO_READY = u32::from(landed);
     }
 }
 pub fn set_volume(level: u8) {

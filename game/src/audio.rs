@@ -90,7 +90,8 @@ pub fn init() {
             && UI_SAMPLES[0].0 as usize == 0x1010 + BANK_BYTES
             && 0x1010 + BANK_BYTES + UI_BYTES <= 0x14000
     );
-    spu::upload_adpcm(SpuAddr::new(UI_SAMPLES[0].0), UI);
+    // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+    let _ = spu::upload_adpcm(SpuAddr::new(UI_SAMPLES[0].0), UI);
     unsafe {
         GREAT_DOOR_RANDOM = 0x47524452;
         HK_GREAT_DOOR_HIT_SFX = 0;
@@ -113,7 +114,8 @@ pub fn init() {
 pub fn upload(bank: &[u8]) {
     assert!(bank.len() == BANK_BYTES);
     assert!(BANK_BYTES <= 0x14000 - 0x1010);
-    spu::upload_adpcm(SpuAddr::new(0x1010), bank);
+    // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+    let _ = spu::upload_adpcm(SpuAddr::new(0x1010), bank);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
         let volume = sample_gain(index, volume);
         // Pinned SDK fast release + reserved silence repeat address avoid
@@ -138,9 +140,10 @@ pub fn upload(bank: &[u8]) {
 pub fn upload_world(bank: &[u8]) {
     assert!(bank.len() == WORLD_BANK_BYTES);
     assert!(world::SPU_BASE % 16 == 0 && world::SPU_BASE as usize + WORLD_BANK_BYTES <= 0x7fff0);
-    spu::upload_adpcm(SpuAddr::new(world::SPU_BASE), bank);
+    // A bank whose upload timed out is never played (the SDK latches the fault).
+    let landed = spu::upload_adpcm(SpuAddr::new(world::SPU_BASE), bank).is_ok();
     unsafe {
-        WORLD_READY = true;
+        WORLD_READY = landed;
     }
 }
 

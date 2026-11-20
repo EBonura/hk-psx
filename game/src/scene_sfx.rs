@@ -84,7 +84,8 @@ pub fn upload(scene: usize, bytes: &[u8]) {
         crate::ambience::forget(address, address + len);
         let clip = &bytes[offset as usize..(offset + len) as usize];
         for (slice, part) in clip.chunks(UPLOAD_SLICE).enumerate() {
-            spu::upload_adpcm(SpuAddr::new(address + (slice * UPLOAD_SLICE) as u32), part);
+            // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+            let _ = spu::upload_adpcm(SpuAddr::new(address + (slice * UPLOAD_SLICE) as u32), part);
             crate::input::checkpoint();
         }
         if event == MINER_IDLE_HUM || event == ZOMBIE_GUARD_RUN_LOOP {
@@ -108,7 +109,8 @@ fn make_loop(address: u32, clip: &[u8]) {
         let mut block = [0u8; 16];
         block.copy_from_slice(&clip[at..at + 16]);
         block[1] = flags;
-        spu::upload_adpcm(SpuAddr::new(address + at as u32), &block);
+        // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
+        let _ = spu::upload_adpcm(SpuAddr::new(address + at as u32), &block);
     }
 }
 /// Where the resident bank holds `event`, with the rate it was cooked at, its

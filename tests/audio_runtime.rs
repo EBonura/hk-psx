@@ -43,18 +43,19 @@ impl Voice {
     }
 }
 pub fn init(){TRACE.lock().unwrap().events.push(Event::Init);}
-pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){
+// SDK fce1f6855bc1: the upload returns its timeout as a Result; these fixtures always land.
+pub fn upload_adpcm(address:SpuAddr,bytes:&[u8])->Result<(),()>{
     assert_eq!((bytes.as_ptr() as usize)%4,0,"DMA source alignment");
     // init's own upload: the menu's two clips, right above the bank.
     if address.0==0x1010+320 {
         assert_eq!(bytes.len(),64);assert_eq!((bytes[0],bytes[32]),(20,21));
-        TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));return;
+        TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));return Ok(());
     }
     // The world bank, at its own base below Focus.
     if address.0==0x60000 {
         assert_eq!(bytes.len(),160);
         for (i,sample) in bytes.chunks_exact(32).enumerate(){assert_eq!(sample[0],40+i as u8);}
-        TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));return;
+        TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));return Ok(());
     }
     assert_eq!(address.0,0x1010);assert_eq!(bytes.len(),320);
     for (i,sample) in bytes.chunks_exact(32).enumerate(){
@@ -62,6 +63,7 @@ pub fn upload_adpcm(address:SpuAddr,bytes:&[u8]){
         assert!(sample[1..].iter().all(|b|*b==0));
     }
     TRACE.lock().unwrap().events.push(Event::Upload(address.0,bytes.len()));
+    Ok(())
 }
 #[path="../game/src/audio.rs"]mod audio;
 // The bank now arrives as a slice from the disc loader, which stages it in the

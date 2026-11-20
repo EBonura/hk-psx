@@ -477,6 +477,9 @@ const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
 const _: () = assert!(SCENE_COUNT <= 1 << 8);
 const EMPTY: usize = usize::MAX;
 const SEEK_POLL: u32 = 4_000_000;
+/// A seek-first read's bound on the seek (SDK fce1f6855bc1: the reader waits by time, not spins):
+/// the SDK's own `FIRST_SECTOR_WAIT`, which covers a drive spinning up from idle.
+const SEEK_WAIT: psx_io::cd::wait::WaitTime = psx_io::cd::wait::FIRST_SECTOR_WAIT;
 /// Byte operations one decoder step may run between pad checkpoints during a load. 4096
 /// took about a VBlank on a dense room (the False Knight journey's first load) before the
 /// format walks went (`room_decode::TRUST_COOK`); a step now costs a few milliseconds. On a tour
@@ -1149,7 +1152,7 @@ impl Cache {
         }
         if !unsafe {
             self.reader
-                .start_read_seek_first(WORLD_PACK_DEFAULT_LBA, SEEK_POLL)
+                .start_read_seek_first(WORLD_PACK_DEFAULT_LBA, SEEK_WAIT)
         } || !header_sector(&mut self.reader, 0)
         {
             return Err(LoadError::HeaderRead);
@@ -1258,7 +1261,7 @@ impl Cache {
         // first sector is the descriptor: told, it copies the whole read for each of the two.
         unsafe { core::arch::asm!("/* {0} */", inout(reg) lba, options(pure, nomem, nostack, preserves_flags)) };
         loop {
-            if !unsafe { self.reader.start_read_seek_first(lba, SEEK_POLL) }
+            if !unsafe { self.reader.start_read_seek_first(lba, SEEK_WAIT) }
                 || !header_sector(&mut self.reader, 0)
             {
                 return;
@@ -1852,7 +1855,7 @@ impl Cache {
         let mut words=[0u32;SECTOR_WORDS];
         for pass in 0..2 {
             if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_POLL,&mut pad_idle)} {
+            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_WAIT,&mut pad_idle)} {
                 unsafe{self.reader.stop();}
                 return Err(LoadError::PayloadRead);
             }
