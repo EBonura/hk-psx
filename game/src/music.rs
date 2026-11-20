@@ -492,6 +492,12 @@ pub fn enter_scene(scene: usize) {
     let s = MUSIC_SCENES[scene];
     apply(s.state, s.delay_ticks as u32);
 }
+/// A death respawn: the scene loads again in the original (`SceneManager.Start` applies its
+/// cue and snapshot), even when it is the scene the Knight died in, so the next `enter_scene`
+/// applies the scene's state over the death's `Silent` snapshot.
+pub fn respawn() {
+    area().scene = u16::MAX;
+}
 /// Once per simulation tick: music regions the Knight enters or leaves.
 pub fn tick_regions(x: i32, y: i32) {
     let scene = area().scene;

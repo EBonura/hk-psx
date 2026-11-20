@@ -706,6 +706,8 @@ fn strike_shroom(region: &world::Region, nail: &Nail, player: &mut Player) -> bo
 fn locked_for_dash(focus: &hk_sim::Focus, door: &great_door::World, bench: &bench::State) -> bool {
     focus.locks_control() || dialogue::open() || door.pending() || bench.locks_control()
 }
+/// `Hero Death Anim` `Start`: TransitionToAudioSnapshot(`Silent`, 1.0 s) on the Music mixer.
+const DEATH_MUSIC_FADE_TICKS: u16 = 60;
 /// Everything that follows a hit the Knight actually took. Four call sites used
 /// to repeat this and the fifth, falling out of the world, had drifted and lost
 /// the dialogue cancel, so a dialogue open at that moment survived the hazard
@@ -736,7 +738,16 @@ fn respond_to_hurt(
     // clip above stands in for the first. Its Initiate state bursts the slashes
     // in every direction.
     if hurt == hk_sim::Hurt::Died {
+        // The run's footstep sequence ends on the killing tick, with the death clip: `interact`
+        // would release it only on the next tick. (HeroController.Update stops FootstepsRun on
+        // the first frame the Knight is no longer running; the dead Knight never runs.)
+        audio::stop_footsteps();
         audio::hero_death();
+        // `Hero Death Anim`'s `Start` (resources.assets 24938) transitions the Music mixer to
+        // its `Silent` snapshot over 1 s as the death clips play: a boss song and the area music
+        // fade from the killing blow, not at the respawn's load. The respawn scene applies its
+        // own snapshot again (`music::respawn`).
+        music::boss_silence(DEATH_MUSIC_FADE_TICKS);
         hit_fx::death(at);
     } else {
         hit_fx::hit(at);

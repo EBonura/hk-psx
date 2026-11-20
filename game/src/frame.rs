@@ -1156,8 +1156,10 @@ pub fn simulate(
         ability_fx::clear();
         // The screen is already black; the load carries on from there (exit_fade.rs).
         exit_fade::arm(255, 1);
-        // A fight lost ends its XA song; the arena resets for the next try.
+        // A fight lost ends its XA song (faded since the killing blow); the arena resets for the
+        // next try, and the respawn scene's music is applied afresh.
         music::boss(false);
+        music::respawn();
         // Hero Death Anim: Remove Geo moves the wallet into the pool the
         // Shade carries and Set Shade records where and how strong it is.
         // The source also saves here; this port never writes the card on

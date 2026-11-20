@@ -5681,6 +5681,14 @@ impl EnemyWorld {
         (live, written as u32)
     }
     pub fn reset_scene(&mut self, scene: usize) {
+        // A Husk Guard dropped mid-`Run` takes the flag that would have stopped its footstep loop
+        // with it: stop the scene voice's loop here, or it plays on through the death and the load.
+        let guard_running = self.actors.iter().flatten().any(|a| {
+            a.scene == scene && matches!(a.runtime, Runtime::HuskGuard(g) if g.run_loop)
+        });
+        if guard_running {
+            crate::scene_sfx::loop_stop();
+        }
         for slot in &mut self.actors {
             if slot.as_ref().is_some_and(|a| a.scene == scene) {
                 *slot = None;
