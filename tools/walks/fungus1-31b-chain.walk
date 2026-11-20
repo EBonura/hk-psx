@@ -432,8 +432,9 @@ walk 8.24
 end
 clear d31b-h016-tight 11.150 100.600 8.33 11.61
 heal
-walk 7.96
-walk 7.96   # take-off
+# The jump lands on the block only from a take-off within 0.15 of x 8.10 (hk-walkplan, HK_WALKPLAN_MARGIN 0.15), and the ledge ends at
+# 7.75 on the side the Knight walks in from: a held walk ends up to 0.41 past its goal, so `stand` taps him onto the mark (hk-fix 11-20).
+stand 8.10   # take-off
 hold right+cross for 28
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300

@@ -66,6 +66,11 @@ const WALK_PER_TICK: f64 = 0.138;
 /// ticks of `WALK_PER_TICK`, so a stop exactly at the bound lets one more step carry the Knight off the ledge (hk-walk
 /// 2026-11-15: a landing 0.00006 inside the bound, one step, a 13 unit fall).
 const EDGE_BAND: f64 = 0.15;
+/// `stand X` walks in to this far short of X before it taps: a held walk's overshoot (a poll late, plus a catch-up step) is
+/// at most three steps, 0.41, so it never carries the Knight past X.
+const STAND_APPROACH: f64 = 0.6;
+/// `stand X` ends within this of X: half a walk step and a little, so one of the Knight's step positions is always inside.
+const STAND_BAND: f64 = 0.07;
 /// Rounds of `fight`/`snipe` a `clear` makes at most.
 const CLEAR_ROUNDS: u32 = 10;
 /// How far before its take-off a leap lets go of the walk (see `macros`).
@@ -668,6 +673,7 @@ fn definitions(text: &str) -> Result<String> {
 /// ```text
 /// at    X Y                  he stands here (the first goal after a load); waits for his control first
 /// walk  X [tol T]            walk to X from either side, to within T (0.1)
+/// stand X                    walk in short of X, then taps of one poll until within 0.07 of it: a tight take-off
 /// drop  X Y                  walk to x X and fall off the edge to the ground at knight height Y (a jump pressed in
 ///                            mid-air does nothing, so a leap after a ledge starts from a `drop`). Every landing
 ///                            (`hop`, `leap`, `drop`) waits for `HK_WALK_READY`: on the ground, no hard-landing lock
@@ -737,6 +743,31 @@ pub fn macros(text: &str) -> Result<String> {
                 };
                 let from = at_x.unwrap_or(to);
                 walk_to(&mut out, from, to, tol, label);
+                at_x = Some(to);
+            }
+            // `stand X`: a take-off the planner could only fit tightly (its jump lands from a window narrower than a
+            // `walk`'s error). A held walk stops a poll after its goal and a catch-up tick can add a second step, so it
+            // ends up to three steps (0.41) past the goal: off the end of Fungus1_31's ledge at hop 16 of 31b (hk-fix
+            // 2026-11-20). Here the walk in stops STAND_APPROACH short, and then taps of one poll each move the Knight a
+            // step (two on a catch-up tick) until he stands within STAND_BAND of X, which a step of 0.138 always reaches.
+            ["stand", x] => {
+                let to = number(Some(x))?;
+                let from = at_x.unwrap_or(to);
+                let timeout = 300 + (40.0 * (to - from).abs().max(8.0)) as u64;
+                let _ = writeln!(out, "hold right until x ge {} timeout {timeout} # {label}: in from the left", units(to - STAND_APPROACH));
+                let _ = writeln!(out, "hold left until x le {} timeout {timeout} # {label}: in from the right", units(to + STAND_APPROACH));
+                let target = (to * ONE as f64).round() as i64;
+                let band = (STAND_BAND * ONE as f64).round() as i64;
+                let _ = writeln!(
+                    out,
+                    "loop stand-{} until expr abs(i32(HK_PLAYER_X) - {target}) <= {band} max 24 timeout 600 # {label}",
+                    index + 1
+                );
+                let _ = writeln!(out, "if expr i32(HK_PLAYER_X) < {} # {label}: a step right", target - band);
+                let _ = writeln!(out, "press right for 1\nwait 3\nend");
+                let _ = writeln!(out, "if expr i32(HK_PLAYER_X) > {} # {label}: a step left", target + band);
+                let _ = writeln!(out, "press left for 1\nwait 3\nend");
+                let _ = writeln!(out, "end");
                 at_x = Some(to);
             }
             ["drop", x, y] => {
@@ -1261,6 +1292,18 @@ mod tests {
         assert!(toml.contains("block = \"pass\"\nmax_iter = 3"), "{toml}");
         assert!(compile_text("name t\nif x ge 1\nprobe p x\nend\n").unwrap_err().contains("no probe"));
         assert!(compile_text("name t\nif x ge 1\nhold left for 3\n").unwrap_err().contains("never closed"));
+    }
+
+    #[test]
+    fn stand_walks_in_short_and_taps_until_within_half_a_step() {
+        let text = macros("at 9.76 95.39\nstand 8.10 # take-off\n").unwrap();
+        assert!(text.contains("hold left until x le 8.70 timeout"), "{text}");
+        assert!(text.contains("hold right until x ge 7.50 timeout"), "{text}");
+        assert!(text.contains("loop stand-2 until expr abs(i32(HK_PLAYER_X) - 530842) <= 4588 max 24"), "{text}");
+        assert!(text.contains("press left for 1\nwait 3\nend"), "{text}");
+        assert!(text.contains("press right for 1\nwait 3\nend"), "{text}");
+        let toml = compile_text(&format!("name t\nsync poll\n{text}")).unwrap();
+        assert!(toml.contains("block = \"stand-2\"\nmax_iter = 24"), "{toml}");
     }
 
     #[test]
