@@ -5,6 +5,9 @@ use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
 mod movement;
 #[path = "volume.rs"]
 mod volume;
+#[path = "voice_pool.rs"]
+mod voice_pool;
+pub use voice_pool::{clip_ticks, Claim, Weight, HELD};
 static mut LEVEL: u8 = 10;
 /// Every one of the SPU's 24 voices is allocated: 0..5 and16..17 here, 6..11
 /// ambience, 12..14 Geo, 18..20 Focus, 21..23 Runner. Voice15 therefore
@@ -15,7 +18,27 @@ static mut LEVEL: u8 = 10;
 /// sample address, rate or pitch. What overlaps is a kill, a death or a cocoon
 /// on top of each other, which retrigger the way every event class here does.
 const SHARED_VOICE: u8 = 15;
+/// The hard landing's slot keeps voice 16 in this table, but 16 is a pool voice: the landing
+/// takes whichever pool voice is free (`pool_play`), like the room one-shots.
 const VOICES: [u8; 8] = [0, 1, 2, 3, 4, 5, 16, 17];
+/// The voices shared by weight (`voice_pool`): the room one-shots' own (11, ambience's
+/// SCENE_SFX_VOICE), the Geo rocks' two (13, 14), the fourth ambience voice (10, which no
+/// transition needs since the inaudible rain loop left the cues) and the hard landing's (16).
+/// They were idle in 99% of the measured play (hk-sound 2026-11-20); a free one is taken first.
+pub const POOL_VOICES: [u8; 5] = [11, 13, 14, 10, 16];
+static mut POOL: voice_pool::VoicePool<5> = voice_pool::VoicePool::new(POOL_VOICES);
+/// The pool's clock: simulation ticks (`movement_tick`). It stops in a pause, so a sound
+/// counts as playing a little longer than it does, never shorter.
+static mut NOW: u32 = 0;
+/// Pool sounds that took a voice from a sound still playing, and sounds not played because
+/// every pool voice carried a heavier one.
+#[no_mangle]
+pub static mut HK_POOL_CUTS: u32 = 0;
+#[no_mangle]
+pub static mut HK_POOL_DROPS: u32 = 0;
+/// Pool claims by weight (ambient, world, enemy, boss), for the journeys.
+#[no_mangle]
+pub static mut HK_POOL_PLAYS: [u32; 4] = [0; 4];
 static mut MOVEMENT: movement::State = movement::State::new();
 static mut GREAT_DOOR_RANDOM: u32 = 0x47524452;
 #[no_mangle]
@@ -103,6 +126,11 @@ pub fn init() {
         HK_FOOTSTEP_STARTS = 0;
         HK_HARD_LAND_SFX = 0;
         MOVEMENT = movement::State::new();
+        POOL = voice_pool::VoicePool::new(POOL_VOICES);
+        NOW = 0;
+        HK_POOL_CUTS = 0;
+        HK_POOL_DROPS = 0;
+        HK_POOL_PLAYS = [0; 4];
     }
 }
 
@@ -117,6 +145,9 @@ pub fn upload(bank: &[u8]) {
     // A timed-out upload is latched by psx_spu (first_upload_fault); there is no per-game retry.
     let _ = spu::upload_adpcm(SpuAddr::new(0x1010), bank);
     for (index, &(address, rate, volume)) in SAMPLES.iter().enumerate() {
+        if index == HARD_LAND {
+            continue; // a pool voice, configured on every play
+        }
         let volume = sample_gain(index, volume);
         // Pinned SDK fast release + reserved silence repeat address avoid
         // percussive sustain truncation and sample()'s indefinite release.
@@ -155,6 +186,9 @@ pub fn set_volume(level: u8) {
         LEVEL = level.min(10);
     }
     for (index, &(_, _, source)) in SAMPLES.iter().enumerate() {
+        if index == HARD_LAND {
+            continue; // a pool voice: another sound may be playing on it
+        }
         let gain = Volume(volume::scale(sample_gain(index, source), level));
         Voice::new(VOICES[index]).set_volume(gain, gain);
     }
@@ -301,9 +335,6 @@ fn play(index: usize) {
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
         HK_SFX_EVENT_COUNTS[index] = HK_SFX_EVENT_COUNTS[index].saturating_add(1);
-        if index == 6 {
-            HK_HARD_LAND_SFX = HK_HARD_LAND_SFX.saturating_add(1);
-        }
         if index == 7 {
             HK_FOOTSTEP_STARTS = HK_FOOTSTEP_STARTS.saturating_add(1);
         }
@@ -350,6 +381,92 @@ fn play_on(voice: u8, (address, rate, gain): (u32, u32, i16)) {
     Voice::start(mask);
     unsafe {
         HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
+    }
+}
+
+/// The pitch register that plays `rate` samples a second (4096 is 44,100).
+const fn pitch_of(rate: u32) -> u16 {
+    let pitch = (rate * 4096 + 22_050) / 44_100;
+    if pitch > 0x3fff {
+        0x3fff
+    } else {
+        pitch as u16
+    }
+}
+
+/// Key a one-shot of `bytes` at `address` on a pool voice for a sound of `weight`: the voice
+/// is pointed at the clip, its rate, gain and (when given) pitch register, every time. `None`
+/// when every pool voice carries a heavier sound; the sound is then not played.
+pub fn pool_play(
+    weight: Weight,
+    (address, rate, gain): (u32, u32, i16),
+    pitch: Option<u16>,
+    bytes: u32,
+) -> Option<Claim> {
+    let length = clip_ticks(bytes, pitch.unwrap_or(pitch_of(rate)));
+    pool_key(weight, (address, rate, gain), pitch, length)
+}
+
+/// `pool_play` for a looped clip: it holds its voice until `pool_stop`, or until a heavier
+/// sound takes it (`pool_holds` then says false).
+pub fn pool_loop(weight: Weight, sample: (u32, u32, i16), pitch: Option<u16>) -> Option<Claim> {
+    pool_key(weight, sample, pitch, HELD)
+}
+
+fn pool_key(
+    weight: Weight,
+    (address, rate, gain): (u32, u32, i16),
+    pitch: Option<u16>,
+    length: u32,
+) -> Option<Claim> {
+    let Some(claim) = (unsafe { POOL.claim(NOW, weight, length) }) else {
+        unsafe {
+            HK_POOL_DROPS = HK_POOL_DROPS.saturating_add(1);
+        }
+        return None;
+    };
+    let mask = 1 << claim.voice;
+    Voice::release(mask);
+    Voice::new(claim.voice).configure_sample(
+        SpuAddr::new(address),
+        rate,
+        Volume(volume::scale(gain, unsafe { LEVEL })),
+        Adsr::sample_one_shot(),
+    );
+    if let Some(pitch) = pitch {
+        Voice::new(claim.voice).set_pitch(Pitch::raw(pitch));
+    }
+    Voice::start(mask);
+    unsafe {
+        HK_SFX_COUNT = HK_SFX_COUNT.saturating_add(1);
+        HK_POOL_PLAYS[weight as usize] = HK_POOL_PLAYS[weight as usize].saturating_add(1);
+        if claim.cut {
+            HK_POOL_CUTS = HK_POOL_CUTS.saturating_add(1);
+        }
+    }
+    Some(claim)
+}
+
+/// Whether `claim` still has its voice.
+pub fn pool_holds(claim: Claim) -> bool {
+    unsafe { POOL.holds(claim) }
+}
+
+/// Set the gain of the sound `claim` keyed, if it still has its voice (a loop's level).
+pub fn pool_set_gain(claim: Claim, gain: i16) {
+    if pool_holds(claim) {
+        let volume = Volume(volume::scale(gain, unsafe { LEVEL }));
+        Voice::new(claim.voice).set_volume(volume, volume);
+    }
+}
+
+/// Stop the sound `claim` keyed and free its voice; nothing when a heavier sound took it.
+pub fn pool_stop(claim: Claim) {
+    if pool_holds(claim) {
+        Voice::release(1 << claim.voice);
+        unsafe {
+            POOL.release(claim);
+        }
     }
 }
 
@@ -422,6 +539,20 @@ pub fn ability(index: usize, sample: (u32, u32, i16)) {
 pub fn hurt() {
     play(4);
 }
+/// The hard landing, on a pool voice at a boss's weight (a rustle never cuts it). Its clip
+/// runs up to the footsteps' clip, the next one in the bank.
+fn hard_land() {
+    if !ready() {
+        return;
+    }
+    let (address, rate, cooked) = SAMPLES[HARD_LAND];
+    let bytes = SAMPLES[HARD_LAND + 1].0 - address;
+    pool_play(Weight::Boss, (address, rate, sample_gain(HARD_LAND, cooked)), None, bytes);
+    unsafe {
+        HK_SFX_EVENT_COUNTS[HARD_LAND] = HK_SFX_EVENT_COUNTS[HARD_LAND].saturating_add(1);
+        HK_HARD_LAND_SFX = HK_HARD_LAND_SFX.saturating_add(1);
+    }
+}
 pub fn enemy_hit() {
     play(5);
 }
@@ -432,6 +563,9 @@ pub fn enemy_hit() {
 /// tick's landing (`Player::hard_landing_tick`), which already excludes gate
 /// drop-ins; NoHardLanding/acid surfaces must clear it.
 pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bool) {
+    unsafe {
+        NOW = NOW.wrapping_add(1);
+    }
     let events = unsafe {
         MOVEMENT.tick(
             was_grounded,
@@ -448,7 +582,7 @@ pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bo
     match events.landing {
         movement::Landing::None => {}
         movement::Landing::Soft => play(2),
-        movement::Landing::Hard => play(6),
+        movement::Landing::Hard => hard_land(),
     }
     if events.start_run {
         play(7);

@@ -6,17 +6,24 @@ impl SpuAddr { pub fn new(value:u32)->Self{Self(value)} }
 pub struct Adsr;
 impl Adsr {pub fn sample_one_shot()->Self{Self}}
 pub struct Voice(u8);
-#[derive(Default)]struct Trace {uploads:usize,plays:Vec<(u8,u32,u32,i16)>,gains:Vec<(u8,i16)>,on:u32,off:u32}
-static TRACE:Mutex<Trace>=Mutex::new(Trace{uploads:0,plays:Vec::new(),gains:Vec::new(),on:0,off:0});
+#[derive(Default)]struct Trace {uploads:usize,plays:Vec<(u8,u32,u32,i16)>,pool:Vec<(u32,u32,i16,u32)>,gains:Vec<(u8,i16)>,on:u32,off:u32}
+static TRACE:Mutex<Trace>=Mutex::new(Trace{uploads:0,plays:Vec::new(),pool:Vec::new(),gains:Vec::new(),on:0,off:0});
+// Geo keeps voice 12 for the coin pickups; the rock clips go to the shared pool (game/src/audio.rs).
 impl Voice {
- pub fn new(index:u8)->Self{assert!((12..=14).contains(&index));Self(index)}
+ pub fn new(index:u8)->Self{assert_eq!(index,12);Self(index)}
  pub fn configure_sample(self,address:SpuAddr,rate:u32,gain:Volume,_:Adsr){TRACE.lock().unwrap().plays.push((self.0,address.0,rate,gain.0));}
  pub fn set_volume(self,l:Volume,r:Volume){assert_eq!(l,r);TRACE.lock().unwrap().gains.push((self.0,l.0));}
- pub fn release(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().off|=mask;}
- pub fn start(mask:u32){assert_eq!(mask&!0x7000,0);TRACE.lock().unwrap().on|=mask;}
+ pub fn release(mask:u32){assert_eq!(mask,0x1000);TRACE.lock().unwrap().off|=mask;}
+ pub fn start(mask:u32){assert_eq!(mask,0x1000);TRACE.lock().unwrap().on|=mask;}
 }
 // SDK fce1f6855bc1: the upload returns its timeout as a Result; these fixtures always land.
 pub fn upload_adpcm(address:SpuAddr,bytes:&[u8])->Result<(),()>{assert_eq!(address.0,0x14000);assert_eq!((bytes.as_ptr() as usize)%4,0);assert!(bytes.len()<=16384);TRACE.lock().unwrap().uploads+=1;Ok(())}
+mod audio {
+ pub enum Weight {World}
+ pub fn pool_play(weight:Weight,(address,rate,gain):(u32,u32,i16),pitch:Option<u16>,bytes:u32)->Option<()>{
+  assert!(matches!(weight,Weight::World)&&pitch.is_none());super::TRACE.lock().unwrap().pool.push((address,rate,gain,bytes));Some(())
+ }
+}
 #[path="../game/src/geo_audio.rs"]mod geo_audio;
 // The bank now arrives as a slice from the disc loader. Word alignment is the
 // loader's guarantee (the scene arena it stages through), so the fixture keeps
@@ -30,17 +37,20 @@ static BANK:Bank=Bank(*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"),"/../da
  {
  let t=TRACE.lock().unwrap();assert_eq!(t.uploads,1);assert!(t.plays.iter().all(|p|p.3==0));
  let address=|i:u32|0x14000+i*32;
- for (index,p) in t.plays[..128].chunks_exact(4).enumerate(){
-  let _=index;assert!([address(0),address(1)].contains(&p[0].1));
+ for p in t.plays[..96].chunks_exact(3){
+  assert!([address(0),address(1)].contains(&p[0].1));
   assert!([address(0),address(2)].contains(&p[1].1));
   assert!([address(0),address(1)].contains(&p[2].1));
-  assert!([address(3),address(4),address(5)].contains(&p[3].1));
  }
- for i in 0..6 {assert!(t.plays.iter().any(|p|p.1==address(i)));}
- assert_eq!(t.plays.last().copied(),Some((14,0x1010,22050,0)));assert_eq!(t.on,0x7000);assert_eq!(t.off,0x7000);
+ for i in 0..3 {assert!(t.plays.iter().any(|p|p.1==address(i)));}
+ // The rock hits, on the pool at the cooked gain (the pool scales it), each with its clip's length.
+ assert_eq!(t.pool.len(),33);
+ for p in &t.pool[..32] {assert!([address(3),address(4),address(5)].contains(&p.0)&&p.1==11025&&p.2==5461&&p.3==32);}
+ for i in 3..6 {assert!(t.pool.iter().any(|p|p.0==address(i)));}
+ assert_eq!(t.pool.last().copied(),Some((0x1010,22050,5461,0x1650)));assert_eq!(t.on,0x1000);assert_eq!(t.off,0x1000);
  }
  geo_audio::set_volume(5);geo_audio::hit();geo_audio::set_volume(255);geo_audio::pickup(5);
- let t=TRACE.lock().unwrap();assert_eq!(t.plays[t.plays.len()-2].3,2730);assert_eq!(t.plays.last().unwrap().3,5461);
- assert_eq!(t.gains[t.gains.len()-3..],[(12,5461),(13,5461),(14,5461)]);
+ let t=TRACE.lock().unwrap();assert_eq!(t.plays.last().unwrap().3,5461);
+ assert_eq!(t.gains[t.gains.len()-2..],[(12,2730),(12,5461)]);
  unsafe {assert_eq!(geo_audio::HK_GEO_AUDIO_READY,1);assert_eq!(geo_audio::HK_GEO_PICKUP_SFX,97);assert_eq!(geo_audio::HK_GEO_ROCK_HIT_SFX,33);assert_eq!(geo_audio::HK_GEO_ROCK_BREAK_SFX,1);}
 }

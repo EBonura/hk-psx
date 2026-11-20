@@ -35,16 +35,17 @@ const SPU_START: i64 = 0x18000;
 /// sits directly below Focus; ambience must end at or below the ring.
 const MUSIC_RING_BYTES: i64 = 16384;
 const SFX_END: i64 = 0x14000; // Geo occupies 0x14000..0x18000, below ambience.
-/// The SPU voices ambience owns. 0..5 and 16..17 player SFX, 11 the per-scene
-/// one-shots, 12..14 Geo, 15 shared by the Great Door, the False Knight, the
-/// menu and the world bank, 18..20 Focus, 21..23 Runner.
-const VOICES: [i64; 5] = [6, 7, 8, 9, 10];
+/// The SPU voices ambience owns. 0..5 and 17 player SFX, 12 Geo, 15 shared by the Great Door,
+/// the False Knight, the menu and the world bank, 18..20 Focus, 21..23 Runner, and 10, 11, 13, 14
+/// and 16 the pool the room one-shots, the Geo rocks and the hard landing share by weight
+/// (game/src/audio.rs POOL_VOICES): 10 left this set once no transition needed four stems.
+const VOICES: [i64; 4] = [6, 7, 8, 9];
 const SCENE_SFX_VOICE: i64 = 11;
 /// The first of them is area music's: it keeps one voice for the life of the disc.
 const MUSIC_VOICE: i64 = VOICES[0];
 /// The rest are a pool: a stem takes one when it keys on and returns it once it
 /// has finished fading out.
-const POOL_VOICES: [i64; 4] = [7, 8, 9, 10];
+const POOL_VOICES: [i64; 3] = [7, 8, 9];
 /// The banks stacked above ambience in SPU RAM, lowest first.
 const TAIL_BANKS: [&str; 3] = [
     "data/world-sfx.rs",
@@ -451,10 +452,6 @@ fn assemble(
     {
         return err("missing source ambience scenes");
     }
-    let live = pool_pressure(&cues);
-    if live > pool_voices as i64 {
-        return err(format!("{live} stems can be audible at once across a transition and ambience pools {pool_voices} SPU voices ({}); every other voice is allocated", py_list(&POOL_VOICES).replacen('[', "(", 1).replacen(']', ")", 1)));
-    }
     let mut clips = Vec::new();
     for &ch in &CHANNELS {
         let rate = atmos_rate(ch);
@@ -526,6 +523,11 @@ fn assemble(
     // a gap, and ambience::forget cuts the stem if it is still fading in from the
     // previous scene when the bank lands.
     unload_inaudible(&mut cues, &clips);
+    // A stem left out of a cue never keys there, so it needs no voice.
+    let live = pool_pressure(&cues);
+    if live > pool_voices as i64 {
+        return err(format!("{live} stems can be audible at once across a transition and ambience pools {pool_voices} SPU voices ({}); every other voice is allocated", py_list(&POOL_VOICES).replacen('[', "(", 1).replacen(']', ")", 1)));
+    }
     // The prefetch is what the neighbours keep after the drops: a stem no
     // neighbour keeps resident is never read on its way.
     let near = neighbour_masks(&cues, edges);
@@ -1654,7 +1656,7 @@ mod tests {
         assert!(text.contains(&format!("pub gains:[i16;{}]", clips.len())));
         assert!(!text.contains("voice:"));
         assert!(text.contains(&format!("pub const MUSIC_VOICE:u8={MUSIC_VOICE};")));
-        assert!(text.contains("pub const AMBIENCE_POOL_VOICES:[u8;4]=[7, 8, 9, 10];"));
+        assert!(text.contains("pub const AMBIENCE_POOL_VOICES:[u8;3]=[7, 8, 9];"));
     }
 
     #[test]

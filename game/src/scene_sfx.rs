@@ -8,17 +8,31 @@
 //! that can sound in this scene uses; a resident stem the bank overwrites is
 //! forgotten (`ambience::forget`) so it reloads when a cue wants it again.
 //!
-//! Playback: `play(EVENT)` with the event constants below, on the one voice
-//! ambience leaves for this (`SCENE_SFX_VOICE`). An event the current scene's
+//! Playback: `play(EVENT)` with the event constants below, on a voice of the shared
+//! pool (`audio::pool_play`) at the event's weight (`weight`). An event the current scene's
 //! bank does not hold (not cooked for this scene, or refused for room) is a
 //! no-op, counted in `HK_SCENE_SFX_MISSED`, so a call site never has to know
 //! which scenes carry which sounds.
+use crate::audio::{self, Claim, Weight};
 use psx_fx::NrLcg;
-use psx_spu::{self as spu, Adsr, Pitch, SpuAddr, Voice, Volume};
-#[path = "volume.rs"]
-mod volume;
+use psx_spu::{self as spu, SpuAddr};
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scene_sfx.rs"));
-const VOICE: u8 = crate::ambience::SCENE_SFX_VOICE;
+// The pool's first voice is the one ambience leaves for the room sounds, and no pool voice is
+// one ambience or the music keys.
+const _: () = {
+    let pool = audio::POOL_VOICES;
+    assert!(pool[0] == crate::ambience::SCENE_SFX_VOICE);
+    let mut i = 0;
+    while i < pool.len() {
+        assert!(pool[i] != crate::ambience::MUSIC_VOICE);
+        let mut j = 0;
+        while j < crate::ambience::AMBIENCE_POOL_VOICES.len() {
+            assert!(pool[i] != crate::ambience::AMBIENCE_POOL_VOICES[j]);
+            j += 1;
+        }
+        i += 1;
+    }
+};
 const NONE: usize = usize::MAX;
 /// Bytes of a clip sent to the SPU between pad checkpoints. The SPU port stalls the CPU on
 /// every write, so a slice takes a good fraction of a frame; 1 KiB keeps a late slice
@@ -26,9 +40,12 @@ const NONE: usize = usize::MAX;
 /// journey).
 const UPLOAD_SLICE: usize = 1024;
 static mut CURRENT: usize = NONE;
-/// The looping event now keyed on the scene voice (`loop_tick`), NONE once anything else
-/// takes the voice: the next `loop_tick` then starts the loop again.
-static mut LOOPING: usize = NONE;
+/// The looping event `loop_tick` keyed and the voice it holds; when a heavier sound takes the
+/// voice, the next `loop_tick` starts the loop again on another.
+static mut LOOPING: Option<(u8, Claim)> = None;
+/// The voices this bank's sounds were last handed, one per pool voice: a new bank stops those
+/// still sounding, since their clips' bytes are about to be overwritten.
+static mut PLAYING: [Option<Claim>; audio::POOL_VOICES.len()] = [None; audio::POOL_VOICES.len()];
 /// Plays per event, and plays asked for that the resident bank does not hold.
 #[no_mangle]
 pub static mut HK_SCENE_SFX: [u32; EVENTS] = [0; EVENTS];
@@ -56,7 +73,7 @@ pub const fn chunk(scene: usize) -> (usize, u32) {
 pub fn invalidate() {
     unsafe {
         CURRENT = NONE;
-        LOOPING = NONE;
+        LOOPING = None;
         HK_SCENE_SFX_SCENE = 0;
     }
 }
@@ -75,8 +92,8 @@ pub fn overwritten(lo: u32, hi: u32) {
 /// `bytes` is the checked chunk for guest scene `scene`. Uploads every entry to
 /// its cooked address, a slice at a time with the pad serviced between.
 pub fn upload(scene: usize, bytes: &[u8]) {
+    stop_all();
     invalidate();
-    Voice::release(1 << VOICE);
     assert!(bytes.len() == BANKS[scene].0 as usize);
     let mut total = 0u32;
     for &(event, address, offset, len, _, _) in entries(scene) {
@@ -113,16 +130,86 @@ fn make_loop(address: u32, clip: &[u8]) {
         let _ = spu::upload_adpcm(SpuAddr::new(address + at as u32), &block);
     }
 }
+/// Stop every sound of this bank still sounding on a pool voice, the loop too.
+fn stop_all() {
+    unsafe {
+        for claim in PLAYING.iter_mut() {
+            if let Some(c) = claim.take() {
+                audio::pool_stop(c);
+            }
+        }
+        if let Some((_, c)) = LOOPING.take() {
+            audio::pool_stop(c);
+        }
+    }
+}
+/// Keep `claim` as the sound now on its pool voice (`stop_all`).
+fn remember(claim: Claim) {
+    if let Some(slot) = audio::POOL_VOICES.iter().position(|&v| v == claim.voice) {
+        unsafe {
+            PLAYING[slot] = Some(claim);
+        }
+    }
+}
+/// How much `event` matters when every pool voice is sounding: a boss's or an arena's sounds
+/// outweigh an enemy's, an enemy's the world's, and an enemy's footsteps go first, so a rustle
+/// or a step never cuts a roar.
+const fn weight(event: u8) -> Weight {
+    match event {
+        ZOMBIE_GUARD_FOOTSTEP => Weight::Ambient,
+        FALSE_KNIGHT_STRIKE_GROUND
+        | FALSE_KNIGHT_RAGE
+        | BOSS_FINAL_HIT
+        | FALSE_KNIGHT_JUMP
+        | FALSE_KNIGHT_LAND_1ST_TIME
+        | FALSE_KNIGHT_DAMAGE_ARMOUR_FINAL
+        | FALSE_KNIGHT_ROLL
+        | FALSE_KNIGHT_DEATH
+        | FALSE_KNIGHT_CEILING_BREAK
+        | GATE_SLAM
+        | GATE_OPEN
+        | MAWLEK_JUMP
+        | MAWLEK_SPIT
+        | MAWLEK_WHIP
+        | MAWLEK_CALL
+        | MAWLEK_BIG_SPIT
+        | MAWLEK_SCREAM
+        | BOSS_EXPLODE
+        | BOSS_GUSHING
+        | MAWLEK_JUMP_OFFSCREEN
+        | MAWLEK_SPIT_B
+        | BIG_FLY_WALL_HIT
+        | BIG_FLY_SNORE_STARTLE
+        | GRUZ_FINAL_HIT
+        | GRUZ_EXPLODE
+        | GRUZ_GUSHING
+        | BIG_FLY_STOMACHE_PROBLEMS_1
+        | BIG_FLY_STOMACHE_PROBLEMS_2
+        | BIG_FLY_STOMACHE_PROBLEMS_FINAL_AND_EXPLODE => Weight::Boss,
+        ZOMBIE_SHIELD_RAISE
+        | ZOMBIE_SHIELD_MOVE
+        | ZOMBIE_GUARD_CLUB
+        | HERO_PARRY
+        | ASPID_SPIT
+        | ZOMBIE_GUARD_AWAKE
+        | ZOMBIE_GUARD_CLUB_PREPARE
+        | ZOMBIE_GUARD_CLUB_PREPARE_2
+        | ZOMBIE_GUARD_CLUB_PREPARE_3
+        | ZOMBIE_GUARD_DEATH
+        | ZOMBIE_GUARD_RUN_LOOP => Weight::Enemy,
+        _ => Weight::World,
+    }
+}
 /// Where the resident bank holds `event`, with the rate it was cooked at, its
-/// gain and its pitch register, for a caller that plays it on a voice of its own.
-fn lookup(event: u8) -> Option<(u32, u32, i16, u16)> {
+/// gain, its pitch register and its bytes, for a caller that plays it on a voice of its own.
+fn lookup(event: u8) -> Option<(u32, u32, i16, u16, u32)> {
     let current = unsafe { CURRENT };
     let found = if current == NONE {
         None
     } else {
         entries(current).iter().find(|e| e.0 == event)
     };
-    let Some(&(_, address, _, _, rate, pitch)) = found else {
+    let Some(&(_, address, _, bytes, rate, pitch)) = found else {
         unsafe {
             HK_SCENE_SFX_MISSED = HK_SCENE_SFX_MISSED.saturating_add(1);
         }
@@ -134,15 +221,14 @@ fn lookup(event: u8) -> Option<(u32, u32, i16, u16)> {
     unsafe {
         HK_SCENE_SFX[event as usize] = HK_SCENE_SFX[event as usize].saturating_add(1);
     }
-    Some((address, rate, gain, pitch))
+    Some((address, rate, gain, pitch, bytes))
 }
-/// A scene sound on the resident banks' shared voice rather than the scene
-/// voice: for a long clip (the False Knight's roars) that the scene voice's
-/// next one-shot would otherwise cut, where nothing else on the shared voice
-/// sounds at the same time.
+/// A scene sound on the resident banks' shared voice rather than a pool voice: for a long
+/// clip (the False Knight's roars), where nothing else on the shared voice sounds at the
+/// same time.
 pub fn play_shared(event: u8) {
-    if let Some((address, rate, gain, pitch)) = lookup(event) {
-        crate::audio::shared_clip(address, rate, gain, pitch);
+    if let Some((address, rate, gain, pitch, _)) = lookup(event) {
+        audio::shared_clip(address, rate, gain, pitch);
     }
 }
 /// The scene-bank event that is the break clip of the ordinary Breakable `id` (scene * 128 + state),
@@ -163,31 +249,22 @@ pub fn resident(event: u8) -> bool {
 /// each call site it cost more than the sounds it plays.
 #[inline(never)]
 pub fn play_pitched(event: u8, scale: u32) {
-    let Some((address, rate, gain, pitch)) = lookup(event) else {
+    let Some((address, rate, gain, pitch, bytes)) = lookup(event) else {
         return;
     };
-    unsafe {
-        LOOPING = NONE;
+    let pitch = (pitch as u32 * scale / 4096).min(0x3fff) as u16;
+    if let Some(claim) = audio::pool_play(weight(event), (address, rate, gain), Some(pitch), bytes) {
+        remember(claim);
     }
-    Voice::release(1 << VOICE);
-    let voice = Voice::new(VOICE);
-    voice.configure_sample(
-        SpuAddr::new(address),
-        rate,
-        Volume(volume::scale(gain, crate::audio::level())),
-        Adsr::sample_one_shot(),
-    );
-    voice.set_pitch(Pitch::raw((pitch as u32 * scale / 4096).min(0x3fff) as u16));
-    Voice::start(1 << VOICE);
 }
-/// One scene sound on the scene voice, if the resident bank holds it.
+/// One scene sound on a pool voice, if the resident bank holds it.
 pub fn play(event: u8) {
     play_pitched(event, 4096);
 }
-/// A looped scene sound (`make_loop`) at `level`/4096 of its gain, on the scene voice. Call every
-/// frame the source can be heard: it starts the loop when the voice is not already playing it
-/// (the first call, or after a one-shot took the voice) and otherwise only moves the volume.
-/// A zero level silences it without key off, so it keeps its place in the loop.
+/// A looped scene sound (`make_loop`) at `level`/4096 of its gain, on a pool voice. Call every
+/// frame the source can be heard: it starts the loop when it holds no voice (the first call, or
+/// after a heavier sound took its voice) and otherwise only moves the volume. A zero level
+/// silences it without key off, so it keeps its place in the loop.
 pub fn loop_tick(event: u8, level: i32) {
     let Some(&(_, address, _, _, rate, pitch)) = (unsafe {
         let current = CURRENT;
@@ -200,30 +277,26 @@ pub fn loop_tick(event: u8, level: i32) {
         return;
     };
     let (_, gain, _) = EVENT_PARAMS[event as usize];
-    let volume = Volume(volume::scale(
-        (i32::from(gain) * level.clamp(0, 4096) / 4096) as i16,
-        crate::audio::level(),
-    ));
-    let voice = Voice::new(VOICE);
-    if unsafe { LOOPING } != event as usize {
-        Voice::release(1 << VOICE);
-        voice.configure_sample(SpuAddr::new(address), rate, volume, Adsr::sample_one_shot());
-        voice.set_pitch(Pitch::raw(pitch));
-        Voice::start(1 << VOICE);
-        unsafe {
-            LOOPING = event as usize;
+    let gain = (i32::from(gain) * level.clamp(0, 4096) / 4096) as i16;
+    match unsafe { LOOPING } {
+        Some((looping, claim)) if looping == event && audio::pool_holds(claim) => {
+            audio::pool_set_gain(claim, gain);
         }
-    } else {
-        voice.set_volume(volume, volume);
+        held => {
+            if let Some((_, claim)) = held {
+                audio::pool_stop(claim);
+            }
+            let claim = audio::pool_loop(weight(event), (address, rate, gain), Some(pitch));
+            unsafe {
+                LOOPING = claim.map(|c| (event, c));
+            }
+        }
     }
 }
 /// Stop a looped scene sound that `loop_tick` started (the source went away).
 pub fn loop_stop() {
-    if unsafe { LOOPING } != NONE {
-        Voice::release(1 << VOICE);
-        unsafe {
-            LOOPING = NONE;
-        }
+    if let Some((_, claim)) = unsafe { LOOPING.take() } {
+        audio::pool_stop(claim);
     }
 }
 /// Myla, the `Miner` of Crossroads_45. Her AudioSource hums (`Miner_idle_hum`, looped, volume
@@ -268,9 +341,9 @@ pub fn myla_strike(camera: (i32, i32), at: [i32; 2], frame: usize) {
             MYLA_PICKAXE_2
         }
     };
-    if let Some((address, rate, gain, pitch)) = lookup(event) {
+    if let Some((address, rate, gain, pitch, _)) = lookup(event) {
         let gain = (i32::from(gain) * level / 4096).min(i32::from(i16::MAX)) as i16;
-        crate::audio::shared_clip(address, rate, gain, pitch);
+        audio::shared_clip(address, rate, gain, pitch);
     }
 }
 /// The conversation with her opens: her `Conversation Control` plays `Miner_01_sing`. Call every
