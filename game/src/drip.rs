@@ -111,6 +111,11 @@ pub fn tick(scene: usize) {
             if d.phase == IDLE {
                 d.wait = idle(&mut now.rng);
             }
+            if d.phase == IMPACT {
+                // `impactAudioClipTable.PlayOneShot` on the drip's own AudioSource, where it landed.
+                let (_, x, y, fall, _) = DRIPS[now.first + i];
+                crate::scene_sfx::drip([i32::from(x) << 10, (i32::from(y) << 10) - fall_drop(i32::from(fall))]);
+            }
         }
     }
 }

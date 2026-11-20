@@ -1658,6 +1658,10 @@ pub fn simulate(
         if strike.door_sounds > 0 {
             audio::door();
         }
+        // `GrassBehaviour.CutReact`: one of the patch's `cutSounds` (the last patch the swing cut).
+        if strike.grass_cut > 0 {
+            scene_sfx::grass_cut(strike.grass_cut_at);
+        }
         // Barrels, poles and wagons break with their own clip where the scene bank has room.
         if let Some(event) = strike.last_broken.and_then(scene_sfx::break_sound) {
             if scene_sfx::resident(event) {

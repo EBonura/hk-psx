@@ -873,12 +873,145 @@ pub const EVENTS: &[Event] = &[
         71,
         None,
     ),
+    // The sounds the port did not play (hk-sound PROPOSAL section 3, Manny 2026-11-20), every one a late row
+    // (LATE_PRIORITY on): fitted into what each scene's own clips leave plus the bytes of the stems it does not
+    // keep resident (the inaudible rain loop's 15,936 above all), never moving an earlier clip's rate; a clip that
+    // does not fit is refused whole and listed, and its play is a counted miss. The variants of each table are
+    // interleaved by priority, so a tight scene keeps one of each kind before a second of any. Clips and owners
+    // as the install has them (hk-fix 2026-11-20, read through hk-unity):
+    // * GrassBehaviour (every grass patch, sharedassets6): `cutSounds` on CutReact. Its own AudioSource, linear
+    //   rolloff 39 to 50. (`pushSounds` and `cutPushSounds`, played when anything enters a patch, are not here:
+    //   the port has no per-tick test of the Knight against the patches, docs/SCENE_SFX.md.)
+    // * Corpse.Smash (a breaker corpse: Vengefly, Gruzzer, Aspid): `splatAudioClipTable`, through the audio
+    //   actor prefab (ACTOR_ROLLOFF).
+    // * WaterDrip's impact: `impactAudioClipTable` (four clips, weight 1, pitch 1) on the drip's own
+    //   AudioSource (the actor curve).
+    ev(
+        "grass_cut_4",
+        "sharedassets6.assets",
+        94,
+        "grass_cut_4",
+        11025,
+        &["grass"],
+        80,
+        None,
+    ),
+    ev(
+        "splat_1",
+        "sharedassets6.assets",
+        166,
+        "splat_01",
+        11025,
+        &["corpse_smash"],
+        81,
+        None,
+    ),
+    ev(
+        "water_drip_1",
+        "sharedassets6.assets",
+        183,
+        "water_drip_1",
+        11025,
+        &["drips"],
+        82,
+        None,
+    ),
+    ev(
+        "grass_cut_2",
+        "sharedassets6.assets",
+        139,
+        "grass_cut_2",
+        11025,
+        &["grass"],
+        83,
+        None,
+    ),
+    ev(
+        "splat_2",
+        "sharedassets6.assets",
+        152,
+        "Splat_02",
+        11025,
+        &["corpse_smash"],
+        84,
+        None,
+    ),
+    ev(
+        "water_drip_2",
+        "sharedassets6.assets",
+        136,
+        "water_drip_2",
+        11025,
+        &["drips"],
+        85,
+        None,
+    ),
+    ev(
+        "grass_cut_3",
+        "sharedassets6.assets",
+        174,
+        "grass_cut_3",
+        11025,
+        &["grass"],
+        86,
+        None,
+    ),
+    ev(
+        "splat_3",
+        "sharedassets6.assets",
+        117,
+        "Splat_03",
+        11025,
+        &["corpse_smash"],
+        87,
+        None,
+    ),
+    ev(
+        "water_drip_3",
+        "sharedassets6.assets",
+        109,
+        "water_drip_3",
+        11025,
+        &["drips"],
+        88,
+        None,
+    ),
+    ev(
+        "grass_cut_5",
+        "sharedassets6.assets",
+        143,
+        "grass_cut_5",
+        11025,
+        &["grass"],
+        89,
+        None,
+    ),
+    ev(
+        "water_drip_4",
+        "sharedassets6.assets",
+        175,
+        "water_drip_4",
+        11025,
+        &["drips"],
+        90,
+        None,
+    ),
 ];
 
-/// Gruz Mother's arena gates sound like every other arena's.
-const LATE_IN: [(&str, &str, i64); 2] = [
+/// Gruz Mother's arena gates sound like every other arena's. The Husk Guard of Crossroads_21 plays the
+/// clips the one in Crossroads_48 has (hk-sound PROPOSAL: 41,744 bytes at their rows' rates against the
+/// 26,912 the scene had spare, before the rain loop left its cue), late there, enemy sounds before the
+/// grass and drips of the rows above.
+const LATE_IN: [(&str, &str, i64); 9] = [
     ("gate_slam", "Crossroads_04", 60),
     ("gate_open", "Crossroads_04", 61),
+    ("zombie_guard_awake", "Crossroads_21", 72),
+    ("zombie_guard_club", "Crossroads_21", 73),
+    ("zombie_guard_club_prepare", "Crossroads_21", 74),
+    ("zombie_guard_death", "Crossroads_21", 75),
+    ("zombie_guard_club_prepare_2", "Crossroads_21", 76),
+    ("zombie_guard_club_prepare_3", "Crossroads_21", 77),
+    ("zombie_guard_run_loop", "Crossroads_21", 78),
 ];
 
 // ---------------------------------------------------------------- numbers
@@ -1439,6 +1572,26 @@ fn scene_needs(
         })
         .map(scene_of)
         .collect();
+    let listing = |key: &str| -> HashSet<i64> {
+        regions
+            .iter()
+            .filter(|r| r[key].as_array().is_some_and(|a| !a.is_empty()))
+            .map(scene_of)
+            .collect()
+    };
+    let grass = listing("grass");
+    let drips: HashSet<i64> = regions
+        .iter()
+        .filter(|r| !r["drip_art"].is_null())
+        .map(scene_of)
+        .collect();
+    // The breaker corpses (Corpse.breaker: Smash on landing): the Vengefly's, the Gruzzer's and the Aspid's.
+    let corpse_smash: HashSet<i64> = ["Buzzer", "Fly", "Spitter"]
+        .iter()
+        .filter_map(|f| families.get(*f))
+        .flatten()
+        .copied()
+        .collect();
     // The Great Door's `Break 1`, `Break 2` and `Break` play `breakable_wall_death` as a secret wall does.
     let door_scenes: HashSet<i64> = regions
         .iter()
@@ -1541,6 +1694,9 @@ fn scene_needs(
             "shinies" => shinies.clone(),
             "pieces" => pieces.clone(),
             "stalactites" => stalactites.clone(),
+            "grass" => grass.clone(),
+            "drips" => drips.clone(),
+            "corpse_smash" => corpse_smash.clone(),
             "family" => families.get(kind[1]).cloned().unwrap_or_default(),
             other => return err(format!("unknown scene sound selector {other}")),
         };
