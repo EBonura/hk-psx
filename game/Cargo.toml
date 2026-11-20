@@ -61,8 +61,9 @@ psx-math = { path = "../.psoxide/sdk/crates/psx-math" }
 psx-fx = { path = "../.psoxide/sdk/crates/psx-fx" }
 psx-display = { path = "../.psoxide/sdk/crates/psx-display" }
 psx-residency = { path = "../.psoxide/sdk/crates/psx-residency" }
-# 256 trampoline words: with every delay-slot filler search on, the ordinary
-# guest needs 117 and pgo's profiling build 147; psx-rt's default holds 96.
+# 384 trampoline words (game/.cargo/config.toml): with every delay-slot filler search on, the
+# resident image of main 50c8e5d1 already used about 250 of the old 256 (49 sites) and one more
+# six-word site filled it; psx-rt's default holds 96. 512 bytes of RAM buy room for 22 more sites.
 psx-rt = { path = "../.psoxide/sdk/crates/psx-rt" }
 psx-tick = { path = "../.psoxide/sdk/crates/psx-tick" }
 psx-gpu = { path = "../.psoxide/sdk/crates/psx-gpu" }

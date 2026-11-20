@@ -12,7 +12,7 @@ export FSM_EXP_BANK="$V3/hornet1.hkf3" FSM_EXP_ARITY="$V3/arity.rs"
 SDK="$ROOT/.psoxide/sdk"
 TARGET=mipsel-sony-psx
 # The hazard-trampoline table size (psx-rt build variable; was the hazard-trampolines-256 feature).
-export PSX_HAZARD_TRAMPOLINE_WORDS=256
+export PSX_HAZARD_TRAMPOLINE_WORDS=384
 FLAGS='"-Cllvm-args=-disable-mips-df-succbb-search=false","-Cllvm-args=-disable-mips-df-forward-search=false"'
 mkdir -p "$W"
 cd "$HERE"
