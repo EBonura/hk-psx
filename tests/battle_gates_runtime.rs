@@ -183,6 +183,35 @@ fn main() {
     assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED);
     assert_eq!(unsafe { (HK_ARENA_GATE_CLOSES, HK_ARENA_GATE_OPENS) }, (0, 0));
 
+    // An arena no runtime enters (Hornet's: her `Encounter` closes and opens, nothing calls
+    // `arena_entry`): the Knight dies or leaves mid-fight, and the scene's gates go back to
+    // their placement state with the fight over; another scene's sealed arena is untouched.
+    for &(scene, mask) in SCENE_GATES {
+        let scene = scene as usize;
+        let other = SCENE_GATES.iter().find(|&&(s, _)| s as usize != scene).unwrap();
+        reset();
+        close(scene);
+        close(other.0 as usize);
+        assert!(fighting(other.0 as usize));
+        close(scene);
+        assert!(fighting(scene));
+        leave_scene(scene);
+        assert!(!fighting(scene));
+        assert_eq!(unsafe { HK_ARENA_GATES } as u32 & mask, PLACEMENT_CLOSED & mask, "scene {scene} left mid-fight");
+        assert_eq!(unsafe { HK_ARENA_GATES } as u32 & other.1, other.1, "scene {} stays sealed", other.0);
+        for gate in (0..GATES).filter(|&g| mask & (1 << g) != 0) {
+            let want = if PLACEMENT_CLOSED & (1 << gate) != 0 { CLIP_CLOSED } else { CLIP_OPENED };
+            assert_eq!(pose(gate).0, want, "gate {gate} after leaving scene {scene}");
+        }
+    }
+    // A scene with no gates: nothing moves and the sealed arena keeps its fight.
+    reset();
+    close(arena);
+    let gateless = (0..4096).find(|&s| SCENE_GATES.iter().all(|&(g, _)| g as usize != s)).unwrap();
+    leave_scene(gateless);
+    assert!(fighting(arena));
+    assert_eq!(unsafe { HK_ARENA_GATES } as u32, PLACEMENT_CLOSED | arena_mask);
+
     // A slot with no binding costs nothing and changes nothing, which is the
     // path every scene in the game but five takes on every frame.
     reset();

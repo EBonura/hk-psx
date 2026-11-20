@@ -5698,6 +5698,7 @@ impl EnemyWorld {
         if self.arena.is_some_and(|a| a.scene as usize == scene) {
             self.arena = None;
         }
+        crate::battle_gates::leave_scene(scene);
         self.clear_shots(scene);
         // A death or a gate leaves the arena: no roar or arena end outlives it.
         unsafe {

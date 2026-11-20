@@ -461,6 +461,9 @@ mod battle_gates {
     pub fn open(scene: usize) {
         record("open", scene);
     }
+    /// The scene's gates back to placement (tests/battle_gates_runtime.rs covers it); not an
+    /// arena event the runtime tests read.
+    pub fn leave_scene(_scene: usize) {}
     pub const FLOOR_WHOLE: u8 = 0;
     pub const FLOOR_CRACKED: u8 = 1;
     pub const FLOOR_BROKEN: u8 = 2;

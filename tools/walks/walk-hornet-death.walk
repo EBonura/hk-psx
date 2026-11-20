@@ -1,0 +1,37 @@
+name walk-hornet-death
+title a death in Hornet's sealed arena, running: the footstep loop is off on the killing tick, the music fades to silence over a second before the respawn's load, and the arena's gates are open again after the respawn
+max_ticks 30000
+sync poll
+# hornet-04-entry.mcd (walk-hornet-fight's card): Fungus1_04 at the gate from Fungus1_21. The Knight walks in, takes her greeting and
+# then runs back and forth without striking until she kills him (5 masks, no cheat).
+card hornet-04-entry.mcd
+wait 300
+press cross
+wait 53
+press cross
+wait until HK_GAME_MODE == 1 timeout 1200
+include fungus1-04.walk
+wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
+wait until expr u8(HK_HERO_LOCK) == 1 timeout 300
+loop greeting until expr u8(HK_HERO_LOCK) == 0 max 14 timeout 1800
+press cross
+wait 45
+end
+wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
+# Fungus1_04's gates are bits 16 and 17 of HK_ARENA_GATES (data/battle_gates.rs SCENE_GATES, scene 62; both open at placement).
+check sealed HK_HORNET_ENCOUNTERS == 1 ; HK_ARENA_GATE_CLOSES >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; expr (u32(HK_ARENA_GATES) & 196608) == 196608
+loop run-until-dead until expr u32(HK_DEATHS) > 0 max 400 timeout 20000
+hold left until expr u32(HK_DEATHS) > 0 || (u32(HK_INPUT_POLLS) & 63) == 0 timeout 90
+hold right until expr u32(HK_DEATHS) > 0 || (u32(HK_INPUT_POLLS) & 63) == 32 timeout 90
+end
+# Hero Death Anim's Start: the Music mixer goes to Silent over 1 s from the killing tick, and the run's footsteps stop on it.
+check killing-tick HK_DEATHS == 1 ; HK_MUSIC_SNAPSHOT == 254 ; HK_MUSIC_BOSS == 1 ; expr u8(MOVEMENT + 4) == 0 ; expr u8(BOSS_FADE) >= 110 && u8(BOSS_FADE) <= 128
+wait 30
+check half-second HK_MUSIC_BOSS == 1 ; HK_GAME_MODE == 1 ; expr u8(BOSS_FADE) >= 45 && u8(BOSS_FADE) <= 80
+wait 60
+check one-second HK_GAME_MODE == 1 ; expr u32(HK_MUSIC_BOSS) == 0 || u8(BOSS_FADE) <= 8
+wait 600
+wait until HK_WALK_READY == 1 timeout 3000
+wait 120
+# The respawn: the arena's gates are back at placement (open) and the area snapshot is applied again.
+check respawned HK_DEATHS == 1 ; HK_MUSIC_BOSS == 0 ; HK_MUSIC_SNAPSHOT == 1 ; expr (u32(HK_ARENA_GATES) & 196608) == 0
