@@ -92,7 +92,7 @@ now sits in `convo_tick`). `HK_FX_FIT` has a third row (bits 4 and 5): the packs
 background fetch reads it into her old space during the item panel. Nothing resident changes (free RAM is the same as before the
 change); the pool fit check is untouched because it judges the room as it stands before the fight.
 
-Proof: `walk-fungus1-32-to-hornet` and `walk-new-game-to-hornet` check, right after Cross closes the item panel, that `art_fx` is resident
+Proof: `walk-fungus1-31-bench-to-hornet` and `walk-new-game-to-hornet` (the same back half) check, right after Cross closes the item panel, that `art_fx` is resident
 and, after the first dash with no wait, `HK_FX_DASH_RAISED >= 1` (a counter of dash effects alone, since the chain's earlier spell casts
 count in `HK_FX_RAISED` and `HK_FX_LATE`). On the disc without the change the same walk fails the residency check and the dash count (on
 that disc `HK_FX_LATE` goes 0, 1, 2 over the first two dashes and `HK_FX_RAISED` stays 0).

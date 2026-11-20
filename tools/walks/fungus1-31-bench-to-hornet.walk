@@ -1,17 +1,9 @@
-name walk-fungus1-32-to-hornet
-title from a seeded card at Fungus1_31's top gate (fungus1-31-top.mcd, SOUL 0, no Geo needed): Fungus1_32, Fungus1_20_v02 and Fungus1_21 to Hornet, Hornet beaten fairly, the Cloak and the dash. The back half of walk-new-game-to-hornet, three minutes
-max_ticks 160000
-sync poll
-card fungus1-31-top.mcd
-wait 300
-press cross
-wait 40
-press cross
-wait until HK_GAME_MODE == 1 timeout 1200
-wait 60
-hold cross for 40                                # up into the top gate: a bottom entry into Fungus1_32
-wait 20
-wait until HK_GAME_MODE == 1 timeout 1800
+# The back half of the walk to Hornet, from the bench save in Fungus1_31 just loaded by Continue (SOUL 0, full masks): the climb (31b), Fungus1_32,
+# Fungus1_20_v02 and 21 to Hornet, Hornet beaten fairly, the Cloak and the first dash. walk-new-game-to-hornet plays it after a power cycle at that
+# bench and walk-fungus1-31-bench-to-hornet plays it from the card such a run saved there, so the two are the same run from the same boot: the
+# chain cannot fail here while the segment passes (docs/ROUTES.md, "The walk to Hornet in two boots").
+check bench-loaded HK_SAVE_LOADED == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 5 ; x between 26.5 28.2 ; y between 50.5 52.5
+include fungus1-31b-chain.walk
 include fungus1-32-chain.walk
 include fungus1-20v02-chain.walk
 include fungus1-21-chain.walk
@@ -37,11 +29,12 @@ walk 23.2
 wait until HK_WALK_READY == 1 timeout 300
 repeat 3 press up rest 45
 wait 120
-check cloak HK_WORLD_PLAYER == 67108868 ; HK_DEATHS == 0
+check cloak expr (u32(HK_WORLD_PLAYER) & 67108868) == 67108868 ; HK_DEATHS == 0
 check no-item-banner expr u32(HK_TITLE_CARD) != 255                  # the Cloak is announced by its item panel alone: the corner item banner of a charm or relic pickup must not name it too
 check fx-before HK_FX_DASH_RAISED == 0
 press cross                                                          # closes the item panel
 check pack-resident expr ((u8(HK_MODULE_RESIDENT + 4) >> 5) & 1) == 1   # art_fx (module 37) was read while the panel was up
 hold right+r2 for 20                                                 # the first dash, at once
 wait 40
-check dash HK_FX_DASH_RAISED >= 1 ; HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0 ; HK_INPUT_MISSED_VBLANKS == 0
+check dash HK_FX_DASH_RAISED >= 1 ; HK_ABILITY_DRAWN >= 5 ; HK_BOSS_DROPS == 0 ; HK_BOSS_CLIP_MISSES == 0 ; HK_ROOM_LOAD_ERROR == 0 ; HK_CD_STREAM_ERROR == 0
+check no-card-no-cheat HK_CHEATS == 0 ; HK_DEATHS == 0 ; HK_INPUT_MISSED_VBLANKS == 0

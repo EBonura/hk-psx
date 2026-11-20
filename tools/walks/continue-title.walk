@@ -1,0 +1,9 @@
+# Continue from the save on the card the console booted with: the title, Start Game, profile 1 (a saved one), the game loads where it saved.
+# After `reboot` (continue-reload.walk) and after `card FILE` the boot is the same, so a walk that resumes from an earned card plays exactly
+# what a chain that reboots there plays.
+wait 300                                       # the title opens its input at about 245 ticks
+press cross                                    # Start Game
+wait 40
+press cross                                    # profile 1: the save
+wait until HK_GAME_MODE == 1 timeout 1500
+wait until HK_WALK_READY == 1 timeout 900
