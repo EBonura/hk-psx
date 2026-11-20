@@ -15,11 +15,12 @@ scene_gate = true
 # gate is the one this port could not take until its bottom-gate entry
 # stopped dropping the Knight back through the hole he came up.
 HK_SAVE_LOADED = 1
-HK_WORLD_RESTORED = 8
+# journey-kings' seven items (King's Pass, a sub-area, records no visit), then the Crossroads' title.
+HK_WORLD_RESTORED = 7
 HK_SCENE_GATE_LOADS = 9
 HK_SAVE_WRITES = 1
 HK_SAVE_ERRORS = 0
-HK_WORLD_ITEMS = 9
+HK_WORLD_ITEMS = 8
 HK_DEATHS = 0
 HK_REGION_ID = 535
 # Every arrival by a side gate stands the Knight on the ground (HeroController.EnterScene's
