@@ -192,3 +192,77 @@ fn held_corpse_ignores_the_hit_cardinal_that_launches_a_flung_one() {
         assert!(flung.vx != 0 || flung.vy != 0);
     }
 }
+
+
+/// Crossroads_07's small platform (x 8.758 to 12.710, y 6.614 to 7.491, the box Climber 7 circles)
+/// and the floor 3 units under it, as the cooked pack's edges.
+const PLATFORM: [[i32; 4]; 5] = [
+    [573_964, 433_455, 832_963, 433_455],
+    [832_963, 433_455, 832_963, 490_930],
+    [832_963, 490_930, 573_964, 490_930],
+    [573_964, 490_930, 573_964, 433_455],
+    [18 * ONE, 3 * ONE, 0, 3 * ONE],
+];
+fn platform(i: usize) -> [i32; 4] {
+    PLATFORM[i]
+}
+/// The Climber's corpse (sharedassets37.assets:69): its box is a quarter of the Knight's, its
+/// origin at the foot.
+const TIKTIK: CorpseSpec = CorpseSpec {
+    air_clip: 26,
+    land_clip: 27,
+    bounds: [-29696, -1024, 19456, 37888],
+    spawn_offset: [0, 0],
+    bounce_factor: 29491,
+    fling_speed: 20 * ONE,
+    gravity: 48 * ONE,
+    breaker: false,
+    smash_bounces: 0,
+    remove_after_land: 0,
+    hold_ticks: 0,
+};
+fn inside_platform(c: &Corpse) -> bool {
+    let b = if c.facing < 0 { TIKTIK.bounds } else { [-TIKTIK.bounds[2], TIKTIK.bounds[1], -TIKTIK.bounds[0], TIKTIK.bounds[3]] };
+    c.x + b[2] > 573_964 && c.x + b[0] < 832_963 && c.y + b[3] > 433_455 && c.y + b[1] < 490_930
+}
+fn settle(c: &mut Corpse) {
+    for _ in 0..600 {
+        c.tick(TIKTIK, PLATFORM.len(), platform);
+    }
+}
+#[test]
+fn a_corpse_made_inside_a_wall_or_a_ceiling_is_pushed_out_to_the_open_side() {
+    // Hanging from the underside, its foot on the rock at y 6.614: the unrotated corpse box
+    // ([-0.02, 0.58] above the origin) is made inside the platform. Without the push the swept
+    // solver never meets the edge it starts across and the body rests on the underside edge,
+    // inside the rock: the owner's sinking Tiktik, and what walk-tiktik-ceiling measured on the
+    // disc before this change (rest at x 11.22, y 6.63).
+    let hanging = |seed| Corpse::spawn(TIKTIK, 11 * ONE, 433_455, 0, -1, seed);
+    let mut sunk = hanging(6858);
+    settle(&mut sunk);
+    assert!(inside_platform(&sunk), "the old path rested at {:?}", (sunk.x, sunk.y));
+    let mut ceiling = hanging(6858);
+    assert!(ceiling.fresh(TIKTIK));
+    ceiling.depenetrate(TIKTIK, [11 * ONE, 433_455 - 30_000], PLATFORM.len(), platform);
+    assert_eq!(ceiling.y + TIKTIK.bounds[3], 433_455, "pushed down until its top meets the underside");
+    settle(&mut ceiling);
+    assert!(!inside_platform(&ceiling));
+    assert_eq!(ceiling.phase, CorpsePhase::Rest);
+    assert_eq!(ceiling.y + TIKTIK.bounds[1], 3 * ONE, "at rest on the floor under the platform");
+    // On the right end wall, its foot at x 12.71, its body out to the right: pushed out to the
+    // right, the open side, and it falls to the floor outside.
+    let mut c = Corpse::spawn(TIKTIK, 832_963, 7 * ONE, 0, -1, 6858);
+    c.depenetrate(TIKTIK, [832_963 + 30_000, 7 * ONE], PLATFORM.len(), platform);
+    assert!(!inside_platform(&c));
+    assert_eq!(c.x + TIKTIK.bounds[0], 832_963, "pushed right until its left side meets the wall");
+    settle(&mut c);
+    assert!(!inside_platform(&c));
+    // On the top, its box (which reaches 0.02 under the origin) clear of the rock: nothing moves.
+    let mut top = Corpse::spawn(TIKTIK, 11 * ONE, 490_930 - TIKTIK.bounds[1], 0, -1, 6858);
+    let before = (top.x, top.y);
+    top.depenetrate(TIKTIK, [11 * ONE, 490_930 + 30_000], PLATFORM.len(), platform);
+    assert_eq!((top.x, top.y), before);
+    // A corpse that has moved is never pushed again by the caller's test.
+    top.tick(TIKTIK, PLATFORM.len(), platform);
+    assert!(!top.fresh(TIKTIK));
+}

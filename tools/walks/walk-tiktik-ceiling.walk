@@ -1,0 +1,29 @@
+name walk-tiktik-ceiling
+title a Tiktik killed on the underside of its platform in Crossroads_07, struck from the floor below: its corpse comes to rest on a floor, outside the terrain
+max_ticks 12000
+sync poll
+# tools/cards/tiktik-c07-floor.mcd: a seeded record in Crossroads_07 (region 138) on the floor right of the small platform at
+# x 8.76 to 12.71, y 6.61 to 7.49 that Climber 7 (level43:6858) circles. Measured on the disc: the Knight stands at x 13.7,
+# y 1.39 after the load, and Climber 7 walks the platform's underside at y 6.62 from x 12.7 leftwards. Before the corpse
+# push-out (Corpse::depenetrate) its body came to rest at x 11.22, y 6.63, inside the platform; with it, on the floor at y 3.
+card tiktik-c07-floor.mcd
+include tiktik-c07-setup.walk
+walk 11                                        # under the platform's middle
+wait until HK_WALK_READY == 1 timeout 300
+check under x between 10.5 11.5 ; y between 1.2 1.6
+# Hanging from the underside, within half a unit of the Knight's x.
+def under_me any(i in 0..32: let ax = i32(HK_ACT + 8 * i), ay = i32(HK_ACT + 8 * i + 4) in ax != 2147483647 && abs(ax - i32(HK_PLAYER_X)) <= 32768 && ay >= 6 * 65536 + 26214 && ay <= 6 * 65536 + 52429)
+def dead i32(HK_CORPSE) != 2147483647
+loop strike-under until expr $dead max 30 timeout 9000
+wait until expr $under_me timeout 1200
+hold up for 1
+hold up+cross until expr i32(HK_PLAYER_VY) > 0 timeout 10
+hold up+cross until expr i32(HK_PLAYER_VY) <= 0 timeout 60   # the top of the rise (or the head against the underside)
+press up+square
+wait until HK_WALK_READY == 1 timeout 300
+end
+check killed HK_DEATHS == 0 ; expr i32(HK_CORPSE) != 2147483647
+wait until expr i32(HK_CORPSE + 8) == 3 timeout 600
+check rest expr i32(HK_CORPSE + 8) == 3 && i32(HK_CORPSE + 4) == 3 * 65536 + 1024   # on the floor under the platform (y 3), its box 0.02 under the origin
+# The corpse box ([-0.45, -0.02] to [0.30, 0.58] about its origin) must not overlap the platform (x 8.76 to 12.71, y 6.61 to 7.49).
+check outside-terrain expr let cx = i32(HK_CORPSE), cy = i32(HK_CORPSE + 4) in !(cx > 8 * 65536 + 49676 - 29696 && cx < 12 * 65536 + 46531 + 29696 && cy > 6 * 65536 + 40239 - 37888 && cy < 7 * 65536 + 32178) ; HK_DEATHS == 0

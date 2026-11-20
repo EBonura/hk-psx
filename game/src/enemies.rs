@@ -2501,7 +2501,19 @@ impl Actor {
         emit: &mut impl FnMut(RunnerEvent),
     ) {
         if self.health.dead {
+            // On its first tick the corpse is pushed out of any terrain it was made inside,
+            // away from where the enemy's body stood (`Corpse::depenetrate`).
+            let fresh = spec.corpse.is_some_and(|cs| self.corpse.is_some_and(|c| c.fresh(*cs)));
+            let free = if fresh {
+                let body = self.local_bounds(spec);
+                [self.x + (body[0] + body[2]) / 2, self.y + (body[1] + body[3]) / 2]
+            } else {
+                [0, 0]
+            };
             if let (Some(corpse), Some(corpse_spec)) = (&mut self.corpse, spec.corpse) {
+                if fresh {
+                    corpse.depenetrate(*corpse_spec, free, count, &edge);
+                }
                 corpse.tick(*corpse_spec, count, &edge);
             }
             // `End Wait` runs after the boss's death event, so the arena has to
@@ -5203,6 +5215,11 @@ pub static mut HK_FK_PHASE: u32 = 0;
 #[no_mangle]
 pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS] = [[ACT_NONE, 0]; MAX_ACTORS];
 pub const ACT_NONE: i32 = i32::MAX;
+/// The corpse of the loaded scene's last slot that holds one: `{x, y}` (Q16 world units, the corpse's origin)
+/// and its phase (0 none, 1 in the air, 2 landing, 3 at rest, 4 removed). For walks that check where a body
+/// comes to rest (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_CORPSE: [i32; 3] = [ACT_NONE, 0, 0];
 /// Where the False Knight stands (Q16 world units), his body box from there, his Head box being `hk_sim::false_knight::HEAD_BOX`,
 /// and bit 0: the armour refuses a nail, bit 1: he rages (a stagger won in a rage never ends it). Read-only, for walk expressions.
 #[no_mangle]
@@ -5589,7 +5606,17 @@ impl EnemyWorld {
     #[cfg_attr(not(test), optimize(size))]
     pub fn publish_walk_words(&self, scene: usize, x: i32) {
         let (mut boss_dx, mut boss_phase) = (FOE_NO_BOSS, 0);
+        let mut corpse = [ACT_NONE, 0, 0];
         for (slot, entry) in self.actors.iter().enumerate() {
+            if let Some(body) = entry.as_ref().filter(|a| a.scene == scene).and_then(|a| a.corpse) {
+                let phase = match body.phase {
+                    hk_sim::CorpsePhase::Air => 1,
+                    hk_sim::CorpsePhase::Land => 2,
+                    hk_sim::CorpsePhase::Rest => 3,
+                    hk_sim::CorpsePhase::Removed => 4,
+                };
+                corpse = [body.x, body.y, phase];
+            }
             let mut row = [ACT_NONE, 0];
             let live = entry.as_ref().filter(|a| {
                 a.scene == scene && !a.health.dead && !matches!(a.runtime, Runtime::Static { .. })
@@ -5617,6 +5644,7 @@ impl EnemyWorld {
         unsafe {
             HK_FK_DX = boss_dx;
             HK_FK_PHASE = boss_phase;
+            HK_CORPSE = corpse;
         }
         // The slam waves: x and direction (0 when the slot is empty or the wave has stopped).
         for (i, wave) in self.waves.iter().enumerate() {

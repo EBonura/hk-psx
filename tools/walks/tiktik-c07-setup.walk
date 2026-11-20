@@ -1,0 +1,16 @@
+# Crossroads_07, the small platform at x 8.76 to 12.71, y 6.61 to 7.49 that Climber 7 (a Tiktik, level43:6858) circles (a fragment).
+# The walk boots its card (a seeded record in Crossroads_07, region 138) first. This turns on Invincibility and Pure
+# Nail from the pause Cheats page, so the Tiktik dies to the one swing the walk aims and its touch cannot knock the
+# Knight away. The cheats change no corpse rule.
+include title-continue.walk
+hold start until HK_PAUSED == 1 timeout 60
+repeat 2 press up rest 3                       # Resume wraps to Charms, then Cheats
+press cross rest 3                             # the Cheats page, cursor on Invincibility
+press cross rest 3                             # Invincibility on
+press down rest 3
+press cross rest 3                             # Pure Nail on
+repeat 2 press circle rest 3                   # leave the page and the pause menu
+wait until HK_PAUSED == 0 timeout 60
+check cheats HK_CHEATS == 3
+def tiktik any(i in 0..32: let ax = i32(HK_ACT + 8 * i), ay = i32(HK_ACT + 8 * i + 4) in ax != 2147483647 && ax >= 8 * 65536 && ax <= 13 * 65536 + 32768 && ay >= 6 * 65536 && ay <= 8 * 65536 + 6554)
+check tiktik-circles expr $tiktik

@@ -153,6 +153,71 @@ impl Corpse {
             self.phase = CorpsePhase::Removed;
         }
     }
+    /// Whether this corpse has not been stepped yet: a flung body still in the air on its first
+    /// tick (a held prefab has no body and never needs pushing out).
+    pub fn fresh(self, spec: CorpseSpec) -> bool {
+        spec.hold_ticks == 0 && self.phase == CorpsePhase::Air && self.animation_tick == 0
+    }
+    /// The world box the body solver steps, as `[left, bottom, right, top]`.
+    fn world_box(self, spec: CorpseSpec) -> [i32; 4] {
+        let b = if self.facing < 0 {
+            spec.bounds
+        } else {
+            [-spec.bounds[2], spec.bounds[1], -spec.bounds[0], spec.bounds[3]]
+        };
+        [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]]
+    }
+    /// Box2D's first contact step for a body created overlapping terrain: the corpse prefab is
+    /// spawned at the enemy's origin, unrotated, and a Tiktik's origin is on the surface it
+    /// climbs, so on a wall or a ceiling half the body is inside the rock. Unity pushes such a
+    /// body out before it moves; the port's swept solver only stops a body that starts outside
+    /// an edge, so it fell through and came to rest inside the terrain. Each pass moves the box
+    /// out of the edge it overlaps least, to the side of `free` (the dead enemy's body centre,
+    /// which stood in open air), until it overlaps none or four passes have run.
+    pub fn depenetrate(
+        &mut self,
+        spec: CorpseSpec,
+        free: [i32; 2],
+        count: usize,
+        edge: impl Fn(usize) -> [i32; 4],
+    ) {
+        for _ in 0..4 {
+            let [left, bottom, right, top] = self.world_box(spec);
+            let centre = left + (right - left) / 2;
+            let mut best: Option<(i32, i32)> = None;
+            for i in 0..count {
+                let [x0, y0, x1, y1] = edge(i);
+                let push = if x0 == x1 {
+                    if y0 == y1 || x0 <= left || x0 >= right || top <= y0.min(y1) || bottom >= y0.max(y1) {
+                        continue;
+                    }
+                    (if free[0] >= x0 { x0 - left } else { x0 - right }, 0)
+                } else {
+                    if centre < x0.min(x1) || centre > x0.max(x1) {
+                        continue;
+                    }
+                    let h = if y0 == y1 {
+                        y0
+                    } else {
+                        y0 + psx_math::int32::mul_div_i32(centre - x0, y1 - y0, x1 - x0)
+                    };
+                    if h <= bottom || h >= top {
+                        continue;
+                    }
+                    (0, if free[1] >= h { h - bottom } else { h - top })
+                };
+                let size = push.0.abs() + push.1.abs();
+                if best.is_none_or(|b| size < b.0.abs() + b.1.abs()) {
+                    best = Some(push);
+                }
+            }
+            let Some((dx, dy)) = best else {
+                return;
+            };
+            self.x += dx;
+            self.y += dy;
+        }
+    }
     /// Terrain-apron residency is checked by the caller. No extra allocation,
     /// timer-based corpse deletion, contact damage, or Geo gameplay is added.
     pub fn tick(&mut self, spec: CorpseSpec, count: usize, edge: impl Fn(usize) -> [i32; 4]) {
