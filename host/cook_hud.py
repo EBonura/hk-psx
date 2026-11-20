@@ -77,9 +77,19 @@ def soul_art(s,textures):
 def main():
  s=Source();obj=s.file('resources.assets').objects[21155];c=s.read(obj)
  textures={};atlas=Atlas(deduplicate=False)
+ # The full mask (9) sets the scale and the frame; the empty one (0) is the same size in the source
+ # (64 texels a unit) on a much taller canvas, its shape in the same place as the full mask's. Each
+ # scaled by its own canvas made the empty mask 6x14 against 12x14 (Manny 11-19: the masks do not
+ # show as broken on a death), so the empty one is cut to the full mask's world box and scaled the same.
+ full,full_box=tk_sprite(s,obj.assets_file,c,9,textures)
+ ratio=min(14/full.width,14/full.height)
  for index in (9,0):
   im,box=tk_sprite(s,obj.assets_file,c,index,textures)
-  ratio=min(14/im.width,14/im.height)
+  if index!=9:
+   ppu=im.width/(box[2]-box[0])
+   im=im.crop((round((full_box[0]-box[0])*ppu),round((box[3]-full_box[3])*ppu),
+               round((full_box[2]-box[0])*ppu),round((box[3]-full_box[1])*ppu)))
+   assert im.size==full.size,(im.size,full.size)
   atlas.add(im,im.width*ratio,im.height*ratio,streamed=True)
   im.save(ROOT/f'data/hud-source-{index}.png')
  art,meta,report=soul_art(s,textures)
@@ -89,7 +99,7 @@ def main():
  for e in atlas.entries:bank.extend(struct.pack('<4H',e[3],e[4],e[6],0))
  bank.extend(meta);assert len(bank)==80
  bank.extend(b''.join(atlas.palettes[e[5]] for e in atlas.entries));bank.extend(atlas.stream)
- assert [(e[3],e[4]) for e in atlas.entries[:2]]==[(12,14),(6,14)]
+ assert [(e[3],e[4]) for e in atlas.entries[:2]]==[(12,14),(12,14)]
  for e,max_w in zip(atlas.entries,[16,16,40,24,16]):assert e[3]<=max_w and e[4]<=32
  (ROOT/'data/hud.hk').write_bytes(bank)
  report.update({'health_collection_id':s.sid(obj),'health_definition_indices':[9,0],
