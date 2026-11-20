@@ -5127,6 +5127,10 @@ pub static mut HK_ARENA_WAVES: u32 = 0;
 pub static mut HK_ARENA_LANDED: u32 = 0;
 #[no_mangle]
 pub static mut HK_ARENA_WAVE_DEATHS: u32 = 0;
+/// Wave members that landed in the slot of a dead actor because every slot was taken
+/// (`land_member`'s guard).
+#[no_mangle]
+pub static mut HK_ARENA_EVICTIONS: u32 = 0;
 /// A wave member waiting to land, standing, or counted out.
 #[derive(Clone, Copy)]
 struct Seat {
@@ -5867,7 +5871,7 @@ impl EnemyWorld {
                 SeatState::Waiting => {
                     let wait = seat.wait.saturating_sub(1);
                     rt.seats[i].wait = wait;
-                    if wait == 0 && self.land_member(region, seat.source_id) {
+                    if wait == 0 && self.land_member(region, seat.source_id, &rt.seats) {
                         rt.seats[i].state = SeatState::Alive;
                         unsafe { HK_ARENA_LANDED = HK_ARENA_LANDED.wrapping_add(1) }
                     }
@@ -5894,9 +5898,12 @@ impl EnemyWorld {
     }
     /// A summoned member standing at its place: `summon`'s `Summon` state, which
     /// moves it there, activates it and sends ALERT (the cooker seats it alert).
-    /// False when no slot is free or the region does not list it; it tries again.
+    /// False when the region does not list it; it tries again. With every slot taken the
+    /// member takes the slot of a dead actor of the room that no seat still has to count (a
+    /// spent corpse or a fallen hatchling): a wave that cannot land can never be counted out,
+    /// and `BG OPEN` would never come, the gates staying shut for good.
     #[inline(never)]
-    fn land_member(&mut self, region: &Region, source_id: u32) -> bool {
+    fn land_member(&mut self, region: &Region, source_id: u32, seats: &[Seat]) -> bool {
         let mut found = None;
         for index in 0..crate::world::region_actor_count(region) {
             if let Some((placement, spec)) = crate::world::region_actor(region, index) {
@@ -5904,9 +5911,24 @@ impl EnemyWorld {
             }
         }
         let Some((index, placement, spec)) = found else { return false; };
-        let Some(slot) = self.actors.iter().position(Option::is_none) else {
+        let free = self.actors.iter().position(Option::is_none);
+        let Some(slot) = free.or_else(|| {
+            self.actors.iter().position(|a| {
+                a.as_ref().is_some_and(|a| {
+                    a.scene == region.scene
+                        && a.health.dead
+                        && !seats.iter().any(|s| {
+                            s.state == SeatState::Alive && s.source_id == a.source_id
+                        })
+                })
+            })
+        }) else {
             return false;
         };
+        if free.is_none() {
+            self.drop_slot(slot);
+            unsafe { HK_ARENA_EVICTIONS = HK_ARENA_EVICTIONS.wrapping_add(1) }
+        }
         assert!(
             index < NO_PLACEMENT as usize,
             "placement index past the table"
