@@ -806,6 +806,8 @@ pub struct Strike {
     /// The scene-qualified state id of the last ordinary Breakable this swing broke.
     pub last_broken: Option<usize>,
     pub grass_cut: u16,
+    /// The middle of the last grass patch this swing cut (Q16 world), where its sound plays.
+    pub grass_cut_at: [i32; 2],
     pub impact_dropped: u16,
     /// A hidden wall or cracked floor this swing hit or broke.
     pub secret: Option<SecretEvent>,
@@ -1373,6 +1375,8 @@ impl State {
             {
                 self.cut_grass(patch.state);
                 result.grass_cut += 1;
+                let b = patch.grass.bounds;
+                result.grass_cut_at = [b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2];
                 if let Some(bank) = region.particle_bank {
                     if let Some(&emitter) = region
                         .grass_emitters

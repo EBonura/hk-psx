@@ -196,9 +196,75 @@ const fn weight(event: u8) -> Weight {
         | ZOMBIE_GUARD_CLUB_PREPARE_2
         | ZOMBIE_GUARD_CLUB_PREPARE_3
         | ZOMBIE_GUARD_DEATH
-        | ZOMBIE_GUARD_RUN_LOOP => Weight::Enemy,
+        | ZOMBIE_GUARD_RUN_LOOP
+        | SPLAT_1
+        | SPLAT_2
+        | SPLAT_3 => Weight::Enemy,
+        GRASS_CUT_4
+        | GRASS_CUT_2
+        | GRASS_CUT_3
+        | GRASS_CUT_5
+        | WATER_DRIP_1
+        | WATER_DRIP_2
+        | WATER_DRIP_3
+        | WATER_DRIP_4 => Weight::Ambient,
         _ => Weight::World,
     }
+}
+/// `GrassBehaviour.cutSounds`, `Corpse.splatAudioClipTable` and
+/// `WaterDrip.impactAudioClipTable`, in the source's order. A table plays one of the clips the
+/// scene's bank holds, at random with equal weights (`PlayRandomSound`, `RandomAudioClipTable`).
+const GRASS_CUT: [u8; 4] = [GRASS_CUT_4, GRASS_CUT_2, GRASS_CUT_3, GRASS_CUT_5];
+const SPLAT: [u8; 3] = [SPLAT_1, SPLAT_2, SPLAT_3];
+const WATER_DRIP: [u8; 4] = [WATER_DRIP_1, WATER_DRIP_2, WATER_DRIP_3, WATER_DRIP_4];
+/// The tables' own generator: audio never moves gameplay's random state.
+static mut TABLE_RANDOM: u32 = 0x5446_424c;
+/// One clip of `table` the resident bank holds, at random, at its gain scaled by what `rolloff`
+/// leaves of a source at `at` (Q16 world) from the camera. Silent beyond the rolloff, and when the
+/// bank holds none of them (the scene had no room: refused at cook time).
+fn play_one_of(table: &[u8], at: [i32; 2], rolloff: hk_sim::fixed::Rolloff) {
+    let current = unsafe { CURRENT };
+    if current == NONE {
+        return;
+    }
+    let (dx, dy) = unsafe { (at[0] - crate::camera::HK_CAMERA_X, at[1] - crate::camera::HK_CAMERA_Y) };
+    let level = hk_sim::fixed::rolloff_at(dx, dy, rolloff);
+    if level == 0 {
+        return;
+    }
+    let held = |e: &&u8| entries(current).iter().any(|x| x.0 == **e);
+    let count = table.iter().filter(held).count() as u32;
+    if count == 0 {
+        unsafe {
+            HK_SCENE_SFX_MISSED = HK_SCENE_SFX_MISSED.saturating_add(1);
+        }
+        return;
+    }
+    let pick = unsafe {
+        TABLE_RANDOM = NrLcg::step(TABLE_RANDOM);
+        psx_math::WideU::mul(TABLE_RANDOM, count).high() as usize
+    };
+    let Some(&event) = table.iter().filter(held).nth(pick) else {
+        return;
+    };
+    if let Some((address, rate, gain, pitch, bytes)) = lookup(event) {
+        let gain = (i32::from(gain) * level / 4096) as i16;
+        if let Some(claim) = audio::pool_play(weight(event), (address, rate, gain), Some(pitch), bytes) {
+            remember(claim);
+        }
+    }
+}
+/// A grass patch at `at` was cut (`GrassBehaviour.CutReact`).
+pub fn grass_cut(at: [i32; 2]) {
+    play_one_of(&GRASS_CUT, at, hk_sim::fixed::GRASS_ROLLOFF);
+}
+/// A breaker corpse at `at` smashed on landing (`Corpse.Smash`).
+pub fn corpse_smash(at: [i32; 2]) {
+    play_one_of(&SPLAT, at, hk_sim::fixed::ACTOR_ROLLOFF);
+}
+/// A water drip at `at` hit the ground (`WaterDrip`'s impact).
+pub fn drip(at: [i32; 2]) {
+    play_one_of(&WATER_DRIP, at, hk_sim::fixed::ACTOR_ROLLOFF);
 }
 /// Where the resident bank holds `event`, with the rate it was cooked at, its
 /// gain, its pitch register and its bytes, for a caller that plays it on a voice of its own.

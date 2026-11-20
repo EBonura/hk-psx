@@ -2514,7 +2514,13 @@ impl Actor {
                 if fresh {
                     corpse.depenetrate(*corpse_spec, free, count, &edge);
                 }
+                let flying = corpse.phase == hk_sim::CorpsePhase::Air;
                 corpse.tick(*corpse_spec, count, &edge);
+                // `Corpse.Smash`: a breaker corpse goes the moment it lands (`Corpse::tick`), and
+                // plays its `splatAudioClipTable` there.
+                if flying && corpse_spec.breaker && corpse.phase == hk_sim::CorpsePhase::Removed {
+                    crate::scene_sfx::corpse_smash([corpse.x, corpse.y]);
+                }
             }
             // `End Wait` runs after the boss's death event, so the arena has to
             // keep counting for the two seconds the source waits before BG OPEN.
