@@ -280,6 +280,19 @@ impl<'s> Scene<'s> {
             .and_then(Value::int)
             .unwrap_or(0)
     }
+    /// The game objects above `gid` in the transform tree, nearest first.
+    pub fn ancestor_gos(&self, gid: i64) -> Vec<i64> {
+        let mut out = Vec::new();
+        let mut tid = self.go_transform.get(&gid).copied().unwrap_or(0);
+        while tid != 0 {
+            tid = self.father_of(tid);
+            if tid == 0 {
+                break;
+            }
+            out.push(self.go_of_transform(tid));
+        }
+        out
+    }
     fn go_of_transform(&self, tid: i64) -> i64 {
         self.transform(tid)
             .and_then(|t| t.get("m_GameObject"))

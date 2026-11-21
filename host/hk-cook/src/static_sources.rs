@@ -92,7 +92,12 @@ pub fn hazard_sources(sc: &Scene, bounds: Option<[f64; 4]>) -> Result<Vec<Json>>
             continue;
         }
         let gid = go_of(&o.tree).unwrap_or(0);
-        if health_gos.contains(&gid) || !sc.active(gid) {
+        // An enemy's own hurt boxes (Hornet's Needle under Hornet Boss 1) move and
+        // switch with it; baked as scenery they hurt at the spawn point all fight.
+        if health_gos.contains(&gid)
+            || sc.ancestor_gos(gid).iter().any(|a| health_gos.contains(a))
+            || !sc.active(gid)
+        {
             continue;
         }
         let records = component_records(sc, gid);
