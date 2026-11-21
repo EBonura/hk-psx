@@ -30,8 +30,14 @@ pub struct EntRec {
     pub body: bool,
     pub gravity: f64,
     pub damage: u32,
+    /// The collider's bounding box: a BoxCollider2D's size and offset, a polygon's point extent, a circle's 2r square.
     pub box_size: [f64; 2],
     pub box_offset: [f64; 2],
+    /// A CircleCollider2D: the runtime tests it as a circle of radius `box_size[0] / 2`.
+    pub round: bool,
+    /// A PolygonCollider2D's first path, in the collider's local space with its offset applied (the runtime tests the
+    /// polygon itself, not the box).
+    pub poly: Vec<[f64; 2]>,
     /// Component class names on the object (for the adapter's reading of what it is).
     pub components: Vec<String>,
 }
@@ -102,7 +108,7 @@ pub fn read_entities(source: &Source, level: &str, roots: &[i64], extra: &[i64],
                 out.push(EntRec {
                     path_id: pid, name: String::new(), parent: None, active: false, pos: [0.0; 3], scale: [1.0; 2], rot: 0.0, mesh: false,
                     collider: false, trigger: false, kinematic: false, body: false, gravity: 0.0, damage: 0, box_size: [0.0; 2], box_offset: [0.0; 2],
-                    components: vec![],
+                    round: false, poly: vec![], components: vec![],
                 });
                 continue;
             }
@@ -111,7 +117,7 @@ pub fn read_entities(source: &Source, level: &str, roots: &[i64], extra: &[i64],
         let active = go.get("m_IsActive").is_some_and(Value::truthy);
         let mut rec = EntRec {
             path_id: pid, name, parent: None, active, pos: [0.0; 3], scale: [1.0; 2], rot: 0.0, mesh: false, collider: false, trigger: false,
-            kinematic: false, body: false, gravity: 0.0, damage: 0, box_size: [0.0; 2], box_offset: [0.0; 2], components: vec![],
+            kinematic: false, body: false, gravity: 0.0, damage: 0, box_size: [0.0; 2], box_offset: [0.0; 2], round: false, poly: vec![], components: vec![],
         };
         for c in go.get("m_Component").and_then(Value::list).unwrap_or(&[]) {
             let id = c.get("component").and_then(|v| v.get("m_PathID")).and_then(Value::int).ok_or("component")?;
@@ -137,13 +143,7 @@ pub fn read_entities(source: &Source, level: &str, roots: &[i64], extra: &[i64],
                 "BoxCollider2D" | "CircleCollider2D" | "PolygonCollider2D" => {
                     rec.collider |= tree.get("m_Enabled").is_some_and(Value::truthy);
                     rec.trigger |= tree.get("m_IsTrigger").is_some_and(Value::truthy);
-                    if kind == "BoxCollider2D" {
-                        let s = tree.get("m_Size");
-                        let o = tree.get("m_Offset");
-                        let g = |v: Option<&Value>, k: &str| v.and_then(|v| v.get(k)).and_then(Value::float).unwrap_or(0.0);
-                        rec.box_size = [g(s, "x"), g(s, "y")];
-                        rec.box_offset = [g(o, "x"), g(o, "y")];
-                    }
+                    collider_shape(&mut rec, &kind, &tree)?;
                 }
                 "Rigidbody2D" => {
                     rec.body = true;
@@ -158,6 +158,52 @@ pub fn read_entities(source: &Source, level: &str, roots: &[i64], extra: &[i64],
         let _ = h;
     }
     Ok(out)
+}
+
+/// The geometry of one 2D collider component into `rec`: the box the runtime overlaps, and for a circle or a polygon the
+/// shape it tests exactly. The runtime keeps one shape an object, so an object with two colliders is refused.
+fn collider_shape(rec: &mut EntRec, kind: &str, tree: &Value) -> Result<()> {
+    if rec.components.iter().filter(|c| c.ends_with("Collider2D")).count() > 1 {
+        return Err(format!("{}: two colliders on one object", rec.name).into());
+    }
+    let g = |v: Option<&Value>, k: &str| v.and_then(|v| v.get(k)).and_then(Value::float).unwrap_or(0.0);
+    let o = tree.get("m_Offset");
+    let offset = [g(o, "x"), g(o, "y")];
+    match kind {
+        "BoxCollider2D" => {
+            let s = tree.get("m_Size");
+            rec.box_size = [g(s, "x"), g(s, "y")];
+            rec.box_offset = offset;
+        }
+        "CircleCollider2D" => {
+            let d = 2.0 * tree.get("m_Radius").and_then(Value::float).unwrap_or(0.0);
+            rec.box_size = [d, d];
+            rec.box_offset = offset;
+            rec.round = true;
+        }
+        _ => {
+            // PolygonCollider2D: Unity tests every path; the boss trees' polygons each have one.
+            let paths = tree.get("m_Points").and_then(|p| p.get("m_Paths")).and_then(Value::list).ok_or("polygon paths")?;
+            if paths.len() != 1 {
+                return Err(format!("{}: polygon collider with {} paths", rec.name, paths.len()).into());
+            }
+            let pts: Vec<[f64; 2]> = paths[0].list().ok_or("polygon path")?.iter().map(|p| [g(Some(p), "x") + offset[0], g(Some(p), "y") + offset[1]]).collect();
+            if !(3..=16).contains(&pts.len()) {
+                return Err(format!("{}: polygon collider with {} points", rec.name, pts.len()).into());
+            }
+            let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+            for p in &pts {
+                for k in 0..2 {
+                    lo[k] = lo[k].min(p[k]);
+                    hi[k] = hi[k].max(p[k]);
+                }
+            }
+            rec.box_size = [hi[0] - lo[0], hi[1] - lo[1]];
+            rec.box_offset = [(hi[0] + lo[0]) / 2.0, (hi[1] + lo[1]) / 2.0];
+            rec.poly = pts;
+        }
+    }
+    Ok(())
 }
 
 fn class_name(id: i32) -> &'static str {
@@ -693,6 +739,9 @@ pub fn rust_table(label: &str, b: &BossCooked, extra: &str) -> String {
         if e.body {
             flags |= 64;
         }
+        if e.round {
+            flags |= 128;
+        }
         let name = strings.get(e.name.as_str()).copied().unwrap_or(0xffff);
         let _ = writeln!(
             out,
@@ -714,7 +763,61 @@ pub fn rust_table(label: &str, b: &BossCooked, extra: &str) -> String {
         );
     }
     let _ = writeln!(out, "];");
+    // The polygon colliders, by object handle (`hornet::Data::polys`).
+    let polys: Vec<(usize, &EntRec)> = b.ents.iter().enumerate().filter(|(_, e)| !e.poly.is_empty()).collect();
+    let _ = writeln!(out, "pub static POLYS:[(u8,&[[i32;2]]);{}]=[", polys.len());
+    for (h, e) in polys {
+        let pts: Vec<String> = e.poly.iter().map(|p| format!("[{},{}]", q(p[0]), q(p[1]))).collect();
+        let _ = writeln!(out, "    ({h},&[{}]),// {}", pts.join(","), e.name);
+    }
+    let _ = writeln!(out, "];");
     let _ = writeln!(out, "pub static OWNERS:[u8;{}]={:?};", b.owners.len(), b.owners);
     out.push_str(extra);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Hornet's polygon and circle colliders keep the scene's geometry (points with the collider offset applied, in
+    /// units). Needs the Steam data `.hkpsx/doctor.json` names; skipped without it.
+    #[test]
+    fn hornet_colliders_keep_their_shapes() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let Ok(source) = Source::from_doctor(&root) else {
+            eprintln!("no .hkpsx/doctor.json: skipped");
+            return;
+        };
+        let (boss, _) = hornet_inputs(&source).unwrap();
+        let ents = read_entities(&source, "level133", &[boss], &[], &mut TreeCtx::new()).unwrap();
+        let ent = |n: &str| ents.iter().find(|e| e.name == n).unwrap_or_else(|| panic!("{n}"));
+        let near = |a: f64, b: f64| (a - b).abs() < 0.001;
+        let poly = |n: &str, want: &[[f64; 2]]| {
+            let e = ent(n);
+            assert_eq!(e.poly.len(), want.len(), "{n}");
+            assert!(e.poly.iter().zip(want).all(|(p, w)| near(p[0], w[0]) && near(p[1], w[1])), "{n}: {:?}", e.poly);
+            assert!(!e.round);
+            // The box is the points' extent.
+            let (x0, x1) = want.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p[0]), b.max(p[0])));
+            assert!(near(e.box_size[0], x1 - x0) && near(e.box_offset[0], (x0 + x1) / 2.0), "{n}");
+        };
+        let dash = [[-0.334, -0.672], [-0.379, -0.907], [-2.149, -0.861]];
+        poly("Needle", &[[0.660, 0.099], [0.653, -0.133], [-1.817, -0.002]]);
+        poly("Hit GDash", &dash);
+        poly("Hit ADash", &dash);
+        poly(
+            "A Dash Range",
+            &[[0.027, 0.242], [25.436, 18.406], [26.451, -21.549], [7.355, -21.339], [0.008, -0.186], [-6.961, -21.219], [-25.192, -21.337], [-24.868, 19.831]],
+        );
+        for (n, r) in [("Sphere Ball", 2.53), ("Sphere Range", 3.43)] {
+            let e = ent(n);
+            assert!(e.round && e.poly.is_empty(), "{n}");
+            assert!(near(e.box_size[0], 2.0 * r) && near(e.box_size[1], 2.0 * r), "{n}: {:?}", e.box_size);
+            assert!(near(e.box_offset[0], -0.0625) && near(e.box_offset[1], -0.28125), "{n}: {:?}", e.box_offset);
+        }
+        // Box colliders are as before.
+        let tink = ent("Needle Tink");
+        assert!(!tink.round && tink.poly.is_empty() && tink.box_size[0] > 3.0);
+    }
 }
