@@ -33,3 +33,9 @@ def hheal $focus && !$g_dash && !$dash_coming && (u32(HK_HEALTH) <= 3 || $adx > 
 
 # Vengeful Spirit at her when SOUL is spare (more than a Focus needs), she is calm and 5 to 12 units off at his height, and he faces her: a cast owns him for about 24 ticks.
 def hcast u32(HK_SOUL) >= 66 && u32(HK_WALK_READY) == 1 && $hlive && $level && $adx > 327680 && $adx < 786432 && $hcalm && !$dash_coming && (($hdx > 0 && i32(HK_PLAYER_FACING) > 0) || ($hdx <= 0 && i32(HK_PLAYER_FACING) < 0))
+# Her ground-dash wind-up with the Knight inside its reach and room behind him to back away (the arena runs 17 to 36). The
+# wind-up is 32 to 34 ticks, or 52 to 53; a jump from its 19th tick clears the short one, but the losing runs on mister and
+# hostile boots took their hits jumping at ticks 23 to 26 of the long one, so the Knight walks out of reach instead whenever he can.
+def antic_near $hlive && $hs == 2 && $adx < 524288
+def back_left $antic_near && $hdx > 0 && $px > 1245184
+def back_right $antic_near && $hdx <= 0 && $px < 2228224
