@@ -218,6 +218,8 @@ const MENU_INDEX: usize = SCENE_SFX_INDEX + SCENE_COUNT;
 /// prefetch of that group brings the room's code first.
 const CODE_INDEX: usize = MENU_INDEX + 1;
 const PACK_CHUNKS: usize = CODE_INDEX + crate::modules::PACKAGE_CHUNKS;
+/// Where `Cache::title_code` reads the title's code: behind the title art's common part.
+static TITLE_CODE_AT: usize = crate::boot_art::BOOT_COMMON_BYTES;
 /// The stream tails of the scenes read in two parts (host/scene_bank.py `split_stream`), one chunk each,
 /// numbered after the package chunks and filed last in their scene's group, where no gate reads them.
 const TAIL_INDEX: usize = PACK_CHUNKS;
@@ -2016,7 +2018,11 @@ impl Cache {
             return Err(LoadError::Ambience);
         }
         let entry = self.entry(CODE_INDEX + chunk)?;
-        let at = crate::boot_art::BOOT_COMMON_BYTES;
+        // Read at run time, not folded: the common part's size differs between the shipping and the
+        // route-input build, and folded it made this the one function whose code differs between them,
+        // which a searched hot-text placement (game/hk.layout) cannot list for both.
+        // SAFETY: a plain read of an immutable static.
+        let at = unsafe { core::ptr::read_volatile(&raw const TITLE_CODE_AT) };
         self.read(entry, at)?;
         let bytes = unsafe {
             core::slice::from_raw_parts(
