@@ -562,6 +562,11 @@ impl Runner {
     /// Convenience guest schedule, Walker then Swipe. This ordering is a
     /// deterministic policy, not established original execution order. A
     /// reference-driven caller can invoke the two callbacks in observed order.
+    ///
+    /// Always inlined: called out of line (as LLVM chose once the voice pool grew its callers), its
+    /// `Actions` result went through memcpy on every runner tick (hk-fix 2026-11-21: +4.4M instructions
+    /// over the c37-stand window).
+    #[inline(always)]
     pub fn step(
         &mut self,
         senses: Senses,
