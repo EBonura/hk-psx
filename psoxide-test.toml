@@ -65,6 +65,10 @@ build = "ship"
 
 # Two of the frame table's 16-shift routes (tools/hot-layout.sh weighs the layout by them), from
 # after the save's load to the tape's end; offsets are the phase shifts in pad polls.
+# c37-stand is placement-sensitive (hk-fix 2026-11-21, emulator): the same code with one cold
+# load-time function moved in the link order loses 2.3% of its flips, so compare builds by the
+# mean over tape phase shifts (input started 0, 1, 3, 5, 7, 11, 16 polls later), not by one
+# phase. The fce1 baseline's 949 flips was its best phase (935 to 949, mean 940.4).
 [[speed]]
 name = "c37-stand"
 build = "twin"
