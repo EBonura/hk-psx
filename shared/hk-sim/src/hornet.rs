@@ -18,6 +18,8 @@ pub struct Data {
     /// Which `POOL_BANKS` entry replaces `bank` when it is set.
     pub slot: usize,
     pub ents: &'static [EntInit],
+    /// The PolygonCollider2D objects' points by handle, local to the object with the collider's offset applied.
+    pub polys: &'static [(u8, &'static [[i32; 2]])],
     /// The object each FSM is on, by FSM.
     pub owners: &'static [u8],
     pub clips: &'static [ClipInfo],
@@ -41,13 +43,13 @@ const fn bank_of(bank: &'static [u8]) -> &'static [u8] {
 pub mod fight {
     include!("../../../data/hornet3_fsm3.rs");
     pub const SLOT: usize = 0;
-    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, polys: &POLYS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 /// `Corpse Hornet 1`: what the death effects spawn. Its first state writes `hornet1Defeated`, its last sends `HORNET LEAVE`.
 pub mod corpse {
     include!("../../../data/hornet_corpse3_fsm3.rs");
     pub const SLOT: usize = 1;
-    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
+    pub static DATA: super::Data = super::Data { bank: super::bank_of(&BANK), slot: SLOT, ents: &ENTS, polys: &POLYS, owners: &OWNERS, clips: &CLIPS, ent_lib: &ENT_LIB, defaults: &DEFAULT_CLIPS, runtime: RUNTIME_BYTES };
 }
 pub use fight::{ENTS, OWNERS};
 

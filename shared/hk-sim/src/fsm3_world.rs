@@ -36,6 +36,8 @@ pub mod flag {
     pub const PLAYED: u8 = 32;
     /// The object has a Rigidbody2D: its velocity moves it (the boss's own body is the terrain solver's, handle 0).
     pub const BODY: u8 = 64;
+    /// The collider is a CircleCollider2D: the box is the circle's 2r square and the overlap tests are round.
+    pub const ROUND: u8 = 128;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

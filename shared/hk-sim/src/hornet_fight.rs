@@ -235,13 +235,14 @@ impl Fight {
     #[cfg_attr(target_arch = "mips", optimize(size))]
     /// The Knight against every trigger volume of the tree: entered, inside, left, as Unity's callbacks give them.
     fn update_triggers(&mut self, hero_body: [i32; 4]) {
+        let polys = self.boss.data().polys;
         let w = &mut self.boss.world;
         for i in 0..w.n {
             let live = {
                 let e = &w.ent[i as usize];
                 e.on(flag::TRIGGER) && e.on(flag::COLLIDER) && w.active_in_hierarchy(i)
             };
-            let now = live && overlap(world_box(w, i), hero_body);
+            let now = live && touches(w, i, polys, hero_body);
             let was = self.inside & (1 << i) != 0;
             let mut t = 0;
             if now && !was {
@@ -502,13 +503,14 @@ impl Fight {
     #[cfg_attr(target_arch = "mips", optimize(size))]
     /// Every active DamageHero object of the tree against the Knight.
     fn hurt_hero(&mut self, hero_body: [i32; 4], sink: &mut impl FnMut(Effect)) {
+        let polys = self.boss.data().polys;
         let w = &self.boss.world;
         for i in 0..w.n {
             let e = &w.ent[i as usize];
             if e.damage == 0 || !e.on(flag::COLLIDER) || !w.active_in_hierarchy(i) {
                 continue;
             }
-            if overlap(world_box(w, i), hero_body) {
+            if touches(w, i, polys, hero_body) {
                 sink(Effect::HeroHurt { damage: e.damage, from_x: w.world_of(i).0[0] });
                 return;
             }
@@ -682,6 +684,35 @@ fn world_box(w: &crate::fsm3_world::World, i: u8) -> [i32; 4] {
 }
 
 #[cfg_attr(target_arch = "mips", optimize(size))]
+/// Object `i`'s collider against the world box `b` (the Knight's body): a polygon collider as its polygon, a circle as a
+/// circle, any other as its box. The box bounds the shape, so it rejects first. Rotation is ignored, as `world_box` does.
+fn touches(w: &crate::fsm3_world::World, i: u8, polys: &[(u8, &[[i32; 2]])], b: [i32; 4]) -> bool {
+    let bx = world_box(w, i);
+    if !overlap(bx, b) {
+        return false;
+    }
+    if w.ent[i as usize].on(flag::ROUND) {
+        // The nearest point of `b` to the centre within the radius. Unity scales a circle by its larger axis; the boss
+        // trees' circles sit under uniform scales, so the box's width is the diameter.
+        let c = [(bx[0] + bx[2]) / 2, (bx[1] + bx[3]) / 2];
+        let r = (bx[2] - bx[0]) / 2;
+        let (dx, dy) = (c[0].clamp(b[0], b[2]) - c[0], c[1].clamp(b[1], b[3]) - c[1]);
+        return psx_math::Wide::mul(dx, dx).mul_add(dy, dy).mul_sub(r, r).is_negative();
+    }
+    let Some(&(_, poly)) = polys.iter().find(|p| p.0 == i) else {
+        return true;
+    };
+    // Mirroring is a negative world scale: the points flip with it, as the box's offset does.
+    let (pos, scale, _) = w.world_of(i);
+    let mut pts = [[0i32; 2]; 16];
+    let n = poly.len().min(16);
+    for (q, p) in pts.iter_mut().zip(&poly[..n]) {
+        *q = [pos[0] + mul(p[0], scale[0]), pos[1] + mul(p[1], scale[1])];
+    }
+    crate::combat::polygon_hits_box(&pts[..n], b)
+}
+
+#[cfg_attr(target_arch = "mips", optimize(size))]
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
@@ -689,4 +720,106 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
 #[cfg_attr(target_arch = "mips", optimize(size))]
 fn mul(a: i32, b: i32) -> i32 {
     psx_math::int32::mul_shr_i32(a, b, 16)
+}
+
+#[cfg(test)]
+mod collider_tests {
+    //! Hornet's polygon and circle colliders against the Knight's body box, at places the original's shapes do and do not
+    //! reach. Distances are hundredths of a unit from Hornet's origin (handle 0), which stands at (10, 10).
+    use super::*;
+    use crate::fsm3_world::World;
+
+    const NEEDLE: u8 = 7;
+    const SPHERE_RANGE: u8 = 4;
+    const SPHERE_BALL: u8 = 9;
+    const A_DASH_RANGE: u8 = 11;
+    const HIT_GDASH: u8 = 17;
+    const HIT_ADASH: u8 = 18;
+    const AT: i32 = 10 * ONE;
+
+    fn c(v: i32) -> i32 {
+        v * ONE / 100
+    }
+    /// Hornet facing left (her sprite's own way, scale +1) or right (mirrored, scale -1).
+    fn world(mirrored: bool) -> World {
+        let mut w = World::new();
+        w.load(&fight::ENTS);
+        w.ent[0].pos = [AT, AT, 0];
+        w.ent[0].scale[0] = if mirrored { -ONE } else { ONE };
+        w
+    }
+    /// The Knight's body, half a unit wide and a unit and a half tall, its lower left corner at (x, y) from Hornet.
+    fn knight(x: i32, y: i32) -> [i32; 4] {
+        [AT + c(x), AT + c(y), AT + c(x + 50), AT + c(y + 150)]
+    }
+    fn hits(mirrored: bool, h: u8, body: [i32; 4]) -> bool {
+        touches(&world(mirrored), h, fight::DATA.polys, body)
+    }
+
+    #[test]
+    fn the_table_carries_the_shapes() {
+        let handles = fight::POLYS.map(|p| p.0);
+        assert_eq!(handles, [NEEDLE, A_DASH_RANGE, HIT_GDASH, HIT_ADASH]);
+        assert_eq!(fight::POLYS[1].1.len(), 8);
+        for h in [SPHERE_RANGE, SPHERE_BALL] {
+            assert!(fight::ENTS[h as usize].flags & flag::ROUND != 0);
+        }
+        for h in [NEEDLE, SPHERE_BALL, HIT_GDASH, HIT_ADASH] {
+            assert_eq!(fight::ENTS[h as usize].damage, 1);
+            assert!(fight::ENTS[h as usize].box_size[0] > 0);
+        }
+    }
+
+    #[test]
+    fn needle_reaches_the_way_she_faces() {
+        // The needle runs from her hand (x 0.94) to its point (x -1.54), at chest height.
+        assert!(hits(false, NEEDLE, knight(-150, -75)));
+        assert!(!hits(false, NEEDLE, knight(100, -75)));
+        assert!(hits(true, NEEDLE, knight(100, -75)));
+        assert!(!hits(true, NEEDLE, knight(-150, -75)));
+        // Above the thin point: inside the needle's box, outside the needle.
+        assert!(!hits(false, NEEDLE, knight(-150, 5)));
+        assert!(hits(false, NEEDLE, knight(-150, -10)));
+    }
+
+    #[test]
+    fn dash_hitboxes_reach_low_and_in_front() {
+        // Ground dash: a sliver from x -0.33 to -2.15 at y -0.67 to -0.91.
+        assert!(hits(false, HIT_GDASH, knight(-150, -120)));
+        assert!(!hits(false, HIT_GDASH, knight(100, -120)));
+        assert!(hits(true, HIT_GDASH, knight(100, -120)));
+        assert!(!hits(false, HIT_GDASH, knight(-150, 0)));
+        // Air dash: the same sliver half a unit higher.
+        assert!(hits(false, HIT_ADASH, knight(-150, -70)));
+        assert!(!hits(false, HIT_ADASH, knight(-150, -200)));
+        assert!(hits(true, HIT_ADASH, knight(100, -70)));
+        assert!(!hits(true, HIT_ADASH, knight(-150, -70)));
+    }
+
+    #[test]
+    fn spheres_are_round() {
+        // The ball: radius 2.53 about (-0.06, -0.28). Level with the centre it reaches 2.47 to the right and 2.59 to the
+        // left; mirrored the other way round.
+        assert!(hits(false, SPHERE_BALL, knight(245, -100)));
+        assert!(!hits(false, SPHERE_BALL, knight(250, -100)));
+        assert!(hits(true, SPHERE_BALL, knight(250, -100)));
+        // A corner 2.12 away on the diagonal is inside; 2.83 away is not, though the circle's square still covers it.
+        assert!(hits(false, SPHERE_BALL, knight(144, 122)));
+        assert!(!hits(false, SPHERE_BALL, knight(194, 172)));
+        // The range: radius 3.43 about the same centre.
+        assert!(hits(false, SPHERE_RANGE, knight(224, 202)));
+        assert!(!hits(false, SPHERE_RANGE, knight(244, 222)));
+    }
+
+    #[test]
+    fn air_dash_range_leaves_out_above_and_below() {
+        // Two wedges out to the sides; straight above and straight below are left out, though the box covers them.
+        assert!(hits(false, A_DASH_RANGE, knight(1500, -1000)));
+        assert!(hits(false, A_DASH_RANGE, knight(-1500, 500)));
+        assert!(!hits(false, A_DASH_RANGE, knight(-25, 1000)));
+        assert!(!hits(false, A_DASH_RANGE, knight(-25, -1500)));
+        // Its right edge is 26.4 out at y -20, its left 25.2: mirrored, a Knight 25.6 to the right is outside.
+        assert!(hits(false, A_DASH_RANGE, knight(2560, -2050)));
+        assert!(!hits(true, A_DASH_RANGE, knight(2560, -2050)));
+    }
 }
