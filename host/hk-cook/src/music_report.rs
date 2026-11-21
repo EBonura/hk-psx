@@ -29,9 +29,17 @@ use std::path::Path;
 pub const RESIDENT_ATMOS_CHANNELS: [i64; 8] = [0, 1, 4, 5, 7, 9, 10, 15];
 /// Cook rate per resident channel unless RESIDENT_ATMOS_RATES names one.
 pub const DEFAULT_ATMOS_RATE: i64 = 4000;
-/// The cook rate for one resident atmos channel (no channel earns its own today).
-pub fn atmos_rate(_channel: i64) -> i64 {
-    DEFAULT_ATMOS_RATE
+/// Channels cooked at their own rate. Channel 4 is `cave_noises` (43.7 s, held in
+/// 41 Cave rooms): 99% of its energy is under 637 Hz, and 2,800 Hz was chosen by
+/// listening to 4,000, 2,800 and 2,000. Frees about 30 KB of SPU RAM in every room
+/// that holds it.
+pub const RESIDENT_ATMOS_RATES: [(i64, i64); 1] = [(4, 2800)];
+/// The cook rate for one resident atmos channel.
+pub fn atmos_rate(channel: i64) -> i64 {
+    RESIDENT_ATMOS_RATES
+        .iter()
+        .find(|&&(c, _)| c == channel)
+        .map_or(DEFAULT_ATMOS_RATE, |&(_, r)| r)
 }
 
 fn truthy(v: &Value, key: &str) -> Result<bool> {
@@ -755,6 +763,11 @@ pub fn cook(root: &Path, source: &Source, output: &Path) -> Result<()> {
         let mut rates = vec![(22050, 2), (11025, 1)];
         if ambience.contains(sid) {
             rates.extend([(10000, 1), (8000, 1), (4000, 1)]);
+            for (_, r) in RESIDENT_ATMOS_RATES {
+                if !rates.contains(&(r, 1)) {
+                    rates.push((r, 1));
+                }
+            }
         }
         tasks.extend(
             rates
