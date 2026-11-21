@@ -563,19 +563,20 @@ impl Runner {
     /// deterministic policy, not established original execution order. A
     /// reference-driven caller can invoke the two callbacks in observed order.
     ///
-    /// Always inlined: called out of line (as LLVM chose once the voice pool grew its callers), its
-    /// `Actions` result went through memcpy on every runner tick (hk-fix 2026-11-21: +4.4M instructions
-    /// over the c37-stand window).
+    /// Always inlined, and both halves write into the one `Actions`: called out of line, or through
+    /// `step_walker`/`step_swipe` returning their own `Actions`, the result went through memcpy on every
+    /// runner tick (hk-fix 2026-11-21: about +10M cycles over the c37-stand window).
     #[inline(always)]
     pub fn step(
         &mut self,
         senses: Senses,
         mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
     ) -> Actions {
-        let mut out = self.step_walker(senses, &mut choose);
-        for action in self.step_swipe(senses, &mut choose).iter() {
-            out.push(action);
+        let mut out = Actions::new();
+        if self.walker != Walker::Dead {
+            self.walker_callback(senses, &mut choose, &mut out);
         }
+        self.swipe_into(senses, &mut choose, &mut out);
         out
     }
     /// Walker Update only. Call once per 60 Hz tick, including while stopped,
@@ -598,11 +599,21 @@ impl Runner {
     pub fn step_swipe(
         &mut self,
         senses: Senses,
-        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
+        choose: impl FnMut(Wait, [u16; 2]) -> u16,
     ) -> Actions {
         let mut out = Actions::new();
+        self.swipe_into(senses, choose, &mut out);
+        out
+    }
+    #[inline(always)]
+    fn swipe_into(
+        &mut self,
+        senses: Senses,
+        mut choose: impl FnMut(Wait, [u16; 2]) -> u16,
+        out: &mut Actions,
+    ) {
         if self.swipe == Swipe::Dead {
-            return out;
+            return;
         }
         let complete = self.animation.is_some() && senses.completed == self.animation;
         if let Attack::Gas { delay, .. } = self.params.attack {
@@ -610,17 +621,17 @@ impl Runner {
                 self.gas_wait = choose(Wait::Delay, [delay, 0]).min(delay);
             }
             // Reset (StartWalker, then the Ready checks at once) is the one step that needs the Walker's draws.
-            if self.step_gas(&mut out) {
+            if self.step_gas(out) {
                 if matches!(self.walker, Walker::StoppedForAttack | Walker::Paused | Walker::Waiting) {
-                    self.walk(&mut choose, &mut out);
+                    self.walk(&mut choose, out);
                 }
                 self.turn_cooldown = 0;
                 self.swipe = Swipe::Ready;
-                self.check_ready(senses, &mut out);
+                self.check_ready(senses, out);
             } else if self.swipe == Swipe::Ready {
-                self.check_ready(senses, &mut out);
+                self.check_ready(senses, out);
             }
-            return out;
+            return;
         }
         if let Attack::Leap {
             jump_speed_y,
@@ -642,69 +653,68 @@ impl Runner {
                 }
                 Swipe::Lunge if senses.grounded => {
                     self.swipe = Swipe::Cooldown;
-                    self.play(Clip::Cooldown, &mut out);
-                    Self::vx(&mut out, 0);
+                    self.play(Clip::Cooldown, out);
+                    Self::vx(out, 0);
                 }
                 Swipe::Cooldown if complete => {
                     self.swipe = Swipe::Idle;
-                    self.play(Clip::Idle, &mut out);
+                    self.play(Clip::Idle, out);
                     self.wait = idle_ticks;
                 }
                 Swipe::Idle => {
                     self.wait = self.wait.saturating_sub(1);
                     if self.wait == 0 {
                         // Reset: Idle clip and StartWalker.
-                        self.play(Clip::Idle, &mut out);
+                        self.play(Clip::Idle, out);
                         if matches!(
                             self.walker,
                             Walker::StoppedForAttack | Walker::Paused | Walker::Waiting
                         ) {
-                            self.walk(&mut choose, &mut out);
+                            self.walk(&mut choose, out);
                         }
                         self.turn_cooldown = 0;
                         self.swipe = Swipe::Ready;
-                        self.check_ready(senses, &mut out);
+                        self.check_ready(senses, out);
                     }
                 }
-                Swipe::Ready => self.check_ready(senses, &mut out),
+                Swipe::Ready => self.check_ready(senses, out),
                 _ => {}
             }
-            return out;
+            return;
         }
         match self.swipe {
             Swipe::Anticipate if complete => {
                 self.swipe = Swipe::Lunge;
                 out.push(Action::DustStart);
-                self.play(Clip::Lunge, &mut out);
-                Self::vx(&mut out, self.facing() * self.params.lunge_speed);
+                self.play(Clip::Lunge, out);
+                Self::vx(out, self.facing() * self.params.lunge_speed);
             }
             Swipe::Lunge => {
                 if complete {
                     self.swipe = Swipe::Cooldown;
                     out.push(Action::DustStop);
-                    self.play(Clip::Cooldown, &mut out);
-                    Self::vx(&mut out, 0);
+                    self.play(Clip::Cooldown, out);
+                    Self::vx(out, 0);
                 } else {
-                    Self::vx(&mut out, self.facing() * self.params.lunge_speed);
+                    Self::vx(out, self.facing() * self.params.lunge_speed);
                 }
             }
             Swipe::Cooldown if complete => {
                 self.swipe = Swipe::Idle;
-                self.play(Clip::Idle, &mut out);
+                self.play(Clip::Idle, out);
                 self.wait = 15;
             }
             Swipe::Idle => {
                 self.wait = self.wait.saturating_sub(1);
                 if self.wait == 0 {
-                    self.reset(senses, &mut choose, &mut out);
+                    self.reset(senses, &mut choose, out);
                 }
             }
             Swipe::Ready => {
-                self.check_ready(senses, &mut out);
+                self.check_ready(senses, out);
             }
             _ => {}
         }
-        out
     }
     /// One tick of the gas attack's timers. True when `Reset` is due (the caller restarts the Walker and checks Ready).
     #[inline(never)]
