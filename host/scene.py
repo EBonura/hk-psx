@@ -163,6 +163,14 @@ class Scene:
         return r
     def point(self,gid,x=0,y=0,z=0):
         m=self.world(self.go_transform[gid]);return tuple(sum(m[i][j]*v for j,v in enumerate([x,y,z,1])) for i in range(3))
+    def ancestor_gos(self,gid):
+        """The GameObjects above `gid` in the transform tree, nearest first."""
+        out=[];tid=self.go_transform.get(gid)
+        while tid in self.transforms:
+            tid=self.transforms[tid]['m_Father']['m_PathID']
+            if not tid or tid not in self.transforms:break
+            out.append(self.transforms[tid]['m_GameObject']['m_PathID'])
+        return out
     @lru_cache(None)
     def active(self,gid):
         # An object whose GameObject could not be read (see self.errors) or that

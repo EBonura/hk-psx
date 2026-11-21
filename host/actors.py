@@ -1056,7 +1056,9 @@ def hazard_sources(sc, bounds=None):
         if typ != 'DamageHero' or not tree['m_Enabled'] or tree['damageDealt'] <= 0:
             continue
         gid = tree['m_GameObject']['m_PathID']
-        if gid in health_gos or not sc.active(gid):
+        # An enemy's own hurt boxes (Hornet's Needle under Hornet Boss 1) move and
+        # switch with it; baked as scenery they hurt at the spawn point all fight.
+        if gid in health_gos or any(a in health_gos for a in sc.ancestor_gos(gid)) or not sc.active(gid):
             continue
         for collider in _colliders(sc, gid, _component_records(sc, gid)):
             if 'bounds' not in collider:
