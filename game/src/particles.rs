@@ -372,9 +372,7 @@ impl Pool {
                     // Source LimitVelocity.dampen is a fractional reduction above speed1;
                     // native substep/delta scaling is not exposed in the serialized data.
                     let limited = speed - mulq(speed - ONE, style.dampen);
-                    for v in &mut p.velocity {
-                        *v = break_effects::scale_velocity(*v, limited, speed);
-                    }
+                    damp_velocity(&mut p.velocity, limited, speed);
                 }
             }
             for j in 0..3 {
@@ -528,6 +526,47 @@ fn length_squared(v: [i32; 3]) -> psx_math::WideU {
 fn length3(v: [i32; 3]) -> i32 {
     length_squared(v).isqrt() as i32
 }
+/// Each component times `limited / speed`, truncated toward zero: the same
+/// result as `break_effects::scale_velocity`, bit for bit.
+///
+/// A burst particle above the speed limit almost always overflows 32 bits in
+/// `v * limited`, so scale_velocity paid one software 64/32 divide per
+/// component. Here the only wide divide is the Q31 ratio, once per particle.
+/// `|v| * ratio >> 31` then lands on the exact quotient or one below it
+/// (the ratio's floor loses under one part in 2^31 and `|v| <= 2^31`), and the
+/// remainder `|v| * limited - q * speed` tells which: it is below `2 * speed`,
+/// so it fits 32 bits and wrapping word multiplies compute it exactly.
+fn damp_velocity(velocity: &mut [i32; 3], limited: i32, speed: i32) {
+    if speed <= 0 || limited < 0 || limited > speed {
+        // A dampen outside [0, ONE] (not in the cooked styles) can push the
+        // ratio past one; keep the general path for it.
+        for v in velocity {
+            *v = break_effects::scale_velocity(*v, limited, speed);
+        }
+        return;
+    }
+    let (limited, speed) = (limited as u32, speed as u32);
+    // floor(limited * 2^31 / speed) <= 2^31 because limited <= speed.
+    let ratio = psx_math::WideU::from_parts(limited >> 1, limited << 31)
+        .div_rem_u32(speed)
+        .0
+        .low();
+    for v in velocity {
+        let magnitude = v.unsigned_abs();
+        let mut q = psx_math::WideU::mul(magnitude, ratio).shr_u32(31);
+        let rest = magnitude
+            .wrapping_mul(limited)
+            .wrapping_sub(q.wrapping_mul(speed));
+        if rest >= speed {
+            q += 1;
+        }
+        *v = if *v < 0 {
+            q.wrapping_neg() as i32
+        } else {
+            q as i32
+        };
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -570,6 +609,73 @@ mod tests {
             p.angle = (p.angle + style.rotation / 60).rem_euclid(360 * ONE);
         }
         pool.active_count = pool.particles.iter().flatten().count() as u32;
+    }
+    fn wide_scale(v: i32, limited: i32, speed: i32) -> i32 {
+        (v as i64 * limited as i64 / speed as i64) as i32
+    }
+    fn damped(v: [i32; 3], limited: i32, speed: i32) -> [i32; 3] {
+        let mut out = v;
+        damp_velocity(&mut out, limited, speed);
+        out
+    }
+    /// The shared ratio must not cost a single LSB anywhere a legacy particle
+    /// can be: speeds just above the ONE limit up to far past the cooked
+    /// styles' launch speeds, every dampen in [0, ONE], components of either
+    /// sign up to the full speed. An error bound of zero is the bar because
+    /// the pool test below compares the whole simulation for equality.
+    #[test]
+    fn damped_velocity_is_exact_over_the_particle_ranges() {
+        let mut checked = 0u32;
+        for speed in (ONE + 1..=256 * ONE)
+            .step_by(131_071)
+            .chain([ONE + 1, 30 * ONE])
+        {
+            for dampen in (0..=ONE).step_by(4099).chain([1, 19661, ONE]) {
+                let limited = speed - mulq(speed - ONE, dampen);
+                for v in (-speed..=speed)
+                    .step_by(speed as usize / 97)
+                    .chain([-speed, -1, 0, 1, speed])
+                {
+                    let w = speed - v.abs();
+                    let velocity = [v, -w, w / 3];
+                    let expected = velocity.map(|c| wide_scale(c, limited, speed));
+                    assert_eq!(
+                        damped(velocity, limited, speed),
+                        expected,
+                        "{velocity:?} {limited} {speed}"
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked > 300_000, "{checked}");
+        // And anywhere in the domain the helper claims: any component, any
+        // 0 <= limited <= speed, including the ratio's ends and i32::MIN.
+        let mut seed = 0x5eed_1e57u32;
+        for i in 0..200_000 {
+            let speed = (random(&mut seed) & 0x7fff_ffff).max(1) as i32;
+            let limited = match i % 8 {
+                0 => speed,
+                1 => 0,
+                2 => speed - 1,
+                _ => (random(&mut seed) % (speed as u32 + 1)) as i32,
+            };
+            let v = [random(&mut seed) as i32, i32::MIN, i32::MAX];
+            let expected = v.map(|c| wide_scale(c, limited, speed));
+            assert_eq!(
+                damped(v, limited, speed),
+                expected,
+                "{v:?} {limited} {speed}"
+            );
+        }
+        // Outside [0, speed] the general path answers, as before.
+        for (limited, speed) in [(-ONE, 2 * ONE), (3 * ONE, 2 * ONE), (ONE, -ONE)] {
+            let v = [7 * ONE, -9 * ONE, 1];
+            assert_eq!(
+                damped(v, limited, speed),
+                v.map(|c| wide_scale(c, limited, speed))
+            );
+        }
     }
     #[test]
     fn legacy_full_pool_matches_wide_reference_through_expiry_and_scene_changes() {
