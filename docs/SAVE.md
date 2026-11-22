@@ -41,8 +41,8 @@ one store of named fields. What persists, and who owns it in a session:
 | Great Door hits | (scene state) | `great_door` | record header |
 | The Shade owed | `shadeScene`, `geoPool`, ... | `shade` | record header |
 | Abilities, map and mapper, boss flags, `shaman` | PlayerData bools and ints | `player_data` (via `persist::player`) | PlayerData ids 0 to 31 |
-| `fireballLevel`, `quakeLevel`, `screamLevel`, the area title | PlayerData ints | `player_data` (via `persist::level`) | ids 32 to 35 |
-| The cooked FSMs' fields (`seenFocusTablet`, `currentArea`, ...) | PlayerData, by name | `player_data`; `script.rs` fills the kernel's view before a tick and writes it back after | ids 36 to 42 |
+| `fireballLevel`, `quakeLevel`, `screamLevel` | PlayerData ints | `player_data` (via `persist::level`) | ids 32 to 34 |
+| The cooked FSMs' fields (`seenFocusTablet`, `currentArea`, `openedMapperShop`, ...) | PlayerData, by name | `player_data`; `script.rs` fills the kernel's view before a tick and writes it back after; the title card writes `currentArea` and Cornifer's panel `openedMapperShop` too | ids 36 to 42 |
 | Sly's bools and counters, `maxHealthBase`, `MPReserveMax`, keys, eggs | PlayerData | `shop::State` | ids 43 to 60 |
 | Charm board: `gotCharm_N`, `equippedCharm_N`, `charmSlots`, `canOvercharm` | PlayerData | `charms::State` | ids 61 to 66 |
 | NPC conversation cursors (two bits per NPC) | the NPCs' own PlayerData bools | `dialogue` | id 67 (`port.npcCursors`) |
@@ -65,18 +65,27 @@ cooked name with no row fails the guest build). Names starting `port.` are the p
 a field that retires keeps its id. Every value is an `i32`, a bool 0 or 1. The first 32 ids are HKS5's
 `persist` bits at the same numbers (the cooked pickups name an ability by its bit, and `HK_WORLD_PLAYER`, which
 routes pin, is still published as that bitmask); 9 to 15 and 27 to 31 are reserved for the branches that use
-them, 24 is `shaman` (HKS5's bits 24 and 25), 25 is retired.
+them, 24 is `shaman` (HKS5's bits 24 and 25); 22, 25 and 35 are retired (below).
 
 Adding a field: append a row to `NAMES` (and a default in `player_data::default` if it is not 0). Nothing else
 changes. A record written before the field existed has no entry for it and reads it as its default; every
 other field reads as written. No version bump, no fixture rewrite.
 
-Two pairs are the same source field kept apart on purpose, so that this step changes no behaviour:
-`openedMapperShop` (id 39, written by the Crossroads_06 FSM) and `port.openedMapperShop` (id 22, Cornifer's
-hand-coded panel; `HK_WORLD_PLAYER` bit 22); and `currentArea` (id 37, a map zone the Town's `Area Resetter`
-writes) against `port.areaTitle` (id 35, `title_card.rs`'s title index plus one). Merging the first changes
-`HK_WORLD_PLAYER` and `HK_SCRIPT_FLAGS` on routes (the `fungus1-31-bench` fixture holds 1 in the script's copy
-and 0 in Cornifer's); the second needs one encoding chosen.
+Until the merge the port kept two source fields twice. Cornifer's hand-coded panel wrote its own
+`openedMapperShop` (id 22, `HK_WORLD_PLAYER` bit 22) beside the one the Crossroads_06 FSM writes (id 39), and
+the title card kept its area as a title index plus one (id 35) beside `currentArea` (id 37), which the Town's
+`Area Resetter` FSM writes. Both are one field now, as in the source:
+
+- `openedMapperShop` is id 39 for the FSM and for Cornifer (`persist::OPENED_MAPPER_SHOP`). `HK_WORLD_PLAYER`
+  still publishes it as bit 22, so the bit is now also set by the Crossroads_06 FSM, and `HK_SCRIPT_FLAGS`
+  bit 3 by Cornifer's panel.
+- `currentArea` holds the AreaTitleController `areaID` (`title_card::AREA_IDS`, read by host/title_cards.py
+  from the constructor's area list: Dirtmouth 1, Crossroads 2, Greenpath 3), which is what
+  `AreaTitleController.Finish` compares it with. The title card reads and writes it, so the Area Resetter's
+  -1 now re-arms the next area's card, and `HK_SCRIPT_FLAGS` bit 1 is set once any card has announced an area.
+- `PlayerData::fold_retired` carries an older record across on load: Cornifer's bit is ORed into
+  `openedMapperShop`, and a title-card area overrides `currentArea` with that title's `areaID` (it is what the
+  card last announced). The retired ids read zero afterwards.
 
 ### HKS6 layout
 
@@ -105,10 +114,17 @@ rewritten on the card until the next bench save writes HKS6:
 - the script reserve goes to the fields the running bank names in those slots, only when its field-list
   identity is this bank's, as before; otherwise it is dropped, as before;
 - HKS5's `persist` bits and levels go to ids 0 to 35; HKS4's False Knight in the reserve's top two slots becomes
-  the two bits and the arena's item, as HKS5 did.
+  the two bits and the arena's item, as HKS5 did;
+- then the retired copies are folded into the merged fields (above).
+
+`save::load` and `save::migrate` run once, at boot, so they ride the title's code module (host/code_modules.py)
+rather than resident RAM: `main` reads the chosen profile under the loading screen, before `title::close`.
 
 `tests/save_runtime.rs` holds the HKS5 guest's reader unchanged as the oracle and loads every record in every
-`tools/cards/*.mcd` fixture both ways, requiring the same state for every owner, then the HKS6 resave of it.
+`tools/cards/*.mcd` fixture both ways, requiring the same state for every owner apart from the merge, then
+the HKS6 resave of it. The merge changes the two records of `fungus1-31-bench.mcd` and nothing else (pinned
+as `MERGE_CHANGES`): `HK_WORLD_PLAYER` bit 22 becomes 1 from the script's `openedMapperShop`, and
+`currentArea` goes from -1 to 3 (copy 1, Greenpath) and to 2 (copy 0, Crossroads) from the title card's area.
 At this commit that is 58 cards and 73 records (8 HKS4, 65 HKS5); 25 of the HKS5 records carry an older bank's
 script identity (`4201821659`) whose values the HKS5 guest already dropped, and still do.
 `tools/migrate_cards.py` now stops at HKS5, the last append-only format, and `tools/seed_card.py` edits HKS5
