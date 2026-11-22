@@ -180,25 +180,13 @@ impl Nail {
         player: &Player,
         cut: &mut u32,
     ) -> u32 {
-        if !self.hitting(p) {
+        if !(3..=16).contains(&polygons[self.kind as usize].len()) {
             return 0;
         }
-        let points = polygons[self.kind as usize];
-        if !(3..=16).contains(&points.len()) {
+        let Some(hit) = crate::HeroHit::nail(self, p, polygons, player, 0) else {
             return 0;
-        }
-        let mut polygon = [[0; 2]; 16];
-        for (dst, src) in polygon.iter_mut().zip(points) {
-            // The original Knight collection faces left at positive scale X.
-            *dst = [player.x - src[0] * self.facing(player), player.y + src[1]];
-        }
-        let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-        for point in &polygon[..points.len()] {
-            bounds[0] = bounds[0].min(point[0]);
-            bounds[1] = bounds[1].min(point[1]);
-            bounds[2] = bounds[2].max(point[0]);
-            bounds[3] = bounds[3].max(point[1]);
-        }
+        };
+        let (polygon, bounds) = (hit.points(), hit.bounds);
         let mut changed = 0;
         for (i, g) in grass.iter().take(32).enumerate() {
             let bit = 1_u32 << i;
@@ -209,7 +197,7 @@ impl Nail {
                 && bounds[2] >= g.bounds[0]
                 && bounds[1] <= g.bounds[3]
                 && bounds[3] >= g.bounds[1]
-                && polygon_hits_box(&polygon[..points.len()], g.bounds)
+                && polygon_hits_box(polygon, g.bounds)
             {
                 changed |= bit;
             }
