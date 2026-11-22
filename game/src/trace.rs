@@ -103,7 +103,7 @@ pub fn publish(game: &Game, scene: usize, region: usize) {
     hero |= ((game.vitals.invulnerable_ticks > 0) as u32) << 7 | (p.wall_locked as u32) << 8;
     let ball = game
         .cast
-        .ball_bounds(crate::FIREBALL_PARAMS)
+        .ball_bounds(crate::hero_params::current().fireball)
         .map(|_| (game.cast.ball.x, game.cast.ball.y));
     unsafe {
         let t = &mut *(&raw mut HK_TRACE);

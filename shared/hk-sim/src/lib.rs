@@ -69,6 +69,8 @@ pub use spell::{Cast, CastPhase, Fireball, FireballParams};
 mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
+mod hero_params;
+pub use hero_params::HeroParams;
 pub mod hero_attack;
 pub use hero_attack::{HeroAttacks, HeroHit};
 pub mod persistent;

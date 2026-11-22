@@ -2,28 +2,31 @@
 //! Native compile/execution of the guest enemy module with hardware-only drawing
 //! stubbed. Fixtures exercise gameplay rather than mirroring GPU internals.
 use hk_sim::*;
-// cheats composes the equipped charms into the live parameters and reconciles
+// cheats asks the board what a hit costs and charges, and reconciles
 // the all-charms grant. The real module links the cooked catalogue this harness
 // has no manifest directory for, and an empty board composes to the base
 // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
 // the real one.
 mod charms {
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
-    }
     pub fn grant_all(_: bool) {}
     pub fn on_damage(_: &mut hk_sim::Vitals, _: hk_sim::VitalParams) {}
     pub fn damage_taken(damage: u16) -> u16 {
         damage
     }
 }
-// And the shop's half of PlayerData, which `cheats::params` composes under
-// the charms. The real module `include!`s the cooked stock relative to its own
-// crate, which this one is not, and a shop nobody has visited composes to the
-// base anyway; tests/shop_runtime.rs exercises the real one.
-mod shop {
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
+// The cached live parameters `cheats::params` reads: the cooked base, the
+// shop, the charms, then the cheats. The real module (game/src/hero_params.rs)
+// composes the shop and the board, which are not linked here, and an empty
+// board in a shop nobody visited composes to the base anyway, so only the
+// cheats are applied; tests/charms_runtime.rs exercises the real one.
+mod hero_params {
+    pub fn vitals(cheats: crate::cheats::Settings) -> hk_sim::VitalParams {
+        let mut p = crate::VITAL_PARAMS;
+        cheats.override_vitals(&mut p);
+        p
+    }
+    pub fn nail_response() -> hk_sim::NailResponseParams {
+        crate::NAIL_RESPONSE_PARAMS
     }
 }
 #[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
@@ -954,7 +957,7 @@ fn a_tile_outside_the_view_costs_neither_a_quad_nor_a_key() {
 /// with the nail as its only possible entry, at the live damage.
 fn slash(n: &Nail, polygons: [&[[i32; 2]]; 4], p: &Player, settings: cheats::Settings) -> HeroAttacks {
     let mut attacks = HeroAttacks::new();
-    let damage = settings.params(VITAL_PARAMS).nail_damage;
+    let damage = settings.params().nail_damage;
     if let Some(hit) = HeroHit::nail(n, no_attack(), polygons, p, damage) {
         attacks.push(hit);
     }
@@ -2863,7 +2866,7 @@ fn gruz_mother_sleeps_until_hit_in_range_and_wakes_into_a_sealed_arena() {
     let (_, y, hp) = w.actor_state(0, GRUZ_AT.source_id).unwrap();
     assert_eq!(
         hp,
-        90 - cheats::Settings::new().params(VITAL_PARAMS).nail_damage as i16
+        90 - cheats::Settings::new().params().nail_damage as i16
     );
     assert!(y > 4 * ONE, "`Wake` lifts it at 2.5 a second");
     battle_gates::EVENTS.with(|e| {

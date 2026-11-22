@@ -5138,7 +5138,7 @@ impl Events {
 /// NailSlash's answer to a strike that reached a target: the recoil and pogo the Knight takes.
 fn nail_answer(vitals: &Vitals, response: &mut hk_sim::NailResponse, attacks: &HeroAttacks, player: &mut Player) {
     if let (true, Some(hit)) = (vitals.can_control(), attacks.slash()) {
-        response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
+        response.contact(crate::hero_params::nail_response(), hit.kind, hit.facing, player);
     }
 }
 /// Waves started, members landed and members counted dead by a waves arena.
@@ -6351,7 +6351,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                            vitals.gain_soul_on_nail_hit(cheats.params());
                         }
                     }
                     if hit == Hit::Killed {
@@ -6419,7 +6419,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                            vitals.gain_soul_on_nail_hit(cheats.params());
                         }
                     }
                 }
@@ -6487,7 +6487,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                            vitals.gain_soul_on_nail_hit(cheats.params());
                             // The nail's centre is where hkref's streaks start (`boss_fx::HIT`).
                             let at = attack.centre();
                             crate::boss_fx::request(crate::boss_fx::HIT, at[0], at[1], actor.scene);
@@ -6564,9 +6564,9 @@ impl EnemyWorld {
                 // calls BounceHigh for a down-slash instead of Bounce.
                 if vitals.can_control() && !actor.buried() {
                     if shell.is_some() && hit.pogo() {
-                        response.bounce_high(crate::NAIL_RESPONSE_PARAMS, player);
+                        response.bounce_high(crate::hero_params::nail_response(), player);
                     } else {
-                        response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
+                        response.contact(crate::hero_params::nail_response(), hit.kind, hit.facing, player);
                     }
                 }
                 // `HealthManager::Hit` tests `IsBlockingByDirection` after the
@@ -6688,7 +6688,7 @@ impl EnemyWorld {
                         // Through the live parameter stack, like the damage
                         // above it: SoulGain adds Soul Catcher and Soul Eater
                         // to the same 11 the cooked base carries.
-                        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                        vitals.gain_soul_on_nail_hit(cheats.params());
                         // HealthManager TOOK DAMAGE precedes Recoil's global
                         // horizontal event. RecoilByDirection ignores a request
                         // while already recoiling; accepted damage still reacts.
@@ -6844,7 +6844,7 @@ impl EnemyWorld {
                 if hit.hits(shell) && vitals.can_control() {
                     // The Shell's TinkEffect: `Block Hit v2`.
                     crate::scene_sfx::tink();
-                    response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
+                    response.contact(crate::hero_params::nail_response(), hit.kind, hit.facing, player);
                 }
             }
             // The Acid Flyer's Shell carries its own DamageHero.
@@ -7994,7 +7994,7 @@ pub fn pogo_contact(
             if tinger.is_some() {
                 crate::scene_sfx::tink();
             }
-            response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
+            response.contact(crate::hero_params::nail_response(), hit.kind, hit.facing, player);
             return true;
         }
     }

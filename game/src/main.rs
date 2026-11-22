@@ -77,6 +77,7 @@ mod boss_bank;
 mod boss_hooks;
 mod charms;
 mod cheats;
+mod hero_params;
 mod decor;
 mod dialogue;
 mod dialogue_art;
@@ -527,18 +528,18 @@ fn hero_attacks(
     cheats: &cheats::Settings,
 ) -> HeroAttacks {
     let mut attacks = HeroAttacks::new();
-    if let Some(ball) = cast.ball_bounds(FIREBALL_PARAMS) {
+    let hero = hero_params::get(*cheats);
+    if let Some(ball) = cast.ball_bounds(hero.fireball) {
         attacks.push(HeroHit::spell_box(
             hk_sim::hero_attack::Source::Fireball,
             ball,
-            FIREBALL_PARAMS.damage,
+            hero.fireball.damage,
             cast.ball.facing,
         ));
     }
-    // The live damage composes the shop and the charms; only a live swing pays for it.
-    if nail.hitting(ATTACK_PARAMS) {
-        let damage = cheats.params(VITAL_PARAMS).nail_damage;
-        if let Some(hit) = HeroHit::nail(nail, ATTACK_PARAMS, NAIL_POLYGONS, player, damage) {
+    if nail.hitting(hero.attack) {
+        let damage = hero.vitals.nail_damage;
+        if let Some(hit) = HeroHit::nail(nail, hero.attack, NAIL_POLYGONS, player, damage) {
             attacks.push(hit);
         }
     }
@@ -1051,7 +1052,7 @@ fn main() {
     if gate_tour::active() {
         game.settings.cheats.invincible = true;
     }
-    cheats::publish(game.settings.cheats, VITAL_PARAMS);
+    cheats::publish(game.settings.cheats);
     // Continue: stand at the saved bench with the saved wallet and Great Door hits.
     if let Some(s) = saved {
         game.respawn = Some((s.scene as usize, s.seat, s.facing, s.region as usize));

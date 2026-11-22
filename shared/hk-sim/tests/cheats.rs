@@ -1,13 +1,10 @@
 #![allow(dead_code)] // includes game modules by path and exercises part of each
-                     // cheats composes the equipped charms into the live parameters and reconciles
+                     // cheats asks the board what a hit costs and charges, and reconciles
                      // the all-charms grant. The real module links the cooked catalogue this harness
                      // has no manifest directory for, and an empty board composes to the base
                      // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
                      // the real one.
 mod charms {
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
-    }
     pub fn grant_all(_: bool) {}
     pub fn on_damage(_: &mut hk_sim::Vitals, _: hk_sim::VitalParams) {}
     thread_local! {
@@ -22,13 +19,16 @@ mod charms {
         }
     }
 }
-// And the shop's half of PlayerData, which `cheats::params` composes under
-// the charms. The real module `include!`s the cooked stock relative to its own
-// crate, which this one is not, and a shop nobody has visited composes to the
-// base anyway; tests/shop_runtime.rs exercises the real one.
-mod shop {
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
+// The cached live parameters `cheats::params` reads: the cooked base, the
+// shop, the charms, then the cheats. The real module (game/src/hero_params.rs)
+// composes the shop and the board, which are not linked here, and an empty
+// board in a shop nobody visited composes to the base anyway, so only the
+// cheats are applied; tests/charms_runtime.rs exercises the real one.
+mod hero_params {
+    pub fn vitals(cheats: crate::cheats::Settings) -> hk_sim::VitalParams {
+        let mut p = crate::P;
+        cheats.override_vitals(&mut p);
+        p
     }
 }
 #[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
@@ -117,7 +117,7 @@ fn invincibility_preserves_both_pools_but_keeps_hazard_recovery() {
         (1, 3, 8, false, true)
     );
     assert_eq!(s.hurt(&mut v, P, 1, 1, true, false), Hurt::Ignored);
-    v.finish_hazard_respawn(s.params(P));
+    v.finish_hazard_respawn(s.params());
     assert!(!v.hazard_pending);
     assert_eq!(v.invulnerable_ticks, P.hazard_invulnerable_ticks);
     assert_eq!(s.hurt(&mut v, P, 1, 1, true, false), Hurt::Hazard);
@@ -133,7 +133,7 @@ fn toggles_actions_and_session_resets_have_bounded_independent_effects() {
     v.blue_health = 2;
     s.adjust(3, 1);
     s.apply(off, &mut v, P, Action::None);
-    assert_eq!((v.health, s.params(P).max_health), (9, 9));
+    assert_eq!((v.health, s.params().max_health), (9, 9));
     v.health = 4;
     s.apply(s, &mut v, P, Action::None);
     assert_eq!(v.health, 4, "max masks must not act as invincibility");
@@ -143,7 +143,7 @@ fn toggles_actions_and_session_resets_have_bounded_independent_effects() {
         assert!(s.enabled(row));
     }
     assert_eq!(s.bits(), 15);
-    assert_eq!(s.params(P).nail_damage, 21);
+    assert_eq!(s.params().nail_damage, 21);
     s.adjust(CHEAT_ROWS, 1);
     s.adjust(1, 0);
     assert_eq!(s.bits(), 15);
@@ -199,7 +199,7 @@ fn infinite_soul_keeps_original_focus_timing_and_nine_mask_cap() {
         s.maintain(&mut v, P);
         let e = focus.step(
             f,
-            s.params(P),
+            s.params(),
             FocusInput {
                 held: true,
                 grounded: true,

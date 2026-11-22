@@ -410,6 +410,8 @@ fn publish(s: &State) {
         HK_SHOP_SOUL_RESERVE = u32::from(s.soul_reserve());
         HK_SHOP_FRAGMENTS = u32::from(s.vessel_fragments);
     }
+    // `maxHealthBase` and the reserve feed the cached parameters.
+    crate::hero_params::invalidate();
 }
 pub fn record() -> (u32, [u8; 6]) {
     state().record()
@@ -421,10 +423,10 @@ pub fn pick_up(apply: impl FnOnce(&mut State)) {
     publish(s);
 }
 /// `PlayerData.maxHealthBase` and `MPReserveMax` composed onto the cooked
-/// no-charm parameters. `cheats::Settings::params` calls this ahead of
-/// `charms::vitals`, which is the source's own order: `PlayerData::MaxHealth`
-/// recomputes `maxHealth` as `maxHealthBase` plus the equipped charm bonuses,
-/// so a charm bonus is added to the mask total and never the other way round.
+/// no-charm parameters. `hero_params` calls this ahead of `charms::hero`,
+/// which is the source's own order: `PlayerData::MaxHealth` recomputes
+/// `maxHealth` as `maxHealthBase` plus the equipped charm bonuses, so a charm
+/// bonus is added to the mask total and never the other way round.
 ///
 /// What this does not reproduce: the source keeps the reserve as a second pool
 /// behind `MPCharge`, filling it only once the vessel is full and spending it
@@ -438,9 +440,8 @@ pub fn vitals(base: VitalParams) -> VitalParams {
     player_data(state(), base)
 }
 fn player_data(s: &State, mut base: VitalParams) -> VitalParams {
-    // `params` runs several times a tick, so this stays two field writes and
-    // takes the multiply only on a board that has actually fused a vessel; see
-    // the same note over `charms::compose`.
+    // Composed once per change by `hero_params`; see the note over
+    // `charms::compose` for why that matters.
     base.max_health = u16::from(s.masks);
     if s.vessels != 0 {
         base.max_soul = base.max_soul.saturating_add(s.soul_reserve());

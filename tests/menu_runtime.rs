@@ -61,21 +61,19 @@ pub mod display{
 }
 pub mod ambience{pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((1,v)));}}
 pub mod music{pub fn begin(){super::TRACE.with(|t|t.borrow_mut().music_begins+=1);}pub fn suspend()->bool{true}pub fn tick(){}pub fn stop()->bool{true}pub fn set_fade(_:u8){}pub fn set_volume(v:u8){super::TRACE.with(|t|t.borrow_mut().volumes.push((2,v)));}}
-// cheats composes the equipped charms into the live parameters and reconciles
+// cheats asks the board what a hit costs and charges, and reconciles
 // the all-charms grant. Neither reaches the title screen, and the real module
 // links the cooked catalogue this harness has no manifest directory for, so the
 // contract is stubbed here; tests/charms_runtime.rs exercises the real one.
 mod charms{
- pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
  pub fn grant_all(_:bool){}
  pub fn on_damage(_:&mut hk_sim::Vitals,_:hk_sim::VitalParams){}
  pub fn damage_taken(d:u16)->u16{d}
 }
-// And the shop's half of PlayerData sits under the charms in the same stack,
-// for the same reason: the real module links the cooked stock. Its own
-// composition is exercised by tests/shop_runtime.rs.
-mod shop{
- pub fn vitals(base:hk_sim::VitalParams)->hk_sim::VitalParams{base}
+// And the cached live parameters (game/src/hero_params.rs), which compose the
+// shop and the board: the title never reads them.
+mod hero_params{
+ pub fn vitals(_:super::cheats::Settings)->hk_sim::VitalParams{unreachable!("the title never reads the live parameters")}
 }
 #[path="../game/src/cheats.rs"]mod cheats;
 // menu_state indexes the save screen by the profile count.

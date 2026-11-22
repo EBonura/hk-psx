@@ -247,7 +247,7 @@ pub fn tick(
     events.hits += hits;
     events.kills += kills;
     if hits != 0 {
-        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+        vitals.gain_soul_on_nail_hit(cheats.params());
     }
     if s.fight.reached {
         super::nail_answer(vitals, response, attacks, player);
