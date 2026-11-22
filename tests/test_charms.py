@@ -65,6 +65,18 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertEqual(effects['stalwart_shell_ticks']['invulnerable_ticks'], 106)
         self.assertEqual(effects['stalwart_shell_ticks']['recoil_ticks'], 5)
         self.assertEqual(effects['grubsong']['alone'], 15)
+        numeric = effects['parameter_charms']
+        self.assertEqual(numeric['focus']['quick_focus_drain_us'], 18000)
+        self.assertEqual(numeric['focus']['deep_focus'], {'numerator': 33, 'denominator': 20, 'heal': 2,
+                                                          'multiplier': numeric['focus']['deep_focus']['multiplier']})
+        self.assertEqual(numeric['steady_body_recoil_ticks'], 0)
+        self.assertEqual(numeric['spell_twister_cost'], 24)
+        self.assertEqual((numeric['shaman_stone']['damage'], numeric['shaman_stone']['x'],
+                          numeric['shaman_stone']['y']), (20, [13, 10], [8, 5]))
+        self.assertEqual(numeric['movement']['dashmaster_cooldown_ticks'], 24)
+        self.assertEqual(numeric['movement']['quick_slash'], {'duration': 17, 'cooldown': 15})
+        self.assertEqual((numeric['movement']['sprintmaster']['alone'],
+                          numeric['movement']['sprintmaster']['combo']), (10 * 65536, 23 * 32768))
 
     @unittest.skipUnless(REPORT.is_file(), 'run host/charms.py first')
     def test_icons_were_measured_before_being_refused(self):
