@@ -13,11 +13,11 @@
 //!
 //! A charm whose effect the port has no system for is refused rather than
 //! equipped for nothing: `host/charms.py` cooks `Effect::None` for it and
-//! records the missing system in .hkpsx/charm-catalog.json. The six that are
-//! implemented compose onto `VITAL_PARAMS` through `vitals`, which
-//! `cheats::Settings::params` calls, so every consumer of the live parameters
-//! sees them without each one applying the bonus itself.
-use hk_sim::{VitalParams, Vitals};
+//! records the missing system in .hkpsx/charm-catalog.json. The ones that are
+//! implemented compose onto the cooked no-charm `HeroParams` through `hero`,
+//! which `hero_params` calls once per change, so every consumer of the live
+//! parameters sees them without each one applying the bonus itself.
+use hk_sim::{HeroParams, VitalParams, Vitals};
 
 /// One cooked charm. `text` is its localized description, already wrapped to
 /// the panel by the host against the same glyph advances the guest draws with:
@@ -249,6 +249,7 @@ fn publish() {
         HK_CHARM_NOTCHES = u32::from(s.filled()) | (u32::from(s.notches) << 8);
         HK_CHARM_OVERCHARMED = u32::from(s.overcharmed());
     }
+    crate::hero_params::invalidate();
 }
 /// `Get Charm`: a charm picked up in the world.
 pub fn pick_up(charm: usize) {
@@ -320,51 +321,48 @@ pub fn grant_all(on: bool) {
 }
 
 /// The equipped charms composed onto the cooked no-charm parameters, in charm
-/// order. `cheats::Settings::params` calls this, so this is the one place a
-/// charm bonus is applied and no consumer applies it a second time.
-pub fn vitals(base: VitalParams) -> VitalParams {
+/// order. `hero_params` calls this when the board changes, so this is the one
+/// place a charm bonus is applied and no consumer applies it a second time.
+pub fn hero(base: HeroParams) -> HeroParams {
     compose(state(), base)
 }
-fn compose(s: &State, mut base: VitalParams) -> VitalParams {
-    // Nothing equipped is the overwhelmingly common case and it is on a very
-    // hot path: `params` is called several times a tick, by `hurt`, `maintain`,
-    // `new_vitals` and the enemy soul gain. Walking all 40 charms there cost
-    // enough per tick to move kings-return 3.2 units and two masks, because a
-    // frame that slips past a VBlank boundary changes how many simulation ticks
-    // fall between two input polls. The route's combat was identical; only its
-    // timing moved. Nothing below this line runs for an empty board.
+fn compose(s: &State, mut p: HeroParams) -> HeroParams {
+    // Nothing equipped is the common case; nothing below runs for it. This
+    // used to run on every read, several times a tick, and walking all 40
+    // charms there cost enough to move kings-return 3.2 units and two masks: a
+    // frame that slips past a VBlank boundary changes how many simulation
+    // ticks fall between two input polls. That is why `hero_params` caches it.
     if s.equipped.is_empty() {
-        return base;
+        return p;
     }
     for charm in 1..=CHARM_COUNT {
         if !s.equipped(charm) {
             continue;
         }
+        let v = &mut p.vitals;
         match State::charm(charm).effect {
             Effect::Shell {
                 invulnerable_ticks,
                 hazard_invulnerable_ticks,
                 recoil_ticks,
             } => {
-                base.invulnerable_ticks = invulnerable_ticks;
-                base.hazard_invulnerable_ticks = hazard_invulnerable_ticks;
-                base.recoil_ticks = recoil_ticks;
+                v.invulnerable_ticks = invulnerable_ticks;
+                v.hazard_invulnerable_ticks = hazard_invulnerable_ticks;
+                v.recoil_ticks = recoil_ticks;
             }
-            Effect::SoulPerHit(extra) => {
-                base.soul_per_hit = base.soul_per_hit.saturating_add(extra)
-            }
-            Effect::MaxHealth(extra) => base.max_health = base.max_health.saturating_add(extra),
+            Effect::SoulPerHit(extra) => v.soul_per_hit = v.soul_per_hit.saturating_add(extra),
+            Effect::MaxHealth(extra) => v.max_health = v.max_health.saturating_add(extra),
             // `(int)((float)damage * 1.5f)` truncates, so integer division does too.
             Effect::NailScale {
                 numerator,
                 denominator,
             } => {
-                base.nail_damage = base.nail_damage.saturating_mul(numerator) / denominator;
+                v.nail_damage = v.nail_damage.saturating_mul(numerator) / denominator;
             }
             Effect::None | Effect::SoulOnDamage { .. } => {}
         }
     }
-    base
+    p
 }
 /// `HeroController::TakeDamageCharmEffects`, called after a hit that landed.
 /// A hit's damage at the board's present state (doubled while overcharmed).
@@ -791,6 +789,14 @@ mod tests {
     const SOUL_EATER: usize = 21;
     const FRAGILE_HEART: usize = 23;
     const FRAGILE_STRENGTH: usize = 25;
+    /// The cooked hero record with the vitals above, so the vital asserts do
+    /// not move with a recook.
+    fn hero_base() -> HeroParams {
+        HeroParams {
+            vitals: BASE,
+            ..crate::hero_params::BASE
+        }
+    }
 
     fn owning(charms: &[usize]) -> State {
         let mut s = State::new();
@@ -915,7 +921,7 @@ mod tests {
         ]);
         // Owned but not worn changes nothing.
         assert_eq!(
-            compose(&s, BASE).invulnerable_ticks,
+            compose(&s, hero_base()).vitals.invulnerable_ticks,
             BASE.invulnerable_ticks
         );
         // A board wide enough to wear all five at once. Salubra and the other
@@ -932,7 +938,7 @@ mod tests {
         ] {
             assert_eq!(s.toggle(charm), Ok(true));
         }
-        let p = compose(&s, BASE);
+        let p = compose(&s, hero_base()).vitals;
         // INVUL_TIME_STAL 1.75 s and RECOIL_DURATION_STAL 0.08 s at 60 Hz.
         assert_eq!(p.invulnerable_ticks, 106);
         assert_eq!(p.hazard_invulnerable_ticks, 53);

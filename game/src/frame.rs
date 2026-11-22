@@ -368,7 +368,7 @@ pub fn render(
     // Vengeful Spirit's projectile carries its own frame and key.
     let ball_frame = game
         .cast
-        .ball_bounds(FIREBALL_PARAMS)
+        .ball_bounds(hero_params::get(game.settings.cheats).fireball)
         .map(|_| ability_art::frame_index(ability_art::BALL, game.cast.ball.life as u32));
     // The view's NPC, whose clips ride in this view's own room bank.
     let npc_frame = npc.map(|npc| {
@@ -632,9 +632,8 @@ pub fn render(
             128,
         );
     }
-    // Hoisted because the HUD needs three fields of it and `params` composes
-    // the shop's PlayerData, the equipped charms and the cheats on each call.
-    let vitals = game.settings.cheats.params(VITAL_PARAMS);
+    // Hoisted because the HUD needs three fields of it.
+    let vitals = game.settings.cheats.params();
     if !veiled {
         prims += unsafe { spstack::sim(|| render::scenery(camera, true)) };
         prims += game.state.draw_secrets(view, camera, true);
@@ -928,11 +927,11 @@ pub fn interact(
     game.settings
         .cheats
         .maintain(&mut game.vitals, VITAL_PARAMS);
-    cheats::publish(game.settings.cheats, VITAL_PARAMS);
+    cheats::publish(game.settings.cheats);
     // StartSoulLimiter lowers maxMP itself while a Shade is owed.
     game.vitals.soul = game.vitals.soul.min(soul_cap(
         &game.shade,
-        game.settings.cheats.params(VITAL_PARAMS).max_soul,
+        game.settings.cheats.params().max_soul,
     ));
     unsafe {
         HK_PAUSED = u32::from(game.paused);
@@ -1083,7 +1082,7 @@ fn wake(game: &mut Game, scene: usize, cache: &disc::Cache) {
     game.focus.interrupt();
     focus_audio::interrupt();
     game.vitals
-        .add_soul(game.settings.cheats.params(VITAL_PARAMS), shaman::WAKE_SOUL);
+        .add_soul(game.settings.cheats.params(), shaman::WAKE_SOUL);
     if let Some(id) = cache.locate(scene, x, y) {
         game.respawn = Some((scene, [x, y], 1, id));
         game.safe = (x, y, id);
@@ -1187,7 +1186,7 @@ pub fn simulate(
         // The source also saves here; this port never writes the card on
         // its own, so the Shade reaches it at the next bench the player
         // chooses to save at.
-        let params = game.settings.cheats.params(VITAL_PARAMS);
+        let params = game.settings.cheats.params();
         game.shade.record_death(
             r.scene,
             [game.player.x, game.player.y],
@@ -1255,7 +1254,7 @@ pub fn simulate(
         game.focus.interrupt();
         focus_audio::interrupt();
         game.vitals
-            .finish_hazard_respawn(game.settings.cheats.params(VITAL_PARAMS));
+            .finish_hazard_respawn(game.settings.cheats.params());
         *target = Some(game.safe.2);
     } else if !game.vitals.dead {
         let door_exit = game.door.tick(r.scene);
@@ -1269,8 +1268,9 @@ pub fn simulate(
         game.cast.has_fireball =
             game.settings.cheats.spell || persist::store().levels[persist::FIREBALL_LEVEL] > 0;
         let was_antic = game.cast.phase == hk_sim::CastPhase::Antic;
+        let hero = hero_params::get(game.settings.cheats);
         game.cast.tick(
-            FIREBALL_PARAMS,
+            hero.fireball,
             FIREBALL_ANTIC_TICKS,
             FIREBALL_CAST_TICKS,
             cast_button,
@@ -1280,7 +1280,7 @@ pub fn simulate(
         );
         // Quick Cast: the same cast from its own button, with no hold to wait out.
         game.cast.quick(
-            FIREBALL_PARAMS,
+            hero.fireball,
             pad.is_held(input::bind::QUICK_CAST) && !read_consumes && game.vitals.can_control(),
             &mut game.vitals.soul,
             &game.player,
@@ -1292,17 +1292,17 @@ pub fn simulate(
             ability_fx::cast(&game.player);
         }
         let focus_events = game.focus.step(
-            FOCUS_PARAMS,
-            game.settings.cheats.params(VITAL_PARAMS),
+            hero.focus,
+            hero.vitals,
             hk_sim::FocusInput {
                 held: cast_button
-                    && game.cast.held_past_tap(FIREBALL_PARAMS)
+                    && game.cast.held_past_tap(hero.fireball)
                     && !game.cast.locks_control(),
                 // CanFocus wants cState.onGround, which a hard landing leaves false.
                 grounded: game.player.grounded && !game.player.hard_landing(),
                 can_start: game.vitals.can_control()
                     && !game.door.pending()
-                    && (!game.nail.active || game.nail.age >= FOCUS_PARAMS.attack_recovery_ticks),
+                    && (!game.nail.active || game.nail.age >= hero.focus.attack_recovery_ticks),
             },
             &mut game.vitals,
         );
@@ -1311,8 +1311,8 @@ pub fn simulate(
             game.focus.lines_active(),
             focus_events.completed,
             game.vitals.soul as u16,
-            FOCUS_PARAMS.cost as u16,
-            game.vitals.health >= game.settings.cheats.params(VITAL_PARAMS).max_health,
+            hero.focus.cost as u16,
+            game.vitals.health >= hero.vitals.max_health,
         ) {
             ability_sound(audio::FOCUS_READY);
             world::particles::pool().spawn_break_at(
@@ -1373,8 +1373,9 @@ pub fn simulate(
                 && !locked_for_dash(&game.focus, &game.door, &game.bench)
                 && !game.player.hard_landing(),
         );
+        // Dashmaster's `DASH_COOLDOWN_CH` is armed here.
         game.player.dash_input(
-            PARAMS,
+            hero_params::get(game.settings.cheats).movement(PARAMS, game.player.grounded),
             pad.is_held(input::bind::DASH)
                 && game.vitals.can_control()
                 && !locked_for_dash(&game.focus, &game.door, &game.bench)
@@ -1464,7 +1465,7 @@ pub fn simulate(
             // The source saves here without asking; this port never
             // writes the card unless the player says so.
             game.vitals
-                .heal(game.settings.cheats.params(VITAL_PARAMS), u16::MAX);
+                .heal(game.settings.cheats.params(), u16::MAX);
             // Sitting keeps the Knight's floor y; the source seat y is the sprite's, and a
             // body spawned there starts inside the floor and falls through it.
             let stand = [game.bench.seat()[0], game.player.y];
@@ -1545,19 +1546,21 @@ pub fn simulate(
                 audio::jump();
             }
             // A bottom entry's drop carries the source's entry speed, not RUN_SPEED.
+            // `Move` reads Sprintmaster on the ground only, as the step begins.
+            let hero = hero_params::get(game.settings.cheats);
             let params = if game.door.dropping() {
                 hk_sim::Params {
                     speed: great_door::ENTER_HOR,
                     ..PARAMS
                 }
             } else {
-                PARAMS
+                hero.movement(PARAMS, game.player.grounded)
             };
             // The terrain sweep spills heavily; its frames go on the scratchpad.
             unsafe {
                 spstack::sim(|| {
                     game.nail_response.step(
-                        NAIL_RESPONSE_PARAMS,
+                        hero.nail_response,
                         params,
                         &mut game.player,
                         dir,
@@ -1600,7 +1603,7 @@ pub fn simulate(
         );
         let vertical = i32::from(pad.is_held(button::UP)) - i32::from(pad.is_held(button::DOWN));
         let attacked = game.nail.tick(
-            ATTACK_PARAMS,
+            hero_params::get(game.settings.cheats).attack,
             pad.is_held(button::SQUARE) && game.vitals.can_control() && !locked && !read_consumes,
             vertical,
             &mut game.player,
@@ -1638,7 +1641,11 @@ pub fn simulate(
                 // Its RecoilLeft/RecoilRight/RecoilDown, through the enemy hit's NailResponse
                 // (`enemies::nail_answer`, gated alike; the source's own gate is controlReqlinquished).
                 if game.vitals.can_control() {
-                    game.thunk.recoil(&mut game.nail_response, NAIL_RESPONSE_PARAMS, &mut game.player);
+                    game.thunk.recoil(
+                        &mut game.nail_response,
+                        hero_params::get(game.settings.cheats).nail_response,
+                        &mut game.player,
+                    );
                 }
             }
             // A gate's, a toll gate's or the lift block's TinkEffect.
@@ -2043,7 +2050,7 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            let params = game.settings.cheats.params(VITAL_PARAMS);
+            let params = game.settings.cheats.params();
             let roller = blocker_roller::tick(
                 r.scene,
                 [game.player.x, game.player.y],
@@ -2115,7 +2122,7 @@ pub fn simulate(
         // it overlaps there. A Blocker's hurtbox is its Terrain Block's own
         // footprint, so stopping first made every Elder Baldur unkillable.
         game.cast.stop_at_wall(
-            FIREBALL_PARAMS,
+            hero_params::get(game.settings.cheats).fireball,
             room.counts[5],
             game.state.edge_reader(r, room),
         );

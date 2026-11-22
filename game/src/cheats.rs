@@ -120,24 +120,37 @@ impl Settings {
             | (u32::from(self.spell) << 10)
             | (u32::from(self.charms) << 11)
     }
-    /// The live parameter stack: the cooked base, then the PlayerData Sly's
-    /// counter moves (`maxHealthBase` and the SOUL reserve), then the equipped
-    /// charms, then the cheats. Composing here rather than at each consumer is
-    /// what keeps a bonus from being applied twice, and the shop comes before
-    /// the charms because the source recomputes `maxHealth` as `maxHealthBase`
-    /// plus the charm bonuses rather than the other way round.
-    pub fn params(self, base: VitalParams) -> VitalParams {
-        let mut base = crate::charms::vitals(crate::shop::vitals(base));
+    /// The live vitals: the cooked base, then the PlayerData Sly's counter
+    /// moves (`maxHealthBase` and the SOUL reserve), then the equipped charms,
+    /// then the cheats. `hero_params` composes that once per change and this
+    /// reads the cached result, so a bonus is applied in one place and a read
+    /// costs no walk over the board.
+    pub fn params(self) -> VitalParams {
+        crate::hero_params::vitals(self)
+    }
+    /// What the cache was composed for: the two cheats that change a value.
+    pub fn param_key(self) -> u8 {
+        u8::from(self.max_nail) | (u8::from(self.max_masks) << 1)
+    }
+    /// The cheats a key stands for, as far as the parameters can tell.
+    pub fn from_param_key(key: u8) -> Self {
+        Self {
+            max_nail: key & 1 != 0,
+            max_masks: key & 2 != 0,
+            ..Self::new()
+        }
+    }
+    /// The top of the stack, applied after the shop and the charms.
+    pub fn override_vitals(self, p: &mut VitalParams) {
         if self.max_nail {
-            base.nail_damage = PURE_NAIL_DAMAGE;
+            p.nail_damage = PURE_NAIL_DAMAGE;
         }
         if self.max_masks {
-            base.max_health = MAX_MASKS;
+            p.max_health = MAX_MASKS;
         }
-        base
     }
     pub fn new_vitals(self, base: VitalParams) -> Vitals {
-        let mut v = Vitals::new(self.params(base));
+        let mut v = Vitals::new(self.params());
         self.maintain(&mut v, base);
         v
     }
@@ -152,7 +165,7 @@ impl Settings {
         if self.charms != previous.charms {
             crate::charms::grant_all(self.charms);
         }
-        let p = self.params(base);
+        let p = self.params();
         if self.max_masks != previous.max_masks && !v.dead {
             if self.max_masks {
                 v.health = p.max_health;
@@ -192,7 +205,7 @@ impl Settings {
             return Hurt::Ignored;
         }
         if !self.invincible {
-            let p = self.params(base);
+            let p = self.params();
             // An overcharmed Knight takes twice the damage (`HeroController::TakeDamage`).
             let hurt = v.hurt(p, crate::charms::damage_taken(damage), direction, hazard);
             // HeroController::TakeDamage runs TakeDamageCharmEffects only for a
@@ -220,8 +233,8 @@ pub static mut HK_CHEATS: u32 = 0;
 pub static mut HK_CHEAT_NAIL_DAMAGE: u32 = 0;
 #[no_mangle]
 pub static mut HK_CHEAT_MASK_CAP: u32 = 0;
-pub fn publish(settings: Settings, base: VitalParams) {
-    let p = settings.params(base);
+pub fn publish(settings: Settings) {
+    let p = settings.params();
     // SAFETY: the guest is single-threaded; the telemetry words are only read by the host.
     unsafe {
         HK_CHEATS = settings.bits() | if GEO_GRANTED { GEO_GRANTED_BIT } else { 0 };

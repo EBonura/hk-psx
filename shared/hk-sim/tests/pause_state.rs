@@ -1,5 +1,5 @@
 #![allow(dead_code)] // includes game modules by path and exercises part of each
-                     // cheats composes the equipped charms into the live parameters and reconciles
+                     // cheats asks the board what a hit costs and charges, and reconciles
                      // the all-charms grant. The real module links the cooked catalogue this harness
                      // has no manifest directory for, and an empty board composes to the base
                      // anyway, so the contract is stubbed here; tests/charms_runtime.rs exercises
@@ -56,22 +56,20 @@ mod charms {
             false
         }
     }
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
-    }
     pub fn grant_all(_: bool) {}
     pub fn on_damage(_: &mut hk_sim::Vitals, _: hk_sim::VitalParams) {}
     pub fn damage_taken(damage: u16) -> u16 {
         damage
     }
 }
-// And the shop's half of PlayerData, which `cheats::params` composes under
-// the charms. The real module `include!`s the cooked stock relative to its own
-// crate, which this one is not, and a shop nobody has visited composes to the
-// base anyway; tests/shop_runtime.rs exercises the real one.
-mod shop {
-    pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
-        base
+// The cached live parameters `cheats::params` reads: the cooked base, the
+// shop, the charms, then the cheats. The real module (game/src/hero_params.rs)
+// composes the shop and the board, which are not linked here, and an empty
+// board in a shop nobody visited composes to the base anyway, so only the
+// cheats are applied; tests/charms_runtime.rs exercises the real one.
+mod hero_params {
+    pub fn vitals(cheats: crate::cheats::Settings) -> hk_sim::VitalParams {
+        unreachable!("this harness never reads the live parameters")
     }
 }
 #[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game

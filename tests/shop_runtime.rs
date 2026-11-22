@@ -11,3 +11,11 @@ pub mod dialogue {
 pub mod charms;
 #[path = "../game/src/shop.rs"]
 pub mod shop;
+// A purchase invalidates the cached live parameters, which the cheats read.
+include!("../data/params.rs");
+#[allow(dead_code, clippy::all, unexpected_cfgs)]
+#[path = "../game/src/cheats.rs"]
+mod cheats;
+#[allow(dead_code)]
+#[path = "../game/src/hero_params.rs"]
+mod hero_params;

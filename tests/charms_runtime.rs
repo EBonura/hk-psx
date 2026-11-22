@@ -25,6 +25,11 @@ mod shop {
 #[allow(clippy::all, unexpected_cfgs, dead_code)]
 #[path = "../game/src/cheats.rs"]
 mod cheats;
+// The cached live parameters the cheats read, over the cooked no-charm constants.
+include!("../data/params.rs");
+#[allow(dead_code)]
+#[path = "../game/src/hero_params.rs"]
+mod hero_params;
 #[test]
 fn an_overcharmed_hit_takes_two_masks_through_the_real_damage_path() {
     use hk_sim::{Hurt, VitalParams, Vitals};
