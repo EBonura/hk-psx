@@ -630,11 +630,7 @@ fn strike_chests(
     for (dst, p) in polygon.iter_mut().zip(source) {
         *dst = [player.x - p[0] * player.facing, player.y + p[1]];
     }
-    let opened = pickups.strike(&polygon[..source.len()], body);
-    if core::mem::take(&mut pickups.tink) {
-        scene_sfx::tink();
-    }
-    opened
+    pickups.strike(&polygon[..source.len()], body)
 }
 /// Stalactites and grub jars take the nail through the same swept polygon;
 /// a freed grub is recorded in the world save at once.
