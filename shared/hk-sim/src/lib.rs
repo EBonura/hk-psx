@@ -350,6 +350,22 @@ impl Player {
             self.dash_queue += 1;
         }
     }
+    /// A hit that landed. TakeDamage cancels the wall slide and a shroom
+    /// bounce; StartRecoil, Die and DieFromHazard each run ResetMotion
+    /// (CancelJump, CancelDoubleJump, CancelDash, CancelBounce,
+    /// CancelWallsliding, velocity zero); and the Superdash FSM's global
+    /// HERO DAMAGED goes to Cancel, which ends the Crystal Heart in any phase.
+    pub fn take_hit(&mut self) {
+        self.jumping = false;
+        self.double_jumping = false;
+        self.dash_left = 0;
+        self.shadow_dashing = false;
+        self.wall_sliding = false;
+        self.touching_wall = 0;
+        self.shroom_bouncing = false;
+        self.vy = 0;
+        self.super_dash = SuperDash::Off;
+    }
     /// What `HeroController::Bounce` and `BounceHigh` do to the Knight besides
     /// arming the bounce (`NailResponse` holds that): a pogo hands back the
     /// double jump and the air dash, as `doubleJumped` and `airDashed` clear.
@@ -1812,6 +1828,36 @@ mod combination_tests {
             if p.wall_locked {
                 assert_eq!(p.facing, -1);
             }
+        }
+    }
+    #[test]
+    fn a_hit_ends_a_dash_and_lets_the_recoil_move_the_knight() {
+        let mut p = knight();
+        p.grounded = true;
+        p.facing = 1;
+        p.dash_input(P, true);
+        p.step(P, 0, false, 2, room());
+        assert!(p.dash_left > 0);
+        p.take_hit();
+        assert_eq!(p.dash_left, 0);
+        assert!(!p.shadow_dashing);
+        // The recoil's own step now owns the motion: away, not the dash.
+        let x = p.x;
+        let mut r = P;
+        r.speed = 8 * ONE;
+        p.step(r, -1, false, 2, room());
+        assert!(p.x < x);
+    }
+    #[test]
+    fn a_hit_cancels_the_crystal_heart_in_every_phase() {
+        for phase in [SuperDash::Charging(3), SuperDash::Ready, SuperDash::Travelling(5)] {
+            let mut p = knight();
+            p.super_dash = phase;
+            p.wall_sliding = true;
+            p.take_hit();
+            assert_eq!(p.super_dash, SuperDash::Off);
+            assert!(!p.wall_sliding);
+            assert!(p.can_turn());
         }
     }
     #[test]

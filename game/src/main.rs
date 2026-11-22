@@ -717,7 +717,7 @@ const DEATH_MUSIC_FADE_TICKS: u16 = 60;
 /// respawn when every other kind of damage ended it. See docs/DAMAGE.md.
 fn respond_to_hurt(
     hurt: hk_sim::Hurt,
-    at: [i32; 2],
+    player: &mut Player,
     nail: &mut Nail,
     response: &mut hk_sim::NailResponse,
     focus: &mut hk_sim::Focus,
@@ -730,6 +730,10 @@ fn respond_to_hurt(
     if hurt == hk_sim::Hurt::Ignored {
         return;
     }
+    let at = [player.x, player.y];
+    // ResetMotion and the Superdash FSM's HERO DAMAGED: the dash and the
+    // Crystal Heart end here, so the recoil owns the Knight's motion.
+    player.take_hit();
     dialogue::cancel();
     audio::hurt();
     // `Knight Damage`'s `Gen` state, on the DAMAGE event TakeDamage sends:
@@ -767,7 +771,7 @@ fn respond_to_hurt(
 fn apply_hurt(
     cheats: &cheats::Settings,
     vitals: &mut hk_sim::Vitals,
-    player: &Player,
+    player: &mut Player,
     nail: &mut Nail,
     response: &mut hk_sim::NailResponse,
     focus: &mut hk_sim::Focus,
@@ -783,7 +787,7 @@ fn apply_hurt(
         hazard,
         player.shadow_dashing,
     );
-    respond_to_hurt(hurt, [player.x, player.y], nail, response, focus);
+    respond_to_hurt(hurt, player, nail, response, focus);
     hurt
 }
 // `VITAL_PARAMS.max_health` and `shop::STARTING_MASKS` are two cooks of the

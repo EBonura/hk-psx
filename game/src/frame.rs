@@ -1951,7 +1951,7 @@ pub fn simulate(
                 apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
-                    &game.player,
+                    &mut game.player,
                     &mut game.nail,
                     &mut game.nail_response,
                     &mut game.focus,
@@ -2024,7 +2024,7 @@ pub fn simulate(
                 apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
-                    &game.player,
+                    &mut game.player,
                     &mut game.nail,
                     &mut game.nail_response,
                     &mut game.focus,
@@ -2081,7 +2081,7 @@ pub fn simulate(
                 apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
-                    &game.player,
+                    &mut game.player,
                     &mut game.nail,
                     &mut game.nail_response,
                     &mut game.focus,
@@ -2214,7 +2214,7 @@ pub fn simulate(
         }
         respond_to_hurt(
             enemy_events.hurt,
-            [game.player.x, game.player.y],
+            &mut game.player,
             &mut game.nail,
             &mut game.nail_response,
             &mut game.focus,
@@ -2238,7 +2238,7 @@ pub fn simulate(
             apply_hurt(
                 &game.settings.cheats,
                 &mut game.vitals,
-                &game.player,
+                &mut game.player,
                 &mut game.nail,
                 &mut game.nail_response,
                 &mut game.focus,
@@ -2340,7 +2340,7 @@ pub fn simulate(
                 apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
-                    &game.player,
+                    &mut game.player,
                     &mut game.nail,
                     &mut game.nail_response,
                     &mut game.focus,
