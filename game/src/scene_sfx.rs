@@ -86,6 +86,7 @@ pub fn invalidate() {
 }
 /// Another bank is about to write `lo..hi`: drop the resident one if it
 /// overlaps, so a play never keys on bytes that are no longer its clip.
+#[inline(never)]
 pub fn overwritten(lo: u32, hi: u32) {
     let current = unsafe { CURRENT };
     if current != NONE
