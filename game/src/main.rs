@@ -42,6 +42,7 @@ mod input_queue;
 mod input_sampler;
 mod music;
 mod persist;
+mod player_data;
 mod presentation;
 mod save;
 mod save_ui;
@@ -970,38 +971,28 @@ fn main() {
             intro::play(boot, &mut fb, (settings.screen_x, settings.screen_y), preload_first_scene);
         }
     }
+    // PlayerData and SceneData first, from the record itself rather than from
+    // `saved`: a stale spawn point is no reason to un-buy what the player paid
+    // for. An HKS4 or HKS5 record is migrated on the way (`save::migrate`).
+    let used = match slots[profile] {
+        save::Slot::Used(s) => {
+            script::boot(persist::load(&s, profile));
+            true
+        }
+        _ => false,
+    };
+    let pd = player_data::store();
     // Sly's half of PlayerData before the charm board, and both before the
     // first Vitals: a mask a shard fuse bought is `maxHealthBase` and Fragile
     // Heart adds to it, so the base has to be in place before anything reads
-    // the composed max_health. Taken from the record itself rather than from
-    // `saved`, for the same reason the board is: a stale spawn point is no
-    // reason to un-buy what the player paid for.
-    shop::boot(match slots[profile] {
-        save::Slot::Used(s) => Some((s.shop_slots, s.shop_counters)),
-        _ => None,
-    });
-    charms::boot(
-        match slots[profile] {
-            save::Slot::Used(s) => Some((
-                s.charms_owned,
-                s.charms_equipped,
-                s.charm_notches,
-                s.can_overcharm,
-            )),
-            _ => None,
-        },
-        settings.cheats.charms,
-    );
-    // Each NPC's conversation cursor, from the record for the same reason: a
-    // stale spawn point is no reason to make Elderbug introduce himself again.
-    if let save::Slot::Used(s) = slots[profile] {
-        dialogue::restore_met(s.npc_conversations);
-        // And the PlayerData the cooked scripts wrote, if the record was
-        // written by this bank. `script::boot` drops it when it was not.
-        script::boot(&s.script_fields, s.script_field_fnv);
-        // The port's PlayerData and SceneData last: an HKS4 record's False
-        // Knight moves out of the script reserve `script::boot` just filled.
-        persist::load(&s, profile);
+    // the composed max_health. Values the shop's record cannot hold start the
+    // shelf afresh, as a record `shop::State::restore` refuses does.
+    shop::boot(used.then(|| pd.shop(shop::STARTING_MASKS, shop::SOUL_PER_VESSEL)).flatten());
+    charms::boot(used.then(|| pd.charms()), settings.cheats.charms);
+    // Each NPC's conversation cursor, for the same reason: a stale spawn point
+    // is no reason to make Elderbug introduce himself again.
+    if used {
+        dialogue::restore_met(pd.get(player_data::PORT_NPC_CURSORS) as u32);
     }
     let cache = unsafe { &mut *(&raw mut ROOM_CACHE) };
     let mut game = frame::Game {
@@ -1546,7 +1537,13 @@ fn main() {
                 input::begin_scene_load(sim_clock);
                 input::begin_blocking_transfer();
                 game.save_ui.finish(match &s {
-                    Some(s) => save::write(profile, s, persist::store().items(), format),
+                    Some(s) => save::write(
+                        profile,
+                        s,
+                        player_data::store(),
+                        persist::store().items(),
+                        format,
+                    ),
                     None => Err(save::Fault::Other),
                 });
                 sim_clock = input::end_scene_load();

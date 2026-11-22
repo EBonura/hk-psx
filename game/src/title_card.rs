@@ -103,7 +103,7 @@ fn visited(title: u8) -> bool {
 }
 /// PlayerData `currentArea`: the title index plus one, 0 for none.
 fn current_area() -> u8 {
-    persist::store().levels[persist::CURRENT_AREA]
+    persist::level(persist::CURRENT_AREA)
 }
 fn show(title: u8, style: Style, delay: u16) {
     let s = state();

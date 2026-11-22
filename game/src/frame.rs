@@ -1037,13 +1037,12 @@ fn save_record(
     facing: i32,
     region: usize,
 ) -> save::Save {
-    let (owned, equipped, notches, can_overcharm) = charms::record();
-    let (script_fields, script_field_fnv) = script::record();
-    let (shop_slots, shop_counters) = shop::record();
-    // The walls and rocks join the SceneData list now; the cocoon, the secrets
-    // and the arena wrote theirs as it happened.
+    // The charm board, Sly's half and the NPC cursors join PlayerData now; the
+    // rest of it was written there as it happened. Likewise the walls and rocks
+    // join the SceneData list; the cocoon, the secrets and the arena wrote theirs
+    // as it happened.
+    crate::player_data::snapshot();
     persist::snapshot(&game.state, game.geo, scene);
-    let world = persist::store();
     save::Save {
         scene: scene as u32,
         seat,
@@ -1053,18 +1052,7 @@ fn save_record(
         door_hits: game.door.hits(),
         shade: game.shade.record(),
         sequence: 0,
-        charms_owned: owned,
-        charms_equipped: equipped,
-        charm_notches: notches,
-        can_overcharm,
-        npc_conversations: dialogue::met_bits(),
-        script_fields,
-        script_field_fnv,
-        shop_slots,
-        shop_counters,
-        player_bools: world.player,
-        player_levels: world.levels,
-        version: 5,
+        version: 6,
     }
 }
 /// `Check Fall`'s `Black` and `Set Respawns`: the Knight lies at the wake point
@@ -1266,7 +1254,7 @@ pub fn simulate(
             pad.is_held(input::bind::CAST) && !read_consumes && game.vitals.can_control();
         let cast_blocked = !game.vitals.can_control() || game.door.pending() || read_consumes;
         game.cast.has_fireball =
-            game.settings.cheats.spell || persist::store().levels[persist::FIREBALL_LEVEL] > 0;
+            game.settings.cheats.spell || persist::level(persist::FIREBALL_LEVEL) > 0;
         let was_antic = game.cast.phase == hk_sim::CastPhase::Antic;
         let hero = hero_params::get(game.settings.cheats);
         game.cast.tick(

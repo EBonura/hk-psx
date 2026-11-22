@@ -1,11 +1,11 @@
 //! Bench Save Game on the port-1 memory card (P13 step 5 to 7).
 //!
-//! The record holds the bench respawn marker, Geo wallet, Great Door hit count,
-//! the owed Shade, the charm board, NPC conversation cursors, the script bank's
-//! PlayerData, Sly's half of PlayerData (which is where the masks a shard fuse
-//! bought live: `shop::vitals` composes `maxHealthBase` from it), and since
-//! HKS5 the port's own PlayerData and SceneData (`persist.rs`): bosses beaten,
-//! walls broken, cocoons opened, secrets revealed, Geo rocks mined. Writes run
+//! The record holds the bench respawn marker, Geo wallet, Great Door hit count
+//! and the owed Shade in a fixed header, then PlayerData (`player_data.rs`: the
+//! charm board, NPC conversation cursors, the script bank's fields, Sly's half,
+//! abilities, map and boss flags, spell levels) as named fields, then SceneData
+//! (`persist.rs`): bosses beaten, walls broken, cocoons opened, secrets
+//! revealed, Geo rocks mined. docs/SAVE.md has the layout. Writes run
 //! between input checkpoints so the pad sampler keeps polling (SIO0 is shared,
 //! so a card frame and a pad poll never overlap). A card that cannot be written
 //! is never silent: `write` returns the `Fault`, `save_ui.rs` says so on screen
@@ -27,41 +27,51 @@ pub const PROFILES: usize = 4;
 const TITLE: &str = "HOLLOW KNIGHT PSX";
 /// Bumped from HKS1 when the charm board and the NPC conversation cursors
 /// joined the record, from HKS2 when the script runtime's PlayerData did, from
-/// HKS3 when Sly's half of PlayerData did, and from HKS4 when the world state
-/// did. HKS1 to HKS3 read back as Corrupt rather than decoding into a save
-/// whose notch board, conversations, progression flags or shop purchases would
-/// be invented.
+/// HKS3 when Sly's half of PlayerData did, from HKS4 when the world state did,
+/// and from HKS5 when the six PlayerData stores became one (`player_data.rs`).
+/// HKS1 to HKS3 read back as Corrupt rather than decoding into a save whose
+/// notch board, conversations, progression flags or shop purchases would be
+/// invented.
 ///
-/// HKS4 still loads, because nothing HKS5 adds is invented by reading it: an
-/// HKS4 save never recorded a broken wall or a mined rock, so its world is the
-/// authored one, which is exactly what that save restored before. The one
-/// thing it did carry, the False Knight's arena and first plop in the script
-/// reserve's top two slots, `main` moves into `persist` on load.
-const MAGIC: [u8; 4] = *b"HKS5";
+/// HKS4 and HKS5 still load: `migrate` puts every value they carried on its
+/// named field, exactly as the HKS5 guest restored it (tests/save_runtime.rs
+/// loads every committed fixture both ways). HKS6 is the last format that has to
+/// grow by a version: a field joining PlayerData is an id the older records do
+/// not mention, which reads as its default.
+const MAGIC: [u8; 4] = *b"HKS6";
+const MAGIC_HKS5: [u8; 4] = *b"HKS5";
 const MAGIC_HKS4: [u8; 4] = *b"HKS4";
 pub const LEN_HKS4: usize = 156;
-/// HKS4's fields end here, where HKS4 put its checksum; HKS5 keeps every one of
+/// HKS4's fields end here, where HKS4 put its checksum; HKS5 kept every one of
 /// them at the same offset.
 const HKS4_FIELDS: usize = LEN_HKS4 - 4;
-/// Then `persist`'s PlayerData bools (4), its levels (4) and the SceneData item
-/// count (2), then the items, then the checksum.
-const ITEMS_AT: usize = HKS4_FIELDS + 4 + persist::LEVELS + 2;
-/// The shortest HKS5 record: a world nobody has touched, with no items.
-/// `tools/migrate_cards.py` reads this as the length an HKS4 fixture grows to.
-pub const LEN: usize = 166;
-/// The longest, with the store full. Eight 128-byte card frames with the psx-mc
-/// container ahead of it, against the one 8 KiB block each file owns.
-pub const MAX_LEN: usize = LEN + persist::MAX_ITEMS * 4;
+/// HKS5's `persist` bools (4), levels (4) and SceneData item count (2), then the
+/// items, then the checksum.
+const HKS5_ITEMS_AT: usize = HKS4_FIELDS + 4 + persist::LEVELS + 2;
+/// The shortest HKS5 record, a world nobody touched.
+pub const LEN_HKS5: usize = 166;
+/// HKS6: the header (the fields that are the frame's rather than PlayerData's:
+/// the respawn, the wallet, the Great Door, the Shade and the sequence, at
+/// HKS5's offsets), the PlayerData section (`player_data::PlayerData::encode`),
+/// the SceneData item count and items, then the checksum.
+const HEADER: usize = 52;
+/// The shortest HKS6 record: every field at its default and no items.
+/// `tools/migrate_cards.py` reads this.
+pub const LEN: usize = 60;
+const _: () = assert!(LEN == HEADER + 2 + 2 + 4);
+/// The longest, with every field set and the store full. The psx-mc container
+/// ahead of it and the title and icon frames still fit the file's one block.
+pub const MAX_LEN: usize = HEADER + player_data::MAX_SECTION + 2 + persist::MAX_ITEMS * 4 + 4;
+const _: () = assert!(MAX_LEN >= LEN_HKS5 + persist::MAX_ITEMS * 4 && 16 + MAX_LEN <= 8192 - 256);
 use crate::persist;
-/// The shop counters `shop::State::record` packs, which is the one field here
-/// whose width is another module's to choose. Named so the length arithmetic
-/// below reads as the fields rather than as a number.
+use crate::player_data::{self, PlayerData};
+/// HKS4 and HKS5's shop counters (`shop::State::record`).
 pub const SHOP_COUNTERS: usize = 6;
-/// PlayerData slots reserved for the cooked script bank. A fixed reserve rather
-/// than the bank's own count, because the record length cannot follow a
-/// generated table: every change to it invalidates every card fixture. The
-/// cooker refuses a bank that needs more, which is a build failure rather than a
-/// record that quietly holds some of the fields.
+/// HKS4 and HKS5's script reserve: PlayerData slots in the cooked bank's order,
+/// with the bank's field-list identity after them. `host/cook_scripts.py` still
+/// reads this as the most fields a bank may cook; the guest binds each one to
+/// its `player_data` field by name (`script.rs`), so the number no longer sizes
+/// anything on the card.
 pub const SCRIPT_FIELD_SLOTS: usize = 16;
 /// The profile-wide record (the original's roaming shared data): which title styles the endings and the
 /// Mighty Zote fight have unlocked, one bit each (`menu_state::STYLE_KEY`). Its own file, so no slot owns
@@ -207,61 +217,41 @@ pub struct Save {
     pub sequence: u32,
     /// The Hollow Shade owed at the time of the save, and the Geo it carries.
     pub shade: crate::shade::Record,
-    /// The charm half of PlayerData: `gotCharm_N` and `equippedCharm_N` as bit
-    /// per charm, `charmSlots`, and `canOvercharm`. `charmSlotsFilled` and
-    /// `overcharmed` are not stored because the source derives both, in
-    /// `CalculateNotchesUsed` and `RefreshOvercharm`, and a stored copy could
-    /// only ever contradict the set it was derived from.
-    pub charms_owned: psx_math::Mask64,
-    pub charms_equipped: psx_math::Mask64,
-    pub charm_notches: u8,
-    pub can_overcharm: bool,
-    /// How far along its cooked conversation chain each talkable NPC has got,
-    /// two bits per NPC. The port's stand-in for the per-NPC PlayerData bools
-    /// the source's own conversations write, and the only reason Elderbug does
-    /// not introduce himself again after a reload. See game/src/npc_state.rs.
-    pub npc_conversations: u32,
-    /// The PlayerData the cooked script bank reads and writes, by bank slot.
-    pub script_fields: [i32; SCRIPT_FIELD_SLOTS],
-    /// The identity of the field list those values are indexed by. Slot order
-    /// is the cook's, so a record written by one bank and read by another would
-    /// put `seenFocusTablet` where `currentArea` belongs. The loader compares
-    /// this with the bank it is running and drops the values when they disagree,
-    /// which is the one failure a checksum cannot catch.
-    pub script_field_fnv: u32,
-    /// The shop half of PlayerData: the cooked shop bools Sly's stock reads and
-    /// writes, as `shop::State`'s own bitmask. The charm half of a purchase is
-    /// absent because it is already in `charms_owned`: a charm row's bool *is*
-    /// `gotCharm_N`, which is why a charm bought at Sly's survived a quit while
-    /// everything else on the shelf did not.
-    pub shop_slots: u32,
-    /// `heartPieces`, `vesselFragments`, `maxHealthBase` above the starting
-    /// five, the fused vessels, `simpleKeys` and `rancidEggs`, in that order.
-    /// `shop::State::restore` is what decides whether they agree with each
-    /// other; this only carries them.
-    pub shop_counters: [u8; SHOP_COUNTERS],
-    /// `persist`'s PlayerData: the bools by bit, then `fireballLevel`,
-    /// `quakeLevel`, `screamLevel` and a reserved zero. The SceneData items
-    /// follow them on the card but are not part of this struct: they go
-    /// straight between the card buffer and `persist::store()`, because four
-    /// profiles of them would cost the boot survey 2 KiB of stack for records
-    /// only one of which is ever loaded.
-    pub player_bools: u32,
-    pub player_levels: [u8; persist::LEVELS],
-    /// The tag this record was read from, 4 or 5; `encode` always writes 5.
+    /// The tag this record was read from, 4, 5 or 6; `encode` always writes 6.
+    /// PlayerData and the SceneData items are not part of this struct: they go
+    /// straight between the card buffer and their stores (`load`), because four
+    /// profiles of them would cost the boot survey a kilobyte of stack for
+    /// records only one of which is ever loaded.
     pub version: u8,
 }
 fn fnv(bytes: &[u8]) -> u32 {
     psx_pack::fnv1a32(bytes)
 }
+/// What a migrated record needs from the build reading it: the cooked script
+/// bank's fields in slot order and its field-list identity (an HKS4/HKS5 record's
+/// reserve is that bank's or is dropped, as the HKS5 guest did), the False
+/// Knight's arena scene for an HKS4 record, and the shop's own units.
+pub struct Build<'a> {
+    pub script_fields: &'a [player_data::Field],
+    pub script_fnv: u32,
+    pub false_knight_scene: Option<usize>,
+    pub starting_masks: u8,
+    pub soul_per_vessel: u16,
+}
+/// What `migrate` restored, for the loader's telemetry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Restored {
+    pub items: usize,
+    /// Whether the script fields were taken: always for HKS6, and for an older
+    /// record only when its reserve was written by this bank.
+    pub scripts: bool,
+}
 impl Save {
-    /// Write the record and `items` (sorted `persist` words) into `out`, and
-    /// return the record's length. `out` must hold `MAX_LEN` bytes.
-    pub fn encode(&self, items: &[u32], out: &mut [u8]) -> usize {
+    /// Write the record, `pd` and `items` (sorted `persist` words) into `out`,
+    /// and return the record's length. `out` must hold `MAX_LEN` bytes.
+    pub fn encode(&self, pd: &PlayerData, items: &[u32], out: &mut [u8]) -> usize {
         assert!(items.len() <= persist::MAX_ITEMS && out.len() >= MAX_LEN);
-        let len = ITEMS_AT + items.len() * 4 + 4;
-        let out = &mut out[..len];
-        out.fill(0);
+        out[..MAX_LEN].fill(0);
         out[0..4].copy_from_slice(&MAGIC);
         out[4..8].copy_from_slice(&self.scene.to_le_bytes());
         out[8..12].copy_from_slice(&self.seat[0].to_le_bytes());
@@ -277,63 +267,49 @@ impl Save {
         out[40..44].copy_from_slice(&self.shade.position[0].to_le_bytes());
         out[44..48].copy_from_slice(&self.shade.position[1].to_le_bytes());
         out[48..52].copy_from_slice(&self.sequence.to_le_bytes());
-        out[52..56].copy_from_slice(&self.charms_owned.low().to_le_bytes());
-        out[56..60].copy_from_slice(&self.charms_owned.high().to_le_bytes());
-        out[60..64].copy_from_slice(&self.charms_equipped.low().to_le_bytes());
-        out[64..68].copy_from_slice(&self.charms_equipped.high().to_le_bytes());
-        out[68] = self.charm_notches;
-        out[69] = u8::from(self.can_overcharm);
-        out[70..74].copy_from_slice(&self.npc_conversations.to_le_bytes());
-        for (slot, value) in self.script_fields.iter().enumerate() {
-            out[74 + slot * 4..78 + slot * 4].copy_from_slice(&value.to_le_bytes());
+        let mut at = HEADER + pd.encode(&mut out[HEADER..]);
+        out[at..at + 2].copy_from_slice(&(items.len() as u16).to_le_bytes());
+        at += 2;
+        for item in items {
+            out[at..at + 4].copy_from_slice(&item.to_le_bytes());
+            at += 4;
         }
-        let after = 74 + SCRIPT_FIELD_SLOTS * 4;
-        out[after..after + 4].copy_from_slice(&self.script_field_fnv.to_le_bytes());
-        out[after + 4..after + 8].copy_from_slice(&self.shop_slots.to_le_bytes());
-        out[after + 8..after + 8 + SHOP_COUNTERS].copy_from_slice(&self.shop_counters);
-        out[HKS4_FIELDS..HKS4_FIELDS + 4].copy_from_slice(&self.player_bools.to_le_bytes());
-        out[HKS4_FIELDS + 4..HKS4_FIELDS + 4 + persist::LEVELS]
-            .copy_from_slice(&self.player_levels);
-        out[ITEMS_AT - 2..ITEMS_AT].copy_from_slice(&(items.len() as u16).to_le_bytes());
-        for (i, item) in items.iter().enumerate() {
-            out[ITEMS_AT + i * 4..ITEMS_AT + i * 4 + 4].copy_from_slice(&item.to_le_bytes());
-        }
-        let sum = fnv(&out[..len - 4]);
-        out[len - 4..].copy_from_slice(&sum.to_le_bytes());
-        len
+        let sum = fnv(&out[..at]);
+        out[at..at + 4].copy_from_slice(&sum.to_le_bytes());
+        at + 4
     }
-    /// The record and its SceneData item bytes (four per item, validated and
-    /// sorted), or None. An HKS4 record decodes with an empty world.
+    /// The record, its PlayerData bytes (the HKS6 section, or for HKS4 and
+    /// HKS5 the whole record, whose fields `migrate` reads by offset) and its
+    /// SceneData item bytes (four per item, validated and sorted), or None.
+    #[inline(never)]
     #[cfg_attr(not(test), optimize(size))]
-    pub fn decode(bytes: &[u8]) -> Option<(Self, &[u8])> {
-        let (len, version) = if bytes.get(0..4)? == MAGIC_HKS4 {
-            (LEN_HKS4, 4)
-        } else if bytes.get(0..4)? == MAGIC && bytes.len() >= LEN {
-            let count = u16::from_le_bytes([bytes[ITEMS_AT - 2], bytes[ITEMS_AT - 1]]) as usize;
-            if count > persist::MAX_ITEMS {
-                return None;
-            }
-            (ITEMS_AT + count * 4 + 4, 5)
+    pub fn decode(bytes: &[u8]) -> Option<(Self, &[u8], &[u8])> {
+        let magic = bytes.get(0..4)?;
+        let (version, items_at) = if magic == MAGIC_HKS4 {
+            (4, LEN_HKS4 - 4)
+        } else if magic == MAGIC_HKS5 && bytes.len() >= LEN_HKS5 {
+            (5, HKS5_ITEMS_AT)
+        } else if magic == MAGIC {
+            (6, HEADER + PlayerData::check(bytes.get(HEADER..)?)? + 2)
         } else {
             return None;
         };
+        let count = if version == 4 {
+            0
+        } else {
+            u16::from_le_bytes([*bytes.get(items_at - 2)?, *bytes.get(items_at - 1)?]) as usize
+        };
+        if count > persist::MAX_ITEMS {
+            return None;
+        }
+        let len = items_at + count * 4 + 4;
         if bytes.len() < len
             || fnv(&bytes[..len - 4]) != u32::from_le_bytes(bytes[len - 4..len].try_into().ok()?)
         {
             return None;
         }
         let word = |at: usize| i32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
-        let mask = |at: usize| {
-            psx_math::Mask64::from_words(
-                u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()),
-                u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()),
-            )
-        };
-        let items: &[u8] = if version == 5 {
-            &bytes[ITEMS_AT..len - 4]
-        } else {
-            &[]
-        };
+        let items = &bytes[items_at..len - 4];
         // A valid checksum over a list no build could have written is still
         // refused: unknown kinds, and keys out of order or repeated.
         let mut last = None;
@@ -344,6 +320,11 @@ impl Save {
             }
             last = Some(item >> 8);
         }
+        let player = if version == 6 {
+            &bytes[HEADER..items_at - 2]
+        } else {
+            &bytes[..items_at]
+        };
         Some((
             Self {
                 scene: word(4) as u32,
@@ -360,27 +341,9 @@ impl Save {
                     position: [word(40), word(44)],
                 },
                 sequence: word(48) as u32,
-                charms_owned: mask(52),
-                charms_equipped: mask(60),
-                charm_notches: bytes[68],
-                can_overcharm: bytes[69] != 0,
-                npc_conversations: u32::from_le_bytes(bytes[70..74].try_into().unwrap()),
-                script_fields: core::array::from_fn(|slot| word(74 + slot * 4)),
-                script_field_fnv: word(74 + SCRIPT_FIELD_SLOTS * 4) as u32,
-                shop_slots: word(78 + SCRIPT_FIELD_SLOTS * 4) as u32,
-                shop_counters: core::array::from_fn(|i| bytes[82 + SCRIPT_FIELD_SLOTS * 4 + i]),
-                player_bools: if version == 5 {
-                    word(HKS4_FIELDS) as u32
-                } else {
-                    0
-                },
-                player_levels: if version == 5 {
-                    core::array::from_fn(|i| bytes[HKS4_FIELDS + 4 + i])
-                } else {
-                    [0; persist::LEVELS]
-                },
                 version,
             },
+            player,
             items,
         ))
     }
@@ -389,6 +352,130 @@ impl Save {
         raw.chunks_exact(4)
             .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
     }
+}
+/// The HKS4/HKS5 fields `migrate` copies to a PlayerData field as they are:
+/// (offset, whether a word or a byte, field). The charm board, the NPC cursors
+/// and the shop counters.
+const LEGACY: [(u8, bool, u8); 13] = {
+    use player_data::*;
+    [
+        (52, true, PORT_CHARMS_OWNED as u8),
+        (56, true, PORT_CHARMS_OWNED as u8 + 1),
+        (60, true, PORT_CHARMS_EQUIPPED as u8),
+        (64, true, PORT_CHARMS_EQUIPPED as u8 + 1),
+        (68, false, CHARM_SLOTS as u8),
+        (69, false, CAN_OVERCHARM as u8),
+        (70, true, PORT_NPC_CURSORS as u8),
+        (146, false, HEART_PIECES as u8),
+        (147, false, VESSEL_FRAGMENTS as u8),
+        (148, false, MAX_HEALTH_BASE as u8),
+        (149, false, MP_RESERVE_MAX as u8),
+        (150, false, SIMPLE_KEYS as u8),
+        (151, false, RANCID_EGGS as u8),
+    ]
+};
+const _: () = assert!(
+    82 + SCRIPT_FIELD_SLOTS * 4 == 146
+        && 146 + SHOP_COUNTERS == HKS4_FIELDS
+        && player_data::COUNT <= 256
+);
+/// A decoded record's PlayerData into `pd` and its items into `store`. An HKS6
+/// record is its own section. An HKS4 or HKS5 one is migrated: every field it
+/// carried goes to the named field the HKS5 guest restored it to, and what it
+/// never carried stays a new game's.
+///
+/// - The charm board (bytes 52 to 70), the NPC cursors (70) and Sly's half
+///   (142 to 152) are copied across; `charms::boot` and `shop::boot` still judge
+///   whether they agree with each other, as they did.
+/// - The script reserve (74 to 138, its field-list identity at 138) goes to the
+///   fields the running bank names in those slots, only when the identity is
+///   this bank's; otherwise it is dropped, which is what the HKS5 guest did.
+/// - HKS5's `persist` bits (152) and levels (156) go to their fields.
+/// - HKS4 kept the False Knight's arena `Activated` and `falseKnightFirstPlop`
+///   in the reserve's top two slots; they become the bits and the arena's
+///   SceneData item, as HKS5's `persist::migrate_hks4` did.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+pub fn migrate(
+    save: &Save,
+    player: &[u8],
+    items: &[u8],
+    build: &Build,
+    pd: &mut PlayerData,
+    store: &mut persist::Store,
+) -> Restored {
+    let mut installed = 0;
+    for item in Save::items(items) {
+        let (kind, scene, local, value) = persist::unpack(item).expect("validated by decode");
+        installed += usize::from(store.set(kind, scene, local, value));
+    }
+    if save.version == 6 {
+        pd.decode(player);
+        return Restored { items: installed, scripts: true };
+    }
+    let b = player;
+    let word = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+    let p = pd;
+    p.reset();
+    // The fields that copy straight across, as a table: the guest runs this once
+    // per boot and the RAM it would cost unrolled is not worth it.
+    for &(at, wide, field) in &LEGACY {
+        let at = at as usize;
+        let value = if wide { word(at) } else { u32::from(b[at]) };
+        p.set(field as usize, value as i32);
+    }
+    // In the source's own units: masks, and SOUL rather than vessels.
+    p.set(
+        player_data::MAX_HEALTH_BASE,
+        p.get(player_data::MAX_HEALTH_BASE) + i32::from(build.starting_masks),
+    );
+    p.set(
+        player_data::MP_RESERVE_MAX,
+        p.get(player_data::MP_RESERVE_MAX) * i32::from(build.soul_per_vessel),
+    );
+    p.put(player_data::CAN_OVERCHARM, p.flag(player_data::CAN_OVERCHARM));
+    let shop_slots = word(78 + SCRIPT_FIELD_SLOTS * 4);
+    if shop_slots >> player_data::SHOP_FLAGS.len() != 0 {
+        // Bits past the cooked flags: `shop::State::restore` refused the whole
+        // half and the shelf started afresh, so that is what is migrated.
+        for &(_, _, field) in &LEGACY[7..] {
+            p.set(field as usize, player_data::default(field as usize));
+        }
+    } else {
+        for (slot, &field) in player_data::SHOP_FLAGS.iter().enumerate() {
+            p.set(field, (shop_slots >> slot & 1) as i32);
+        }
+    }
+    let slot = |s: usize| word(74 + s * 4) as i32;
+    let scripts = word(74 + SCRIPT_FIELD_SLOTS * 4) == build.script_fnv;
+    if scripts {
+        // HKS4's top two slots were the False Knight's, never the bank's.
+        let usable = if save.version == 4 {
+            SCRIPT_FIELD_SLOTS - 2
+        } else {
+            SCRIPT_FIELD_SLOTS
+        };
+        for (s, &field) in build.script_fields.iter().enumerate().take(usable) {
+            p.set(field, slot(s));
+        }
+    }
+    if save.version == 5 {
+        p.set_legacy_bits(word(HKS4_FIELDS));
+        for i in 0..persist::LEVELS {
+            p.set(player_data::FIREBALL_LEVEL + i, i32::from(b[HKS4_FIELDS + 4 + i]));
+        }
+    } else if scripts {
+        if slot(SCRIPT_FIELD_SLOTS - 2) != 0 {
+            p.put(player_data::FALSE_KNIGHT_FIRST_PLOP, true);
+        }
+        if slot(SCRIPT_FIELD_SLOTS - 1) != 0 {
+            p.put(player_data::FALSE_KNIGHT_DEFEATED, true);
+            if let Some(scene) = build.false_knight_scene {
+                installed += usize::from(store.set(persist::Kind::BattleScene, scene, 0, 1));
+            }
+        }
+    }
+    Restored { items: installed, scripts }
 }
 /// Frame retries before an error stands. A silicon card read under load has
 /// dropped an `/ACK` once in a dozen frames (hardware-tests v2.1) and a write
@@ -593,19 +680,26 @@ fn buf() -> &'static mut [u8; MAX_LEN] {
 /// Call only inside an input scene-load bracket (the sampler drops the
 /// samples polled while the card is busy). Writes the copy `read` did not
 /// return, so an interruption cannot destroy the save still being relied on.
-/// `items` is `persist`'s SceneData list, already brought up to date.
+/// `pd` is PlayerData and `items` `persist`'s SceneData list, both already
+/// brought up to date (`player_data::snapshot`, `persist::snapshot`).
 /// An unformatted card is refused with `Fault::Unformatted` unless `format` is
 /// set: the player is asked first, as the console's own card manager does.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
-pub fn write(profile: usize, save: &Save, items: &[u32], format: bool) -> Result<(), Fault> {
+pub fn write(
+    profile: usize,
+    save: &Save,
+    pd: &PlayerData,
+    items: &[u32],
+    format: bool,
+) -> Result<(), Fault> {
     let mut record = *save;
     let copy = unsafe { NEXT_COPY[profile] };
     record.sequence = unsafe { LAST_SEQUENCE[profile] }.wrapping_add(1);
     let mut name = [0u8; 19];
     let name = file_name(profile, copy, &mut name);
     let out = buf();
-    let len = record.encode(items, out);
+    let len = record.encode(pd, items, out);
     let began = crate::input::vblanks();
     let mut card = Card::new(SlotOne::new(true));
     let result = card.is_formatted().and_then(|formatted| {
@@ -663,7 +757,7 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
         match card.read(name, buf) {
             Ok(len) => {
                 seen = true;
-                if let Some((save, _)) = Save::decode(&buf[..len]) {
+                if let Some((save, _, _)) = Save::decode(&buf[..len]) {
                     // Sequences only ever increase, so a plain comparison holds.
                     if newest.is_none_or(|(_, best)| save.sequence > best.sequence) {
                         newest = Some((copy, save));
@@ -730,18 +824,24 @@ pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
     }
     (slots, fault)
 }
-/// The chosen profile's SceneData items, into `store`. Re-reads the copy
-/// `survey` picked rather than keeping every profile's items from the survey,
-/// which would hold four lists to use one. Boot-time, after the menu and
-/// before the pad sampler starts, the same window `survey` runs in.
+/// The chosen profile's PlayerData into `pd` and its SceneData items into
+/// `store`, migrating an HKS4 or HKS5 record. Re-reads the copy `survey`
+/// picked rather than keeping every profile's from the survey, which would hold
+/// four records to use one. Boot-time, after the menu and before the pad
+/// sampler starts, the same window `survey` runs in.
 ///
-/// Returns the items installed. A read that fails, or finds a different
-/// record than the survey did (the card was swapped at the title), installs
-/// nothing and says so in `HK_SAVE_FAULT`: the rest of the save still loads,
-/// with the authored world, which is the HKS4 behaviour and never an invented
-/// one.
+/// A read that fails, or finds a different record than the survey did (the card
+/// was swapped at the title), installs nothing and says so in `HK_SAVE_FAULT`:
+/// the header still loads, with a new game's PlayerData and the authored world.
 #[inline(never)]
-pub fn load_world(profile: usize, sequence: u32, store: &mut persist::Store) -> usize {
+#[cfg_attr(not(test), optimize(size))]
+pub fn load(
+    profile: usize,
+    sequence: u32,
+    build: &Build,
+    pd: &mut PlayerData,
+    store: &mut persist::Store,
+) -> Restored {
     let copy = 1 - unsafe { NEXT_COPY[profile] };
     let mut name = [0u8; 19];
     let name = file_name(profile, copy, &mut name);
@@ -753,14 +853,8 @@ pub fn load_world(profile: usize, sequence: u32, store: &mut persist::Store) -> 
         .ok()
         .and_then(|&len| Save::decode(&buf[..len]));
     match decoded {
-        Some((save, items)) if save.sequence == sequence => {
-            let mut installed = 0;
-            for item in Save::items(items) {
-                let (kind, scene, local, value) =
-                    persist::unpack(item).expect("validated by decode");
-                installed += usize::from(store.set(kind, scene, local, value));
-            }
-            installed
+        Some((save, player, items)) if save.sequence == sequence => {
+            migrate(&save, player, items, build, pd, store)
         }
         _ => {
             let fault = match read {
@@ -768,7 +862,7 @@ pub fn load_world(profile: usize, sequence: u32, store: &mut persist::Store) -> 
                 Ok(_) => Fault::Corrupt,
             };
             unsafe { HK_SAVE_FAULT = fault as u32 + 1 }
-            0
+            Restored { items: 0, scripts: false }
         }
     }
 }

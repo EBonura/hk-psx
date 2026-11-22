@@ -2,7 +2,7 @@
 //!
 //! `hk_sim::script3` runs the HKFSM03 banks `hk_fsm_cook` cooks from the scene FSMs, on the same kernel the
 //! enemies use, and knows nothing about this game. This is the seam between them: the trigger overlaps, the
-//! PlayerData reserve in the save record and the per-scene instance pool.
+//! cooked fields' binding to PlayerData (`player_data.rs`) and the per-scene instance pool.
 //!
 //! The one service that needs care is `hero_trigger`. Unity raises
 //! OnTriggerEnter2D from the physics step, not from the state that happens to
@@ -51,9 +51,20 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/scripts.rs"));
 
 const VOLUMES: usize = SCRIPT_VOLUMES.len();
 const FIELDS: usize = SCRIPT_FIELD_NAMES.len();
-/// The whole reserve is the cooked bank's. Until HKS5 the top two slots held
-/// the False Knight's arena and first plop, which the port writes by hand; they
-/// live in `persist` now, and `persist::load` moves them out of an HKS4 record.
+/// The `player_data` field each cooked slot names, bound by its source name at
+/// compile time. A bank that cooks a field the store has no row for fails the
+/// build here: add the row to `player_data::NAMES` (append only).
+pub const FIELD_MAP: [crate::player_data::Field; FIELDS] = {
+    let mut map = [0; FIELDS];
+    let mut i = 0;
+    while i < FIELDS {
+        map[i] = crate::player_data::find(SCRIPT_FIELD_NAMES[i]);
+        assert!(map[i] < crate::player_data::COUNT, "a cooked script field has no player_data row");
+        i += 1;
+    }
+    map
+};
+/// HKS4 and HKS5 records hold at most this many; `save::migrate` reads them.
 const _: () = assert!(
     FIELDS <= crate::save::SCRIPT_FIELD_SLOTS,
     "the cooked script bank has outgrown the save record's reserve"
@@ -78,10 +89,9 @@ const _: () = assert!(same_instances(), "the HKFSM03 script banks list the insta
 
 static mut RUNNING: Scripts = Scripts::new();
 static mut INSIDE: Overlaps<VOLUMES> = Overlaps::new();
-/// The PlayerData a script reads and writes. The bench save record carries the
-/// whole reserve, so a flag a script sets survives a quit the way the source's
-/// own does.
-static mut STORE: [i32; crate::save::SCRIPT_FIELD_SLOTS] = [0; crate::save::SCRIPT_FIELD_SLOTS];
+/// The kernel's view of PlayerData, in cooked slot order: filled from the store
+/// before a tick and written back after one that wrote. Not a store of its own.
+static mut STORE: [i32; FIELDS] = [0; FIELDS];
 
 /// Instances ticked on the last tick, which is the resident scene's set.
 #[no_mangle]
@@ -104,9 +114,9 @@ pub static mut HK_SCRIPT_HALTS: u32 = 0;
 /// the symbol stays so the telemetry readers keep one shape.
 #[no_mangle]
 pub static mut HK_SCRIPT_NATIVE: u32 = 0;
-/// Whether a loaded record's PlayerData was taken. Zero after a boot with a
-/// record whose field list is not this bank's, which is the case the loader
-/// refuses rather than mapping onto the wrong fields.
+/// Whether a loaded record's script fields were taken. Zero after a boot with an
+/// HKS4 or HKS5 record whose field list is not this bank's, which the loader
+/// refuses rather than mapping onto the wrong fields; an HKS6 record names them.
 #[no_mangle]
 pub static mut HK_SCRIPT_RESTORED: u32 = 0;
 
@@ -114,40 +124,17 @@ fn volume_of(scene: usize, source: u32) -> Option<usize> {
     SCRIPT_VOLUMES.iter().position(|v| v.scene as usize == scene && v.source_id == source)
 }
 
-/// The PlayerData a script or a port controller wrote, for the bench save
-/// record, with the identity of the field list it is indexed by.
-pub fn record() -> ([i32; crate::save::SCRIPT_FIELD_SLOTS], u32) {
-    (unsafe { STORE }, SCRIPT_FIELD_FNV)
-}
-/// Restore it from a loaded record, or refuse to.
-///
-/// Slot order is the cook's, so values from a bank with a different field list
-/// would land on the wrong fields: `seenFocusTablet` read as `currentArea` is a
-/// wrong answer no checksum can see. A mismatch drops them and says so rather
-/// than guessing which ones still line up.
-pub fn boot(values: &[i32; crate::save::SCRIPT_FIELD_SLOTS], field_fnv: u32) {
-    unsafe {
-        if field_fnv != SCRIPT_FIELD_FNV {
-            HK_SCRIPT_RESTORED = 0;
-            return;
-        }
-        STORE = *values;
-        HK_SCRIPT_RESTORED = 1;
-    }
-}
-/// Clear one reserve slot directly; `persist::load` uses it to empty the two
-/// an HKS4 record lent the False Knight. The cooked bank reaches its own
-/// through the kernel.
-pub fn set_player_data(slot: usize, value: i32) {
-    unsafe { STORE[slot] = value }
+/// Whether the loaded record's script fields were taken (`persist::load`).
+pub fn boot(taken: bool) {
+    unsafe { HK_SCRIPT_RESTORED = u32::from(taken) }
 }
 
 /// Clear the whole bank, for a new game or a session reset. The PlayerData a
-/// script wrote goes with it, because nothing carries it across yet.
+/// script wrote is `persist::reset`'s to clear, with the rest of the store.
 pub fn reset() {
     unsafe {
         (*(&raw mut RUNNING)).forget();
-        STORE = [0; crate::save::SCRIPT_FIELD_SLOTS];
+        STORE = [0; FIELDS];
         HK_SCRIPT_ACTIVE = 0;
         HK_SCRIPT_TRANSITIONS = 0;
         HK_SCRIPT_WRITES = 0;
@@ -180,6 +167,10 @@ pub fn tick(scene: usize, body: [i32; 4]) {
             volume.scene as usize == scene && overlaps(volume.bounds, body)
         });
         let inside = &*(&raw const INSIDE);
+        let pd = crate::player_data::store();
+        for (slot, &field) in FIELD_MAP.iter().enumerate() {
+            STORE[slot] = pd.get(field);
+        }
         let report = scripts.tick(
             |i| {
                 let Some(v) = volume_of(scene, SCRIPT_INSTANCES[i].source_id) else { return 0 };
@@ -193,6 +184,11 @@ pub fn tick(scene: usize, body: [i32; 4]) {
             },
             &mut *(&raw mut STORE),
         );
+        if report.writes != 0 {
+            for (slot, &field) in FIELD_MAP.iter().enumerate() {
+                pd.set(field, STORE[slot]);
+            }
+        }
         HK_SCRIPT_ACTIVE = report.active;
         HK_SCRIPT_TRANSITIONS += report.transitions;
         HK_SCRIPT_WRITES += report.writes;

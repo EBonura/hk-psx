@@ -132,12 +132,15 @@ class PlayerDataReserveTests(unittest.TestCase):
     reserve, which meant a recook that changed the bank's field list dropped a
     won boss fight along with the script values. They are `persist` items now:
     `Activated` a SceneData item keyed by the arena's scene, the plop a
-    PlayerData bit. The reserve is the cooked bank's alone.
+    PlayerData bit. The reserve is the cooked bank's alone. Since HKS6 the
+    reserve is not stored at all: each cooked slot is bound by name to its
+    `player_data` field (`script::FIELD_MAP`), and the record carries the store.
     """
     def test_the_reserve_is_the_cooked_banks_and_the_boss_is_not_in_it(self):
         slots = rustsrc.const_int(ROOT / 'game/src/save.rs', 'SCRIPT_FIELD_SLOTS')
         script = rustsrc.source(ROOT / 'game/src/script.rs')
-        self.assertEqual(re.findall(r'pub const FIELD_\w+', script), [])
+        # No hand-placed slot of the port's own; FIELD_MAP is the by-name binding.
+        self.assertEqual(re.findall(r'pub const FIELD_(?!MAP:)\w+', script), [])
         enemies = rustsrc.source(ROOT / 'game/src/enemies.rs')
         self.assertIn('persist::Kind::BattleScene', enemies)
         self.assertIn('persist::FALSE_KNIGHT_FIRST_PLOP', enemies)
@@ -150,11 +153,12 @@ class PlayerDataReserveTests(unittest.TestCase):
         cooked = len([n for n in names.split(',') if n.strip()])
         self.assertLessEqual(cooked, slots, 'the cooked script bank has outgrown the reserve')
 
-    def test_the_whole_reserve_reaches_the_record(self):
-        """`record`/`boot` must carry every slot, not just the cooked ones."""
+    def test_every_cooked_slot_reaches_the_store(self):
+        """Each slot is bound to its field by name and written back after a tick
+        that wrote, so what a script sets is what the record carries."""
         script = ROOT / 'game/src/script.rs'
-        self.assertTrue(rustsrc.contains(script, 'static mut STORE: [i32; crate::save::SCRIPT_FIELD_SLOTS]'))
-        self.assertTrue(rustsrc.contains(script, 'STORE = *values;'))
+        self.assertTrue(rustsrc.contains(script, 'crate::player_data::find(SCRIPT_FIELD_NAMES[i])'))
+        self.assertTrue(rustsrc.contains(script, 'pd.set(field, STORE[slot]);'))
 
 
 if __name__ == '__main__':
