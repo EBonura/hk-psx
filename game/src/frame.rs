@@ -1630,6 +1630,11 @@ pub fn simulate(
             );
             if struck & hk_sim::terrain_thunk::THUNK != 0 {
                 scene_sfx::nail_terrain();
+                // Its RecoilLeft/RecoilRight/RecoilDown, through the enemy hit's NailResponse
+                // (`enemies::nail_answer`, gated alike; the source's own gate is controlReqlinquished).
+                if game.vitals.can_control() {
+                    game.thunk.recoil(&mut game.nail_response, NAIL_RESPONSE_PARAMS, &mut game.player);
+                }
             }
             // A gate's, a toll gate's or the lift block's TinkEffect.
             if struck & hk_sim::terrain_thunk::TINK != 0 {
