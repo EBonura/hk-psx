@@ -69,6 +69,8 @@ pub use spell::{Cast, CastPhase, Fireball, FireballParams};
 mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
+pub mod hero_attack;
+pub use hero_attack::{HeroAttacks, HeroHit};
 pub mod persistent;
 pub use actors::{
     persistent_actor, places_false_knight, resolve_actor_spawn, runner_audio_family, walker_senses, ActorController, ActorHealth, ActorPlacement, ActorSpec,
