@@ -419,10 +419,18 @@ mod world {
 #[path = "../../../game/src/persist.rs"]
 #[allow(dead_code)]
 mod persist_store;
+/// PlayerData (`game/src/player_data.rs`), where `persist::player` reads and
+/// writes since HKS6.
+#[allow(clippy::all, unexpected_cfgs)]
+#[path = "../../../game/src/player_data.rs"]
+#[allow(dead_code)]
+mod player_data;
 mod persist {
     pub use super::persist_store::*;
+    use super::player_data::PlayerData;
     std::thread_local! {
         pub static STORE: std::cell::RefCell<Store> = const { std::cell::RefCell::new(Store::new()) };
+        pub static PLAYER: std::cell::RefCell<PlayerData> = const { std::cell::RefCell::new(PlayerData::new()) };
     }
     pub fn get(kind: Kind, scene: usize, local: usize) -> Option<u8> {
         STORE.with(|s| s.borrow().get(kind, scene, local))
@@ -437,10 +445,10 @@ mod persist {
     }
     pub fn publish() {}
     pub fn player(bit: u32) -> bool {
-        STORE.with(|s| s.borrow().player(bit))
+        PLAYER.with(|p| p.borrow().flag(bit as usize))
     }
     pub fn set_player(bit: u32) {
-        STORE.with(|s| s.borrow_mut().set_player(bit))
+        PLAYER.with(|p| p.borrow_mut().put(bit as usize, true))
     }
 }
 /// The arena gates. The real module links the cooked `(slot, gate, edges)`

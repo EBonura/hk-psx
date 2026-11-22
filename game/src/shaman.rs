@@ -41,13 +41,12 @@ const CROSS: u16 = 0x4000;
 const CIRCLE: u16 = 0x2000;
 const SQUARE: u16 = 0x8000;
 const ACTIONS: u16 = UP | DOWN | CROSS | CIRCLE | SQUARE;
-/// `shaman` in two PlayerData bits (persist::SHAMAN_LOW, SHAMAN_HIGH).
+/// PlayerData `shaman`.
 pub fn state(pd: &impl Player) -> u8 {
-    u8::from(pd.get(persist::SHAMAN_LOW)) | u8::from(pd.get(persist::SHAMAN_HIGH)) << 1
+    pd.shaman()
 }
 fn set_state(pd: &mut impl Player, value: u8) {
-    pd.put(persist::SHAMAN_LOW, value & 1 != 0);
-    pd.put(persist::SHAMAN_HIGH, value & 2 != 0);
+    pd.set_shaman(value);
 }
 
 /// Tick lengths at 60 Hz, from the FSM waits.
@@ -58,10 +57,10 @@ pub const BLACK_TICKS: u16 = 120; // Check Fall: Black, Wait 2
 pub const FADE_TICKS: u16 = 180; // Fade Back: EaseColor 3
 
 pub trait Player {
-    fn get(&self, bit: u32) -> bool;
-    fn put(&mut self, bit: u32, on: bool);
     fn fireball(&self) -> u8;
     fn set_fireball(&mut self, level: u8);
+    fn shaman(&self) -> u8;
+    fn set_shaman(&mut self, value: u8);
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Talk {
@@ -345,21 +344,18 @@ mod live {
     use psx_vram::{Clut, TextureDepth, TexturePage};
     struct Store;
     impl Player for Store {
-        fn get(&self, bit: u32) -> bool {
-            persist::player(bit)
-        }
-        fn put(&mut self, bit: u32, on: bool) {
-            if on {
-                persist::set_player(bit)
-            } else {
-                persist::clear_player(bit)
-            }
-        }
         fn fireball(&self) -> u8 {
-            persist::store().levels[persist::FIREBALL_LEVEL]
+            persist::level(persist::FIREBALL_LEVEL)
         }
         fn set_fireball(&mut self, level: u8) {
             persist::set_level(persist::FIREBALL_LEVEL, level)
+        }
+        fn shaman(&self) -> u8 {
+            crate::player_data::store().get(crate::player_data::SHAMAN) as u8
+        }
+        fn set_shaman(&mut self, value: u8) {
+            crate::player_data::store().set(crate::player_data::SHAMAN, i32::from(value));
+            persist::publish();
         }
     }
     static mut SHAMAN: Shaman = Shaman::new();
@@ -555,21 +551,18 @@ mod tests {
     use super::*;
     struct Pd(u32, u8);
     impl Player for Pd {
-        fn get(&self, b: u32) -> bool {
-            self.0 & (1 << b) != 0
-        }
-        fn put(&mut self, b: u32, on: bool) {
-            if on {
-                self.0 |= 1 << b
-            } else {
-                self.0 &= !(1 << b)
-            }
-        }
         fn fireball(&self) -> u8 {
             self.1
         }
         fn set_fireball(&mut self, l: u8) {
             self.1 = l;
+        }
+        // Bits 24 and 25 of the fake's word, where HKS5 kept it.
+        fn shaman(&self) -> u8 {
+            (self.0 >> 24 & 3) as u8
+        }
+        fn set_shaman(&mut self, v: u8) {
+            self.0 = self.0 & !(3 << 24) | u32::from(v & 3) << 24;
         }
     }
     fn at(r: [i32; 4]) -> [i32; 4] {

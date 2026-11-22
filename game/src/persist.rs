@@ -2,8 +2,9 @@
 //! load and rides the bench save record (`save.rs`, HKS5 onward).
 //!
 //! The source keeps two stores and this mirrors both. `PlayerData` is one flat
-//! set of named fields; the few the port implements and nothing else writes are
-//! the bits and levels below, each named after its source field. `SceneData`
+//! set of named fields, which `player_data.rs` holds since HKS6; the names below
+//! are the ones this module's callers have always used, and each is that
+//! store's field id (the HKS4/HKS5 bit numbers). `SceneData`
 //! is a list of persistent items keyed by scene and object: every
 //! `PersistentBoolItem` (a broken wall, an opened cocoon, a revealed secret, an
 //! arena's `Activated`) and every `GeoRock`'s `hitsLeft`. The list holds only
@@ -110,8 +111,8 @@ pub fn unpack(item: u32) -> Option<(Kind, usize, usize, u8)> {
     ))
 }
 
-/// PlayerData bools, by bit. Append only: a bit's meaning is part of the card
-/// format, so a retired field keeps its bit.
+/// PlayerData bools, by `player_data` field id, which is the bit HKS4 and HKS5
+/// kept them in (the cooked pickups name an ability by it).
 pub const FALSE_KNIGHT_DEFEATED: u32 = 0;
 pub const FALSE_KNIGHT_FIRST_PLOP: u32 = 1;
 pub const HAS_DASH: u32 = 2;
@@ -125,8 +126,9 @@ pub const HAS_CITY_KEY: u32 = 8;
 /// The map and its mapper, from bit 16 so the abilities and pickups other
 /// branches add below it do not collide with them. `hasMap` (any map bought),
 /// `mapCrossroads`, `hasQuill`, `hasPinBench`, `metCornifer`,
-/// `corniferIntroduced`, `openedMapperShop`, `metIselda`. `mapDirtmouth` is a
-/// new-save default that nothing clears, so it has no bit.
+/// `corniferIntroduced`, `openedMapperShop` (Cornifer's copy of it: see
+/// `player_data`), `metIselda`. `mapDirtmouth` is a new-save default that
+/// nothing clears, so it has no bit.
 pub const HAS_MAP: u32 = 16;
 pub const MAP_CROSSROADS: u32 = 17;
 pub const HAS_QUILL: u32 = 18;
@@ -135,15 +137,13 @@ pub const MET_CORNIFER: u32 = 20;
 pub const CORNIFER_INTRODUCED: u32 = 21;
 pub const OPENED_MAPPER_SHOP: u32 = 22;
 pub const MET_ISELDA: u32 = 23;
-/// PlayerData `shaman` (0..3 here), two bits: game/src/shaman.rs.
-pub const SHAMAN_LOW: u32 = 24;
-pub const SHAMAN_HIGH: u32 = 25;
 /// `hornet1Defeated`: Greenpath's Hornet beaten. The Cloak Corpse's shiny (the
 /// Mothwing Cloak) is offered once it is set.
 pub const HORNET_1_DEFEATED: u32 = 26;
-/// PlayerData small integers, by index: `fireballLevel`, `quakeLevel`,
-/// `screamLevel`, and `currentArea` (title_card.rs: the title index plus one of the area last
-/// announced, 0 for none; a record from before it reads 0).
+/// PlayerData small integers, by index from `player_data::FIREBALL_LEVEL`:
+/// `fireballLevel`, `quakeLevel`, `screamLevel`, and the area title
+/// (title_card.rs: the title index plus one of the area last announced, 0 for
+/// none; `player_data::PORT_AREA_TITLE`).
 pub const FIREBALL_LEVEL: usize = 0;
 #[allow(dead_code)]
 pub const QUAKE_LEVEL: usize = 1;
@@ -156,8 +156,6 @@ pub const LEVELS: usize = 4;
 pub struct Store {
     items: [u32; MAX_ITEMS],
     len: usize,
-    pub player: u32,
-    pub levels: [u8; LEVELS],
     /// Items refused because the store was full or the id did not fit.
     pub overflow: u32,
 }
@@ -166,8 +164,6 @@ impl Store {
         Self {
             items: [0; MAX_ITEMS],
             len: 0,
-            player: 0,
-            levels: [0; LEVELS],
             overflow: 0,
         }
     }
@@ -257,15 +253,6 @@ impl Store {
             (k == kind).then_some((scene, local, value))
         })
     }
-    pub fn player(&self, bit: u32) -> bool {
-        self.player & (1 << bit) != 0
-    }
-    pub fn set_player(&mut self, bit: u32) {
-        self.player |= 1 << bit;
-    }
-    pub fn clear_player(&mut self, bit: u32) {
-        self.player &= !(1 << bit);
-    }
 }
 
 #[cfg(not(test))]
@@ -299,7 +286,7 @@ pub fn publish() {
     let s = store();
     unsafe {
         HK_WORLD_ITEMS = s.len as u32;
-        HK_WORLD_PLAYER = s.player;
+        HK_WORLD_PLAYER = crate::player_data::store().legacy_bits();
         HK_WORLD_OVERFLOW = s.overflow;
     }
 }
@@ -336,78 +323,58 @@ pub fn count(kind: Kind) -> usize {
 }
 #[cfg(not(test))]
 pub fn player(bit: u32) -> bool {
-    store().player(bit)
+    crate::player_data::store().flag(bit as usize)
 }
 #[cfg(not(test))]
 #[inline(never)]
 pub fn set_player(bit: u32) {
-    store().set_player(bit);
+    crate::player_data::store().put(bit as usize, true);
     publish();
 }
+/// One of the levels (`fireballLevel` and its siblings).
 #[cfg(not(test))]
-#[inline(never)]
-pub fn clear_player(bit: u32) {
-    store().clear_player(bit);
-    publish();
+pub fn level(index: usize) -> u8 {
+    crate::player_data::store().get(crate::player_data::FIREBALL_LEVEL + index) as u8
 }
-/// Set one of `levels` (`fireballLevel` and its siblings).
 #[cfg(not(test))]
 #[inline(never)]
 pub fn set_level(index: usize, value: u8) {
-    store().levels[index] = value;
+    crate::player_data::store().set(crate::player_data::FIREBALL_LEVEL + index, i32::from(value));
     publish();
 }
-/// A new game, or the development reset back to one.
+/// A new game, or the development reset back to one: SceneData and PlayerData.
 #[cfg(not(test))]
 #[inline(never)]
 pub fn reset() {
     *store() = Store::new();
+    crate::player_data::store().reset();
     unsafe { HK_WORLD_RESTORED = 0 }
     publish();
 }
 
-/// Boot: PlayerData from the record, SceneData from the card for an HKS5
-/// record or out of the script reserve for an HKS4 one.
+/// Boot: PlayerData and SceneData from the chosen record, migrating an HKS4
+/// or HKS5 one (`save::migrate`). Returns whether the script bank's fields
+/// were taken.
 #[cfg(not(test))]
 #[inline(never)]
-pub fn load(save: &crate::save::Save, profile: usize) {
-    let s = store();
-    s.player = save.player_bools;
-    s.levels = save.player_levels;
-    let restored = if save.version >= 5 {
-        crate::save::load_world(profile, save.sequence, s)
-    } else {
-        migrate_hks4(save, s)
+pub fn load(save: &crate::save::Save, profile: usize) -> bool {
+    let build = crate::save::Build {
+        script_fields: &crate::script::FIELD_MAP,
+        script_fnv: crate::script::SCRIPT_FIELD_FNV,
+        false_knight_scene: crate::world::false_knight_scene(),
+        starting_masks: crate::shop::STARTING_MASKS,
+        soul_per_vessel: crate::shop::SOUL_PER_VESSEL,
     };
-    unsafe { HK_WORLD_RESTORED = restored as u32 }
+    let restored = crate::save::load(
+        profile,
+        save.sequence,
+        &build,
+        crate::player_data::store(),
+        store(),
+    );
+    unsafe { HK_WORLD_RESTORED = restored.items as u32 }
     publish();
-}
-/// HKS4 kept the False Knight's arena `Activated` and `falseKnightFirstPlop`
-/// in the script reserve's top two slots. They move here, and the slots are
-/// cleared so the cooked bank can have them. Only when the record's field list
-/// is this bank's: `script::boot` has already dropped the values otherwise, and
-/// a won fight is the conservative thing to lose, as it always was.
-#[cfg(not(test))]
-#[inline(never)]
-fn migrate_hks4(save: &crate::save::Save, s: &mut Store) -> usize {
-    use crate::save::SCRIPT_FIELD_SLOTS as SLOTS;
-    if save.script_field_fnv != crate::script::SCRIPT_FIELD_FNV {
-        return 0;
-    }
-    let arena = save.script_fields[SLOTS - 1] != 0;
-    let first_plop = save.script_fields[SLOTS - 2] != 0;
-    crate::script::set_player_data(SLOTS - 1, 0);
-    crate::script::set_player_data(SLOTS - 2, 0);
-    if first_plop {
-        s.set_player(FALSE_KNIGHT_FIRST_PLOP);
-    }
-    if !arena {
-        return 0;
-    }
-    s.set_player(FALSE_KNIGHT_DEFEATED);
-    crate::world::false_knight_scene().map_or(0, |scene| {
-        usize::from(s.set(Kind::BattleScene, scene, 0, 1))
-    })
+    restored.scripts
 }
 /// Hand the loaded SceneData to the stores that own it for the session:
 /// broken walls to the world, mined rocks to the Geo pool, an opened cocoon to

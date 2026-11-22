@@ -63,7 +63,7 @@ fn me() -> &'static mut Option<Roller> {
 }
 /// `Can Roller?`: the spell is had and no roller is out.
 pub fn can_spawn() -> bool {
-    crate::persist::store().levels[crate::persist::FIREBALL_LEVEL] > 0 && me().is_none()
+    crate::persist::level(crate::persist::FIREBALL_LEVEL) > 0 && me().is_none()
 }
 /// `Fire` from the `Roller` branch.
 pub fn spawn(scene: usize, at: [i32; 2], velocity: [i32; 2], moving_right: bool) {
