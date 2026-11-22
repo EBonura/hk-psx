@@ -200,9 +200,22 @@ impl Vitals {
     }
 }
 
+/// HeroController.TakeDamage returns while cState.shadowDashing only when
+/// hazardType is 1, ordinary contact damage; spikes (2) and acid (3) go on to
+/// DieFromHazard. HeroBox skips a DamageHero whose shadowDashHazard is set,
+/// but none in the admitted scenes sets it, so it is not modelled.
+pub const fn shadow_dash_ignores(shadow_dashing: bool, hazard: bool) -> bool {
+    shadow_dashing && !hazard
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_shade_cloak_passes_enemies_but_not_spikes_or_acid() {
+        assert!(shadow_dash_ignores(true, false));
+        assert!(!shadow_dash_ignores(true, true));
+        assert!(!shadow_dash_ignores(false, false));
+    }
     const P: VitalParams = VitalParams {
         max_health: 5,
         max_soul: 99,

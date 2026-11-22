@@ -186,10 +186,9 @@ impl Settings {
         hazard: bool,
         shadow: bool,
     ) -> Hurt {
-        // Source TakeDamage returns immediately while cState.shadowDashing, so
-        // a Shade Cloak dash passes through a hazard rather than respawning at
-        // it. That is deliberately unlike the Invincibility cheat below.
-        if shadow {
+        // A Shade Cloak dash passes through enemies but not spikes or acid.
+        // That is deliberately unlike the Invincibility cheat below.
+        if hk_sim::shadow_dash_ignores(shadow, hazard) {
             return Hurt::Ignored;
         }
         if !self.invincible {
