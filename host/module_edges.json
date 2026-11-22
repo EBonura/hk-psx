@@ -330,6 +330,11 @@
     "hk_psx::lifeblood::presentation::apply"
   ],
   [
+    "hk_psx::title::load_player",
+    "title",
+    "hk_psx::save::load"
+  ],
+  [
     "hk_psx::title::loading",
     "title",
     "hk_psx::menu::loading"

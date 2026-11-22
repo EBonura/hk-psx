@@ -147,7 +147,10 @@ MODULES = {
                    'centered_caps', 'ornament', 'logo', 'pointer', 'pointers', 'leaf', 'pointer_u', 'mix', 'rd',
                    'lerp9', 'piece', 'emitter', 'layer', 'extras', 'flourishes', 'unfurl', 'ramp', 'levels',
                    'hide_frames', 'input_at', 'present_samples', 'present', 'status', 'probe_screen', 'loading',
-                   'retry', 'restore', 'upload_style', 'upload_ornaments', 'upload_font'),
+                   'retry', 'restore', 'upload_style', 'upload_ornaments', 'upload_font')
+             # The boot's one read of the chosen save and its migration (game/src/save.rs `load`, `migrate`):
+             # run once, between the title and its eviction (title.rs `load_player`).
+             + ('*6hk_psx4save4load*', '*6hk_psx4save7migrate*'),
     # Tutorial_01's Lifeblood cocoon and its two Health Scuttlers (game/src/lifeblood.rs): the world's strike
     # and tick, their resident-side wrappers, and the cocoon's presentation. The blue masks in the HUD (every
     # scene) and the persistence hooks stay resident. Entry points are guarded by `modules::loaded(LIFEBLOOD)`.

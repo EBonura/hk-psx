@@ -365,7 +365,7 @@ pub fn load(save: &crate::save::Save, profile: usize) -> bool {
         starting_masks: crate::shop::STARTING_MASKS,
         soul_per_vessel: crate::shop::SOUL_PER_VESSEL,
     };
-    let restored = crate::save::load(
+    let restored = crate::title::load_player(
         profile,
         save.sequence,
         &build,

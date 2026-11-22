@@ -44,6 +44,25 @@ pub fn run(
     menu::run(fb, art, slots, fault)
 }
 
+/// `save::load`: the chosen profile's PlayerData and SceneData, migrating an HKS4 or HKS5 record. Boot-only,
+/// so it rides the title's module rather than resident RAM; `main` calls it before `close`. With the module
+/// absent (a disc that would not give the title's code) nothing is loaded and the fault says so, as for a
+/// card that would not give the record.
+#[inline(never)]
+pub fn load_player(
+    profile: usize,
+    sequence: u32,
+    build: &crate::save::Build,
+    pd: &mut crate::player_data::PlayerData,
+    store: &mut crate::persist::Store,
+) -> crate::save::Restored {
+    if !modules::loaded(modules::TITLE) {
+        unsafe { crate::save::HK_SAVE_FAULT = crate::save::Fault::Other as u32 + 1 }
+        return crate::save::Restored { items: 0, scripts: false };
+    }
+    crate::save::load(profile, sequence, build, pd, store)
+}
+
 /// `menu::loading`: the title art with its loading prompt, while the first scene is read.
 #[inline(never)]
 pub fn loading(fb: &mut DoubleBuffer) {
