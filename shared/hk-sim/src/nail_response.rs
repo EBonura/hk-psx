@@ -45,7 +45,10 @@ impl NailResponse {
                 player.jumping = false;
                 player.vy = player.vy.min(p.down_speed);
             }
-            3 if self.bounce_left == 0 && !self.finish_bounce => {
+            // HeroController.Bounce refuses while cState.bouncing or
+            // shroomBouncing is set.
+            3 if self.bounce_left == 0 && !self.finish_bounce && !player.shroom_bouncing => {
+                player.bounce();
                 self.bounce_left = p.bounce_ticks;
             }
             _ => {}
@@ -54,8 +57,9 @@ impl NailResponse {
     /// NailSlash's down-slash answer for a collider carrying `BigBouncer`
     /// (the Acid Flyer's body): `HeroController.BounceHigh`. It refuses while a
     /// bounce is running, as `Bounce` does, so whichever lands first wins.
-    pub fn bounce_high(&mut self, p: NailResponseParams) {
+    pub fn bounce_high(&mut self, p: NailResponseParams, player: &mut Player) {
         if self.bounce_left == 0 && !self.finish_bounce {
+            player.bounce();
             self.bounce_left = p.high_bounce_ticks;
         }
     }
@@ -154,6 +158,30 @@ mod tests {
         }
         response.step(R, p(), &mut player, 0, false, 0, |_| [0; 4]);
         assert_eq!(player.vy, -p().gravity / 60);
+    }
+    #[test]
+    fn a_pogo_hands_back_the_double_jump_and_the_air_dash() {
+        let mut response = NailResponse::new();
+        let mut player = Player::spawn(0, 10 * ONE);
+        player.double_jumped = true;
+        player.air_dashed = true;
+        response.contact(R, 3, 1, &mut player);
+        assert!(!player.double_jumped && !player.air_dashed);
+        // A second contact during the bounce is refused, and so changes nothing.
+        player.air_dashed = true;
+        response.contact(R, 3, 1, &mut player);
+        assert!(player.air_dashed);
+        // BounceHigh hands them back as well.
+        let mut response = NailResponse::new();
+        response.bounce_high(R, &mut player);
+        assert!(!player.air_dashed);
+        // A shroom bounce's rise refuses the ordinary pogo outright.
+        let mut response = NailResponse::new();
+        player.shroom_bouncing = true;
+        player.air_dashed = true;
+        response.contact(R, 3, 1, &mut player);
+        assert_eq!(response.bounce_left, 0);
+        assert!(player.air_dashed);
     }
     #[test]
     fn horizontal_recoil_opposes_hit_preserves_facing_and_has_bounded_duration() {

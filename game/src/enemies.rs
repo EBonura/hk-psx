@@ -6608,7 +6608,7 @@ impl EnemyWorld {
                 // calls BounceHigh for a down-slash instead of Bounce.
                 if vitals.can_control() && !actor.buried() {
                     if shell.is_some() && nail.kind == 3 {
-                        response.bounce_high(crate::NAIL_RESPONSE_PARAMS);
+                        response.bounce_high(crate::NAIL_RESPONSE_PARAMS, player);
                     } else {
                         response.contact(
                             crate::NAIL_RESPONSE_PARAMS,
