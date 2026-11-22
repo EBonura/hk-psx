@@ -65,6 +65,23 @@ const PARAMS: AttackParams = AttackParams {
     alternate_reset: 30,
     hit_start: 2,
     hit_end: 6, ..AttackParams::ZERO };
+/// The guest's nail receiver: the live swing's hit record, or no strike outside its window.
+#[allow(clippy::too_many_arguments)]
+fn swing(
+    state: &mut State,
+    region: &Region,
+    nail: &Nail,
+    p: AttackParams,
+    polygons: [&[[i32; 2]]; 4],
+    player: &Player,
+    swing: u32,
+    body: [i32; 4],
+) -> world::Strike {
+    match hk_sim::HeroHit::nail(nail, p, polygons, player, 0) {
+        Some(hit) => state.strike(region, &hit, player.x, swing, body),
+        None => world::Strike::default(),
+    }
+}
 const TRIANGLE: &[[i32; 2]] = &[[100, 0], [200, 0], [100, 100]];
 const SQUARE: &[[i32; 2]] = &[[100, 0], [200, 0], [200, 100], [100, 100]];
 // FIXTURE_BANK (tools/test_world.py): region 1 holds breakable 0 (TRIANGLE,
@@ -94,20 +111,18 @@ fn exact_source_polygon_rejects_box_false_positive_and_breaks_once() {
     nail.age = 2;
     let player = Player::spawn(0, 0);
     let attack = &[[-185, 80], [-180, 80], [-180, 85], [-185, 85]][..];
-    let hit = state.strike(&region(), &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    let hit = swing(&mut state, &region(), &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     assert_eq!((hit.broken, hit.door_sounds), (1, 1));
     assert!(!state.broken(0));
     assert!(state.broken(1));
     assert_eq!(
-        state
-            .strike(&region(), &nail, PARAMS, [attack; 4], &player, 0, [0; 4])
+        swing(&mut state, &region(), &nail, PARAMS, [attack; 4], &player, 0, [0; 4])
             .broken,
         0
     );
     nail.age = 6;
     assert_eq!(
-        state
-            .strike(&region(), &nail, PARAMS, [SQUARE; 4], &player, 0, [0; 4])
+        swing(&mut state, &region(), &nail, PARAMS, [SQUARE; 4], &player, 0, [0; 4])
             .broken,
         0
     );
@@ -194,13 +209,13 @@ fn a_switch_sets_its_bit_and_lifts_the_edges_bound_to_it_in_any_scene() {
     assert_eq!(state.edge(&r, &room, 2), [7, 8, 9, 8]);
     assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5]);
     assert_eq!(state.edge(&r, &room, 3), [0; 4], "an inverted edge (an Activated Plat) is absent until the bit");
-    let hit = state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    let hit = swing(&mut state, &r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     assert_eq!((hit.broken, hit.door_sounds, hit.last_broken), (1, 0, None));
     assert!(state.broken(2) && !state.broken(0) && !state.broken(1));
     assert_eq!(state.edge(&r, &room, 2), [0; 4], "the gate of this scene opens");
     assert_eq!(state.edge(&r, &room, 4), [5, 5, 6, 5], "another scene's gate waits for its own bit");
     assert_eq!(state.edge(&r, &room, 3), [1, 1, 2, 1], "the inverted edge appears with the bit");
-    assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "once");
+    assert_eq!(swing(&mut state, &r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "once");
     state.restore_broken(3 * 128 + 7);
     assert_eq!(state.edge(&r, &room, 4), [0; 4], "a saved bit of scene 3 lifts the binding in scene 0");
     let mut saved: std::vec::Vec<usize> = std::vec::Vec::new();
@@ -222,10 +237,10 @@ fn a_switch_with_a_wait_opens_after_it_or_when_the_scene_is_left() {
     let player = Player::spawn(0, 0);
     let attack = &[[-650, 50], [-645, 50], [-645, 55], [-650, 55]][..];
     let mut state = State::new();
-    let hit = state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    let hit = swing(&mut state, &r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     assert_eq!(hit.broken, 1, "the camera shakes at the hit");
     assert!(!state.broken(3));
-    assert_eq!(state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "not twice");
+    assert_eq!(swing(&mut state, &r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]).broken, 0, "not twice");
     for _ in 0..19 {
         state.tick();
     }
@@ -233,7 +248,7 @@ fn a_switch_with_a_wait_opens_after_it_or_when_the_scene_is_left() {
     state.tick();
     assert!(state.broken(3), "the wait is over");
     let mut state = State::new();
-    state.strike(&r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    swing(&mut state, &r, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     state.reset_scene(0);
     assert!(state.broken(3), "leaving the scene opens it, as a reload would");
 }
@@ -885,7 +900,7 @@ fn every_breakable_on_every_disc_bank_can_be_struck_open() {
                                 let mut player = Player::spawn(x, y);
                                 player.facing = facing;
                                 let body = [x - hk_sim::ONE / 4, y - hk_sim::ONE, x + hk_sim::ONE / 4, y];
-                                let hit = state.strike(&region, &nail, nail_data::ATTACK_PARAMS, nail_data::NAIL_POLYGONS, &player, 1, body);
+                                let hit = swing(&mut state, &region, &nail, nail_data::ATTACK_PARAMS, nail_data::NAIL_POLYGONS, &player, 1, body);
                                 // A switch counts the source's wait out (at most 1,023 ticks) before its bit is set.
                                 if hit.broken > 0 && !state.broken(b.id()) {
                                     for _ in 0..1024 { state.tick(); }
@@ -977,7 +992,7 @@ fn a_break_launches_its_owners_pieces_and_a_region_draws_them_as_its_own_frames(
     let player = Player::spawn(0, 0);
     let attack = &[[-185, 80], [-180, 80], [-180, 85], [-185, 85]][..];
     // The triangle's hit polygon rejects the box swing; the square (owner 1) breaks and launches two pieces.
-    state.strike(&one, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
+    swing(&mut state, &one, &nail, PARAMS, [attack; 4], &player, 0, [0; 4]);
     assert!(state.broken(1) && !state.broken(0));
     assert_eq!(state.debris_active(), 2);
 }

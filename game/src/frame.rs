@@ -1646,21 +1646,23 @@ pub fn simulate(
                 scene_sfx::tink();
             }
         }
+        // Every hero attack live this tick, transformed once for all the
+        // receivers below. The Knight does not move again before the last of
+        // them; a hit he takes in between ends the swing (`end_swing`).
+        let mut attacks = hero_attacks(
+            &game.nail,
+            &game.cast,
+            &game.dream,
+            &game.player,
+            &game.settings.cheats,
+        );
         // HeroController.Bounce returns early while cState.shroomBouncing,
         // so an ordinary pogo cannot cut a shroom's rise short.
         if game.vitals.can_control()
-            && !strike_shroom(r, &game.nail, &mut game.player)
+            && !strike_shroom(r, &attacks, &mut game.player)
             && !game.player.shroom_bouncing
         {
-            enemies::pogo_contact(
-                r,
-                &game.state,
-                &mut game.player,
-                &game.nail,
-                ATTACK_PARAMS,
-                NAIL_POLYGONS,
-                &mut game.nail_response,
-            );
+            enemies::pogo_contact(r, &game.state, &mut game.player, &attacks, &mut game.nail_response);
         }
         let hero_body = [
             game.player.x - PARAMS.half_width,
@@ -1668,15 +1670,10 @@ pub fn simulate(
             game.player.x + PARAMS.half_width,
             game.player.y + PARAMS.top,
         ];
-        let strike = game.state.strike(
-            r,
-            &game.nail,
-            ATTACK_PARAMS,
-            NAIL_POLYGONS,
-            &game.player,
-            game.attacks,
-            hero_body,
-        );
+        let strike = match attacks.slash() {
+            Some(hit) => game.state.strike(r, hit, game.player.x, game.attacks, hero_body),
+            None => world::Strike::default(),
+        };
         unsafe {
             HK_BREAK_COUNT = HK_BREAK_COUNT.saturating_add(strike.broken as u32);
         }
@@ -1694,10 +1691,9 @@ pub fn simulate(
             secret_feedback(game, r, e);
         }
         // Vengeful Spirit breaks a hidden wall outright (`Spell Destroy`).
-        let spell_break = game
-            .cast
-            .ball_bounds(FIREBALL_PARAMS)
-            .and_then(|ball| game.state.spell_strike(r, ball));
+        let spell_break = attacks
+            .of(hk_sim::hero_attack::Class::Spell)
+            .find_map(|hit| game.state.spell_strike(r, hit.bounds));
         if let Some(e) = spell_break {
             secret_feedback(game, r, e);
         }
@@ -1721,7 +1717,7 @@ pub fn simulate(
             }
         }
         raise_fk_dust();
-        let mining = strike_geo(game.geo, r.scene, &game.nail, &game.player);
+        let mining = strike_geo(game.geo, r.scene, &attacks);
         if mining.hits > 0 {
             geo_audio::hit();
         }
@@ -1752,7 +1748,7 @@ pub fn simulate(
             game.player.x + PARAMS.half_width,
             game.player.y + PARAMS.top,
         ]);
-        let totem_soul = strike_totems(r.scene, &game.nail, &game.player, game.attacks);
+        let totem_soul = strike_totems(r.scene, &attacks, game.attacks);
         if totem_soul > 0 {
             game.vitals.add_soul(VITAL_PARAMS, totem_soul);
             scene_sfx::play(scene_sfx::SOUL_TOTEM_SLASH);
@@ -1784,7 +1780,7 @@ pub fn simulate(
         // an arena gate, and none carries a cocoon and the Great Door. It is
         // written anyway because the symptom is a wall that exists for one
         // simulation tick, which is close to undiagnosable from a bug report.
-        let life_strike = strike_lifeblood(game.life, r.scene, &game.nail, &game.player);
+        let life_strike = strike_lifeblood(game.life, r.scene, &attacks);
         // A struck Health Scuttler plays `ScuttlerControl.deathSound1` and
         // `deathSound2`. The second is `enemy_damage`, the resident enemy-hit
         // clip; the first is not identified here, so it stays silent. The
@@ -1828,7 +1824,7 @@ pub fn simulate(
             battle_gates::apply(&mut game.state, game.region_id, game.view);
             blocker_terrain::apply(&mut game.state, game.region_id);
         }
-        let door_hit = strike_great_door(&mut game.door, r.scene, &game.nail, &game.player);
+        let door_hit = strike_great_door(&mut game.door, r.scene, &attacks);
         if door_hit.hit {
             audio::great_door_hit();
             // The source's `Hit` state: a nail impact where the nail met the
@@ -1885,8 +1881,7 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            let props_strike =
-                strike_props(game.props, r.scene, &game.nail, &game.player, hero_body);
+            let props_strike = strike_props(game.props, r.scene, &attacks, hero_body);
             // StalactiteControl: `breakSound` for a break, `hitSound` for a bat
             // (the scene voice keeps the later), or the enemy-hit clip where the
             // scene bank has no room for them, as for a freed grub; `Strike Nail R`
@@ -1928,7 +1923,7 @@ pub fn simulate(
             }
             // `Chest Control`'s `Open`: saved at once, and `Spawn Items` flings
             // its Geo through the coin pool.
-            if let Some(chest) = strike_chests(game.pickups, &game.nail, &game.player, hero_body) {
+            if let Some(chest) = strike_chests(game.pickups, &attacks, hero_body) {
                 open_chest(game.geo, r.scene, chest);
             }
             let touched = game.props.tick(
@@ -1948,7 +1943,7 @@ pub fn simulate(
                 props::stalactite_dust(r.scene, slot, index, 1, at);
             }
             if let Some(direction) = touched.hurt {
-                apply_hurt(
+                if apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
                     &mut game.player,
@@ -1958,7 +1953,10 @@ pub fn simulate(
                     1,
                     direction,
                     false,
-                );
+                ) != hk_sim::Hurt::Ignored
+                {
+                    attacks.end_swing();
+                }
             }
         }
         {
@@ -1997,12 +1995,7 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            if strike_shade(
-                &mut game.shade,
-                &game.nail,
-                &game.player,
-                game.settings.cheats.params(VITAL_PARAMS).nail_damage,
-            ) {
+            if strike_shade(&mut game.shade, &attacks) {
                 audio::enemy_hit();
             }
             let shade_position = game
@@ -2021,7 +2014,7 @@ pub fn simulate(
                 } else {
                     1
                 };
-                apply_hurt(
+                if apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
                     &mut game.player,
@@ -2031,7 +2024,10 @@ pub fn simulate(
                     1,
                     direction,
                     false,
-                );
+                ) != hk_sim::Hurt::Ignored
+                {
+                    attacks.end_swing();
+                }
             }
             if shade_events.returned_geo > 0 {
                 game.geo
@@ -2047,24 +2043,12 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            let mut polygon = [[0; 2]; 16];
-            let mut sides = 0;
-            if game.nail.hitting(ATTACK_PARAMS) {
-                let source = NAIL_POLYGONS[game.nail.kind as usize];
-                sides = source.len();
-                for (dst, p) in polygon.iter_mut().zip(source) {
-                    *dst = [
-                        game.player.x - p[0] * game.nail.facing(&game.player),
-                        game.player.y + p[1],
-                    ];
-                }
-            }
             let params = game.settings.cheats.params(VITAL_PARAMS);
             let roller = blocker_roller::tick(
                 r.scene,
                 [game.player.x, game.player.y],
                 hero_body,
-                (sides > 0).then_some(&polygon[..sides]),
+                attacks.slash().map(HeroHit::points),
                 params.nail_damage,
                 room.counts[5],
                 game.state.edge_reader(r, room),
@@ -2078,7 +2062,7 @@ pub fn simulate(
                 audio::enemy_death();
             }
             if let Some(direction) = roller.touched {
-                apply_hurt(
+                if apply_hurt(
                     &game.settings.cheats,
                     &mut game.vitals,
                     &mut game.player,
@@ -2088,7 +2072,10 @@ pub fn simulate(
                     1,
                     direction,
                     false,
-                );
+                ) != hk_sim::Hurt::Ignored
+                {
+                    attacks.end_swing();
+                }
             }
         }
         let enemy_events = game.enemies.tick(
@@ -2097,14 +2084,8 @@ pub fn simulate(
             &mut game.state,
             &mut game.player,
             &mut game.vitals,
-            &game.nail,
-            &game.dream,
-            game.cast
-                .ball_bounds(FIREBALL_PARAMS)
-                .map(|b| (b, FIREBALL_PARAMS.damage)),
+            &attacks,
             &mut game.nail_response,
-            ATTACK_PARAMS,
-            NAIL_POLYGONS,
             game.settings.cheats,
             [camera.0, camera.1, -2496922],
             runner_event,
@@ -2200,7 +2181,7 @@ pub fn simulate(
         if enemy_events.hits > 0 {
             audio::enemy_hit();
             // The Slash Impact at the nail, facing away from the Knight.
-            if let Some(b) = nail_bounds(&game.nail, &game.player) {
+            if let Some(b) = nail_bounds(&attacks) {
                 game.state
                     .hit_impact(r, game.attacks as usize, b, game.player.x);
             }
@@ -2219,12 +2200,15 @@ pub fn simulate(
             &mut game.nail_response,
             &mut game.focus,
         );
+        if enemy_events.hurt != hk_sim::Hurt::Ignored {
+            attacks.end_swing();
+        }
         let bank_region = cache
             .world_metadata()
             .region(meta_region)
             .expect("admitted world metadata covers the selected region");
         // Spikes and worms carry a TinkEffect: the nail on one answers with `sword_hit_reject`.
-        if let Some(nail) = crate::nail_bounds(&game.nail, &game.player) {
+        if let Some(nail) = crate::nail_bounds(&attacks) {
             if game.state.hazard_tink(bank_region, nail) {
                 scene_sfx::tink();
             }

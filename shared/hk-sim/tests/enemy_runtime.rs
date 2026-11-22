@@ -950,6 +950,16 @@ fn a_tile_outside_the_view_costs_neither_a_quad_nor_a_key() {
     assert_eq!(len, 0);
     assert_eq!(gone.draw(), 0);
 }
+/// The tick's attack list as the guest gathers it (`hero_attacks` in main.rs),
+/// with the nail as its only possible entry, at the live damage.
+fn slash(n: &Nail, polygons: [&[[i32; 2]]; 4], p: &Player, settings: cheats::Settings) -> HeroAttacks {
+    let mut attacks = HeroAttacks::new();
+    let damage = settings.params(VITAL_PARAMS).nail_damage;
+    if let Some(hit) = HeroHit::nail(n, no_attack(), polygons, p, damage) {
+        attacks.push(hit);
+    }
+    attacks
+}
 fn no_attack() -> AttackParams {
     AttackParams {
         duration: 20,
@@ -968,18 +978,15 @@ fn tick(
     v: &mut Vitals,
     n: &Nail,
 ) -> enemies::Events {
+    let attacks = slash(n, [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4], p, cheats::Settings::new());
     w.tick(
         r,
         room,
         &mut world::State,
         p,
         v,
-        n,
-        &hk_sim::DreamNail::new(),
-        None,
+        &attacks,
         &mut NailResponse::new(),
-        no_attack(),
-        [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
         cheats::Settings::new(),
         [0, 0, -2496922],
         |_| panic!("Crawler emitted Runner event"),
@@ -1095,36 +1102,15 @@ fn static_spike_accepts_downslash_only_with_active_source_polygon() {
     n.active = true;
     n.age = 1;
     n.kind = 0;
-    assert!(!enemies::pogo_contact(
-        &r,
-        &world::State,
-        &mut p,
-        &n,
-        no_attack(),
-        [poly; 4],
-        &mut response
-    ));
+    let attacks = slash(&n, [poly; 4], &p, cheats::Settings::new());
+    assert!(!enemies::pogo_contact(&r, &world::State, &mut p, &attacks, &mut response));
     n.kind = 3;
-    assert!(enemies::pogo_contact(
-        &r,
-        &world::State,
-        &mut p,
-        &n,
-        no_attack(),
-        [poly; 4],
-        &mut response
-    ));
+    let attacks = slash(&n, [poly; 4], &p, cheats::Settings::new());
+    assert!(enemies::pogo_contact(&r, &world::State, &mut p, &attacks, &mut response));
     assert_eq!(response.bounce_left, 15);
     n.age = 9;
-    assert!(!enemies::pogo_contact(
-        &r,
-        &world::State,
-        &mut p,
-        &n,
-        no_attack(),
-        [poly; 4],
-        &mut response
-    ));
+    let attacks = slash(&n, [poly; 4], &p, cheats::Settings::new());
+    assert!(!enemies::pogo_contact(&r, &world::State, &mut p, &attacks, &mut response));
 }
 
 #[test]
@@ -1553,18 +1539,15 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
         let mut v = Vitals::new(VITAL_PARAMS);
         let mut n = Nail::new();
         let polygons = [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]][..]; 4];
+        let attacks = slash(&n, polygons, &p, settings);
         let hit = w.tick(
             &r,
             &room,
             &mut world::State,
             &mut p,
             &mut v,
-            &n,
-            &hk_sim::DreamNail::new(),
-            None,
+            &attacks,
             &mut NailResponse::new(),
-            no_attack(),
-            polygons,
             settings,
             [0, 0, -2496922],
             |_| panic!("Crawler event"),
@@ -1582,18 +1565,15 @@ fn cheat_nail_and_contact_protection_use_actual_enemy_runtime() {
         p.x = w.actor_state(0, PLACEMENT.source_id).unwrap().0;
         n.active = true;
         n.age = 1;
+        let attacks = slash(&n, polygons, &p, settings);
         let hit = w.tick(
             &r,
             &room,
             &mut world::State,
             &mut p,
             &mut v,
-            &n,
-            &hk_sim::DreamNail::new(),
-            None,
+            &attacks,
             &mut NailResponse::new(),
-            no_attack(),
-            polygons,
             settings,
             [0, 0, -2496922],
             |_| panic!("Crawler event"),
@@ -1638,12 +1618,8 @@ fn resident_actor_view_matches_unpartitioned_patrol_across_knight_apron() {
             &mut world::State,
             &mut p,
             &mut v,
-            &Nail::new(),
-            &hk_sim::DreamNail::new(),
-            None,
+            &HeroAttacks::new(),
             &mut NailResponse::new(),
-            no_attack(),
-            [&[]; 4],
             cheats::Settings::new(),
             [0, 0, -2496922],
             |_| panic!("Crawler event"),
@@ -1680,12 +1656,8 @@ fn unrelated_scene_view_cannot_activate_suspended_actor() {
         &mut world::State,
         &mut Player::spawn(10 * ONE, ONE),
         &mut Vitals::new(VITAL_PARAMS),
-        &Nail::new(),
-        &hk_sim::DreamNail::new(),
-        None,
+        &HeroAttacks::new(),
         &mut NailResponse::new(),
-        no_attack(),
-        [&[]; 4],
         cheats::Settings::new(),
         [0, 0, -2496922],
         |_| panic!("Crawler event"),
@@ -3065,18 +3037,15 @@ fn acid_tick(
     n: &Nail,
     response: &mut NailResponse,
 ) -> enemies::Events {
+    let attacks = slash(n, [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4], p, cheats::Settings::new());
     w.tick(
         r,
         room,
         &mut world::State,
         p,
         &mut Vitals::new(VITAL_PARAMS),
-        n,
-        &hk_sim::DreamNail::new(),
-        None,
+        &attacks,
         response,
-        no_attack(),
-        [&[[-ONE, -2 * ONE], [ONE, -2 * ONE], [ONE, ONE], [-ONE, ONE]]; 4],
         cheats::Settings::new(),
         [0, 0, -2496922],
         |_| panic!("Acid Flyer emitted a Runner event"),

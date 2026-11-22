@@ -77,22 +77,27 @@ impl HeroHit {
         facing: i32,
     ) -> Self {
         assert!((3..=MAX_POINTS).contains(&local.len()));
-        let mut hit = Self {
+        let points: [[i32; 2]; MAX_POINTS] = core::array::from_fn(|i| match local.get(i) {
+            Some(p) => [at[0] - p[0] * facing, at[1] + p[1]],
+            None => [0; 2],
+        });
+        let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
+        for p in &points[..local.len()] {
+            bounds[0] = bounds[0].min(p[0]);
+            bounds[1] = bounds[1].min(p[1]);
+            bounds[2] = bounds[2].max(p[0]);
+            bounds[3] = bounds[3].max(p[1]);
+        }
+        Self {
             source,
             class,
+            damage: 0,
+            kind: 0,
             facing,
+            bounds,
+            points,
             len: local.len() as u8,
-            bounds: [i32::MAX, i32::MAX, i32::MIN, i32::MIN],
-            ..Self::EMPTY
-        };
-        for (dst, p) in hit.points.iter_mut().zip(local) {
-            *dst = [at[0] - p[0] * facing, at[1] + p[1]];
-            hit.bounds[0] = hit.bounds[0].min(dst[0]);
-            hit.bounds[1] = hit.bounds[1].min(dst[1]);
-            hit.bounds[2] = hit.bounds[2].max(dst[0]);
-            hit.bounds[3] = hit.bounds[3].max(dst[1]);
         }
-        hit
     }
 
     /// The nail's swing while its hit window is open: the cooked polygon of
@@ -195,10 +200,10 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
 pub const MAX_HITS: usize = 3;
 
 /// This tick's live hero attacks, built once after the Knight has moved and
-/// swung, and read by every receiver.
+/// swung, and read by every receiver. Empty slots are `None`, so an idle tick
+/// writes three tags rather than three shapes.
 pub struct HeroAttacks {
-    hits: [HeroHit; MAX_HITS],
-    len: u8,
+    hits: [Option<HeroHit>; MAX_HITS],
 }
 
 impl Default for HeroAttacks {
@@ -210,20 +215,19 @@ impl Default for HeroAttacks {
 impl HeroAttacks {
     pub const fn new() -> Self {
         Self {
-            hits: [HeroHit::EMPTY; MAX_HITS],
-            len: 0,
+            hits: [None; MAX_HITS],
         }
     }
 
-    /// Append one live attack. Receivers see entries in push order.
+    /// Append one live attack. Receivers see entries in push order; every push
+    /// comes before the tick's first `end_swing`.
     pub fn push(&mut self, hit: HeroHit) {
-        assert!((self.len as usize) < MAX_HITS);
-        self.hits[self.len as usize] = hit;
-        self.len += 1;
+        let slot = self.hits.iter_mut().find(|h| h.is_none());
+        *slot.expect("more live hero attacks than MAX_HITS") = Some(hit);
     }
 
-    pub fn iter(&self) -> core::slice::Iter<'_, HeroHit> {
-        self.hits[..self.len as usize].iter()
+    pub fn iter(&self) -> impl Iterator<Item = &HeroHit> {
+        self.hits.iter().flatten()
     }
 
     /// The live hits of one class, in order.
@@ -240,14 +244,11 @@ impl HeroAttacks {
     /// stops reaching anything for the rest of the tick. Spells already in
     /// flight and the Dream Nail are not affected.
     pub fn end_swing(&mut self) {
-        let mut kept = 0;
-        for i in 0..self.len as usize {
-            if self.hits[i].class != Class::Slash {
-                self.hits[kept] = self.hits[i];
-                kept += 1;
+        for slot in &mut self.hits {
+            if slot.is_some_and(|h| h.class == Class::Slash) {
+                *slot = None;
             }
         }
-        self.len = kept as u8;
     }
 }
 

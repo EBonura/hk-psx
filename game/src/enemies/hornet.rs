@@ -5,7 +5,7 @@
 //! All of it lives in the room's `hornet` module and its zeroed state block (`art_hornet`): the fight's two trees and their
 //! scene objects are ten kilobytes the resident image has no room for. The resident code only asks the module to tick and
 //! to draw, while the module is resident.
-use super::{Draws, Events, Nail, Vitals};
+use super::{Draws, Events, Vitals};
 use crate::world::{Region, State as World};
 use crate::world::debris::Rotation;
 use hk_format::Room;
@@ -109,10 +109,9 @@ pub fn tick(
     player: &mut Player,
     vitals: &mut Vitals,
     response: &mut hk_sim::NailResponse,
-    nail: &Nail,
+    attacks: &hk_sim::HeroAttacks,
     cheats: crate::cheats::Settings,
     body: [i32; 4],
-    polygon: &[[i32; 2]],
     camera: [i32; 3],
     world: &World,
     region: &Region,
@@ -172,8 +171,13 @@ pub fn tick(
     if s.fight.phase == Phase::Gone {
         return;
     }
-    let damage = cheats.params(crate::VITAL_PARAMS).nail_damage as i32;
-    let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind: nail.kind as u8, damage, facing: nail.facing(player) });
+    // She answers the nail only; spells and the Dream Nail pass through her.
+    let strike = attacks.slash().map(|hit| Strike {
+        polygon: hit.points(),
+        kind: hit.kind as u8,
+        damage: hit.damage as i32,
+        facing: hit.facing,
+    });
     let input = Input {
         hero: [player.x, player.y],
         hero_body: body,
@@ -246,7 +250,7 @@ pub fn tick(
         vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
     }
     if s.fight.reached {
-        super::nail_answer(vitals, response, nail, player);
+        super::nail_answer(vitals, response, attacks, player);
     }
     if let Some((damage, x)) = hurt {
         events.damage_hero(vitals, cheats, player, x, damage as u16);

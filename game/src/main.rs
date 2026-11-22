@@ -6,7 +6,7 @@
 #![feature(fn_align)]
 extern crate psx_rt;
 use hk_format::{i32_at, u32_at, Room};
-use hk_sim::{Nail, Player, ONE};
+use hk_sim::{HeroAttacks, HeroHit, Nail, Player, ONE};
 use psx_gpu::{self as gpu, display::DoubleBuffer, display::Resolution, display::VideoMode};
 use psx_pad::{button, ButtonState};
 use psx_telemetry::{counter, emit, stage, task};
@@ -515,51 +515,53 @@ pub static mut HK_AMBIENCE_LEVEL: u32 = 10;
 pub static mut HK_GEO_LOST: u32 = 0;
 #[no_mangle]
 pub static mut HK_BLUE_HEALTH: u32 = 0;
-fn strike_lifeblood(
-    life: &mut lifeblood::World,
-    scene: usize,
+/// This tick's live hero attacks, gathered once after the Knight has moved
+/// and swung: Vengeful Spirit's ball, the nail swing, the Dream Nail slash, in
+/// the order the receivers have always taken them. Every receiver reads its
+/// hits from here (hk_sim::hero_attack).
+fn hero_attacks(
     nail: &Nail,
+    cast: &hk_sim::Cast,
+    dream: &hk_sim::DreamNail,
     player: &Player,
-) -> lifeblood::Strike {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return lifeblood::Strike::default();
+    cheats: &cheats::Settings,
+) -> HeroAttacks {
+    let mut attacks = HeroAttacks::new();
+    if let Some(ball) = cast.ball_bounds(FIREBALL_PARAMS) {
+        attacks.push(HeroHit::spell_box(
+            hk_sim::hero_attack::Source::Fireball,
+            ball,
+            FIREBALL_PARAMS.damage,
+            cast.ball.facing,
+        ));
     }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
+    // The live damage composes the shop and the charms; only a live swing pays for it.
+    if nail.hitting(ATTACK_PARAMS) {
+        let damage = cheats.params(VITAL_PARAMS).nail_damage;
+        if let Some(hit) = HeroHit::nail(nail, ATTACK_PARAMS, NAIL_POLYGONS, player, damage) {
+            attacks.push(hit);
+        }
     }
-    lifeblood::strike(life, scene, &polygon[..source.len()])
+    if dream.hitting() {
+        attacks.push(HeroHit::dream(DREAM_NAIL_POLYGON, player));
+    }
+    attacks
 }
-fn strike_great_door(
-    door: &mut great_door::World,
-    scene: usize,
-    nail: &Nail,
-    player: &Player,
-) -> great_door::Strike {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return great_door::Strike::default();
+fn strike_lifeblood(life: &mut lifeblood::World, scene: usize, attacks: &HeroAttacks) -> lifeblood::Strike {
+    match attacks.slash() {
+        Some(hit) => lifeblood::strike(life, scene, hit.points()),
+        None => lifeblood::Strike::default(),
     }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
-    door.strike(scene, &polygon[..source.len()])
 }
-/// The active nail polygon's world bounds, when the nail is hitting.
-fn nail_bounds(nail: &Nail, player: &Player) -> Option<[i32; 4]> {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return None;
+fn strike_great_door(door: &mut great_door::World, scene: usize, attacks: &HeroAttacks) -> great_door::Strike {
+    match attacks.slash() {
+        Some(hit) => door.strike(scene, hit.points()),
+        None => great_door::Strike::default(),
     }
-    let mut b = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-    for p in NAIL_POLYGONS[nail.kind as usize] {
-        let (x, y) = (player.x - p[0] * nail.facing(player), player.y + p[1]);
-        b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
-    }
-    Some(b)
+}
+/// The live nail swing's world bounds.
+fn nail_bounds(attacks: &HeroAttacks) -> Option<[i32; 4]> {
+    attacks.slash().map(|hit| hit.bounds)
 }
 /// A pickup taken: its PlayerData, its saved bool and its message.
 #[inline(never)]
@@ -617,47 +619,30 @@ fn open_chest(geo: &mut geo::World, scene: usize, chest: &pickups::Chest) {
 #[inline(never)]
 fn strike_chests(
     pickups: &mut pickups::World,
-    nail: &Nail,
-    player: &Player,
+    attacks: &HeroAttacks,
     body: [i32; 4],
 ) -> Option<&'static pickups::Chest> {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return None;
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
-    pickups.strike(&polygon[..source.len()], body)
+    pickups.strike(attacks.slash()?.points(), body)
 }
 /// Stalactites and grub jars take the nail through the same swept polygon;
 /// a freed grub is recorded in the world save at once.
 fn strike_props(
     props: &mut props::World,
     scene: usize,
-    nail: &Nail,
-    player: &Player,
+    attacks: &HeroAttacks,
     body: [i32; 4],
 ) -> props::Strike {
-    if !nail.hitting(ATTACK_PARAMS) {
+    let Some(hit) = attacks.slash() else {
         return props::Strike::default();
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
+    };
     // `damages_enemy`'s direction: 0 right, 90 up, 180 left, 270 down.
-    let direction = match nail.kind {
-        2 => props::NailDirection::Up,
+    let direction = match hit.cardinal() {
+        1 => props::NailDirection::Up,
         3 => props::NailDirection::Down,
-        _ if nail.facing(player) > 0 => props::NailDirection::Right,
+        0 => props::NailDirection::Right,
         _ => props::NailDirection::Left,
     };
-    let strike = props.strike(&polygon[..source.len()], body, direction, |local| {
+    let strike = props.strike(hit.points(), body, direction, |local| {
         persist::set(persist::Kind::Grub, scene, local, 1)
     });
     if strike.freed > 0 {
@@ -671,33 +656,18 @@ fn strike_props(
 #[no_mangle]
 pub static mut HK_GRUBS: u32 = 0;
 /// The Shade's body takes the nail through the same swept polygon as the rest.
-fn strike_shade(shade: &mut shade::World, nail: &Nail, player: &Player, damage: u16) -> bool {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return false;
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
-    shade.strike(&polygon[..source.len()], damage)
+fn strike_shade(shade: &mut shade::World, attacks: &HeroAttacks) -> bool {
+    attacks.slash().is_some_and(|hit| shade.strike(hit.points(), hit.damage))
 }
 /// NailSlash.OnTriggerEnter2D's shroom branch. Only the down slash reaches it,
 /// and the hero answers with ShroomBounce instead of the ordinary Bounce, so
 /// this takes the contact before the pogo targets get a look at it.
-fn strike_shroom(region: &world::Region, nail: &Nail, player: &mut Player) -> bool {
-    if nail.kind != 3 || !nail.hitting(ATTACK_PARAMS) {
+fn strike_shroom(region: &world::Region, attacks: &HeroAttacks, player: &mut Player) -> bool {
+    let Some(hit) = attacks.slash().filter(|hit| hit.pogo()) else {
         return false;
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
+    };
     for shroom in world::shrooms(region) {
-        if hk_sim::polygon_hits_box(&polygon[..source.len()], shroom.bounds) {
+        if hit.hits(shroom.bounds) {
             player.shroom_bounce(PARAMS);
             return true;
         }
@@ -816,29 +786,16 @@ fn soul_cap(shade: &shade::World, max_soul: u16) -> u16 {
 }
 /// The active nail polygon against the scene's soul totems; the attack counter
 /// is the swing token, so one swing pays a totem once.
-fn strike_totems(scene: usize, nail: &Nail, player: &Player, swing: u32) -> u16 {
-    if !nail.hitting(ATTACK_PARAMS) {
-        return 0;
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
-    soul_totems::strike(scene, &polygon[..source.len()], swing)
+fn strike_totems(scene: usize, attacks: &HeroAttacks, swing: u32) -> u16 {
+    attacks
+        .slash()
+        .map_or(0, |hit| soul_totems::strike(scene, hit.points(), swing))
 }
-fn strike_geo(geo: &mut geo::World, scene: usize, nail: &Nail, player: &Player) -> geo::Strike {
-    if !nail.hitting(ATTACK_PARAMS) {
+fn strike_geo(geo: &mut geo::World, scene: usize, attacks: &HeroAttacks) -> geo::Strike {
+    let Some(hit) = attacks.slash() else {
         return geo::Strike::default();
-    }
-    let source = NAIL_POLYGONS[nail.kind as usize];
-    let mut polygon = [[0; 2]; 16];
-    assert!((3..=16).contains(&source.len()));
-    for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-    }
-    geo.strike(scene, &polygon[..source.len()], |each| {
+    };
+    geo.strike(scene, hit.points(), |each| {
         // The scene's rocks, read from its admitted bank one at a time.
         for rock in world::geo_rocks(scene) {
             let mut points = [[0; 2]; 32];
