@@ -2248,14 +2248,19 @@ fn rust(
             })
             .collect::<String>()
     ));
-    lines.push("/// World boxes (Q16: x0, y0, x1, y1) of the colliders an active NonThunker sits on, by guest scene id:".into());
-    lines.push("/// a terrain edge inside one gives no nail tink (HeroController.CheckForTerrainThunk).".into());
+    lines.push("/// World boxes (Q16: x0, y0, x1, y1) of the colliders an active NonThunker sits on, sorted by".into());
+    lines.push("/// guest scene id (NO_THUNK_SCENE): a terrain edge inside one gives no nail tink".into());
+    lines.push("/// (HeroController.CheckForTerrainThunk).".into());
     lines.push(format!(
-        "pub static NO_THUNK:&[(u8,[i32;4])]=&[{}];",
+        "pub static NO_THUNK:&[[i32;4]]=&[{}];",
         no_thunk
             .iter()
-            .map(|(scene, b)| format!("({scene},[{},{},{},{}]),", b[0], b[1], b[2], b[3]))
+            .map(|(_, b)| format!("[{},{},{},{}],", b[0], b[1], b[2], b[3]))
             .collect::<String>()
+    ));
+    lines.push(format!(
+        "pub static NO_THUNK_SCENE:&[u8]=&[{}];",
+        no_thunk.iter().map(|(scene, _)| format!("{scene},")).collect::<String>()
     ));
     lines.join("\n") + "\n"
 }
@@ -2804,7 +2809,8 @@ mod tests {
         let text = rust(&[(0, bank)].into_iter().collect(), &BTreeMap::new(), &[(3, [1, 2, 3, 4])]);
         let index = EVENTS.iter().position(|e| e.name == "bench_rest").unwrap();
         assert!(text.contains(&format!("({index},64,0,32,4000,{}),", pitch_register(4000))));
-        assert!(text.contains("pub static NO_THUNK:&[(u8,[i32;4])]=&[(3,[1,2,3,4]),];"));
+        assert!(text.contains("pub static NO_THUNK:&[[i32;4]]=&[[1,2,3,4],];"));
+        assert!(text.contains("pub static NO_THUNK_SCENE:&[u8]=&[3,];"));
     }
 
     #[test]
