@@ -16,8 +16,9 @@ knockback, `hazard_pending` routes a hazard to its respawn marker instead of a
 recoil, and `death_ticks` orders the death. Every caller reaches it through
 `cheats::Settings::hurt`, which layers two things on top: the Invincibility
 cheat, which keeps hazard recovery but takes no damage, and the Shade Cloak,
-which returns `Hurt::Ignored` outright because the source's `TakeDamage` returns
-immediately while `cState.shadowDashing`.
+which returns `Hurt::Ignored` for contact damage because the source's
+`TakeDamage` returns while `cState.shadowDashing` for hazardType 1 only. Spikes
+and acid still take the Knight back to his respawn marker mid-dash.
 
 **An enemy taking damage** goes through `ActorHealth::hit`, which owns its own
 rules: `evasion_ticks` is the multi-hit cooldown, `invincible` blocks, and

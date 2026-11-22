@@ -77,7 +77,7 @@ pub use actors::{
 pub use combat::polygon_hits_box;
 pub use combat::{AttackParams, Grass, Nail};
 pub use nail_response::{NailResponse, NailResponseParams};
-pub use vitals::{Hurt, VitalParams, Vitals, DEATH_FREEZE_TICKS, PULSE_TICKS};
+pub use vitals::{shadow_dash_ignores, Hurt, VitalParams, Vitals, DEATH_FREEZE_TICKS, PULSE_TICKS};
 pub const ONE: i32 = 65536;
 /// Two terrain edges (or boxes) are equal. The derived `==` on `[i32; 4]` is a
 /// 16-byte `memcmp` call on the R3000, a byte loop; this is four word compares.
@@ -217,7 +217,8 @@ pub struct Player {
     pub was_dash: bool,
     /// Set when the Mothwing Cloak has been acquired; nothing grants it yet.
     pub has_dash: bool,
-    /// Source cState.shadowDashing: TakeDamage returns immediately while set.
+    /// Source cState.shadowDashing: TakeDamage ignores contact damage
+    /// (hazardType 1) while set, but not spikes or acid.
     pub shadow_dashing: bool,
     pub shadow_dash_cooldown: u16,
     pub has_shade_cloak: bool,
