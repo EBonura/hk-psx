@@ -809,6 +809,8 @@ pub struct Strike {
     /// The middle of the last grass patch this swing cut (Q16 world), where its sound plays.
     pub grass_cut_at: [i32; 2],
     pub impact_dropped: u16,
+    /// The middle of the gate switch this swing struck (Q16 world), where its `Hit` sound plays.
+    pub gate_switch_at: Option<[i32; 2]>,
     /// A hidden wall or cracked floor this swing hit or broke.
     pub secret: Option<SecretEvent>,
 }
@@ -1337,6 +1339,12 @@ impl State {
                 // a break for the camera's `EnemyKillShake`, which the source's `Hit` sends too.
                 if flags & 16 != 0 {
                     result.broken += 1;
+                    // A `Switch Control` switch waits before it opens (its `Hit` state); a Vine
+                    // Platform's cut does not, and plays no switch sound.
+                    if flags >> 6 != 0 {
+                        let b = object.bounds();
+                        result.gate_switch_at = Some([b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2]);
+                    }
                     continue;
                 }
                 particles::pool().spawn_break(region.scene, id, nail.kind as u8, player.facing);

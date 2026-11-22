@@ -604,6 +604,8 @@ mod scene_sfx {
     pub fn loop_tick(_event: u8, _level: i32) {}
     pub fn loop_stop() {}
     pub fn corpse_smash(_at: [i32; 2]) {}
+    pub fn nail_reject(_at: [i32; 2]) {}
+    pub fn tink(_at: [i32; 2]) {}
     pub fn play(event: u8) {
         if event != ASPID_SPIT {
             crate::boss_effects::record("scene voice");

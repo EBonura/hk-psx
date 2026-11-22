@@ -22,6 +22,8 @@ pub struct Game {
     pub vitals: hk_sim::Vitals,
     pub nail: Nail,
     pub nail_response: hk_sim::NailResponse,
+    /// The swing's `CheckForTerrainThunk` checks.
+    pub thunk: hk_sim::terrain_thunk::TerrainThunk,
     pub focus: hk_sim::Focus,
     pub dream: hk_sim::DreamNail,
     pub cast: hk_sim::Cast,
@@ -981,6 +983,7 @@ pub fn debug_reset(game: &mut Game, target: &mut Option<usize>) {
     game.safe_facing = 1;
     game.nail = Nail::new();
     game.nail_response = hk_sim::NailResponse::new();
+    game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
     game.focus.interrupt();
     focus_audio::interrupt();
     game.attacks = 0;
@@ -1073,6 +1076,7 @@ fn wake(game: &mut Game, scene: usize, cache: &disc::Cache) {
     game.player.facing = 1;
     game.nail = Nail::new();
     game.nail_response = hk_sim::NailResponse::new();
+    game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
     game.focus.interrupt();
     focus_audio::interrupt();
     game.vitals
@@ -1227,6 +1231,7 @@ pub fn simulate(
         game.bench.respawn(game.respawn.is_some());
         game.nail = Nail::new();
         game.nail_response = hk_sim::NailResponse::new();
+        game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
         game.focus.interrupt();
         focus_audio::interrupt();
         *target = Some(slot);
@@ -1243,6 +1248,7 @@ pub fn simulate(
         game.player.facing = game.safe_facing;
         game.nail = Nail::new();
         game.nail_response = hk_sim::NailResponse::new();
+        game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
         game.focus.interrupt();
         focus_audio::interrupt();
         game.vitals
@@ -1333,6 +1339,7 @@ pub fn simulate(
         if focus_events.started {
             game.nail = Nail::new();
             game.nail_response = hk_sim::NailResponse::new();
+            game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
             game.player.vy = 0;
             game.player.jumping = false;
         }
@@ -1599,6 +1606,22 @@ pub fn simulate(
             game.attacks = game.attacks.wrapping_add(1);
             game.geo.begin_attack();
             audio::nail_kind(game.nail.kind);
+            game.thunk.start(game.nail.kind);
+        }
+        // `CheckForTerrainThunk`: the swing's box cast, once a tick for 0.12 s, plays the tink off terrain.
+        scene_sfx::tick();
+        if game.thunk.active() {
+            let body = [
+                game.player.x - PARAMS.half_width,
+                game.player.y + PARAMS.bottom,
+                game.player.x + PARAMS.half_width,
+                game.player.y + PARAMS.top,
+            ];
+            let no_thunk = scene_sfx::no_thunk(r.scene);
+            let player = game.player;
+            if game.thunk.tick(&player, body, room.counts[5], game.state.edge_reader(r, room), no_thunk) {
+                scene_sfx::nail_terrain();
+            }
         }
         // HeroController.Bounce returns early while cState.shroomBouncing,
         // so an ordinary pogo cannot cut a shroom's rise short.
@@ -1661,6 +1684,9 @@ pub fn simulate(
         // `GrassBehaviour.CutReact`: one of the patch's `cutSounds` (the last patch the swing cut).
         if strike.grass_cut > 0 {
             scene_sfx::grass_cut(strike.grass_cut_at);
+        }
+        if let Some(at) = strike.gate_switch_at {
+            scene_sfx::gate_switch(at);
         }
         // Barrels, poles and wagons break with their own clip where the scene bank has room.
         if let Some(event) = strike.last_broken.and_then(scene_sfx::break_sound) {
@@ -2415,6 +2441,7 @@ fn take_gate(
     }
     game.nail = Nail::new();
     game.nail_response = hk_sim::NailResponse::new();
+    game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
     game.focus.interrupt();
     focus_audio::interrupt();
     *target = Some(id);

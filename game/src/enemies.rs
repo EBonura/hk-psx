@@ -6887,6 +6887,10 @@ impl EnemyWorld {
                             if !actions.is_empty() {
                                 shield.animation_tick = 0;
                             }
+                            // Its HealthManager leaves preventInvincibleEffect off, so `Invincible`
+                            // spawns `Block Hit` and its `sword_hit_reject`. (The Acid Flyer's, the
+                            // Moss Knight's and the bosses' set it: their blocks are silent.)
+                            crate::scene_sfx::nail_reject([actor.x, actor.y]);
                         }
                         // `Invincible` sets evasionByHitRemaining 0.15 s.
                         if shell.is_some() {
@@ -6900,6 +6904,8 @@ impl EnemyWorld {
                 // only tinks (its recoils are NailSlash's own) or, from above,
                 // takes an ordinary Bounce.
                 if hk_sim::polygon_hits_box(polygon, shell) && vitals.can_control() {
+                    // The Shell's TinkEffect: `Block Hit v2` at the collider's centre.
+                    crate::scene_sfx::tink([shell[0] / 2 + shell[2] / 2, shell[1] / 2 + shell[3] / 2]);
                     response.contact(
                         crate::NAIL_RESPONSE_PARAMS,
                         nail.kind,

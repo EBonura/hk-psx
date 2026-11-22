@@ -1047,6 +1047,7 @@ fn main() {
         vitals: settings.cheats.new_vitals(VITAL_PARAMS),
         nail: Nail::new(),
         nail_response: hk_sim::NailResponse::new(),
+        thunk: hk_sim::terrain_thunk::TerrainThunk::new(),
         focus: hk_sim::Focus::new(),
         dream: hk_sim::DreamNail::new(),
         cast: hk_sim::Cast::new(),
