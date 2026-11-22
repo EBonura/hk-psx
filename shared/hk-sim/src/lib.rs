@@ -55,6 +55,7 @@ pub mod script3;
 pub mod shade;
 pub mod shockwave;
 pub mod switches;
+pub mod terrain_thunk;
 pub mod vengefly;
 pub mod zombie_shield;
 pub use hard_landing::HardLandingParams;
