@@ -21,6 +21,12 @@ Door and the Shade, is copied across byte for byte.
 
 The record layout is read out of game/src/save.rs rather than repeated here, so
 this cannot drift from the guest the way a hardcoded copy would.
+
+HKS6 ends this: it is not an append-only growth of HKS5 (PlayerData moved into
+named fields), and the guest migrates HKS4 and HKS5 records itself on load
+(`save::migrate`, proven on every fixture by tests/save_runtime.rs). So this
+tool carries fixtures at most to HKS5, the last append-only format, and a field
+joining PlayerData from now on needs no fixture rewrite at all.
 """
 import argparse, re, struct, sys
 from pathlib import Path
@@ -53,10 +59,14 @@ def fnv(data):
     return h
 
 
-# Formats the current guest loads besides its own, as (magic, fixed length).
-# HKS4 loads into HKS5 with an untouched world (game/src/save.rs says why), so
-# a fixture on it is not stale and the power-cut check must find it.
-LOADABLE_OLDER = ((b'HKS4', 156),)
+# Formats the current guest loads besides its own, as (magic, fixed length or
+# None for a variable one). HKS4 and HKS5 load into HKS6 through the guest's
+# migration (game/src/save.rs), so a fixture on either is not stale and the
+# power-cut check must find it.
+LOADABLE_OLDER = ((b'HKS4', 156), (b'HKS5', None))
+# The last format that grew by appending fields, which is the only kind of
+# growth `migrate` below can carry a record across.
+APPEND_ONLY_LAST = (b'HKS5', 166)
 
 
 def record_length(data, at):
@@ -174,12 +184,19 @@ def main():
     # The fixtures stay on HKS4 on purpose while the guest still loads it:
     # every card route then proves an old save loads.
     p.add_argument('--from-magic', default='HKS4', help='the tag the fixtures carry now')
+    p.add_argument('--to-magic', default=APPEND_ONLY_LAST[0].decode(),
+                   help='the append-only format to carry them to (at most HKS5)')
     p.add_argument('--from-len', type=int, default=156, help='that format\'s record length')
     p.add_argument('--dry-run', action='store_true')
     p.add_argument('cards', nargs='*', type=Path,
                    help='card images; defaults to every fixture under tools/cards')
     a = p.parse_args()
     magic, length = layout()
+    if magic != APPEND_ONLY_LAST[0]:
+        if a.to_magic.encode() != APPEND_ONLY_LAST[0]:
+            raise SystemExit(f'{magic.decode()} is not an append-only growth; the guest migrates '
+                             'older records on load, so fixtures go no further than HKS5')
+        magic, length = APPEND_ONLY_LAST
     old_magic = a.from_magic.encode()
     if old_magic == magic:
         print(f'fixtures already carry {magic.decode()}; nothing to do')

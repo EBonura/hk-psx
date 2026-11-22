@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 
-from migrate_cards import BLOCK, CONTAINER, CONTAINER_LEN, ENTRY, IN_USE, fnv, layout, migrate
+from migrate_cards import APPEND_ONLY_LAST, BLOCK, CONTAINER, CONTAINER_LEN, ENTRY, IN_USE, fnv, layout, migrate
 
 OLD_MAGIC, OLD_LEN = b'HKS1', 56
 
@@ -54,7 +54,9 @@ def old_record(geo=6, sequence=3, door_hits=13):
 
 class MigrationTests(unittest.TestCase):
     def setUp(self):
-        self.magic, self.length = layout()
+        # The migrator carries records along append-only growths, which ended
+        # at HKS5; HKS6 records are migrated by the guest itself.
+        self.magic, self.length = APPEND_ONLY_LAST
 
     def run_one(self, image):
         return migrate(image, OLD_MAGIC, OLD_LEN, self.magic, self.length)
@@ -133,7 +135,8 @@ class MigrationTests(unittest.TestCase):
         # says why), and the fixtures stay on it on purpose so every card route
         # proves an old save loads; tests/save_runtime.rs covers that decode.
         from migrate_cards import LOADABLE_OLDER, loadable_records
-        formats = {self.magic: None, **dict(LOADABLE_OLDER)}
+        current, shortest = layout()
+        formats = {current: None, **dict(LOADABLE_OLDER)}
         for path in sorted((ROOT / 'tools/cards').glob('*.mcd')):
             with self.subTest(card=path.name):
                 image = path.read_bytes()
@@ -149,7 +152,7 @@ class MigrationTests(unittest.TestCase):
                     if fixed is not None:
                         self.assertEqual(length, fixed, f'{path.name} record at {at} has a stale container length')
                     else:
-                        self.assertGreaterEqual(length, self.length)
+                        self.assertGreaterEqual(length, shortest)
 
 
 if __name__ == '__main__':

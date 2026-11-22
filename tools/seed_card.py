@@ -13,8 +13,10 @@ A seeded record is a weaker fixture than an earned one and the difference matter
 when reading a result: it proves the room and what happens in it, not the journey
 to it. Say which you have.
 
-The record layout is read out of `game/src/save.rs`, the same way
-`tools/migrate_cards.py` reads it, so this cannot drift from the guest. The
+It edits HKS5 records, the format every fixture carries: the guest loads them
+through its migration (`save::migrate`), so a seeded HKS5 card is as good a
+fixture as an earned one of the same format. HKS6 holds PlayerData as named
+fields rather than at these offsets, so this deliberately stays on HKS5. The
 psx-mc container header ahead of the payload carries the length and is rewritten
 with it; missing that produces a valid record the guest silently rejects for
 being short, which cost two builds to find.
@@ -24,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-from migrate_cards import BLOCK, CONTAINER, CONTAINER_LEN, ENTRY, IN_USE, fnv, layout, record_length
+from migrate_cards import APPEND_ONLY_LAST, BLOCK, CONTAINER, CONTAINER_LEN, ENTRY, IN_USE, fnv, record_length
 
 Q = 65536
 
@@ -93,7 +95,8 @@ def seed(image, magic, length, items=(), **fields):
     return bytes(out), written
 
 
-# Offsets from `Save::encode` in game/src/save.rs. The PlayerData bool word sits
+# Offsets from HKS5's `Save::encode` (game/src/save.rs before HKS6; the HKS4 and
+# HKS5 offsets `save::migrate` reads are the same ones). The PlayerData bool word sits
 # four bytes ahead of the small integers `fireball` writes.
 PLAYER_BOOLS_AT = 152
 FIELDS = {
@@ -120,7 +123,7 @@ def main():
     p.add_argument('--item', action='append', default=[], metavar='KIND:SCENE:LOCAL:VALUE',
                    help='a SceneData item to seed (persist.rs Kind number), repeatable')
     a = p.parse_args()
-    magic, length = layout()
+    magic, length = APPEND_ONLY_LAST
     fields = {'scene': a.scene, 'region': a.region, 'facing': a.facing,
               'seat_x': round(a.x * Q), 'seat_y': round(a.y * Q)}
     if a.geo is not None:
@@ -131,8 +134,8 @@ def main():
         fields['player_bits'] = sum(1 << bit for bit in a.player_bit)
     image = a.from_card.read_bytes()
     if magic not in image:
-        raise SystemExit(f'{a.from_card} is not on the current {magic.decode()} format; '
-                         'run tools/migrate_cards.py first')
+        raise SystemExit(f'{a.from_card} holds no {magic.decode()} record; '
+                         'run tools/migrate_cards.py on it first')
     items = [item_word(*map(int, text.split(':'))) for text in a.item]
     out, written = seed(image, magic, length, items, **fields)
     a.output.write_bytes(out)
