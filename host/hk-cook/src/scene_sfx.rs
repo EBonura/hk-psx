@@ -107,8 +107,10 @@ pub enum Trim {
 /// ["arena", name, ...] for scenes whose arena the port drives,
 /// ["family", actor name prefix], ["grass"], ["drips"], ["corpse_smash"],
 /// ["all"] (every scene), ["gate_switches"] (scenes with a `Switch Control`
-/// gate switch) or ["nail_reject"] (scenes with an actor whose block plays
-/// `sword_hit_reject`). A clip two scenes need is one row
+/// gate switch), ["nail_reject"] (scenes with an actor whose block plays
+/// `sword_hit_reject`, or a TinkEffect the port carries), ["gate_openings"]
+/// (scenes whose switch opens a gate that plays the row's clip) or
+/// ["vine_platforms"] (scenes with a vine platform). A clip two scenes need is one row
 /// naming both. Rates follow the measured share of source energy above the new
 /// Nyquist (hk-audit/audio-census/prices.json).
 #[derive(Clone, PartialEq, Debug)]
@@ -1042,6 +1044,55 @@ pub const EVENTS: &[Event] = &[
         93,
         None,
     ),
+    // hk-sound PROPOSAL section 5, item 6: the rest of the nail's answers, late rows after the ones above.
+    // * Every TinkEffect in the cooked scenes (207 of them) spawns `blockEffect` resources.assets 4957
+    //   (`Block Hit v2`), whose AudioSource plays `sword_hit_reject` (the `nail_reject` row above, at
+    //   TinkEffect's random pitch 0.85 to 1.15). `nail_reject` now also covers the scenes where the port
+    //   carries one (`scan`): spikes and worms (hazards), the False Knight's armour `Tinger` (a nail bounce),
+    //   arena, bone and toll gates and the lift's `Inactive Block` (terrain), opened chests, Hornet's `Needle
+    //   Tink`.
+    // * The gate a `Switch Control` opens (`switch_openings`): Crossroads_06's `Raising Pillar` FSM `Pillar
+    //   Control` plays `switch_gate_gate` (sharedassets39.assets 17) entering `Shake` and `platform_dirt_fall_1`
+    //   (sharedassets6.assets 170) entering `Finish Opening`; Fungus1_22's `Metal Gate` FSM `Gate` plays
+    //   `gate_open` (the arenas' row) entering `Open`. AudioPlayerOneShotSingle through the Audio Player Actor
+    //   (resources.assets 4126) at the gate, volume 1, pitch 1.
+    // * `VinePlatformCut.Cut` (Fungus1_06, 07, 09, 14, 21, 22): PlayOneShot of `cutSound`, `vine_plat_cut`
+    //   (sharedassets135.assets 14), on the parent `Vine Platform`'s AudioSource: volume 1, pitch 1, max
+    //   distance 50, the actor curve (39 to 47.06 units).
+    // Rates by the share of source energy above the new Nyquist, measured on the source WAV:
+    //   switch_gate_gate 5512 Hz: loss -23.2 dB (-19.0 at 3000), 3.60 s.
+    //   platform_dirt_fall_1 11025 Hz: loss -1.6 dB, broadband (-0.7 at 5512).
+    //   vine_plat_cut 11025 Hz: loss -6.3 dB (-4.4 at 5512).
+    ev(
+        "switch_gate_gate",
+        "sharedassets39.assets",
+        17,
+        "switch_gate_gate",
+        5512,
+        &["gate_openings"],
+        94,
+        None,
+    ),
+    ev(
+        "platform_dirt_fall_1",
+        "sharedassets6.assets",
+        170,
+        "platform_dirt_fall_1",
+        11025,
+        &["gate_openings"],
+        95,
+        None,
+    ),
+    ev(
+        "vine_plat_cut",
+        "sharedassets135.assets",
+        14,
+        "vine_plat_cut",
+        11025,
+        &["vine_platforms"],
+        96,
+        None,
+    ),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's. The Husk Guard of Crossroads_21 plays the
@@ -1546,11 +1597,28 @@ fn break_owners(report: &J) -> BTreeMap<i64, (i64, &'static str)> {
 }
 
 /// `scene_needs`: per scene id, the events its content asks for.
+/// Scenes with a `Switch Control` gate switch (host/world_links.py): a lever that waits before it opens. A
+/// Vine Platform's cut (no wait) and a Toll Machine (paid, not struck) are not this switch.
+fn gate_switch_scenes(report: &J) -> Result<HashSet<i64>> {
+    Ok(report["regions"]
+        .as_array()
+        .ok_or("no regions")?
+        .iter()
+        .filter(|r| {
+            r["levers"].as_array().into_iter().flatten().any(|l| {
+                l["open_ticks"].as_i64().unwrap_or(0) > 0 && !l["toll"].as_bool().unwrap_or(false)
+            })
+        })
+        .map(|r| r["scene_id"].as_i64().unwrap_or(0))
+        .collect())
+}
+
 fn scene_needs(
     root: &Path,
     report: &J,
     gates: &[J],
     scenes: &[J],
+    scanned: &Scan,
 ) -> Result<BTreeMap<i64, Vec<Event>>> {
     let by_name: HashMap<String, i64> = scenes
         .iter()
@@ -1640,19 +1708,21 @@ fn scene_needs(
         .collect();
     // Every scene: the terrain tink can sound wherever the Knight swings.
     let all: HashSet<i64> = scenes.iter().filter_map(|s| s["scene_id"].as_i64()).collect();
-    // A `Switch Control` gate switch (host/world_links.py): a lever that waits before it opens. A Vine
-    // Platform's cut (no wait) and a Toll Machine (paid, not struck) are not this switch.
-    let gate_switches: HashSet<i64> = regions
+    let gate_switches = gate_switch_scenes(report)?;
+    // A `VinePlatform` (host/world_links.py `vine_records`): a lever that opens at once, unpaid.
+    let vine_platforms: HashSet<i64> = regions
         .iter()
         .filter(|r| {
             r["levers"].as_array().into_iter().flatten().any(|l| {
-                l["open_ticks"].as_i64().unwrap_or(0) > 0 && !l["toll"].as_bool().unwrap_or(false)
+                l["open_ticks"].as_i64().unwrap_or(0) == 0 && !l["toll"].as_bool().unwrap_or(false)
             })
         })
         .map(scene_of)
         .collect();
-    // The blocks the port plays `sword_hit_reject` for: the Husk Warrior's shield and the Durandoo's shell.
-    let nail_reject: HashSet<i64> = regions
+    // The blocks the port plays `sword_hit_reject` for: the Husk Warrior's shield and the Durandoo's shell,
+    // and every TinkEffect the port carries (`scan`).
+    let mut nail_reject: HashSet<i64> = scanned.tinks.clone();
+    nail_reject.extend(regions
         .iter()
         .filter(|r| {
             r["actors"].as_array().into_iter().flatten().any(|a| {
@@ -1662,8 +1732,7 @@ fn scene_needs(
                         .any(|f| jstr(a, "name").starts_with(f))
             })
         })
-        .map(scene_of)
-        .collect();
+        .map(scene_of));
     // The Great Door's `Break 1`, `Break 2` and `Break` play `breakable_wall_death` as a secret wall does.
     let door_scenes: HashSet<i64> = regions
         .iter()
@@ -1772,6 +1841,13 @@ fn scene_needs(
             "all" => all.clone(),
             "gate_switches" => gate_switches.clone(),
             "nail_reject" => nail_reject.clone(),
+            "gate_openings" => scanned
+                .openings
+                .iter()
+                .filter(|o| o.1 == event.name)
+                .map(|o| o.0)
+                .collect(),
+            "vine_platforms" => vine_platforms.clone(),
             "family" => families.get(kind[1]).cloned().unwrap_or_default(),
             other => return err(format!("unknown scene sound selector {other}")),
         };
@@ -1803,8 +1879,24 @@ fn scene_needs(
             }
         }
     }
+    // A gate opening's clip whose row is placed for other scenes (Fungus1_22's `Metal Gate` plays the arenas'
+    // `gate_open`): late in the switch's scene, after every row above.
+    for &(scene, name, _, _) in &scanned.openings {
+        let event = EVENTS.iter().find(|e| e.name == name).ok_or("opening row")?;
+        if let Some(list) = needs.get_mut(&scene) {
+            if !list.iter().any(|e| e.name == name) {
+                list.push(Event {
+                    priority: OPENING_PRIORITY,
+                    ..event.clone()
+                });
+            }
+        }
+    }
     Ok(needs)
 }
+
+/// Where a gate opening's shared row goes in its switch's scene: after the catalogue's own rows.
+const OPENING_PRIORITY: i64 = 97;
 
 /// `free_gaps`: SPU gaps between ambience's start and the ring that no stem
 /// able to be resident in `scene` occupies. With `unloaded` false, the bytes of
@@ -2183,7 +2275,8 @@ fn assemble(
 fn rust(
     banks: &BTreeMap<i64, Bank>,
     owners: &BTreeMap<i64, (i64, &'static str)>,
-    no_thunk: &[(i64, [i64; 4])],
+    terrain: &[(i64, [i64; 4], u8)],
+    openings: &[(i64, &'static str, i64, [i64; 2])],
 ) -> String {
     let mut lines = vec![
         "// Generated by host/scene_sfx.py: per-scene one-shot banks, read at the scene gate."
@@ -2248,49 +2341,145 @@ fn rust(
             })
             .collect::<String>()
     ));
-    lines.push("/// World boxes (Q16: x0, y0, x1, y1) of the colliders an active NonThunker sits on, sorted by".into());
-    lines.push("/// guest scene id (NO_THUNK_SCENE): a terrain edge inside one gives no nail tink".into());
-    lines.push("/// (HeroController.CheckForTerrainThunk).".into());
+    lines.push("/// World boxes (Q16: x0, y0, x1, y1) of the terrain colliders whose GameObject carries an active".into());
+    lines.push("/// NonThunker (TERRAIN_BOX_KIND bit 1: an edge inside gives no nail tink) or a TinkEffect (bit 2: an".into());
+    lines.push("/// edge inside answers the nail with sword_hit_reject), sorted by guest scene id (TERRAIN_BOX_SCENE).".into());
     lines.push(format!(
-        "pub static NO_THUNK:&[[i32;4]]=&[{}];",
-        no_thunk
+        "pub static TERRAIN_BOX:&[[i32;4]]=&[{}];",
+        terrain
             .iter()
-            .map(|(_, b)| format!("[{},{},{},{}],", b[0], b[1], b[2], b[3]))
+            .map(|(_, b, _)| format!("[{},{},{},{}],", b[0], b[1], b[2], b[3]))
             .collect::<String>()
     ));
     lines.push(format!(
-        "pub static NO_THUNK_SCENE:&[u8]=&[{}];",
-        no_thunk.iter().map(|(scene, _)| format!("{scene},")).collect::<String>()
+        "pub static TERRAIN_BOX_SCENE:&[u8]=&[{}];",
+        terrain.iter().map(|(scene, _, _)| format!("{scene},")).collect::<String>()
+    ));
+    lines.push(format!(
+        "pub static TERRAIN_BOX_KIND:&[u8]=&[{}];",
+        terrain.iter().map(|(_, _, kind)| format!("{kind},")).collect::<String>()
+    ));
+    lines.push("/// (guest scene id, event, ticks after the gate switch is struck, Q16 world point): what the gate a".into());
+    lines.push("/// Switch Control opens plays on its way open, through the audio actor at the gate.".into());
+    lines.push(format!(
+        "pub static SWITCH_SOUNDS:&[(u8,u8,u16,[i32;2])]=&[{}];",
+        openings
+            .iter()
+            .map(|(scene, event, tick, at)| {
+                let index = EVENTS.iter().position(|x| x.name == *event).unwrap();
+                format!("({scene},{index},{tick},[{},{}]),", at[0], at[1])
+            })
+            .collect::<String>()
     ));
     lines.join("\n") + "\n"
 }
 
-/// `HeroController.CheckForTerrainThunk` gives no tink off a collider whose GameObject carries an active
-/// `NonThunker` (the King's Pass doors, arena gates, the False Knight's terrain block, chests). Their world
-/// boxes per scene, from the collider shapes on each such object, sorted by scene. A collider the shape reader
-/// does not know (an EdgeCollider2D) or a trigger is left out: a trigger is never terrain.
-fn no_thunk_boxes(source: &Source, scenes: &[J]) -> Result<Vec<(i64, [i64; 4])>> {
-    use crate::common::{collider_polygons, component_records, go_of, q16};
+/// A terrain box's kind bits (TERRAIN_BOX_KIND): the collider's GameObject carries an active `NonThunker`,
+/// so `HeroController.CheckForTerrainThunk` gives no tink off it.
+pub const BOX_NON_THUNKER: u8 = 1;
+/// The collider's GameObject carries a `TinkEffect` and the port cooks the collider as terrain: the nail
+/// striking it plays the block effect's `sword_hit_reject`.
+pub const BOX_TINK: u8 = 2;
+
+/// What one pass over the scenes' source objects gives the banks and the guest tables.
+#[derive(Default)]
+struct Scan {
+    /// (guest scene id, world box in Q16, BOX_* bits), sorted.
+    terrain: Vec<(i64, [i64; 4], u8)>,
+    /// Scenes where the nail can strike a `TinkEffect` the port carries: as terrain, a hazard, a nail
+    /// bounce, an opened chest or Hornet's thrown needle.
+    tinks: HashSet<i64>,
+    /// (guest scene id, event, ticks after the switch is struck, world point in Q16) for each sound the
+    /// gate a `Switch Control` opens plays on its way open.
+    openings: Vec<(i64, &'static str, i64, [i64; 2])>,
+}
+
+/// The cooked collider sources of one scene's regions: terrain edges, hazards and nail bounces.
+fn cooked_colliders(regions: &[J], scene: i64) -> (HashSet<String>, HashSet<String>) {
+    let (mut terrain, mut other) = (HashSet::new(), HashSet::new());
+    for r in regions.iter().filter(|r| r["scene_id"].as_i64() == Some(scene)) {
+        for s in r["edge_sources"].as_array().into_iter().flatten() {
+            terrain.insert(s.as_str().unwrap_or_default().to_string());
+        }
+        for h in r["hazards"].as_array().into_iter().flatten() {
+            other.insert(jstr(h, "collider_source"));
+        }
+        for p in r["pogo_targets"].as_array().into_iter().flatten() {
+            other.insert(jstr(p, "source"));
+        }
+    }
+    (terrain, other)
+}
+
+/// One pass over every scene:
+/// * `HeroController.CheckForTerrainThunk` gives no tink off a collider whose GameObject carries an active
+///   `NonThunker` (the King's Pass doors, arena gates, the False Knight's terrain block, chests). A
+///   `TinkEffect` on a collider the port cooks as terrain (arena gates, toll gates, the bone gates, the lift's
+///   `Inactive Block`) answers the nail with `sword_hit_reject`: its terrain is present exactly while the
+///   object is (an open gate's edges are lifted), so the guest plays it when the swing's cast strikes an edge
+///   inside the box. Both are world boxes per scene from the collider shapes. A collider the shape reader does
+///   not know (an EdgeCollider2D) or a trigger is left out: a trigger is never terrain.
+/// * The scenes with any `TinkEffect` the port carries (`Scan::tinks`).
+/// * The sounds of the gates `Switch Control` opens (`switch_openings`).
+fn scan(source: &Source, scenes: &[J], report: &J, gate_switches: &HashSet<i64>) -> Result<Scan> {
+    use crate::common::{collider_polygons, component_records, go_of, q16, str_of};
     use hk_unity::scene::Scene;
-    let mut out = Vec::new();
+    let regions = report["regions"].as_array().ok_or("no regions")?;
+    let chests: HashSet<String> = regions
+        .iter()
+        .flat_map(|r| r["pickups"]["chests"].as_array().cloned().unwrap_or_default())
+        .map(|c| jstr(&c, "source"))
+        .collect();
+    let hornet = report["hornet_bank_adopted"].as_bool().unwrap_or(false);
+    let mut out = Scan::default();
     for s in scenes {
         let id = s["scene_id"].as_i64().ok_or("scene id")?;
         let sc = Scene::new(source, &jstr(s, "file")).map_err(|e| e.to_string())?;
-        let mut gids: Vec<i64> = sc
-            .objects
-            .iter()
-            .filter(|o| o.typename == "NonThunker")
-            .filter(|o| o.tree.get("active").is_some_and(Value::truthy))
-            .filter_map(|o| go_of(&o.tree))
-            .collect();
+        let (terrain, other) = cooked_colliders(regions, id);
+        let on = |kind: &str, field: &str| -> Vec<i64> {
+            let mut gids: Vec<i64> = sc
+                .objects
+                .iter()
+                .filter(|o| o.typename == kind && o.tree.get(field).is_some_and(Value::truthy))
+                .filter_map(|o| go_of(&o.tree))
+                .collect();
+            gids.sort();
+            gids.dedup();
+            gids
+        };
+        let non_thunkers = on("NonThunker", "active");
+        let tinkers = on("TinkEffect", "m_Enabled");
+        let name = |gid: i64| sc.go(gid).and_then(|g| str_of(g, "m_Name").ok()).unwrap_or_default();
+        let mut boxes: Vec<([i64; 4], u8)> = Vec::new();
+        let mut gids: Vec<i64> = non_thunkers.iter().chain(&tinkers).copied().collect();
         gids.sort();
         gids.dedup();
-        let mut boxes = Vec::new();
         for gid in gids {
-            for (_, kind, tree) in component_records(&sc, gid) {
+            let tink = tinkers.contains(&gid);
+            let records = component_records(&sc, gid);
+            // A TinkEffect the nail can reach in the port: its collider is cooked (terrain, hazard or nail
+            // bounce), it is a cooked chest's `Opened`, or it is Hornet's `Needle Tink` in the fight the port runs.
+            if tink
+                && (records.iter().any(|r| {
+                    let sid = sc.sid(r.0);
+                    terrain.contains(&sid) || other.contains(&sid)
+                }) || (name(gid) == "Opened"
+                    && sc.ancestor_gos(gid).first().is_some_and(|p| chests.contains(&sc.sid(*p))))
+                    || (hornet
+                        && name(gid) == "Needle Tink"
+                        && sc.ancestor_gos(gid).iter().any(|a| name(*a) == "Hornet Boss 1")))
+            {
+                out.tinks.insert(id);
+            }
+            for (cid, kind, tree) in records {
                 if !matches!(kind, "BoxCollider2D" | "PolygonCollider2D")
                     || tree.get("m_IsTrigger").is_some_and(Value::truthy)
                 {
+                    continue;
+                }
+                let bits = if non_thunkers.contains(&gid) { BOX_NON_THUNKER } else { 0 }
+                    | if tink && terrain.contains(&sc.sid(cid)) { BOX_TINK } else { 0 };
+                if bits == 0 {
                     continue;
                 }
                 let Ok(polygons) = collider_polygons(&sc, gid, kind, tree) else {
@@ -2300,15 +2489,167 @@ fn no_thunk_boxes(source: &Source, scenes: &[J]) -> Result<Vec<(i64, [i64; 4])>>
                 for (x, y) in polygons.iter().flatten() {
                     b = [b[0].min(*x), b[1].min(*y), b[2].max(*x), b[3].max(*y)];
                 }
-                boxes.push([q16(b[0])?, q16(b[1])?, q16(b[2])?, q16(b[3])?]);
+                let b = [q16(b[0])?, q16(b[1])?, q16(b[2])?, q16(b[3])?];
+                match boxes.iter_mut().find(|(x, _)| *x == b) {
+                    Some(slot) => slot.1 |= bits,
+                    None => boxes.push((b, bits)),
+                }
             }
         }
         boxes.sort();
-        boxes.dedup();
-        out.extend(boxes.into_iter().map(|b| (id, b)));
+        out.terrain.extend(boxes.into_iter().map(|(b, bits)| (id, b, bits)));
+        if gate_switches.contains(&id) {
+            out.openings.extend(switch_openings(&sc, id)?);
+        }
     }
-    out.sort();
+    out.terrain.sort();
+    out.openings.sort();
     Ok(out)
+}
+
+/// One FSM action's FsmObject parameter (`fsmObjectParams`), which `action_fields` does not decode.
+fn object_param(state: &Value, action: usize, parameter: &str) -> Option<Value> {
+    let d = state.get("actionData")?;
+    let list = |k: &str| d.get(k).and_then(Value::list).unwrap_or(&[]);
+    let starts = list("actionStartIndex");
+    let start = starts.get(action)?.int()? as usize;
+    let end = starts.get(action + 1).and_then(Value::int).map_or(list("paramName").len(), |e| e as usize);
+    (start..end).find_map(|i| {
+        (list("paramName").get(i)?.str()? == parameter && list("paramDataType").get(i)?.int()? == 24)
+            .then(|| list("fsmObjectParams").get(list("paramDataPos").get(i)?.int()? as usize).cloned())?
+    })
+}
+
+/// The sounds a gate a `Switch Control` opens plays on its way open, timed from the strike: the switch's
+/// `Hit` waits, then sends `ACTIVATE` to its `Target`; from the target FSM's `ACTIVATE` transition the walk
+/// follows `FINISHED`, each state's `AudioPlayerOneShotSingle` clips sounding as it is entered and the clock
+/// moving on by the state's `Wait`, or by the length of the clip a state waits out with
+/// `Tk2dWatchAnimationEvents` or `Tk2dPlayAnimationWithEvents` (frames over fps, played once). Every clip
+/// must be a catalogue row, played at the target through the audio actor (the rolloff the guest uses).
+/// Crossroads_06's `Raising Pillar` shakes (`switch_gate_gate`) and lands (`platform_dirt_fall_1`);
+/// Fungus1_22's `Metal Gate` plays `gate_open`.
+fn switch_openings(sc: &hk_unity::scene::Scene, scene: i64) -> Result<Vec<(i64, &'static str, i64, [i64; 2])>> {
+    use crate::common::{actions, component_records, field, fsm, go_of, path_id, q16, scalar, variables};
+    let wait_of = |state: &Value| -> Result<f64> {
+        Ok(actions(state, "Wait")?
+            .first()
+            .map(|w| field(w, "time").map(|t| scalar(t).float().unwrap_or(0.0)))
+            .transpose()?
+            .unwrap_or(0.0))
+    };
+    let state_named = |f: &Value, n: &str| -> Result<Value> {
+        crate::common::get(f, "states")?
+            .list()
+            .unwrap_or(&[])
+            .iter()
+            .find(|s| s.get("name").and_then(Value::str).as_deref() == Some(n))
+            .cloned()
+            .ok_or_else(|| format!("no state {n}"))
+    };
+    let next = |state: &Value, event: &str| -> Option<String> {
+        state.get("transitions")?.list()?.iter().find_map(|t| {
+            (t.get("fsmEvent")?.get("name")?.str()? == event).then(|| t.get("toState")?.str())?
+        })
+    };
+    let mut out = Vec::new();
+    let switches: Vec<i64> = sc
+        .objects
+        .iter()
+        .filter(|o| o.typename == "PlayMakerFSM")
+        .filter(|o| o.tree.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).as_deref() == Some("Switch Control"))
+        .filter_map(|o| go_of(&o.tree))
+        .collect();
+    for gid in switches {
+        let records = component_records(sc, gid);
+        let control = fsm(&records, "Switch Control")?;
+        let hit = wait_of(&state_named(control, "Hit")?)?;
+        if hit <= 0.0 {
+            continue;
+        }
+        let Some((_, target)) = variables(control).into_iter().find(|(n, _)| n == "Target") else {
+            return err("Switch Control without a Target");
+        };
+        let target = path_id(&target).filter(|&t| t != 0).ok_or("Switch Control with a null Target")?;
+        let target_records = component_records(sc, target);
+        let fsms: Vec<&Value> = target_records
+            .iter()
+            .filter(|r| r.1 == "PlayMakerFSM")
+            .filter_map(|r| r.2.get("fsm"))
+            .collect();
+        let Some((gate, first)) = fsms.iter().find_map(|f| {
+            let states = f.get("states")?.list()?;
+            states.iter().find_map(|s| next(s, "ACTIVATE").filter(|_| s.get("name").and_then(Value::str).as_deref() == Some("Idle"))).map(|n| (*f, n))
+        }) else {
+            return err("a Switch Control target with no Idle ACTIVATE");
+        };
+        let animator = target_records.iter().find(|r| r.1 == "tk2dSpriteAnimator").map(|r| r.2);
+        let clip_seconds = |name: &str| -> Result<f64> {
+            let library = get_ref(sc, animator.ok_or("an animation wait with no tk2dSpriteAnimator")?, "library")?;
+            let clip = library
+                .get("clips")
+                .and_then(Value::list)
+                .unwrap_or(&[])
+                .iter()
+                .find(|c| c.get("name").and_then(Value::str).as_deref() == Some(name))
+                .cloned()
+                .ok_or_else(|| format!("no clip {name}"))?;
+            let frames = clip.get("frames").and_then(Value::list).map_or(0, |f| f.len());
+            let fps = clip.get("fps").and_then(Value::float).unwrap_or(0.0);
+            if fps <= 0.0 || clip.get("wrapMode").and_then(Value::int) != Some(2) {
+                return err(format!("{name} is not a clip played once"));
+            }
+            Ok(frames as f64 / fps)
+        };
+        let at = sc.point(target, 0.0, 0.0, 0.0).map_err(|e| e.to_string())?;
+        let at = [q16(at[0])?, q16(at[1])?];
+        let (mut clock, mut name, mut seen) = (hit, first, 0);
+        loop {
+            seen += 1;
+            if seen > 16 {
+                return err("a gate opening that does not settle");
+            }
+            let state = state_named(gate, &name)?;
+            for (kind, index) in hk_unity::playmaker::enabled(&state) {
+                if kind != "AudioPlayerOneShotSingle" {
+                    continue;
+                }
+                let clip = object_param(&state, index, "audioClip").ok_or("an opening sound with no clip")?;
+                let obj = sc.source.deref(&sc.base, clip.get("value").ok_or("clip value")?).map_err(|e| e.to_string())?;
+                let t = sc.source.read(&obj).map_err(|e| e.to_string())?;
+                let clip_name = t.get("m_Name").and_then(Value::str).unwrap_or_default();
+                let file = obj.file.name.rsplit(['/', '\\']).next().unwrap_or_default().to_string();
+                let Some(row) = EVENTS
+                    .iter()
+                    .find(|e| e.file == file && e.path_id == obj.path_id() && e.clip == clip_name)
+                else {
+                    return err(format!("gate opening clip {file}:{} {clip_name} has no catalogue row", obj.path_id()));
+                };
+                out.push((scene, row.name, py_round(clock * 60.0), at));
+            }
+            let Some(after) = next(&state, "FINISHED") else { break };
+            let enabled: Vec<String> = hk_unity::playmaker::enabled(&state).into_iter().map(|(k, _)| k).collect();
+            clock += if enabled.iter().any(|k| k == "Wait") {
+                wait_of(&state)?
+            } else if enabled.iter().any(|k| k == "Tk2dWatchAnimationEvents" || k == "Tk2dPlayAnimationWithEvents") {
+                let play = actions(&state, "Tk2dPlayAnimationWithEvents")?
+                    .into_iter()
+                    .chain(actions(&state, "Tk2dPlayAnimation")?)
+                    .next()
+                    .ok_or("an animation wait with no clip")?;
+                clip_seconds(&scalar(field(&play, "clipName")?).str().unwrap_or_default())?
+            } else {
+                0.0
+            };
+            name = after;
+        }
+    }
+    Ok(out)
+}
+
+/// The object a scene component's PPtr field names, read.
+fn get_ref(sc: &hk_unity::scene::Scene, tree: &Value, key: &str) -> Result<Value> {
+    let obj = sc.source.deref(&sc.base, tree.get(key).ok_or_else(|| format!("no {key}"))?).map_err(|e| e.to_string())?;
+    sc.source.read(&obj).map_err(|e| e.to_string())
 }
 
 fn float_or_null(v: Option<f64>) -> Json {
@@ -2344,7 +2685,8 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         .unwrap_or_default();
     let report = read_json(&root.join("data/regions.json"))?;
     let scenes = report["scenes"].as_array().cloned().ok_or("no scenes")?;
-    let needs = scene_needs(root, &report, &gates, &scenes)?;
+    let scanned = scan(source, &scenes, &report, &gate_switch_scenes(&report)?)?;
+    let needs = scene_needs(root, &report, &gates, &scenes, &scanned)?;
     let mut clips = Clips::new(root, source)?;
     let banks = assemble(&needs, &ambience, &mut clips)?;
     let out = root.join("data/scene-sfx");
@@ -2355,7 +2697,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     }
     std::fs::write(
         root.join("data/scene_sfx.rs"),
-        rust(&banks, &break_owners(&report), &no_thunk_boxes(source, &scenes)?),
+        rust(&banks, &break_owners(&report), &scanned.terrain, &scanned.openings),
     )
     .map_err(|e| e.to_string())?;
     let mut events = Vec::new();
@@ -2806,11 +3148,19 @@ mod tests {
             free_after: 0,
             fitted: None,
         };
-        let text = rust(&[(0, bank)].into_iter().collect(), &BTreeMap::new(), &[(3, [1, 2, 3, 4])]);
+        let text = rust(
+            &[(0, bank)].into_iter().collect(),
+            &BTreeMap::new(),
+            &[(3, [1, 2, 3, 4], BOX_NON_THUNKER | BOX_TINK)],
+            &[(8, "switch_gate_gate", 45, [5, 6])],
+        );
         let index = EVENTS.iter().position(|e| e.name == "bench_rest").unwrap();
         assert!(text.contains(&format!("({index},64,0,32,4000,{}),", pitch_register(4000))));
-        assert!(text.contains("pub static NO_THUNK:&[[i32;4]]=&[[1,2,3,4],];"));
-        assert!(text.contains("pub static NO_THUNK_SCENE:&[u8]=&[3,];"));
+        assert!(text.contains("pub static TERRAIN_BOX:&[[i32;4]]=&[[1,2,3,4],];"));
+        assert!(text.contains("pub static TERRAIN_BOX_SCENE:&[u8]=&[3,];"));
+        assert!(text.contains("pub static TERRAIN_BOX_KIND:&[u8]=&[3,];"));
+        let gate = EVENTS.iter().position(|e| e.name == "switch_gate_gate").unwrap();
+        assert!(text.contains(&format!("pub static SWITCH_SOUNDS:&[(u8,u8,u16,[i32;2])]=&[(8,{gate},45,[5,6]),];")));
     }
 
     #[test]
