@@ -153,7 +153,9 @@ impl HeroHit {
     }
 
     /// The one overlap test every receiver uses: the exact polygon against
-    /// `target`, or the box against it for a box-shaped hit.
+    /// `target`, or the box against it for a box-shaped hit. Kept out of line:
+    /// inlined, it grew each boss's strike code in its room module.
+    #[inline(never)]
     pub fn hits(&self, target: [i32; 4]) -> bool {
         if self.len == 0 {
             overlap(self.bounds, target)
