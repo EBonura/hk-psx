@@ -525,6 +525,7 @@ impl Sim {
         }
         // `main.rs::respond_to_hurt`; see the second note.
         if hurt != Hurt::Ignored {
+            self.player.take_hit();
             self.nail = Nail::new();
             self.response = NailResponse::new();
             self.focus.interrupt();
