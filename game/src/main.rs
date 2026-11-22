@@ -944,6 +944,20 @@ fn main() {
     focus_audio::set_volume(settings.sfx);
     if opened {
         title::loading(&mut fb);
+    }
+    // PlayerData and SceneData, from the record itself rather than from `saved`
+    // below: a stale spawn point is no reason to un-buy what the player paid
+    // for. An HKS4 or HKS5 record is migrated on the way (`save::migrate`), whose
+    // code rides the title's module, so this runs under the loading
+    // screen and before `title::close`.
+    let used = match slots[profile] {
+        save::Slot::Used(s) => {
+            script::boot(persist::load(&s, profile));
+            true
+        }
+        _ => false,
+    };
+    if opened {
         // The pool is the rooms' from here: the first scene's modules install into it.
         title::close();
     }
@@ -971,16 +985,6 @@ fn main() {
             intro::play(boot, &mut fb, (settings.screen_x, settings.screen_y), preload_first_scene);
         }
     }
-    // PlayerData and SceneData first, from the record itself rather than from
-    // `saved`: a stale spawn point is no reason to un-buy what the player paid
-    // for. An HKS4 or HKS5 record is migrated on the way (`save::migrate`).
-    let used = match slots[profile] {
-        save::Slot::Used(s) => {
-            script::boot(persist::load(&s, profile));
-            true
-        }
-        _ => false,
-    };
     let pd = player_data::store();
     // Sly's half of PlayerData before the charm board, and both before the
     // first Vitals: a mask a shard fuse bought is `maxHealthBase` and Fragile
