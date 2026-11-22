@@ -67,8 +67,9 @@ pub enum Effect {
     Shake { average: bool },
     /// The boss died: the corpse tree has been spawned.
     Died,
-    /// The nail struck the thrown needle's `Needle Tink` (a TinkEffect: `sword_hit_reject`), at its box's centre.
-    Tink { at: [i32; 2] },
+    /// The nail struck the thrown needle's `Needle Tink` (a TinkEffect: `sword_hit_reject`). The effect spawns
+    /// near the Knight and plays at full level, so no position rides with it.
+    Tink,
 }
 
 /// Object 8 is `Needle Tink`, the Needle's child (hk-fsm boss `hornet_inputs`). `Setup and Follow` moves it to the
@@ -333,8 +334,7 @@ impl Fight {
             }
         }
         if struck & (1 << NEEDLE_TINK) != 0 {
-            let b = world_box(&self.boss.world, NEEDLE_TINK);
-            sink(Effect::Tink { at: [b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2] });
+            sink(Effect::Tink);
         }
         let e = self.boss.world.ent[0];
         if self.phase == Phase::Dying || !e.on(flag::COLLIDER) || !self.boss.world.active_in_hierarchy(0) {
