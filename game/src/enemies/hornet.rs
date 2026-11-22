@@ -196,6 +196,8 @@ pub fn tick(
             }
         } else if let Effect::Struck { .. } = e {
             hits += 1;
+        } else if let Effect::Tink { .. } = e {
+            crate::scene_sfx::tink();
         } else if let Effect::Died = e {
             kills += 1;
             unsafe { super::HK_HORNET_CLOAK_WAIT = u16::MAX };
