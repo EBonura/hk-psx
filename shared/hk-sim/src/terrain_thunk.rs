@@ -84,7 +84,9 @@ impl TerrainThunk {
     }
     /// One frame of the coroutine: `THUNK` when this frame's cast struck terrain (play the tink, and
     /// the checks end), `TINK` when it struck an edge of a `BOX_TINK` box. `count` edges are read
-    /// through `edge`; `boxes` are the scene's terrain boxes and `kinds` their `BOX_*` bits.
+    /// through `edge`; `boxes` are every scene's terrain boxes, `scenes` the scene each belongs to
+    /// and `kinds` its `BOX_*` bits, of which those of `scene` count.
+    #[allow(clippy::too_many_arguments)]
     pub fn tick(
         &mut self,
         player: &Player,
@@ -92,7 +94,9 @@ impl TerrainThunk {
         count: usize,
         edge: impl Fn(usize) -> [i32; 4],
         boxes: &[[i32; 4]],
+        scenes: &[u8],
         kinds: &[u8],
+        scene: usize,
     ) -> u8 {
         if self.left == 0 {
             return 0;
@@ -105,24 +109,27 @@ impl TerrainThunk {
             if empty_edge(&e) || !edge_in_box(e, swept) {
                 continue;
             }
-            let mut thunk = THUNK;
-            for (b, &kind) in boxes.iter().zip(kinds) {
-                if edge_within(e, *b) {
-                    if kind & BOX_TINK != 0 {
-                        out |= TINK;
-                    }
-                    if kind & BOX_NON_THUNKER != 0 {
-                        thunk = 0;
-                    }
-                }
-            }
-            out |= thunk;
+            out |= answer(e, boxes, scenes, kinds, scene);
         }
         if out & THUNK != 0 {
             self.left = 0;
         }
         out
     }
+}
+
+/// What an edge the cast struck answers: `THUNK` unless it lies in a `BOX_NON_THUNKER` box,
+/// and `TINK` if it lies in a `BOX_TINK` one.
+#[cfg_attr(target_arch = "mips", optimize(size))]
+#[inline(never)]
+fn answer(e: [i32; 4], boxes: &[[i32; 4]], scenes: &[u8], kinds: &[u8], scene: usize) -> u8 {
+    let mut kind = 0;
+    for ((b, &s), &k) in boxes.iter().zip(scenes).zip(kinds) {
+        if s as usize == scene && edge_within(e, *b) {
+            kind |= k;
+        }
+    }
+    (if kind & BOX_NON_THUNKER == 0 { THUNK } else { 0 }) | (if kind & BOX_TINK != 0 { TINK } else { 0 })
 }
 
 fn inside(p: [i32; 2], b: [i32; 4]) -> bool {
@@ -159,7 +166,8 @@ mod tests {
         p
     }
     fn run(t: &mut TerrainThunk, p: &Player, edges: &[[i32; 4]], no: &[[i32; 4]]) -> bool {
-        t.tick(p, BODY, edges.len(), |i| edges[i], no, &[BOX_NON_THUNKER; 4][..no.len()]) & THUNK != 0
+        let n = no.len();
+        t.tick(p, BODY, edges.len(), |i| edges[i], no, &[3; 4][..n], &[BOX_NON_THUNKER; 4][..n], 3) & THUNK != 0
     }
     // A wall 2 units to the right (inside the 2.225 reach of the side cast) and one 3 units left.
     const WALL_RIGHT: [i32; 4] = [2 * ONE, -4 * ONE, 2 * ONE, 4 * ONE];
@@ -234,15 +242,18 @@ mod tests {
         let mut t = TerrainThunk::new();
         // An arena gate: NonThunker and TinkEffect. The tink plays, the checks go on.
         t.start(0);
-        assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[BOX_NON_THUNKER | BOX_TINK]), TINK);
+        assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[5], &[BOX_NON_THUNKER | BOX_TINK], 5), TINK);
         assert!(t.active());
         // A toll gate: TinkEffect only. Both play, and the checks end.
         t.start(0);
-        assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[BOX_TINK]), THUNK | TINK);
+        assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[5], &[BOX_TINK], 5), THUNK | TINK);
         assert!(!t.active());
         // An open gate's lifted edge answers nothing.
         t.start(0);
-        assert_eq!(t.tick(&player(1), BODY, 1, |_| [0; 4], &[gate], &[BOX_TINK]), 0);
+        assert_eq!(t.tick(&player(1), BODY, 1, |_| [0; 4], &[gate], &[5], &[BOX_TINK], 5), 0);
+        // Another scene's box answers nothing here.
+        t.start(0);
+        assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[6], &[BOX_TINK], 5), THUNK);
     }
 
     #[test]

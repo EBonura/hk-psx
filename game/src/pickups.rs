@@ -141,6 +141,8 @@ pub struct World {
     kneel: Option<Kneel>,
     /// `hornet1Defeated`, set by the caller each tick before `collect`.
     pub hornet_defeated: bool,
+    /// The last `strike` reached an opened chest's TinkEffect; the caller plays it and clears this.
+    pub tink: bool,
 }
 fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
@@ -162,6 +164,7 @@ impl World {
             up_held: false,
             kneel: None,
             hornet_defeated: false,
+            tink: false,
         }
     }
     /// A scene entered: chests shut and pickups waiting, except what the save
@@ -217,7 +220,16 @@ impl World {
         }
         for c in self.chests.iter_mut().flatten() {
             let spec = &CHESTS[c.index as usize];
-            if !c.open && polygon_hits_box(polygon, spec.body) && overlap(spec.reach, body) {
+            if !polygon_hits_box(polygon, spec.body) {
+                continue;
+            }
+            // An opened chest whose lid has finished: its `Opened` child, active from `Chest
+            // Control`'s `Opened` state, carries a TinkEffect. The chest's own box stands in for
+            // `Opened`'s (as wide, 0.31 units taller at the top).
+            if c.open && u32::from(c.age) * spec.open_fps >= u32::from(spec.open_count) * 60 * 256 {
+                self.tink = true;
+            }
+            if !c.open && overlap(spec.reach, body) {
                 c.open = true;
                 c.age = 0;
                 unsafe {
@@ -227,18 +239,6 @@ impl World {
             }
         }
         None
-    }
-    /// Whether the nail's polygon is on a chest whose lid has finished opening: the chest's
-    /// `Opened` child, active from `Chest Control`'s `Opened` state, carries a TinkEffect. The
-    /// chest's own box stands in for `Opened`'s (as wide, 0.31 units taller at the top).
-    #[inline(never)]
-    pub fn opened_hit(&self, polygon: &[[i32; 2]]) -> bool {
-        self.chests.iter().flatten().any(|c| {
-            let spec = &CHESTS[c.index as usize];
-            c.open
-                && u32::from(c.age) * spec.open_fps >= u32::from(spec.open_count) * 60 * 256
-                && polygon_hits_box(polygon, spec.body)
-        })
     }
     /// One tick of pickups. `inspect` is UP held while the Knight is free to
     /// inspect; a shiny answers the press (`START INSPECT`), a piece the

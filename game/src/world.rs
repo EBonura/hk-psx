@@ -2097,22 +2097,11 @@ impl State {
         )
     }
     /// Whether the nail's world box `nail` reaches a hazard whose third word marks a TinkEffect
-    /// (spikes, worms: tools/world_metadata.py), through the same bound table as `hazard_contact`.
-    #[inline(never)]
+    /// (spikes, worms: tools/world_metadata.py): the first hazard the box reaches, through the
+    /// table `hazard_contact` reads.
     pub fn hazard_tink(&mut self, region: meta::Region, nail: [i32; 4]) -> bool {
-        let tinks = |object: meta::Object| {
-            object.extra(2) != 0 && object.polygons().flatten().any(|p| bank_polygon_hits(p, nail))
-        };
-        self.bind_triggers(region);
-        let t = &self.triggers;
-        if t.overflow {
-            return region.objects().flatten().any(|o| {
-                o.kind() == META_HAZARD && overlap(nail, o.bounds()) && tinks(o)
-            });
-        }
-        (0..t.hazards as usize).any(|slot| {
-            overlap(nail, t.bounds[slot]) && region.object(t.object[slot] as usize).is_some_and(|o| tinks(o))
-        })
+        self.trigger(region, META_HAZARD, nail, &|_| false)
+            .is_some_and(|hazard| hazard.extra(2) != 0)
     }
     /// Authored hazard checkpoint trigger, distinct from a bench or death save:
     /// spawn point and facing from the admitted scene bank.

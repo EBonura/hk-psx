@@ -631,7 +631,7 @@ fn strike_chests(
         *dst = [player.x - p[0] * player.facing, player.y + p[1]];
     }
     let opened = pickups.strike(&polygon[..source.len()], body);
-    if opened.is_none() && pickups.opened_hit(&polygon[..source.len()]) {
+    if core::mem::take(&mut pickups.tink) {
         scene_sfx::tink();
     }
     opened

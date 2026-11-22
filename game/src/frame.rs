@@ -1617,9 +1617,17 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            let (boxes, kinds) = scene_sfx::terrain_boxes(r.scene);
             let player = game.player;
-            let struck = game.thunk.tick(&player, body, room.counts[5], game.state.edge_reader(r, room), boxes, kinds);
+            let struck = game.thunk.tick(
+                &player,
+                body,
+                room.counts[5],
+                game.state.edge_reader(r, room),
+                scene_sfx::TERRAIN_BOX,
+                scene_sfx::TERRAIN_BOX_SCENE,
+                scene_sfx::TERRAIN_BOX_KIND,
+                r.scene,
+            );
             if struck & hk_sim::terrain_thunk::THUNK != 0 {
                 scene_sfx::nail_terrain();
             }
