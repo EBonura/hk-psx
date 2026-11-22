@@ -1,5 +1,5 @@
 # psoxide-pgo layout 1
-# psoxide-pgo searched: rounds 600 seed 4
+# psoxide-pgo searched: rounds 1 seed 4
 # features: 
 # variant: 
 # Per-word counts over the gameplay polls (w index:count) and the direct
@@ -8892,786 +8892,576 @@ w 80:29375 81:3525055 82:3525055 83:3525055 84:3525055 85:3525055 86:34509 87:34
 w 96:20078 97:20078 98:20078 99:20078
 c 20078 95 psx_io::gpu::write_commands_when_ready_slow
 c 5134 12 psx_vram::upload_bytes
-# placement: psoxide-pgo search, seed 4 rounds 600 batch 24: 28802 window replays, 136 moves kept, objective 4.0000 -> 3.7218
+# placement: psoxide-pgo search, seed 4 rounds 1 batch 24: 50 window replays, 1 moves kept, objective 4.0000 -> 3.9960
 # placement windows: c37-stand (weight 1), kings-return (weight 3)
 s 8001cfb0
 o a5305ce99200f7fa 1413 8001cfb0 hk_psx::input::checkpoint
 o c041604209439c5a 63 8001e5c4 hk_psx::presentation::service
 o 6477eeee500ea62b 609 8001e6c0 <hk_psx::disc::Cache>::prepare_code
-o 330719207fe991c6 7 8001f044 hk_sim::runner_senses::all_edges
-o d042168fd3fe6973 200 8001f060 hk_psx::present_spin
-o 6767f9ce27af16db 42 8001f380 psx_math::int32::mul_div_i32
+o 1ba07bd5fda2a4ff 47 8001f044 hk_psx::disc::spill_abort
+o d042168fd3fe6973 200 8001f100 hk_psx::present_spin
+o 589716cfbec832c2 2 8001f420 <hk_psx::world::State>::checkpoint::{closure#0} @hk_psx
 o f54ca02f16d7cccc 282 8001f428 hk_psx::disc::preverify_step
-o a91c7d167722919c 168 8001f890 hk_psx::dialogue::panel
-o ea7771ad736bc770 55 8001fb30 __psx_rt_present_kick
-o 26876ceff3dbbf6a 683 8001fc0c <hk_format::scene::SceneValidation>::step
-o bb3c530effececa6 23 800206b8 <hk_psx::camera::Camera>::enter_lock_zone
-o 82a269c48f2e64ec 160 80020714 memcpy
-o 1812e10afc23d18d 723 80020994 <hk_psx::room_decode::Decoder>::step
-o ba63b25554fa8d56 48 800214e0 <core::iter::adapters::enumerate::Enumerate<core::iter::adapters::chain::Chain<core::slice::iter::Iter<&str>, core::slice::iter::Iter<&str>>> as core::iter::traits::iterator::Iterator>::nth @hk_psx
-o 6c3797ac67621731 147 800215a0 hk_psx::render::tile_visibility
-o 4cb37557a139e1c3 852 800217ec <hk_psx::disc::Cache>::prepare_coverage
-o 5007efe6fe19953b 26 8002253c <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#8} @hk_psx
-o 204aae881895d05a 1967 800225a4 hk_psx::render::scenery_range
-o bf34bbc3747aee02 395 80024460 <hk_psx::disc::Cache>::prepare_runner_audio
-o 589716cfbec832c2 2 80024a8c <hk_psx::world::State>::checkpoint::{closure#0} @hk_psx
-o ab049a7036b0d904 273 80024a94 <hk_psx::alpha_scissor_cache::Entry>::map_cached_into
-o ff5f0f6f340911d9 12 80024ed8 hk_psx::ability_fx::cast
-o 2982caeb124edc61 27 80024f08 <hk_psx::enemies::Actor>::fsm_ready
-o e769b4f6b7bff4d9 296 80024f74 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, &mut core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::world::gate::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
-o 589026cfbec22f44 2 80025414 <hk_psx::enemies::no_runner_event as core::ops::function::FnMut<(hk_psx::enemies::RunnerEvent,)>>::call_mut @hk_psx
-o 66e232e4f28ef153 10 8002541c __psx_rt_call_on_stack
-o 4b047bd114b8156f 810 80025444 <hk_psx::world::State>::reset_scene
-o b35a48491c3fcd1c 108 800260ec <core::slice::iter::Iter<u8> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::adapters::map::map_try_fold<&u8, usize, (), core::ops::control_flow::ControlFlow<usize>, <hk_psx::shop::State>::shelf::{closure#0}, core::iter::traits::iterator::Iterator::find::check<usize, &mut <hk_psx::shop::State>::shelf::{closure#1}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<usize>> @hk_psx
-o 6c6769fba1080b3a 177 8002629c <hk_psx::enemies::Actor>::local_bounds
-o e5f2103fef5c7ccd 412 80026560 hk_psx::save::survey
-o 49acea11eca5462d 20 80026bd0 <hk_psx::disc::Cache>::preload
-o 3bc45dc9454da90d 7003 80026c20 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}> @hk_psx
-o caa91db37ecbd70e 543 8002d98c <hk_psx::disc::Cache>::prepare_atlases
-o 123ccd7ef0129e77 51 8002e208 hk_psx::render::release_scene
-o 8333bf7be36651f1 4864 8002e2d4 <hk_psx::enemies::Actor>::advance_in_view::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}> @hk_psx
-o 5011ef74f9441d99 406 80032ed4 <hk_psx::disc::Cache>::stage
-o bad9a07d23d655fb 37 8003352c hk_psx::disc::fnv
-o f28f701aad6a4939 47 800335c0 psx_math::wide_div::divrem_word
-o f2739e0961708fd6 993 8003367c <hk_psx::enemies::Actor>::new
-o aa08b38db6c7da4a 15 80034600 hk_psx::main::{closure#5} @hk_psx
-o 6e08aae2c9cfd25b 106 8003463c hk_psx::render::kick_ready
-o 8340407a92474d95 500 800347e4 <hk_psx::disc::Cache>::prepare_scene_ambience
-o d4fde0237f5be03a 123 80034fb4 hk_psx::world::bank_region
-o 40dbfeb2d1f9dfcd 800 800351a0 hk_psx::frame::debug_reset
-o ea5aad81500e1820 172 80035e20 hk_psx::music::apply
-o f9273e4295ee2491 307 800360d0 hk_psx::render::occlusion::subtract_many
-o 54a78309ef5673a9 249 8003659c <hk_psx::disc::Cache>::spill_plan
-o 4af3429cbd8eb8c7 419 80036980 hk_sim::runner_senses::walker_queries_with::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 94fa15b2165757e5 674 8003700c hk_psx::frame::simulate::{closure#10} @hk_psx
-o f570c1b3c95bf095 39 80037a94 hk_psx::blocker_terrain::killed
-o f44a5d40108c16ff 86 80037b30 <hk_format::Room>::texture
-o 722e3ad8640abe63 233 80037c88 hk_psx::render::draw_scenery_xy
-o 589026cfbec22f44 2 8003802c <<psx_io::cd::reader::SectorReader>::start_read_seek_first::{closure#0} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} @psx_io
-o 6914ea93fa0c686a 170 80038034 hk_sim::runner_senses::walker_queries_with::<hk_psx::world::terrain::{closure#0}>::{closure#0} @hk_psx
-o 43249eff24e57422 151 800382dc hk_psx::disc::room_drive
-o b2025351e0ffe1a5 11627 80038538 hk_psx::frame::render
-o 0e526e2773a7223f 721 80043ae4 <hk_psx::disc::Cache>::prepare_ambience
-o e53bc4f49ff34dfb 53 80044628 hk_psx::dialogue::save_notice::{closure#1} @hk_psx
-o d2ab4d4fd5aee651 270 800446fc hk_psx::render::occlusion::subtract
-o d3d22bf5d5ce2965 784 80044b34 hk_psx::world::particles::break_effects::load_scene
-o 076de33fee39da77 51 80045774 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::fail @psx_cdstream
-o 89f8cc6ee8404b8d 954 80045840 <hk_psx::geo::World>::tick::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o b9bf254a59b21bea 402 80046728 hk_psx::dialogue::save_notice
-o 20df03c99072a7fb 35 80046d70 <hk_psx::great_door::World>::begin_gate_entry
-o a195292abc1379bc 296 80046dfc <hk_psx::enemies::EnemyWorld>::prepare_draws::{closure#7} @hk_psx
-o 9cec1388b94de5aa 398 8004729c hk_psx::scene_transition::load
-o 1f74e10aa128aee1 46 800478d4 <core::slice::iter::Iter<u32> as core::iter::traits::iterator::Iterator>::find_map::<(usize, usize, u8), &mut <hk_psx::persist::Store>::all::{closure#0}> @hk_psx
-o 4a544af49073fded 54 8004798c hk_psx::render::occlusion::tile_runs::any_hidden
-o 739cc8e82bcaccf2 516 80047a64 hk_psx::world::gate
-o 9859250bbd7b5bd3 23 80048274 <hk_psx::world::State>::hit_object
-o 49224a040394ab16 400 800482d0 hk_psx::apply_reveal_masks
-o 257a4cc9fc6edec5 33 80048910 <hk_psx::persist::Store>::clear_kind
-o d605765989b2dc95 153 80048994 hk_psx::frame::simulate::{closure#8}::{closure#0} @hk_psx
-o 3bdb51d558e35101 452 80048bf8 hk_psx::frame::take_gate
-o 99111b2a96f9bc34 5 80049308 hk_psx::modules::release_claim
-o 7a5f42d60e020f6d 366 8004931c <hk_psx::props::World>::append_needed::{closure#0} @hk_psx
-o d7cd1647f1dd8145 721 800498d4 <hk_format::scene::SceneValidation>::new
-o aa1f0210cf0b7455 204 8004a418 hk_psx::disc::chunk_spec
-o 71f75aa082774e7a 14677 8004a748 hk_psx::frame::simulate
-o 09241a787d529bed 28 80058c9c <psx_vram::VramRect>::new
+o 01e9ecb97bed08b9 167 8001f890 <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::wait_seek_end
+o ea7771ad736bc770 55 8001fb2c __psx_rt_present_kick
+o 26876ceff3dbbf6a 683 8001fc08 <hk_format::scene::SceneValidation>::step
+o 5007efe6fe19953b 26 800206b4 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#8} @hk_psx
+o 82a269c48f2e64ec 160 8002071c memcpy
+o 1812e10afc23d18d 723 8002099c <hk_psx::room_decode::Decoder>::step
+o ab5b40b54dc67e8a 45 800214e8 <hk_psx::disc::Cache>::prepare_specs
+o 6c3797ac67621731 147 8002159c hk_psx::render::tile_visibility
+o 4cb37557a139e1c3 852 800217e8 <hk_psx::disc::Cache>::prepare_coverage
+o 9ddc9cd03eb2a241 72 80022538 hk_psx::locked_for_dash
+o 204aae881895d05a 1967 80022658 hk_psx::render::scenery_range
+o 0c1637eff086d0ea 361 80024514 hk_psx::world::polygons_overlap
+o 589026cfbec22f44 2 80024ab8 <hk_psx::enemies::no_runner_event as core::ops::function::FnMut<(hk_psx::enemies::RunnerEvent,)>>::call_mut @hk_psx
+o 589026cfbec22f44 2 80024ac0 <<psx_io::cd::reader::SectorReader>::start_read_seek_first::{closure#0} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} @psx_io
+o ab049a7036b0d904 273 80024ac8 <hk_psx::alpha_scissor_cache::Entry>::map_cached_into
+o 2982caeb124edc61 27 80024f0c <hk_psx::enemies::Actor>::fsm_ready
+o e769b4f6b7bff4d9 296 80024f78 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, &mut core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::world::gate::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
+o 589026cfbec22f44 2 80025418 <psx_io::cd::reader::SectorReader>::start_read_seek_first::{closure#0} @psx_io
+o 66e232e4f28ef153 10 80025420 __psx_rt_call_on_stack
+o 4b047bd114b8156f 810 80025448 <hk_psx::world::State>::reset_scene
+o 9a468d6959b25de3 67 800260f0 hk_psx::disc::spill_take
+o 6c6769fba1080b3a 177 800261fc <hk_psx::enemies::Actor>::local_bounds
+o aa8175a091027459 114 800264c0 <hk_psx::camera::Camera>::release_lock
+o 3bc45dc9454da90d 7003 80026688 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}> @hk_psx
+o a2400cf5a07aa356 181 8002d3f4 <psx_io::cd::reader::SectorReader>::send_command_waiting
+o 8333bf7be36651f1 4864 8002d6c8 <hk_psx::enemies::Actor>::advance_in_view::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}> @hk_psx
+o 38119b5350496086 188 800322c8 <hk_psx::enemies::EnemyWorld>::spawn_projectile
+o f28f701aad6a4939 47 800325b8 psx_math::wide_div::divrem_word
+o b4fb8e6bbb760ef9 1009 80032674 hk_psx::world::particles::break_effects::draw_particle
+o 6e08aae2c9cfd25b 106 80033638 hk_psx::render::kick_ready
+o 42857e746f055ed5 482 800337e0 hk_sim::wire::decode_controller
+o 4c5855d44199e761 17 80033f68 psx_cdstream::console::counted::cancel
+o d4fde0237f5be03a 123 80033fac hk_psx::world::bank_region
+o 40dbfeb2d1f9dfcd 800 80034198 hk_psx::frame::debug_reset
+o ea5aad81500e1820 172 80034e18 hk_psx::music::apply
+o f9273e4295ee2491 307 800350c8 hk_psx::render::occlusion::subtract_many
+o f794de9d12f59988 251 80035594 core::str::converts::from_utf8
+o 9826307c941dd0d1 8 80035980 <hk_psx::enemies::Actor>::advance_mawlek::<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#1} @hk_psx
+o 4af3429cbd8eb8c7 419 800359a0 hk_sim::runner_senses::walker_queries_with::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 94fa15b2165757e5 674 8003602c hk_psx::frame::simulate::{closure#10} @hk_psx
+o 7c15b9843744dcb0 31 80036ab4 <hk_psx::enemies::VengeflyRuntime>::apply
+o f44a5d40108c16ff 86 80036b30 <hk_format::Room>::texture
+o 722e3ad8640abe63 233 80036c88 hk_psx::render::draw_scenery_xy
+o 6914ea93fa0c686a 170 8003702c hk_sim::runner_senses::walker_queries_with::<hk_psx::world::terrain::{closure#0}>::{closure#0} @hk_psx
+o d3d22bf5d5ce2965 784 800372d4 hk_psx::world::particles::break_effects::load_scene
+o 4257bf74a966522f 180 80037f14 hk_sim::wire::decode_chunk
+o b2025351e0ffe1a5 11627 800381e4 hk_psx::frame::render
+o 0e526e2773a7223f 721 80043790 <hk_psx::disc::Cache>::prepare_ambience
+o 7865592585187dad 176 800442d4 hk_psx::persist::record_secrets
+o d2ab4d4fd5aee651 270 80044594 hk_psx::render::occlusion::subtract
+o d7cd1647f1dd8145 721 800449cc <hk_format::scene::SceneValidation>::new
+o 7b338b5dfcb8df27 142 80045510 hk_psx::ability_art::presentation::draw_with
+o 89f8cc6ee8404b8d 954 80045748 <hk_psx::geo::World>::tick::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 3bdb51d558e35101 452 80046630 hk_psx::frame::take_gate
+o 257a4cc9fc6edec5 33 80046d40 <hk_psx::persist::Store>::clear_kind
+o a195292abc1379bc 296 80046dc4 <hk_psx::enemies::EnemyWorld>::prepare_draws::{closure#7} @hk_psx
+o 4a544af49073fded 54 80047264 hk_psx::render::occlusion::tile_runs::any_hidden
+o 432e9283a2e6cb8b 673 8004733c <core::iter::adapters::flatten::FlattenCompat<core::iter::adapters::map::Map<core::option::IntoIter<hk_format::world_meta::WorldMeta>, hk_psx::world::gates::{closure#1}>, core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, hk_psx::world::gates::{closure#1}::{closure#0}>>>::iter_try_fold::<(), <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, hk_psx::world::gates::{closure#1}::{closure#0}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::frame::simulate::{closure#11}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<hk_psx::world::Gate>> @hk_psx
+o d82543c21be5d2d1 275 80047dc0 hk_psx::room_decode::fast_sequences
+o 1b36de9677b35906 6 8004820c hk_psx::enemies::note_clip_miss
+o 49224a040394ab16 400 80048224 hk_psx::apply_reveal_masks
+o 56478a39459ca98b 79 80048864 hk_psx::persist::reset_semi_persistent
+o d605765989b2dc95 153 800489a0 hk_psx::frame::simulate::{closure#8}::{closure#0} @hk_psx
+o 1fba314e4a20ef81 663 80048c04 <hk_format::Room>::validate_record
+o 36035342beebf564 63 80049660 <psx_mc::Card<hk_psx::save::SlotOne>>::free_blocks_in @hk_psx
+o 7a5f42d60e020f6d 366 8004975c <hk_psx::props::World>::append_needed::{closure#0} @hk_psx
+o caa91db37ecbd70e 543 80049d14 <hk_psx::disc::Cache>::prepare_atlases
+o 584d40adbd07f9e3 66 8004a590 hk_psx::music::begin
+o 71f75aa082774e7a 14677 8004a698 hk_psx::frame::simulate
+o deddb8d9bee1ce71 72 80058bec hk_psx::audio::door
 o c446fd6c313cb365 93 80058d0c hk_sim::terrain_thunk::edge_in_box
 o 8b3d0ebe0027fc9c 377 80058e80 hk_psx::world::particles::break_effects::collide::<core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<usize>, hk_psx::world::particles::break_effects::tick_specs_with_tracks<&hk_psx::world::terrain::{closure#0}>::{closure#2}>, hk_psx::world::particles::break_effects::tick_specs_with_tracks<&hk_psx::world::terrain::{closure#0}>::{closure#3}>> @hk_psx
-o 9826307c941dd0d1 8 80059464 <hk_psx::enemies::Actor>::advance_mawlek::<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#1} @hk_psx
+o d820672a2d3f0fa9 8 80059464 <hk_psx::disc::pad_idle as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} @hk_psx
 o 1e1d93d7ac0c86af 458 80059484 <hk_psx::world::State>::trigger
-o 0960c5ae8de5f8cb 269 80059bac hk_psx::ambience::prefetch_done
-o 589026cfbec22f44 2 80059fe0 <psx_io::cd::reader::SectorReader>::start_read_seek_first::{closure#0} @psx_io
-o 01da9b55530035e4 256 80059fe8 hk_psx::render::occlusion::tile_runs::visible_runs_rows
-o 432e9283a2e6cb8b 673 8005a3e8 <core::iter::adapters::flatten::FlattenCompat<core::iter::adapters::map::Map<core::option::IntoIter<hk_format::world_meta::WorldMeta>, hk_psx::world::gates::{closure#1}>, core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, hk_psx::world::gates::{closure#1}::{closure#0}>>>::iter_try_fold::<(), <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, hk_psx::world::gates::{closure#1}::{closure#0}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::frame::simulate::{closure#11}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<hk_psx::world::Gate>> @hk_psx
-o 01e9ecb97bed08b9 167 8005ae6c <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::wait_seek_end
-o e4f6a9f35ee51ea4 3953 8005b108 <hk_psx::world::State>::tick_debris
-o 5663ae2dc9ea8a6d 80 8005eecc <hk_sim::waves::WaveArena>::tick
-o b7209d9a7176db92 37 8005f00c hk_psx::dialogue::open
-o a8298742e4165da8 512 8005f0a0 <psx_mc::Card<hk_psx::save::SlotOne>>::write_inner @hk_psx
-o 816b8a59cf100f9f 98 8005f8a0 <core::slice::iter::Iter<u8> as core::iter::traits::iterator::Iterator>::try_fold::<core::num::nonzero::NonZero<usize>, core::iter::adapters::map::map_try_fold<&u8, usize, core::num::nonzero::NonZero<usize>, core::option::Option<core::num::nonzero::NonZero<usize>>, <hk_psx::shop::State>::shelf::{closure#0}, core::iter::adapters::filter::filter_try_fold<usize, core::num::nonzero::NonZero<usize>, core::option::Option<core::num::nonzero::NonZero<usize>>, <hk_psx::shop::State>::shelf::{closure#1}, <core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::slice::iter::Iter<u8>, <hk_psx::shop::State>::shelf::{closure#0}>, <hk_psx::shop::State>::shelf::{closure#1}> as core::iter::traits::iterator::Iterator::advance_by::SpecAdvanceBy>::spec_advance_by::{closure#0}>::{closure#0}>::{closure#0}, core::option::Option<core::num::nonzero::NonZero<usize>>> @hk_psx
-o bea1798be5c7aa56 221 8005fa28 <hk_psx::camera::Camera>::tick
-o 458b3ce714c93b11 117 8005fd9c <hk_psx::disc::Cache>::find_xa
-o d8e179cf1e60f448 157 8005ff70 hk_psx::render::texture_material_alpha
-o f2edca2ef91b852a 107 800601e4 <hk_psx::menu::state::Settings>::adjust
-o 7e188034e40a0361 925 80060390 <hk_psx::world::State>::draw_secrets
-o de3a8b3dc75d6a6a 196 80061204 <hk_psx::camera::Camera>::position_to_hero
-o 3a6755813693c9f7 1219 80061514 <hk_psx::world::State>::apply
-o 1fba314e4a20ef81 663 80062820 <hk_format::Room>::validate_record
-o 8be4d1653093b90c 261 8006327c hk_psx::frame::secret_feedback
-o 0b27873cf61f89db 676 80063690 hk_psx::geo_render::draw
-o 42857e746f055ed5 482 80064120 hk_sim::wire::decode_controller
-o 5df477658533a48e 36 800648a8 hk_psx::camera::request
-o 71b7e01e29f44ffe 1082 80064938 <hk_sim::Player>::step::<&hk_psx::world::terrain::{closure#0}> @hk_psx
-o 19bfb3c2bf4ebe8f 327 80065a20 <hk_psx::save::Save>::decode
-o e5e7f4e4202e8935 69 80065f3c hk_psx::frame::raise_fk_dust
-o 90a7cdadad30ddcc 317 80066050 hk_psx::world::particles::break_effects::soft_styles
-o a3b873605c1c56a9 16 80066544 hk_psx::dialogue::ornament
-o 7e13433957921e44 732 80066584 <hk_psx::world::particles::Pool>::draw
-o be593e5e545850ad 219 800670f4 hk_psx::ability_fx::request
-o 18cb79a7b17d08c0 395 80067460 <hk_psx::enemies::EnemyWorld>::apply_arena
-o 2b458795ca1a92bd 92 80067a8c hk_psx::modules::evict_boot
-o 6f2295707d623ada 850 80067bfc hk_psx::render::submit
-o e3d9d5132c859a40 389 80068944 <hk_psx::disc::Cache>::prepare_effect_art
-o 528f603062a3e960 376 80068f58 hk_psx::enemies::push_sprite
-o 4257bf74a966522f 180 80069538 hk_sim::wire::decode_chunk
-o 5c7d8fdf0720e226 569 80069808 hk_psx::enemies::actor_edges
-o b37c8ee9a6035fe7 370 8006a0ec <hk_sim::runner::Runner>::horizontal_recoil::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#18}> @hk_psx
-o b48bfe6c11724156 193 8006a6b4 hk_sim::runner_audio::valid_fragment
-o 1edc67ec46e166eb 401 8006a9b8 hk_psx::drip::tick
-o d82543c21be5d2d1 275 8006affc hk_psx::room_decode::fast_sequences
-o 1b36de9677b35906 6 8006b448 hk_psx::enemies::note_clip_miss
-o 05be4c88943a1dbd 54 8006b460 <hk_psx::world::State>::run_levers
-o 584d40adbd07f9e3 66 8006b538 hk_psx::music::begin
-o f536b672464f3ece 96 8006b640 hk_psx::ability_fx::tick
-o e901e0b9c5815733 367 8006b7c0 <hk_psx::enemies::EnemyWorld>::land_member
-o 19f0a22f4541179a 366 8006bd7c <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, (), core::ops::control_flow::ControlFlow<hk_format::world_meta::Object>, core::iter::traits::iterator::Iterator::find::check<hk_format::world_meta::Object, hk_psx::world::reveal_initial_opacity::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
-o 9d52ec3295428b5b 23 8006c334 <hk_sim::wire::Reader>::bool
-o 8176d08cca24bf32 101 8006c390 hk_psx::strike_chests
-o 0c1637eff086d0ea 361 8006c524 hk_psx::world::polygons_overlap
-o 25e7a5ca3ab0f7d5 357 8006cac8 hk_psx::world::bank_trigger
-o 230626ec8237f213 14 8006d05c hk_psx::persist::reset
-o e010bad91ca2ccb5 1062 8006d094 hk_psx::respond_to_hurt
-o 6f5c9a266ccfaaf3 355 8006e12c <hk_psx::disc::Cache>::stage_group
-o 38119b5350496086 188 8006e6b8 <hk_psx::enemies::EnemyWorld>::spawn_projectile
-o 48ae71feaba8d7a6 94 8006e9a8 hk_psx::ability_fx::emit
-o 8522ae4dbcbde102 119 8006eb20 hk_psx::enemies::segment_crosses
-o 66017ef8ebe6e1c4 74 8006ecfc hk_psx::ability_fx::on_edges
-o 2e3947b061dfad64 345 8006ee24 hk_psx::ambience::set_volume
-o 9ee97283b0153c36 342 8006f388 <hk_sim::runner::Runner>::reset::<&mut <hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o 3c820e441c6f2cae 20 8006f8e0 psx_io::gpu::handoff::write_display_control_slow
-o 47565a153f38064e 252 8006f930 <hk_psx::world::State>::gate
-o c81874bfe6fc0930 336 8006fd20 hk_psx::enemies::climber_ray_hit::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 1a997f09b9038967 304 80070260 <hk_psx::world::State>::strike_secret
-o c06e0c1fb3ae17d9 25 80070720 <hk_sim::fsm3::Ctx>::set_obj
-o 53740f3ec6fd66cc 736 80070784 hk_psx::enemies::pogo_contact
-o d95d3ac8163ec2a6 303 80071304 <hk_psx::world::State>::spell_strike
-o 5ae2baddb19ab232 301 800717c0 hk_psx::enemies::climber_ray_hit::<hk_psx::world::terrain::{closure#0}>::{closure#0} @hk_psx
-o 487f40a5766dcbc5 140 80071c74 hk_psx::save::load_world
-o 6a34bfb831204155 321 80071ea4 hk_psx::strike_shroom
-o 5e0d234641a85ad0 300 800723a8 <hk_psx::ambience::state::Mixer>::release
-o bb10b9211a5e15ac 150 80072858 <hk_psx::world::debris::Pool>::publish
-o 4515f16c5a159d18 54 80072ab0 <hk_psx::enemies::Actor>::gas_touch
-o 5c3403f602190426 196 80072b88 hk_psx::enemies::segment_hits_edges
-o 4450a39563eeefbe 703 80072e98 <hk_psx::pickups::World>::append_needed
-o 17300b2043efb6e1 520 80073994 <hk_psx::enemies::Actor>::runner_senses::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 716eba73eb023ec4 136 800741b4 <hk_psx::world::particles::Pool>::draw_front
-o b9efbc828abd4fa4 1854 800743d4 hk_psx::dialogue::prepare
-o cbb75a10a533eeed 472 800760cc hk_psx::battle_gate_art::prepare
-o 6bd3cd267ef4a65a 25 8007682c hk_psx::render::wait_dma_idle
-o bb65eef4584684e7 359 80076890 <hk_psx::pickups::Draws>::draw
-o cde5a28e19610de5 1116 80076e2c hk_psx::geo_render::apply
-o 62fc84d06f9d3f27 533 80077f9c hk_psx::drip::prepare
-o 4907b8444541f3ab 119 800787f0 hk_psx::draw_frame
-o f5bfcaf249b9c9e9 223 800789cc <hk_psx::render::core_map_cache::Cache>::map
-o 9f5f2158b22ca1ac 136 80078d48 <hk_psx::drip::Draws>::draw
-o 68855c2a0c2a63c0 104 80078f68 hk_psx::hit_fx::frames
-o 5d869dcd08e55f5a 121 80079108 <hk_psx::battle_gate_art::Draws>::draw
-o 043039185c186354 419 800792ec <hk_psx::shade::World>::draw
-o 3e4fc46a5408a76d 829 80079978 hk_psx::game_map::prepare
-o 38cb4645f604cc9a 153 8007a66c hk_psx::blocker_terrain::apply
-o 61034bc62d405868 153 8007a8d0 hk_psx::great_door::apply
-o 2ae79d4ab5df9ec9 510 8007ab34 hk_psx::battle_gates::apply
-o 8550b08beb67f24c 325 8007b32c hk_psx::boss_hooks::draw
-o 5a9d26232d3cbefb 149 8007b840 hk_psx::hero_light::vignette_scene
-o d084e06dba34d623 258 8007ba94 hk_psx::blocker_roller::draw
-o 17c76b0ba6ffbf22 293 8007be9c hk_psx::world::particles::break_effects::collide::<core::iter::adapters::copied::Copied<core::slice::iter::Iter<[i32; 4]>>> @hk_psx
-o b15c11e7979eaa92 292 8007c330 hk_psx::ambience::cut
-o 9ddc9cd03eb2a241 72 8007c7c0 hk_psx::locked_for_dash
-o 991c328c7c078e63 328 8007c8e0 hk_psx::render::set_vignette
-o 6df67ed09700da0b 290 8007ce00 <hk_psx::geo::World>::reset_enemies
-o 7bf7efe722aff4eb 288 8007d288 <psx_mc::hardware::HardwareCard as psx_mc::Block>::read_frame @hk_psx
-o 134af45669f4a670 13 8007d708 hk_psx::disc::tail_disarm
-o 08128f9a54c7dd1e 15 8007d73c hk_psx::boss_hooks::append_needed
-o 1f4a846a48ed8ef2 288 8007d778 <psx_io::cd::reader::SectorReader>::start_read_seek_first_with
-o 4f3b4c442587e8f8 275 8007dbf8 <psx_mc::hardware::HardwareCard as psx_mc::Block>::write_frame @hk_psx
-o d87c1b5c4de43829 239 8007e044 hk_psx::disc::prefetch_take
-o af17cb592b20e64a 78 8007e400 hk_psx::dialogue_art::presentation::append_needed
-o dfd60f30f4a640d9 46 8007e538 hk_psx::charms::presentation::append_needed
-o ec585c180ce8e897 200 8007e5f0 hk_psx::pickups::kneel_frame
-o 95460956b2c7441e 232 8007e910 hk_psx::decor::apply
-o 863d00271d1f265c 173 8007ecb0 hk_psx::props::apply
-o 4a0c1080fc97591b 97 8007ef64 hk_psx::pickups::apply
-o fd39f9dad4f68623 45 8007f0e8 hk_psx::dialogue::panel_up
-o e4a584acb2bde3da 186 8007f19c <u16 as core::slice::cmp::SliceContains>::slice_contains
-o bc89e526f7e257c0 40 8007f484 hk_psx::dialogue::prompt_up
-o 64f61269a395bdd8 705 8007f524 hk_psx::render::repair
-o 15161e634e91f75f 269 80080028 psx_spu::dma_write
-o ef35bb608160994a 118 8008045c <hk_psx::persist::Store>::set
-o 15f062caadc28cf8 2087 80080634 hk_psx::render::bind_animation
-o 6f9a2357a9ed6533 265 800826d0 hk_psx::dialogue::ornament_color
-o 83e2378a22b3bb12 264 80082af4 hk_psx::dialogue::ornate_frame
-o 55178712182eb322 105 80082f14 hk_psx::ability_fx::draw_one
-o 06b0d90c2edf9242 151 800830b8 <hk_psx::enemies::Draws>::push_part
-o 5d14bc54d7f199db 56 80083314 <hk_psx::enemies::Draws>::can_push
-o b92fea669972fd5a 105 800833f4 hk_psx::scenery_geometry::legal
-o 7e32cb92e19ed852 110 80083598 <hk_psx::disc::Cache>::is_ready
-o df2fe0a3de4f2a79 162 80083750 hk_psx::world::camera_lock
-o b4fb8e6bbb760ef9 1009 800839d8 hk_psx::world::particles::break_effects::draw_particle
-o d468e0d9ccec844e 13 8008499c hk_psx::persist::publish
-o 079fcb55ddc39c93 332 800849d0 hk_psx::world::resident_with_budget
-o 6435abf06c749748 232 80084f00 hk_sim::combat::polygon_hits_box
-o f794de9d12f59988 251 800852a0 core::str::converts::from_utf8
-o d6a53ab6bd7d26d2 247 8008568c hk_psx::persist::snapshot
-o 0f948ff0d375bd81 214 80085a68 <hk_psx::disc::Cache>::window_fits_at
-o 7918bb659d0bc5a6 136 80085dc0 <hk_format::scene::Scene>::room
-o d99e32fa14dfb2c7 228 80085fe0 <hk_sim::fsm3::Tree>::init
-o 6bbce7f403ca1272 88 80086370 hk_psx::display::draw_direct
-o 10b5981941dc0848 108 800864d0 <hk_psx::disc::Cache>::locate_cached
-o d581945634f946d3 324 80086680 hk_psx::render::early_back_allowed
-o 60464ae679cf83bb 289 80086b90 <hk_sim::runner::Runner>::walker_callback::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o 74bf33127be52440 321 80087014 <hk_psx::enemies::Actor>::apply_runner_actions::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}> @hk_psx
-o 7cf9a88b74e056bc 81 80087518 hk_psx::disc::start_pool
-o 0a93c78b0e933da9 113 8008765c hk_psx::disc::cd_stream::status
-o 700ebc49d2162f6e 162 80087820 hk_psx::render::begin_frame
-o 6725a3ba2917e107 36 80087aa8 hk_psx::world::particles::length3
-o b6575e549a3d0276 359 80087b38 hk_psx::input::poll_slow
-o e8daccaae08e07ba 28 800880d4 hk_psx::frame::render::{closure#5} @hk_psx
-o 8366e2997623d95f 47 80088144 <hk_format::world_meta::Object>::bounds
-o 067e697c42d89467 405 80088200 <psx_pad::controllers::Controllers>::step::<psx_io::periph::ControllerPort> @hk_psx
-o 115017b3f206dd7f 119 80088854 psx_math::int32::div_u64_by_u32
-o b83485ceaf61ac38 246 80088a30 hk_psx::music::boss_service
-o b1babf0350ea3723 254 80088e08 <hk_psx::alpha_scissor_cache::Entry>::prepare
-o a07c1a51478061d7 26 80089200 hk_psx::render::begin
-o 19b1bab962882454 226 80089268 hk_psx::music::stream::hardware::upload
-o dc146f4bc6550c42 222 800895f0 <hk_psx::world::State>::bind_gates
-o 3047bc280549098d 501 80089968 <core::iter::adapters::flatten::FlattenCompat<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_bindings::{closure#0}>, hk_psx::world::reveal_bindings::{closure#1}>, hk_psx::world::reveal_bindings::{closure#2}>, hk_format::world_meta::Indices> as core::iter::traits::iterator::Iterator>::next @hk_psx
-o 9ecd951c0cc6a9f1 222 8008a13c hk_psx::modules::next_background
-o 2126b65bff5a2dea 220 8008a4b4 <hk_psx::disc::Cache>::restore_spill
-o aa8175a091027459 114 8008a824 <hk_psx::camera::Camera>::release_lock
-o fdd15e9d4cb7e9b9 1070 8008a9ec <hk_psx::enemies::EnemyWorld>::sync_region
-o 70f849b21239ed6f 21 8008baa4 hk_psx::scene_sfx::loop_stop
-o 8b96ed26c2c953aa 83 8008baf8 psx_pad::pad_exchange::<psx_io::periph::ControllerPort> @psx_pad
-o ae56192b9d800b43 144 8008bc44 hk_psx::music::want_read
-o 4343ad119c042ba0 139 8008be84 hk_psx::disc::start_prefetch
-o e54fe6a1bb36845c 68 8008c0b0 hk_psx::disc::start_tail
-o ad8797d0f15f5769 109 8008c1c0 hk_psx::disc::start_spill
-o 957b57d6d489804b 291 8008c374 hk_psx::ambience::want_prefetch
-o 9a3fa13f9e07981d 66 8008c800 hk_psx::disc::maybe_park
-o 23370f7595a65044 123 8008c908 <hk_psx::alpha_scissor_cache::Axis>::interval
-o 907c23458cf41b5d 75 8008caf4 hk_psx::open_chest
-o 86c1bb9d1a0fec99 80 8008cc20 <hk_format::world_meta::Region>::object
-o 6aa3e2eed7ae7fc9 43 8008cd60 <hk_psx::world::particles::Pool>::spawn_break_at
-o 87b6c5ea5f50bec3 173 8008ce0c <hk_psx::enemies::EnemyWorld>::arena_step
-o b9afd54dd15f8d96 974 8008d0c0 hk_psx::scenery_geometry::subdivide_in
-o 437e0b1288ba90ac 27 8008dff8 <hk_format::world_meta::Object>::state_id
-o 578fa94b2e02d849 53 8008e064 <core::iter::adapters::flatten::FlattenCompat<hk_format::world_meta::Points, core::result::IntoIter<[i32; 2]>> as core::iter::traits::iterator::Iterator>::next @hk_psx
-o ccafee935acfe79f 218 8008e138 hk_psx::scene_sfx::loop_tick
-o 84e25f86a53c42c1 216 8008e4a0 hk_psx::modules::admit_art
-o f039d1adcc8a7944 216 8008e800 <psx_math::wide::WideU>::scale_by_ratio
-o e18855e9b82522c2 212 8008eb60 hk_psx::dialogue::caps_text
-o bd611b650bbe5350 147 8008eeb0 <hk_psx::secret_breaks::Hits>::nail
-o 2c63c0ecd62b5dad 27 8008f0fc <hk_format::world_meta::Object>::flags
-o a01dd808a204dc1c 49 8008f168 <hk_psx::disc::Cache>::window_sectors
-o b075866205caa188 28 8008f22c <hk_format::world_meta::Object>::extra
-o 8759e4c57cf0b17e 211 8008f29c hk_psx::modules::fetch_pending
-o d66b2b2de980e14c 209 8008f5e8 hk_psx::disc::sector
-o 06799a04444d3520 209 8008f92c hk_psx::modules::art_begin
-o 8652b045b00071d9 204 8008fc70 hk_psx::world::region_actor
-o 7b338b5dfcb8df27 142 8008ffa0 hk_psx::ability_art::presentation::draw_with
-o 9bc75a86899eec1a 392 800901d8 <hk_psx::camera::Camera>::triggers
-o 69f07c2a371eac09 64 800907f8 <hk_format::world_meta::Object>::polygons
-o 6a60de5d8ace8e25 59 800908f8 <hk_format::world_meta::Polygon>::points
-o b89e02b9d6c8a57a 26 800909e4 <hk_format::world_meta::Object>::source_id
-o f1d292b50df2af66 239 80090a4c <hk_sim::fsm3::Tree>::pass
-o 05deb8318152adb7 2064 80090e08 hk_psx::world::particles::break_effects::tick_specs_with_tracks::<&hk_psx::world::terrain::{closure#0}> @hk_psx
-o 4f0cc4c9dc14f4cb 53 80092e48 psx_rt::present::wait_slot_empty_on::<psx_rt::present::Hardware> @psx_rt
-o 60b1a3447172836c 453 80092f1c <hk_psx::world::particles::Pool>::tick
-o 0dcd3fd843f2c5ba 499 80093630 hk_sim::runner_senses::line_of_sight_near::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 701da2864c8b5522 202 80093dfc hk_psx::title_card::big_line
-o a9309d4b9b4e220c 202 80094124 hk_psx::disc::group_of
-o 51fb7ee0c7c04e11 201 8009444c <psx_mc::Card<hk_psx::save::SlotOne>>::read @hk_psx
-o fd439fefe9d7e158 200 80094770 hk_psx::dialogue::board_backdrop
-o 180aab293efe3e49 170 80094a90 <hk_psx::enemies::EnemyWorld>::reset_scene
-o 2e2675e0f59ba95d 354 80094d38 <hk_sim::runner_senses::Sweep>::new
-o dca98f8e4a3d8dee 51 800952c0 psx_gpu::gpu::draw::<psx_gpu::prim::QuadTexturedMaterial> @psx_gpu
-o dc5247a682fda670 136 8009538c <psx_rt::present::Presenter>::submit
-o a3d622048b813caa 50 800955ac psx_math::int32::mul_div_i32.2300
-o 2450826546def3a1 102 80095674 <hk_sim::fsm3::Tree>::step
-o a94228ec9b80cf01 199 8009580c hk_psx::disc::land_prefetch
-o df3dac39089eb377 199 80095b28 hk_psx::charms::presentation::icon_sized
-o 9ba3abedbdecdfa6 198 80095e44 hk_psx::take_pickup
-o f7ff3f3c4a778494 141 8009615c hk_psx::persist::apply
-o 4e9060d6bedf172a 182 80096390 hk_psx::render::occlusion_scratch::dynamic_hidden
-o d7bc0794942d8e24 188 80096668 hk_psx::enemies::push_sprite_if_room
-o c4941e46e1ac46b2 109 80096958 <hk_sim::runner::Runner>::attack
-o 33cd15f9b6ac497f 207 80096b0c hk_psx::render::draw_visibility::set_opacity
-o 90054f143474ba8f 183 80096e48 hk_psx::world::particles::break_effects::stretch_corners
-o a2400cf5a07aa356 181 80097124 <psx_io::cd::reader::SectorReader>::send_command_waiting
-o 7865592585187dad 176 800973f8 hk_psx::persist::record_secrets
-o f49e3091de97eccc 170 800976b8 hk_psx::scene_sfx::play_pitched
-o 5bd3ea9dfc672673 169 80097960 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, &mut core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::frame::simulate::{closure#11}>::{closure#0}>::{closure#0} @hk_psx
-o f85cde797ca7b909 84 80097c04 <hk_sim::runner::Runner>::pause::<&mut <hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o 01c6a80efceb24d2 73 80097d54 hk_psx::world::particles::perspective::scale
-o d0ea0ab50f243642 279 80097e78 hk_psx::ability_art::presentation::draw_slash
-o 322bdd2b1ec7683d 31 800982d4 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<core::option::Option<(hk_psx::world::Region, hk_format::Room)>, hk_psx::frame::simulate::{closure#8}::{closure#0}> @hk_psx
-o c4fb28d4cc241e04 219 80098350 <hk_psx::camera::Camera>::update_camera
-o 47218ba613b13a39 169 800986bc <hk_psx::world::PogoTarget>::hit_by
-o e1952c8ebb704552 36 80098960 <hk_sim::fsm3::Tree>::event
-o 1fb7659878c89f6d 402 800989f0 <hk_psx::camera::Camera>::update_target
-o deddb8d9bee1ce71 72 80099038 hk_psx::audio::door
-o 92bafb36dc4d2b85 146 80099158 <hk_sim::fsm3::Tree>::drain
-o 8e822f8de31db6e1 169 800993a0 <hk_psx::world::Breakable>::hit_by
-o 0c82a273d01c8468 165 80099644 <hk_psx::modules::Place>::consider
-o c4ebd8bdece79cff 162 800998d8 <psx_mc::fs::DataCursor>::read_exact::<hk_psx::save::SlotOne> @hk_psx
-o 99e1bd9cbc57e5ba 162 80099b60 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, core::iter::adapters::filter::filter_try_fold<hk_format::world_meta::Object, (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, hk_psx::world::region_actors::{closure#1}, core::iter::adapters::map::map_try_fold<hk_format::world_meta::Object, (hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec), (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, hk_psx::world::region_actors::{closure#2}, core::iter::traits::iterator::Iterator::find::check<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec), <hk_psx::enemies::EnemyWorld>::spec_in::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
-o 599f1d0c13f91f1f 87 80099de8 <hk_psx::disc::Cache>::staged_prefix
-o de124cee7f345e5c 56 80099f44 hk_psx::persist::get
-o 6f360fe99881bc80 162 8009a024 hk_psx::draw_at
-o 97a2d0ef007d3a45 162 8009a2ac hk_psx::frame::save_record
-o 226b204fb475261f 161 8009a534 hk_sim::runner::gas_polygon
-o dbef7c5005a641cf 159 8009a7b8 <hk_psx::world::State>::apply_mask
-o e1e3781e4a64cfbd 149 8009aa34 hk_psx::disc::spill_upload
-o 3d3d461034b50e21 5572 8009ac88 hk_psx::frame::interact
-o 71783a5cd4e73f80 158 800a0398 <hk_psx::disc::Cache>::split_b_base
-o bde671fd3bcb5841 157 800a0610 <hk_psx::camera::Camera>::enter_scene
-o 1e9cb4a113852de8 156 800a0884 <hk_psx::props::World>::fling
-o a84c69a3d770775c 71 800a0af4 hk_psx::audio::ui_confirm
-o 75c9218d3bf332c6 189 800a0c10 hk_psx::enemies::edges_near
-o 6838bcc458ad0806 156 800a0f04 hk_sim::wire::decode_spec
-o 2e80781cf80c623e 155 800a1174 psx_mc::fs::entry_name_eq
-o 0084345be1c2195c 147 800a13e0 <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::status
-o 06cdf8dcbf2bbc03 146 800a162c hk_psx::input::begin_scene_load
-o 61388cf4446a1883 110 800a1874 hk_psx::frame::ability_sound
-o b20c279be080f2b1 355 800a1a2c <hk_psx::pickups::World>::collect::<hk_psx::frame::interact::{closure#2}> @hk_psx
-o 724509b3fdaeef3a 53 800a1fb8 <hk_psx::pickups::World>::kneel_tick
-o 92acebe0444f7940 58 800a208c hk_psx::disc::preverified
-o e0c64e0bf5212cec 614 800a2174 hk_psx::render::collect_occluders
-o d6287be942f4c850 146 800a2b0c hk_psx::scene_sfx::play_shared
-o 22a2ff6b906156b0 183 800a2d54 psx_math::int32::isqrt_u64
-o d15e7ae59c639416 139 800a3030 <hk_psx::enemies::Actor>::apply_battle_scene
-o 6ca2b815cb0648e9 25 800a325c hk_sim::waves::summon_delay
-o f7294ba97cebaa4e 281 800a32c0 <hk_sim::script3::Scripts>::tick::<hk_psx::script::tick::{closure#1}> @hk_psx
-o e3bd87d794ab35b1 9 800a3724 hk_psx::ability_fx::clear
-o 68c7502a7cf2e1c3 1544 800a3748 <hk_psx::geo::Coin>::step::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 647fe0b5229adba2 71 800a4f68 hk_psx::render::resident_quad_tinted
-o e0c72cae4b24f270 279 800a5084 hk_psx::geo_render::draw_art
-o 3077223113243141 34 800a54e0 <hk_sim::fsm3::Tree>::enter
-o 102e10cef49969a8 93 800a5568 hk_psx::render::draw_visibility::set_visible
-o 8db2d461ac39d5f7 139 800a56dc <hk_sim::script3::Scripts>::seat
-o 0fd8adefc23e8881 43 800a5908 <hk_psx::enemies::BlockerRuntime>::clip
-o 57d46b46c4e14105 19 800a59b4 hk_psx::title_card::npcs_inert
-o 55b5bd12b33825d5 325 800a5a00 hk_sim::combat::segments_intersect
-o 67ee749c2db2ebb8 76 800a5f14 <hk_psx::world::State>::refresh_edges
-o d12644a3a3518c55 131 800a6044 <hk_psx::alpha_scissor_cache::Secondary>::prepare
-o 93e8845090fe230a 204 800a6250 <hk_psx::world::Breakables as core::iter::traits::iterator::Iterator>::next
-o bf7588607b82e43a 69 800a6580 psx_gpu::wait_idle_impl
-o a857599dcb2f8f28 319 800a6694 <hk_psx::world::CameraLock>::touches
-o 821bb5a07ae3270f 138 800a6b90 psx_io::cd::try_command_until_complete_inner
-o ee4683e12afd7fd6 137 800a6db8 hk_psx::disc::cut_music
-o b48daab4e11e03fe 137 800a6fdc hk_psx::dialogue::draw_prompt
-o 90541ed9df2dff58 135 800a7200 <hk_psx::disc::Cache>::audio_bank
-o 17029bed4b5f9c5e 134 800a741c hk_psx::dialogue::pause_backdrop
-o ef17d2b7e5cd809e 132 800a7634 <hk_psx::enemies::GruzRuntime>::frame_box
-o c8f4ebe07e489d63 131 800a7844 <hk_sim::fsm3::Tree>::transition
-o 058789f81acc307f 74 800a7a50 <hk_psx::disc::Cache>::group_sectors
-o 51aa6716ed27bfa4 1225 800a7b78 <hk_psx::shade::World>::tick::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 7eb490ce7cf1c83b 209 800a8e9c hk_psx::strike_shade
-o 28ec6a2b296df7aa 6 800a91e0 <hk_sim::fsm3::Ctx>::set_scratch8
-o d167a386bc27534a 149 800a91f8 <hk_psx::cheats::Settings>::params
-o 3a563a8f1f794929 69 800a944c <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::sync_source @psx_cdstream
-o 3eb233cd12a6bd58 55 800a9560 <hk_psx::camera::Camera>::look
-o b6c92ad966b499dc 165 800a963c hk_psx::camera::smooth_damp
-o dc0c8303af4386b1 805 800a98d0 hk_psx::render::collect_tile_coverage
-o 64ae0989553a4793 27 800aa564 <hk_sim::fsm3::Tree>::age
-o df00d25db3f3424d 20 800aa5d0 psx_cdstream::console::leave::<psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>> @psx_cdstream
-o 12607b13b223c288 192 800aa620 hk_psx::render::draw_visibility::set_gain
-o 04457bba191cb560 131 800aa920 <psx_io::cd::xa::Engine>::begin_read_at::<psx_io::periph::Cd> @psx_io
-o a62d49ff107bb7f4 130 800aab2c hk_psx::charms::publish
-o 40aa691cb0a54c51 104 800aad34 hk_psx::hard_landing::landed
-o 3910693f547b31e4 107 800aaed4 hk_sim::fsm3::dispatch
-o e6ed0379a6292fd7 130 800ab080 <psx_io::periph::Cd>::command_within
-o 86d5b18ddd64c1a9 72 800ab288 <core::ops::range::Range<usize> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<usize, hk_sim::terrain_thunk::edge_in_box::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<()>> @hk_sim
-o a9025c6b5fe93d97 531 800ab3a8 hk_psx::render::derive_draw
-o 1dd647a7b4d30839 139 800abbf4 <hk_psx::camera::Camera>::lock_to_area
-o 61ec1ff30dbf1f47 83 800abe20 hk_sim::fsm3::layout
-o d520e4dafcf09540 66 800abf6c <hk_format::world_meta::Region>::objects
-o 726ba7cde800b045 148 800ac074 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, core::iter::adapters::filter::filter_try_fold<hk_format::world_meta::Object, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, hk_psx::world::benches::{closure#1}, core::iter::adapters::map::map_try_fold<hk_format::world_meta::Object, hk_psx::world::Bench, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, hk_psx::world::benches::{closure#2}, core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Bench, <hk_psx::bench::State>::tick::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
-o 43587a96cc546aeb 123 800ac2c4 hk_psx::render::tile_coverage::claim
-o 20eb0419705197cb 401 800ac4b0 <hk_psx::geo::World>::publish
-o 649f5e2f61c3ba8e 195 800acaf4 hk_psx::frame::simulate::{closure#3} @hk_psx
-o 9fbdcdc3fd5a2865 121 800ace00 hk_psx::render::template
-o 823c2bd51c33491e 8 800acfe4 psx_cdstream::console::enter::<psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>> @psx_cdstream
-o 8dcce14f30e25b4a 85 800ad004 hk_psx::ability_fx::parts_of
-o abfd27cef5c7cae8 260 800ad158 <hk_format::Room>::frame_tile
-o 803486606e6d1c1f 145 800ad568 hk_psx::render::draw_visibility::reset_visibility
-o e475ce5d1d83b4e0 24 800ad7ac hk_psx::dialogue::number
-o 95caf4b314f074b2 130 800ad80c psx_math::wide_div::divrem_wide
-o 0956c39f353cf410 129 800ada14 <psx_mc::fs::DataWriter>::flush_frame::<hk_psx::save::SlotOne> @hk_psx
-o 919551ba885b95c5 129 800adc18 <hk_psx::enemies::Actor>::fly_body::<hk_psx::world::terrain::{closure#0}> @hk_psx
-o 8392f48b754ac556 129 800ade1c hk_psx::game_map::update_game_map
-o 4e7ec940319b806b 128 800ae020 psx_pad::controllers::config::<psx_io::periph::ControllerPort> @hk_psx
-o 9c9127bf03c13bfb 128 800ae220 <hk_psx::disc::Cache>::title_code
-o afc2b8b23841fc83 128 800ae420 <hk_format::Validation>::step
-o e4a8b0c1ff2b9b3d 19 800ae620 hk_psx::dialogue::width
-o 80c705f2a6a3c618 59 800ae66c psx_pad::pad_begin::<psx_io::periph::ControllerPort> @psx_pad
-o c85b587025292420 104 800ae758 hk_psx::render::resident_quad_flash
-o 0ac25e01f9c49292 266 800ae8f8 <hk_psx::world::State>::bind_triggers
-o e4efb3336db9e8d8 309 800aed20 hk_psx::render::prepare_back_prefix
-o 5e2f26b589c1a2ba 21 800af1f4 hk_psx::boss_fx::take
-o 3a33b196e3ef51b8 18 800af248 hk_psx::enemies::take_fk_dust
-o 89551132798db31e 458 800af290 <hk_sim::runner_senses::Sweep>::hits_edge_exact
-o e105f22f92aa6230 228 800af9b8 hk_psx::render::scenery
-o 918781020f9681d8 127 800afd48 <hk_psx::disc::Cache>::stage_menu
-o ef99681f7272a839 16 800aff44 <psx_io::periph::Cd as psx_io::cd::xa::Drive>::end_stop
-o c340eb810d7daf35 42 800aff84 <hk_format::Room>::frame
-o fa14b72e61da8a29 172 800b002c hk_psx::ability_art::locate
-o 260404dbe9b6ae75 102 800b02dc <hk_psx::disc::Cache>::entry
-o 91ff0da617ee7a7a 71 800b0474 hk_psx::render::restore_tile_coverage
-o f8dfeaadaa64cdde 85 800b0590 hk_psx::disc::land_tail
-o 6192f262d661c547 1656 800b06e4 <hk_psx::geo::World>::strike::<hk_psx::strike_geo::{closure#0}> @hk_psx
-o 33cef600d1a18a23 127 800b20c4 hk_psx::music::tick
-o bbfd1a43ac128e3e 72 800b22c0 <psx_rt::present::Presenter>::begin_frame
-o 5a8270a5b7f2335c 56 800b23e0 hk_psx::modules::pool_want
-o 209f1018f1ccfa06 127 800b24c0 psx_spu::upload_adpcm_pio
-o 4aa32f832ffcf910 126 800b26bc <psx_mc::hardware::Link<psx_io::periph::ControllerPort>>::xfer @hk_psx
-o ac48017b473833e2 126 800b28b4 hk_psx::animation_cache::init
-o 0669319afcc46a02 126 800b2aac <hk_format::Validation>::new
-o 08dc954165b8e0e0 126 800b2ca4 hk_sim::fixed::source_rolloff
-o 1a96597e5f501144 124 800b2e9c <psx_mc::Card<hk_psx::save::SlotOne>>::read_dir @hk_psx
-o e0a45b910b0c3f5d 69 800b308c <hk_format::Room>::stream_pixels.2206
-o 092e47386e8e910c 480 800b31a0 hk_psx::world::fill_edges
-o 41e2845f1fc35554 112 800b3920 hk_sim::actors::spawn_separation
-o ac89eab0da5efb52 2488 800b3ae0 hk_psx::render::collect_solid_core
-o 9a511f2f2f259543 122 800b61c0 hk_psx::room_decode::copy_match
-o eec304b5dec33269 116 800b63a8 <hk_sim::runner::Runner>::step_gas
-o 9e13e1a98a904672 116 800b6578 <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::wait_completion
-o d30bc0718cd1f67b 113 800b6748 hk_psx::battle_gates::arena_entry
-o 70d87823a1de3a00 113 800b690c hk_psx::disc::member
-o 9b185cc8275ad3dd 112 800b6ad0 <hk_psx::disc::Cache>::prepare_map
-o 539147770802537a 112 800b6c90 hk_psx::audio::pool_stop
-o 5199ea0ecbac410d 112 800b6e50 hk_psx::world::inside
-o 3d3dc5d6f5a8ba41 68 800b7010 hk_psx::battle_gates::set_poses
-o bce878e8b0be5938 431 800b7120 hk_psx::props::corners
-o 1813996fdce60fd4 112 800b77dc hk_psx::modules::install_boot
-o 23db7723e9031a65 68 800b799c <psx_gpu::prim::QuadTextured>::with_material
-o 9e0169ba60cbb246 107 800b7aac hk_psx::render::prepare_tile_coverage
-o e8fff640cffd5f94 10 800b7c58 <hk_sim::fsm3::Block>::state
-o 88d102e1297d8dee 57 800b7c80 <hk_psx::save_ui::Ui as core::cmp::PartialEq>::eq
-o 3245f3e6862737af 54 800b7d64 hk_psx::dialogue::prompt_fade_out
-o 274d95b5441e430b 112 800b7e3c <psx_io::cd::reader::SectorReader>::ack_unexpected
-o e514bd6296c0152e 21 800b7ffc <psx_io::periph::Cd as psx_io::cd::xa::Drive>::begin_stop
-o 0d7512cb78ec6f89 31 800b8050 <hk_cache::Cache>::is_resident
-o 97f391bcf23406d5 27 800b80cc hk_psx::battle_gates::scene_mask
-o 131dd100da6e051e 72 800b8138 <hk_format::Room>::frame_grid
-o f7f7475e62ced614 102 800b8258 <hk_psx::ambience::state::ClipCheck>::feed
-o 7edf8c4919ccf525 101 800b83f0 hk_psx::world::camera_lock_objects::<<hk_psx::camera::Camera>::enter_scene::{closure#2}> @hk_psx
-o d7a7f6f420f61032 100 800b8584 hk_psx::ambience::publish
-o bbe3f49cd57355e1 103 800b8714 psx_vram::upload_bytes_aligned
-o 758f70a599e49f5c 27 800b88b0 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<(), hk_psx::frame::simulate::{closure#3}> @hk_psx
-o 392538b41f62a07b 1675 800b891c hk_psx::render::init
-o a64431e3258ac2c4 98 800ba348 hk_psx::dialogue::text_gain
-o ad8a12bc7c020e56 101 800ba4d0 <hk_psx::boss_art::Bank>::part
-o 95de53653b76616d 61 800ba664 <psx_io::cd::reader::SectorReader>::stop
-o 5f6c3525d175eb7f 28 800ba758 <hk_format::Room>::draw_pool_index
-o 88cb4d9e8383cb4d 112 800ba7c8 hk_psx::modules::wanted
-o e3602a7df60d1dac 625 800ba988 hk_psx::modules::pool_service
-o 3ae21da628922e76 26 800bb34c psx_math::fmt::u32_dec
-o e197c780ce9afea5 51 800bb3b4 hk_psx::display::append
-o c9f18ea6aab42d74 27 800bb480 <hk_format::world_meta::Object>::polygon_count
-o 09577b6355e16291 99 800bb4ec <hk_psx::disc::Cache>::split_fits
-o 145fe121ef98abdc 98 800bb678 <psx_mc::Card<hk_psx::save::SlotOne>>::is_formatted @hk_psx
-o 5ab2d04ce11d5b1f 98 800bb800 hk_psx::battle_gates::sprites
-o 7ffcef04ec8fdf7b 98 800bb988 hk_psx::dialogue::interact_hint
-o ff9879750081bd5d 97 800bbb10 <psx_io::cd::xa::Engine>::poll::<psx_io::periph::Cd> @psx_io
-o ad3114f49666a1b8 95 800bbc94 <psx_mc::Card<hk_psx::save::SlotOne>>::write_dir @hk_psx
-o d0af8692007ee094 22 800bbe10 hk_psx::focus_audio::interrupt
-o e92e3a548f0dac1b 35 800bbe68 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<(), hk_psx::main::{closure#14}> @hk_psx
-o 1ba07bd5fda2a4ff 47 800bbef4 hk_psx::disc::spill_abort
-o c472feb6928e9fea 179 800bbfb0 hk_psx::render::texture_sub
-o f4fe36e677c53030 94 800bc27c hk_psx::room_decode::word_hash
-o 4a922f1dade4bc7f 93 800bc3f4 <psx_mc::Card<hk_psx::save::SlotOne>>::chain @hk_psx
-o d3fe08a0cd797f5b 56 800bc568 hk_psx::dialogue::board_backdrop::{closure#1} @hk_psx
-o 5bf4de38e1877d1a 315 800bc648 hk_psx::ability_art::presentation::submit
-o 9f89b0344a059db7 93 800bcb34 <hk_psx::save::SlotOne>::write_once
-o 26b5e7af405e5060 15 800bcca8 hk_psx::boss_hooks::package
-o 9bbb4a263f7361f0 127 800bcce4 hk_psx::render::opaque_groups::claim
-o 871330e1fea79369 92 800bcee0 psx_gpu::compat::draw_quad_textured_material
-o 49e453882b30be71 91 800bd050 hk_psx::disc::open_gap
-o f8e5a8c73c1888cf 91 800bd1bc hk_sim::wire::decode_corpse
-o d6ec0391bd2bd3f3 90 800bd328 <hk_sim::runner::Runner>::walk::<&mut <hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o 69200d630ccf3beb 28 800bd490 hk_psx::boss_hooks::upload
-o 2576de4cf6713b8c 52 800bd500 hk_psx::modules::scene_modules
-o 06dcdfaf82f73e82 16 800bd5d0 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<u32, hk_psx::frame::render::{closure#6}> @hk_psx
-o 1a205a06086a0cbf 16 800bd610 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<u32, hk_psx::frame::render::{closure#14}> @hk_psx
-o 1e9d4391c550d68c 296 800bd650 hk_psx::modules::service
-o 7ab16ad8a318cfe7 168 800bdaf0 hk_psx::audio::nail_kind
-o 0475db7c8f593f53 184 800bdd90 <hk_psx::frame::Game>::carry_streamed_art
-o 621f6396fbbe4067 67 800be070 hk_psx::modules::carry
-o 6e4dab90a54a7abd 87 800be17c hk_psx::audio::great_door_hit
-o caa521a85de6d1d9 87 800be2d8 hk_psx::geo_audio::hit
-o 808f116539cf2004 85 800be434 hk_psx::dialogue::prompt_marker
-o d9d4877d9c9df7de 84 800be588 hk_psx::music::stream::hardware::start
-o 35a5359047fe4c17 84 800be6d8 <psx_io::cd::xa::Engine>::launch::<psx_io::periph::Cd> @psx_io
-o 56478a39459ca98b 79 800be828 hk_psx::persist::reset_semi_persistent
-o d4bf982cb02d0e9c 79 800be964 hk_psx::scene_sfx::break_sound
-o 51ee560e7b49cc3d 79 800beaa0 <psx_math::wide::WideU>::cmp_ratio
-o 285a3149420d01d3 78 800bebdc <psx_pad::controllers::Slot>::settle::<psx_io::periph::ControllerPort> @hk_psx
-o aa2687bd28b64339 78 800bed14 <hk_psx::disc::Cache>::prepare_world_sfx
-o 009058c97f51ecb3 78 800bee4c hk_sim::wire::decode_attack
-o f0177bc9481c8239 22 800bef84 hk_psx::scene_sfx::nail_terrain
-o 6f07fe533e328ac5 287 800befdc <hk_psx::disc::Cache>::locate_box
-o ab5d7a41194d89d2 92 800bf458 <hk_psx::render::tile_events::Events<704>>::build @hk_psx
-o 9a468d6959b25de3 67 800bf5c8 hk_psx::disc::spill_take
-o 8f9bdab36a375285 10 800bf6d4 psx_rt::present::wait_idle_on::<psx_rt::present::Hardware> @psx_rt
-o 699617946cdee207 77 800bf6fc hk_psx::presentation::set_display_enabled
-o 1a5a36a9821b60aa 77 800bf830 hk_psx::display::set_screen
-o a07b05c4570b12df 75 800bf964 hk_psx::audio::cocoon_break
-o 56f40f3cee53803d 75 800bfa90 hk_psx::modules::claim_top
-o 01d283d31dc84cc4 75 800bfbbc <psx_pack::Fnv32>::update_bulk
-o 923e0fd896206b40 74 800bfce8 hk_psx::boss_hooks::upload_texels
-o c7081c6551e2e941 74 800bfe10 hk_psx::save::unlock_styles
-o 5ffcfaeb211c826e 67 800bff38 hk_psx::audio::ui_select
-o fa471544ee7bb304 66 800c0044 hk_psx::render::quad_words
-o d4abed251be852e8 66 800c014c <hk_format::world_meta::Region>::neighbours
-o 3cbdfd554d59c02e 65 800c0254 <hk_psx::enemies::ZombieShieldRuntime>::clip
-o 94ee2a4efa86c8a9 65 800c0358 hk_format::lerp_tile
-o c580dc7acdddea02 65 800c045c psx_io::gpu::kick_draw_done_list
-o 4de04c095984a7b7 64 800c0560 hk_sim::wire::decode_params
-o 5c8cd681bb561a39 13 800c0660 <hk_sim::fsm3::Block>::kill
-o 0d2709e75a917925 27 800c0694 <hk_format::world_meta::Object>::kind
-o 475fba2b194a91f0 25 800c0700 psx_pad::command_byte_failed::<psx_io::periph::ControllerPort> @psx_pad
-o 4ff3099b70ddfc0c 98 800c0764 hk_psx::render::core_map_cache::interval
-o 13e5df50585ff7cb 483 800c08ec <hk_sim::runner_senses::EdgeColumns>::build
-o 1b36de9677b35906 6 800c1078 hk_psx::render::record_dynamic_hidden_quad
-o 1ace7e30c061100b 22 800c1090 <psx_cdstream::console::Mmio<true, true, true> as psx_cdstream::hw::CdHw>::finish_response @psx_cdstream
-o 8f9bdab36a375285 10 800c10e8 hk_psx::disc::checkpoint
-o e01572176ae0c921 11 800c1110 psx_io::gpu::handoff::run_armed_guard
-o e306183dc040ccda 35 800c113c psx_rt::present::wait_drawn_idle_on::<psx_rt::present::Hardware> @psx_rt
-o 810d7549ec0703d2 25 800c11c8 psx_io::gpu::write_commands_when_ready_slow
-o d00e0b5e4974df3a 299 800c122c psx_cdstream::console::on_counted_interrupt
-o a67d409ba7ad4d97 29 800c16d8 psx_io::gpu::handoff::write_commands_slow
-o de07cf1d743f13d0 64 800c174c <psx_io::periph::Cd as psx_io::cd::xa::Drive>::head_lba
-o 04147554ee228b4a 49 800c184c hk_psx::disc::start_music
-o f375b5a14040b5db 83 800c1910 hk_psx::disc::land_pool
-o 4c5855d44199e761 17 800c1a5c psx_cdstream::console::counted::cancel
-o 645db41d166aeaf4 8 800c1aa0 hk_psx::disc::cd_stream::received
-o 36035342beebf564 63 800c1ac0 <psx_mc::Card<hk_psx::save::SlotOne>>::free_blocks_in @hk_psx
-o f652a3fe7d40ec29 63 800c1bbc psx_gpu::gpu::set_draw_mode
-o 96b41ed77370e2fb 62 800c1cb8 hk_psx::modules::pool_has_room
-o ef74a700168951f3 62 800c1db0 hk_psx::dialogue::glow
-o b9a1e0120b9e741f 60 800c1ea8 hk_psx::runner_audio::begin_overlay
-o fdf18d07906fd87b 60 800c1f98 hk_psx::disc::prefetch_guard
-o 4970d5bd5f59fdf2 18 800c2088 <hk_psx::disc::Cache>::style_art
-o d4532441ceb8ace8 219 800c20d0 <hk_psx::cheats::Settings>::hurt
-o 92a116eddc12bc82 70 800c243c <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::command @psx_cdstream
-o ae179d7cdfedc1c4 60 800c2554 <psx_rt::present::Presenter>::present_drawn
-o e019e1f1bb6c024d 59 800c2644 hk_psx::ability_fx::raise
-o dbc3d5e9888a5c5f 59 800c2730 <psx_gpu::prim::QuadGouraudBlended>::new
-o 33d68fc261963f4e 59 800c281c psx_rt::interrupts::install_vblank_counter
-o 14136cf05e109fa3 58 800c2908 psx_rt::interrupts::pace_direct_flip
-o 30eb4cf2a78edb9d 58 800c29f0 <psx_spu::Voice>::configure_sample
-o 6e86c34ceb26a051 11 800c2ad8 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#9} @hk_psx
-o dd7d1d3a62d663db 46 800c2b04 hk_psx::apply_hurt
-o 3c820e441c6f2cae 20 800c2bbc psx_io::gpu::handoff::write_command_slow
-o 431e73022a1f60c4 21 800c2c0c psx_io::cd::drain_response_limited
-o b04a6b55dc63ebb1 40 800c2c60 <psx_cdstream::console::Mmio<true, true, true> as psx_cdstream::hw::CdHw>::pop_sector @psx_cdstream
-o 336ccb46bc8b8dcc 57 800c2d00 hk_psx::disc::prefetch_discard
-o cefeac6c4162c266 57 800c2de4 <psx_io::cd::xa::Engine>::poll_stopping::<psx_io::periph::Cd> @psx_io
-o 3dad75179616dfd4 56 800c2ec8 <hk_psx::reveal_masks::State>::restore_driven
-o fbe21fd99236a7e7 56 800c2fa8 <hk_format::scene::Scene>::validated_view
-o 106cbaf8fe918a80 55 800c3088 hk_psx::disc::bank_settle
-o 0abdc503a679312c 54 800c3164 hk_psx::disc::bank_pending
-o d4f6502a927a4a4d 22 800c323c psx_math::sincos::sin_q12
-o f89cc82e3b578b4f 283 800c3294 <hk_psx::impact::Pool>::spawn
-o f4706ee988e21ac5 54 800c3700 hk_psx::audio::set_volume
-o d54302aa0dc284ff 54 800c37d8 hk_psx::camera::sides
-o 25ffd63eb648b209 53 800c38b0 <hk_psx::enemies::HuskGuardRuntime>::clip
-o 7926ff0aa1e0c515 53 800c3984 hk_psx::title_card::card_glyph
-o 231b82b1fc72d98f 53 800c3a58 hk_psx::ability_art::ready
-o 628207c2408e2922 22 800c3b2c <hk_sim::wire::Reader>::fill_i32
-o 65928932de77da48 402 800c3b84 hk_psx::scene_sfx::play_one_of
-o 3dca3deb736a2f98 249 800c41cc <hk_psx::pickups::World>::strike
-o 620900d915b9adab 820 800c45b0 <hk_psx::world::particles::Pool>::spawn
-o c49cb0f2eefeb705 53 800c5280 psx_rt::present::count_signal
-o 2586a4b879e20712 53 800c5354 psx_rt::interrupts::wait_vblank
-o 73d70991b46e7fc7 52 800c5428 <hk_psx::camera::Camera>::slow_down
-o 00ae6088a7356cd5 52 800c54f8 hk_psx::props::stalactite_dust
-o c60eec9dbb9cbff9 16 800c55c8 <psx_io::cd::xa::Engine>::stop::<psx_io::periph::Cd> @psx_io
-o 23745e5e4b27c4ba 92 800c5608 hk_psx::geo_audio::pickup
-o b42ade820be5973d 26 800c5778 hk_psx::dialogue::ramp
-o bdeb114a4606e885 60 800c57e0 <hk_psx::world::State>::tick_break_particles
-o 78d8d4b497ba6d17 49 800c58d0 hk_psx::charms::presentation::upload
-o 282b5fd5098ba13a 47 800c5994 hk_psx::disc::group_len
-o 6de8f6ae16fe6c10 47 800c5a50 hk_psx::music::play
-o 66961c8fc60f69a3 12 800c5b0c hk_psx::disc::spill_sum
-o b73527f394d364cd 12 800c5b3c psx_io::cd::ack_all_and_reset_parameters
-o e885b0f8ccd70e6b 46 800c5b6c hk_psx::runner_audio::release_voices
-o ab5b40b54dc67e8a 45 800c5c24 <hk_psx::disc::Cache>::prepare_specs
-o 3c8084a4004f38ad 45 800c5cd8 hk_psx::disc::atlas
-o 43999e0d7c326de7 45 800c5d8c <hk_format::Room>::alpha_cover
-o 17cc22106f1e61b6 22 800c5e40 <hk_sim::wire::Reader>::fill_u16
-o 46712766be139703 232 800c5e98 hk_psx::nail_bounds
-o d5a3ca7fbce0bc2b 45 800c6238 <hk_sim::runner::Runner>::took_damage
-o 6aa3e2eed7ae7fc9 43 800c62ec hk_psx::ability_fx::burst
-o 0a277475011f78f9 43 800c6398 hk_psx::runner_audio::upload_fragment
-o ecdbc1107a8c208f 43 800c6444 hk_psx::persist::secrets
-o d763c15e9f51228a 42 800c64f0 hk_psx::fx::raise
-o 2be11ae590126d14 42 800c6598 hk_psx::disc::tail_finish
-o 378c4c5a3e11bfb5 42 800c6640 hk_psx::music::set_volume
-o dfd5ec73373f5c92 116 800c66e8 psx_vram::upload_bytes
-o 1d3d14cc31de3d2a 42 800c68b8 psx_io::cd::read_response_fifo
-o d5df975a2bf1cf50 41 800c6960 <hk_psx::world::State>::break_object
-o e8b065b826298499 41 800c6a04 <hk_sim::actors::ActorHealth>::hit
-o bac14e6ff2419e93 41 800c6aa8 hk_psx::ability_fx::draw
-o c7db53991b016009 41 800c6b4c <psx_io::cd::xa::Engine>::stop_without_waiting::<psx_io::periph::Cd> @psx_io
-o 144c1f8c15eba63a 40 800c6bf0 <hk_psx::reveal_masks::State>::fire_driver
-o adcade448260b2d6 40 800c6c90 hk_psx::scene_sfx::resident
-o fe14467a7c295701 17 800c6d30 psx_io::cd::xa::set_mixer
-o 2258f476f454cab6 52 800c6d74 <hk_psx::world::State>::hit_impact
-o 621466a7844283fa 28 800c6e44 psx_cdstream::console::wait_room
-o 0279586da1e4c39b 40 800c6eb4 psx_io::cd::begin_polled_command
-o 4798f9db6278df46 39 800c6f54 hk_psx::disc::spill_reset
-o 1ffde01e3518eea3 39 800c6ff0 hk_psx::disc::cd_stream::start
-o 868d31aa63ae70c7 39 800c708c <hk_format::world_meta::Indices as core::iter::traits::iterator::Iterator>::next
-o ae515851003a6884 38 800c7128 <hk_psx::camera::Camera>::exit_lock_zone
-o 17046b35b489e151 38 800c71c0 psx_rt::entry::settle_channel
-o 5aa306e0b101307f 37 800c7258 hk_psx::persist::migrate_hks4
-o 82d5aaec3a7aa1b2 36 800c72ec <hk_sim::shade::Shade>::begin_retreat
-o add6cad74fb53a44 35 800c737c <hk_psx::enemies::PigeonRuntime>::clip
-o 5f1e3dc22ec4ca19 35 800c7408 hk_psx::ability_fx::draw_world
-o 38cce41b33d04ccd 35 800c7494 hk_psx::disc::tail_pause
-o df9640996243b842 35 800c7520 <psx_math::wide::WideU>::mul_full
-o ec8a84c8d6733e45 35 800c75ac psx_rt::present::stop_walk_and_raise
-o 294d19e8deb2f694 33 800c7638 hk_psx::persist::restore_cocoon
-o d4277f8462866849 33 800c76bc hk_psx::enemies::project_box_at_depth::toward_centre
-o 0f86ea5c0a1389b4 33 800c7740 <hk_sim::fsm3::Ctx>::pd_read
-o 49513964ef9c5c60 33 800c77c4 psx_gpu::gpu::draw::<psx_gpu::prim::Sprite> @psx_gpu
-o cb160b56b11944e1 32 800c7848 <hk_psx::enemies::Actor>::emit_runner::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}> @hk_psx
-o df2f59d37d76bb7f 32 800c78c8 <hk_psx::world::State>::queue_lever
-o ae16d9cc03446fb0 32 800c7948 <hk_psx::enemies::Actor>::gruz
-o 3ea4faba2c7c9aa1 32 800c79c8 <hk_psx::enemies::Actor>::mawlek
-o 931d8e1224dfa957 32 800c7a48 hk_psx::ability_art::record_word
-o 210006320ba97807 32 800c7ac8 hk_psx::title::open
-o 6c78f0ff85aa7586 32 800c7b48 hk_psx::dialogue::up_age
-o 5795c55dc742775c 32 800c7bc8 <hk_sim::fsm3::Ctx>::send
-o 7ae58b6702c09f74 32 800c7c48 <psx_io::cd::xa::Engine>::start::<psx_io::periph::Cd> @psx_io
-o 7c15b9843744dcb0 31 800c7cc8 <hk_psx::enemies::VengeflyRuntime>::apply
-o fc82679b8dab8ddc 31 800c7d44 <hk_sim::wire::Reader>::take
-o d18abbbbadd2a254 30 800c7dc0 <hk_sim::wire::SpecPool<13, 4>>::load @hk_psx
-o d820672a2d3f0fa9 8 800c7e38 <hk_psx::disc::pad_idle as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0} @hk_psx
-o 341f1c63477774f2 11 800c7e58 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::pause @psx_cdstream
-o 0367b446759c736b 289 800c7e84 <hk_psx::geo::World>::spawn_enemy
-o 386585ee11abfa26 282 800c8308 <hk_sim::shade::Shade>::chase
-o 9e68109a7d147e7d 30 800c8770 psx_gpu::gpu::draw::<psx_gpu::prim::FillRect> @psx_gpu
-o 22f410209514f794 18 800c87e8 hk_psx::modules::reclaim
-o 36723e7183c70182 59 800c8830 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::pause_complete @psx_cdstream
-o 5d4b8f572e4ce1bc 108 800c891c psx_cdstream::console::counted::submit
-o fd009a792e34994c 91 800c8acc hk_psx::audio::enemy_death
-o 53dd9a5803e5b178 24 800c8c38 <hk_sim::fsm3::Block>::cell
-o 89405b2a9ab27121 46 800c8c98 psx_io::gpu::wait_ready_slow
-o ce062174b85c9bb7 29 800c8d50 hk_psx::disc::tail_retry
-o 5aaaf9f9c89aebd8 29 800c8dc4 hk_psx::persist::load
-o 7e6214970d52d610 28 800c8e38 hk_psx::disc::pad_idle
-o d820672a2d3f0fa9 8 800c8ea8 hk_psx::title::run
-o cfa2710221e2c645 29 800c8ec8 <hk_format::world_meta::Region>::object_count
-o d12bb55ac5aee62d 84 800c8f3c <hk_psx::enemies::EnemyWorld>::sync_arena
-o eae843c2ee94da2b 28 800c908c <hk_format::world_meta::Region>::global_id
-o 75abbc95ee7e6f8c 28 800c90fc psx_io::cd::finish_failed_polled_command
-o 58677a8071eb6422 27 800c916c hk_psx::actor_persistence::dead
-o e7023ee2d8dc75eb 27 800c91d8 hk_psx::geo_audio::break_rock
-o 90d92a30773d8eab 24 800c9244 <psx_io::cd::xa::Engine>::reach_end::<psx_io::periph::Cd> @psx_io
-o 6a6d34ebdde6bb77 70 800c92a4 psx_cdstream::engine::location
-o 0502afde564c6bed 180 800c93bc <hk_psx::geo::Coin>::flung
-o b43ca914ee60a48b 11 800c968c memmove
-o 8753cef5bea61eaf 27 800c96b8 <hk_sim::fsm3::Ctx>::set
-o c45e88cd41306058 27 800c9724 psx_cdstream::console::counted::is_idle
-o a3444b9db5e31510 12 800c9790 hk_psx::modules::fsm_state_block
-o 37c3d0e12ad4aca8 53 800c97c0 <hk_format::world_meta::Points as core::iter::traits::iterator::Iterator>::next
-o 269ab9f55247d6e7 27 800c9894 <psx_io::periph::Cd as psx_io::cd::xa::Drive>::look_pause
-o b7b999efec1dfe1e 27 800c9900 psx_io::gpu::settle_busy_gpu_channel
-o 8f6b523c8e6a527e 27 800c996c psx_spu::upload_adpcm
-o 249e20ebed513f0a 26 800c99d8 <core::iter::adapters::chain::Chain<core::slice::iter::Iter<&str>, core::slice::iter::Iter<&str>> as core::iter::traits::iterator::Iterator>::next @hk_psx
-o 3ed8d794b2ca6207 26 800c9a40 <hk_sim::fsm3::Ctx>::obj
-o 111886841b25a85c 20 800c9aa8 <psx_pack::Fnv32>::update
-o b67d450388eb4b8d 18 800c9af8 psx_rt_fatal_fault
-o c3dbcf1bd3aadbe6 17 800c9b40 <psx_io::periph::ControllerPort as psx_io::controller_port::Transport>::cs_high_gap @psx_pad
-o 0842f124b4ca68a6 15 800c9b84 hk_psx::save::fnv
-o 4629860d65a6ebba 15 800c9bc0 hk_psx::persist::set_player
-o cbe770b265c44c90 15 800c9bfc hk_psx::persist::clear_player
-o 2695638e5dad08a4 15 800c9c38 hk_psx::world::particles::break_effects::u16_at
-o e2fe7248d3bf8cf4 15 800c9c74 <hk_sim::fsm3::Tree>::region
-o fabe50f7fc5586cf 15 800c9cb0 psx_io::gpu::handoff::display_control_guard_slow
-o 4716f37c511315eb 13 800c9cec <hk_sim::waves::WaveArena>::hero_entered
-o f229c5b7cd9ebaaf 13 800c9d20 <hk_sim::waves::WaveArena>::new
-o 4d93efe70da50400 13 800c9d54 core::array::try_from_fn::<core::ops::try_trait::NeverShortCircuit<u16>, 4, core::ops::try_trait::Wrapped<u16, usize, hk_sim::wire::clips<4>::{closure#0}>> @hk_sim
-o bec846257cbdc603 12 800c9d88 hk_psx::modules::data_mut
-o d72ce88760fdb433 12 800c9db8 hk_psx::dialogue::row_glow
-o 342014c8d378a911 11 800c9de8 hk_psx::persist::set_level
-o 8f9bdab36a375285 10 800c9e14 hk_psx::persist::set
-o 9b3b69c6f9ce2776 10 800c9e3c hk_psx::world::particles::break_effects::spawn_specs
-o 9c061e59d96b9c30 10 800c9e64 __hk_module_trap
-o 7959f84845454338 10 800c9e8c <hk_sim::fsm3::Ctx>::rand
-o 328611b066f05760 9 800c9eb4 hk_psx::enemies::ray_fraction_less
-o 7b7e8d1568c55e55 9 800c9ed8 psx_pad::nobody_answered::<psx_io::periph::ControllerPort> @psx_pad
-o d820672a2d3f0fa9 8 800c9efc hk_psx::title::close
-o d820672a2d3f0fa9 8 800c9f1c hk_psx::title::retry
-o d820672a2d3f0fa9 8 800c9f3c hk_psx::title::loading
-o d820672a2d3f0fa9 8 800c9f5c hk_psx::title::restore
-o 089609b07586aee6 8 800c9f7c hk_psx::modules::allocate
-o db5243ed15236d75 8 800c9f9c hk_psx::dialogue::text
-o f1ab1f21aa7f3f68 8 800c9fbc hk_psx::scene_sfx::play
-o d820672a2d3f0fa9 8 800c9fdc <hk_psx::disc::pad_idle as core::ops::function::FnMut<()>>::call_mut @hk_psx
-o 175088b7c54e29b1 8 800c9ffc <hk_sim::wire::Reader>::u8
-o c551b9788ec46f9c 8 800ca01c <hk_sim::wire::Reader>::i32
-o 3bbc4cbc00d388be 8 800ca03c <hk_sim::wire::Reader>::u16
-o cd9d87f34c48e209 45 800ca05c <hk_sim::nail_response::NailResponse>::contact
-o 23c821775848dd1c 43 800ca110 <hk_sim::actors::ActorHealth>::strike
-o c782dac07e303f59 346 800ca1bc <hk_psx::disc::Cache>::camera_view
-o 416c30509a5ceeba 405 800ca724 core::iter::adapters::flatten::and_then_or_clear::<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, hk_format::world_meta::Object, <core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}> as core::iter::traits::iterator::Iterator>::next> @hk_psx
-o 74793fbe02333a75 302 800cad78 <core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::WorldMeta>, core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}>, hk_psx::world::reveal_masks::{closure#0}> as core::iter::traits::iterator::Iterator>::next @hk_psx
-o c02ebe4cc87b6ef8 761 800cb230 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1} @hk_psx
-o e0cb37cd4bd1dc34 88 800cbe14 <hk_sim::runner::Runner>::walk::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o c262cf46e83ec793 23 800cbf74 hk_psx::boss_hooks::bind_bank
-o 69ccf66274e7bcf1 205 800cbfd0 hk_psx::bind_view
-o 21e8edc71812c5cc 9 800cc304 psx_rt::dispatch::detach
-o dd4ac97a9daa7df4 19 800cc328 psx_rt::dispatch::attach
-o c0d4839ecad0fcf4 82 800cc374 <hk_sim::runner::Runner>::pause::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
-o 011a64c8d1ca7510 193 800cc4bc hk_psx::render::remember_cpu_view
-o 22a2ff6b906156b0 183 800cc7c0 psx_math::int32::isqrt_u64.2297
-o 5959558d6f11497a 21 800cca9c hk_psx::actor_persistence::killed
-o bc242a4ca512e314 15 800ccaf0 __psx_rt_dispatch_update
-o d820672a2d3f0fa9 8 800ccb2c <psx_pack::WordFnv32>::update
-o c9715d4589abd4c9 156 800ccb4c <hk_sim::corpse::Corpse>::spawn
-o 89449cb3e54be21d 104 800ccdbc hk_sim::buzz::distance_fly_height
-o 3ac1306c2b070a4d 94 800ccf5c hk_psx::dialogue::cancel
-o db6beed9307ca99c 382 800cd0d4 hk_psx::audio::pool_key
-o de33163f434f43ba 45 800cd6cc <hk_psx::world::State>::enemy_death_particles
-o f0d7fcb7e979f8ad 84 800cd780 hk_psx::modules::missing_art_chunk
-o e0e05399eb50402e 103 800cd8d0 hk_psx::modules::plan
-o 9076608f33487771 514 800cda6c <hk_psx::geo::World>::queue
-o f94781c99f3d764e 316 800ce274 <hk_psx::modules::Install>::run
-o 8b2b19f73181a1cb 69 800ce764 hk_psx::modules::package
-o e6f6638a9ee40824 82 800ce878 psx_rt::cache::wait_for_quiet::<psx_rt::cache::HwBus> @psx_rt
-o a58729e449027b15 266 800ce9c0 compiler_builtins::mem::memmove
-o 01ad0d4cd32f1fe7 204 800cede8 hk_sim::actors::spawn_separation::range
-o 03ffca3a16ad3d92 42 800cf118 <psx_rt::cache::HwBus as psx_rt::cache::Bus>::dma_busy
-o b28c6819aa762895 18 800cf1c0 <psx_pack::WordFnv32>::update_raw
-o 0845c9a4ae4a47a1 29 800cf208 psx_rt::cache::spin_until_idle::<psx_rt::cache::HwBus> @psx_rt
-o 1fb985231f8f3b65 19 800cf27c psx_rt::cache::flush_instruction_cache
-o 21cefd354e893023 279 800cf2c8 hk_psx::modules::allocate_in
-o 2f7bf2f9562ffc0f 11 800cf724 hk_psx::actor_bank::clear
-o e265ae432e13c8e4 31 800cf750 __psx_rt_flush_i_cache
-o f6b1de138969a364 71 800cf7cc hk_psx::modules::flush_instruction_cache_idle
-o c79c4cec344b604c 24 800cf8e8 hk_psx::actor_persistence::key
-o 2cf9dfc3789834c6 119 800cf948 <core::array::iter::IntoIter<[i32; 2], 4> as core::iter::traits::iterator::Iterator>::min_by_key::<i32, hk_sim::actors::spawn_separation::{closure#0}> @hk_sim
-o b453b328566f12e4 47 800cfb24 psx_math::wide_div::rounded_magnitude
-o d60bee85db749b16 154 800cfbe0 hk_psx::modules::gap_in
-o 54c142c40ef04061 107 800cfe48 <hk_psx::frame::Game>::carry_ability_art
-o 9f53613739da45ed 96 800cfff4 <hk_psx::pickups::World>::enter_scene
-o ac017724ffa155b9 36 800d0174 <hk_psx::camera::Camera>::seat
-o 66dee1cd74a98d93 40 800d0204 hk_psx::publish_walk_senses
-o 0585d05f957bf1c8 32 800d02a4 <hk_sim::fsm3::Ctx>::bit
-o 56f299b4bc07ab6b 64 800d0324 <hk_sim::fsm3::Ctx>::value_of
-o fe637c6b1fe88de2 10 800d0424 <hk_sim::fsm3::Ctx>::scratch32
-o f2bdd11f1262b454 36 800d044c <hk_sim::fsm3::Ctx>::set_bit
-o 89e4305ea2f07eaf 10 800d04dc <hk_sim::fsm3::Ctx>::scratch16
-o 7b257cd324507542 8 800d0504 <hk_sim::fsm3::Ctx>::set_scratch16
-o a633cea320d2aaab 247 800d0524 __psx_rt_exception_handler
-o f175fa328bae719b 8 800d0900 <hk_sim::fsm3::Ctx>::scratch8
-o 6d15a895e4d04703 32 800d0920 <hk_sim::fsm3::Ctx>::array
-o 8ebead02c673849b 11 800d09a0 <hk_sim::fsm3::Block>::dead
-o 612d4fd80b17f1e6 7 800d09cc <hk_sim::fsm3::Ctx>::set_scratch32
-o be2c809f2420cad1 18 800d09e8 <hk_sim::fsm3::Ctx>::bit_of
-o 8e1dd6490c231583 15 800d0a30 <hk_sim::fsm3::Ctx>::event
-o e4c2dfc1e0748633 88 800d0a6c __psx_rt_dispatch_tramp
-o 51ad1761f91d0cc6 74 800d0bcc hk_psx::disc::tail_service
+o 01da9b55530035e4 256 80059bac hk_psx::render::occlusion::tile_runs::visible_runs_rows
+o 6bbce7f403ca1272 88 80059fac hk_psx::display::draw_direct
+o e4f6a9f35ee51ea4 3953 8005a10c <hk_psx::world::State>::tick_debris
+o 5663ae2dc9ea8a6d 80 8005ded0 <hk_sim::waves::WaveArena>::tick
+o b7209d9a7176db92 37 8005e010 hk_psx::dialogue::open
+o 739cc8e82bcaccf2 516 8005e0a4 hk_psx::world::gate
+o 9b185cc8275ad3dd 112 8005e8b4 <hk_psx::disc::Cache>::prepare_map
+o bea1798be5c7aa56 221 8005ea74 <hk_psx::camera::Camera>::tick
+o 816b8a59cf100f9f 98 8005ede8 <core::slice::iter::Iter<u8> as core::iter::traits::iterator::Iterator>::try_fold::<core::num::nonzero::NonZero<usize>, core::iter::adapters::map::map_try_fold<&u8, usize, core::num::nonzero::NonZero<usize>, core::option::Option<core::num::nonzero::NonZero<usize>>, <hk_psx::shop::State>::shelf::{closure#0}, core::iter::adapters::filter::filter_try_fold<usize, core::num::nonzero::NonZero<usize>, core::option::Option<core::num::nonzero::NonZero<usize>>, <hk_psx::shop::State>::shelf::{closure#1}, <core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::slice::iter::Iter<u8>, <hk_psx::shop::State>::shelf::{closure#0}>, <hk_psx::shop::State>::shelf::{closure#1}> as core::iter::traits::iterator::Iterator::advance_by::SpecAdvanceBy>::spec_advance_by::{closure#0}>::{closure#0}>::{closure#0}, core::option::Option<core::num::nonzero::NonZero<usize>>> @hk_psx
+o d8e179cf1e60f448 157 8005ef70 hk_psx::render::texture_material_alpha
+o f2edca2ef91b852a 107 8005f1e4 <hk_psx::menu::state::Settings>::adjust
+o 7e188034e40a0361 925 8005f390 <hk_psx::world::State>::draw_secrets
+o a94228ec9b80cf01 199 80060204 hk_psx::disc::land_prefetch
+o 3a6755813693c9f7 1219 80060520 <hk_psx::world::State>::apply
+o a8298742e4165da8 512 8006182c <psx_mc::Card<hk_psx::save::SlotOne>>::write_inner @hk_psx
+o 5011ef74f9441d99 406 8006202c <hk_psx::disc::Cache>::stage
+o 0b27873cf61f89db 676 80062684 hk_psx::geo_render::draw
+o 8340407a92474d95 500 80063114 <hk_psx::disc::Cache>::prepare_scene_ambience
+o c06e0c1fb3ae17d9 25 800638e4 <hk_sim::fsm3::Ctx>::set_obj
+o 71b7e01e29f44ffe 1082 80063948 <hk_sim::Player>::step::<&hk_psx::world::terrain::{closure#0}> @hk_psx
+o 9ee97283b0153c36 342 80064a30 <hk_sim::runner::Runner>::reset::<&mut <hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
+o e5e7f4e4202e8935 69 80064f88 hk_psx::frame::raise_fk_dust
+o 1a997f09b9038967 304 8006509c <hk_psx::world::State>::strike_secret
+o 6e86c34ceb26a051 11 8006555c <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#9} @hk_psx
+o 7e13433957921e44 732 80065588 <hk_psx::world::particles::Pool>::draw
+o be593e5e545850ad 219 800660f8 hk_psx::ability_fx::request
+o e5f2103fef5c7ccd 412 80066464 hk_psx::save::survey
+o d4bf982cb02d0e9c 79 80066ad4 hk_psx::scene_sfx::break_sound
+o 6f2295707d623ada 850 80066c10 hk_psx::render::submit
+o b9bf254a59b21bea 402 80067958 hk_psx::dialogue::save_notice
+o 9cec1388b94de5aa 398 80067fa0 hk_psx::scene_transition::load
+o 487f40a5766dcbc5 140 800685d8 hk_psx::save::load_world
+o 5c7d8fdf0720e226 569 80068808 hk_psx::enemies::actor_edges
+o bf34bbc3747aee02 395 800690ec <hk_psx::disc::Cache>::prepare_runner_audio
+o 5bd3ea9dfc672673 169 80069718 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::gates::{closure#1}::{closure#0}::{closure#1}>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Gate>, &mut core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Gate, hk_psx::frame::simulate::{closure#11}>::{closure#0}>::{closure#0} @hk_psx
+o 1edc67ec46e166eb 401 800699bc hk_psx::drip::tick
+o 4f3b4c442587e8f8 275 8006a000 <psx_mc::hardware::HardwareCard as psx_mc::Block>::write_frame @hk_psx
+o e3bd87d794ab35b1 9 8006a44c hk_psx::ability_fx::clear
+o 05be4c88943a1dbd 54 8006a470 <hk_psx::world::State>::run_levers
+o 145fe121ef98abdc 98 8006a548 <psx_mc::Card<hk_psx::save::SlotOne>>::is_formatted @hk_psx
+o f536b672464f3ece 96 8006a6d0 hk_psx::ability_fx::tick
+o 18cb79a7b17d08c0 395 8006a850 <hk_psx::enemies::EnemyWorld>::apply_arena
+o 90a7cdadad30ddcc 317 8006ae7c hk_psx::world::particles::break_effects::soft_styles
+o d820672a2d3f0fa9 8 8006b370 hk_psx::title::run
+o 8176d08cca24bf32 101 8006b390 hk_psx::strike_chests
+o e3d9d5132c859a40 389 8006b524 <hk_psx::disc::Cache>::prepare_effect_art
+o c81874bfe6fc0930 336 8006bb38 hk_psx::enemies::climber_ray_hit::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 330719207fe991c6 7 8006c078 hk_sim::runner_senses::all_edges
+o e010bad91ca2ccb5 1062 8006c094 hk_psx::respond_to_hurt
+o 528f603062a3e960 376 8006d12c hk_psx::enemies::push_sprite
+o 47218ba613b13a39 169 8006d70c <hk_psx::world::PogoTarget>::hit_by
+o 48ae71feaba8d7a6 94 8006d9b0 hk_psx::ability_fx::emit
+o b37c8ee9a6035fe7 370 8006db28 <hk_sim::runner::Runner>::horizontal_recoil::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#18}> @hk_psx
+o d3fe08a0cd797f5b 56 8006e0f0 hk_psx::dialogue::board_backdrop::{closure#1} @hk_psx
+o 66017ef8ebe6e1c4 74 8006e1d0 hk_psx::ability_fx::on_edges
+o e901e0b9c5815733 367 8006e2f8 <hk_psx::enemies::EnemyWorld>::land_member
+o 19f0a22f4541179a 366 8006e8b4 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, (), core::ops::control_flow::ControlFlow<hk_format::world_meta::Object>, core::iter::traits::iterator::Iterator::find::check<hk_format::world_meta::Object, hk_psx::world::reveal_initial_opacity::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
+o dc146f4bc6550c42 222 8006ee6c <hk_psx::world::State>::bind_gates
+o 47565a153f38064e 252 8006f1e4 <hk_psx::world::State>::gate
+o eec304b5dec33269 116 8006f5d4 <hk_sim::runner::Runner>::step_gas
+o 53740f3ec6fd66cc 736 8006f7a4 hk_psx::enemies::pogo_contact
+o 25e7a5ca3ab0f7d5 357 80070324 hk_psx::world::bank_trigger
+o 342014c8d378a911 11 800708b8 hk_psx::persist::set_level
+o 6a34bfb831204155 321 800708e4 hk_psx::strike_shroom
+o 6f5c9a266ccfaaf3 355 80070de8 <hk_psx::disc::Cache>::stage_group
+o 2e3947b061dfad64 345 80071374 hk_psx::ambience::set_volume
+o 8522ae4dbcbde102 119 800718d8 hk_psx::enemies::segment_crosses
+o 4515f16c5a159d18 54 80071ab4 <hk_psx::enemies::Actor>::gas_touch
+o de3a8b3dc75d6a6a 196 80071b8c <hk_psx::camera::Camera>::position_to_hero
+o 4450a39563eeefbe 703 80071e9c <hk_psx::pickups::World>::append_needed
+o 17300b2043efb6e1 520 80072998 <hk_psx::enemies::Actor>::runner_senses::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 716eba73eb023ec4 136 800731b8 <hk_psx::world::particles::Pool>::draw_front
+o b9efbc828abd4fa4 1854 800733d8 hk_psx::dialogue::prepare
+o cbb75a10a533eeed 472 800750d0 hk_psx::battle_gate_art::prepare
+o 6bd3cd267ef4a65a 25 80075830 hk_psx::render::wait_dma_idle
+o bb65eef4584684e7 359 80075894 <hk_psx::pickups::Draws>::draw
+o cde5a28e19610de5 1116 80075e30 hk_psx::geo_render::apply
+o 62fc84d06f9d3f27 533 80076fa0 hk_psx::drip::prepare
+o 4907b8444541f3ab 119 800777f4 hk_psx::draw_frame
+o f5bfcaf249b9c9e9 223 800779d0 <hk_psx::render::core_map_cache::Cache>::map
+o 9f5f2158b22ca1ac 136 80077d4c <hk_psx::drip::Draws>::draw
+o 68855c2a0c2a63c0 104 80077f6c hk_psx::hit_fx::frames
+o 5d869dcd08e55f5a 121 8007810c <hk_psx::battle_gate_art::Draws>::draw
+o 043039185c186354 419 800782f0 <hk_psx::shade::World>::draw
+o 3e4fc46a5408a76d 829 8007897c hk_psx::game_map::prepare
+o 38cb4645f604cc9a 153 80079670 hk_psx::blocker_terrain::apply
+o 61034bc62d405868 153 800798d4 hk_psx::great_door::apply
+o 2ae79d4ab5df9ec9 510 80079b38 hk_psx::battle_gates::apply
+o 8550b08beb67f24c 325 8007a330 hk_psx::boss_hooks::draw
+o 5a9d26232d3cbefb 149 8007a844 hk_psx::hero_light::vignette_scene
+o d084e06dba34d623 258 8007aa98 hk_psx::blocker_roller::draw
+o 991c328c7c078e63 328 8007aea0 hk_psx::render::set_vignette
+o 08128f9a54c7dd1e 15 8007b3c0 hk_psx::boss_hooks::append_needed
+o af17cb592b20e64a 78 8007b3fc hk_psx::dialogue_art::presentation::append_needed
+o dfd60f30f4a640d9 46 8007b534 hk_psx::charms::presentation::append_needed
+o ec585c180ce8e897 200 8007b5ec hk_psx::pickups::kneel_frame
+o 95460956b2c7441e 232 8007b90c hk_psx::decor::apply
+o 863d00271d1f265c 173 8007bcac hk_psx::props::apply
+o 4a0c1080fc97591b 97 8007bf60 hk_psx::pickups::apply
+o fd39f9dad4f68623 45 8007c0e4 hk_psx::dialogue::panel_up
+o e4a584acb2bde3da 186 8007c198 <u16 as core::slice::cmp::SliceContains>::slice_contains
+o bc89e526f7e257c0 40 8007c480 hk_psx::dialogue::prompt_up
+o 64f61269a395bdd8 705 8007c520 hk_psx::render::repair
+o 15f062caadc28cf8 2087 8007d024 hk_psx::render::bind_animation
+o 06b0d90c2edf9242 151 8007f0c0 <hk_psx::enemies::Draws>::push_part
+o 5d14bc54d7f199db 56 8007f31c <hk_psx::enemies::Draws>::can_push
+o b92fea669972fd5a 105 8007f3fc hk_psx::scenery_geometry::legal
+o 7e32cb92e19ed852 110 8007f5a0 <hk_psx::disc::Cache>::is_ready
+o df2fe0a3de4f2a79 162 8007f758 hk_psx::world::camera_lock
+o 079fcb55ddc39c93 332 8007f9e0 hk_psx::world::resident_with_budget
+o 6435abf06c749748 232 8007ff10 hk_sim::combat::polygon_hits_box
+o 7918bb659d0bc5a6 136 800802b0 <hk_format::scene::Scene>::room
+o 10b5981941dc0848 108 800804d0 <hk_psx::disc::Cache>::locate_cached
+o d581945634f946d3 324 80080680 hk_psx::render::early_back_allowed
+o 60464ae679cf83bb 289 80080b90 <hk_sim::runner::Runner>::walker_callback::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
+o 74bf33127be52440 321 80081014 <hk_psx::enemies::Actor>::apply_runner_actions::<<hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}> @hk_psx
+o 7cf9a88b74e056bc 81 80081518 hk_psx::disc::start_pool
+o 0a93c78b0e933da9 113 8008165c hk_psx::disc::cd_stream::status
+o 700ebc49d2162f6e 162 80081820 hk_psx::render::begin_frame
+o 6725a3ba2917e107 36 80081aa8 hk_psx::world::particles::length3
+o b6575e549a3d0276 359 80081b38 hk_psx::input::poll_slow
+o e8daccaae08e07ba 28 800820d4 hk_psx::frame::render::{closure#5} @hk_psx
+o 8366e2997623d95f 47 80082144 <hk_format::world_meta::Object>::bounds
+o 067e697c42d89467 405 80082200 <psx_pad::controllers::Controllers>::step::<psx_io::periph::ControllerPort> @hk_psx
+o 115017b3f206dd7f 119 80082854 psx_math::int32::div_u64_by_u32
+o b83485ceaf61ac38 246 80082a30 hk_psx::music::boss_service
+o b1babf0350ea3723 254 80082e08 <hk_psx::alpha_scissor_cache::Entry>::prepare
+o a07c1a51478061d7 26 80083200 hk_psx::render::begin
+o 3047bc280549098d 501 80083268 <core::iter::adapters::flatten::FlattenCompat<core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_bindings::{closure#0}>, hk_psx::world::reveal_bindings::{closure#1}>, hk_psx::world::reveal_bindings::{closure#2}>, hk_format::world_meta::Indices> as core::iter::traits::iterator::Iterator>::next @hk_psx
+o fdd15e9d4cb7e9b9 1070 80083a3c <hk_psx::enemies::EnemyWorld>::sync_region
+o 8b96ed26c2c953aa 83 80084af4 psx_pad::pad_exchange::<psx_io::periph::ControllerPort> @psx_pad
+o ae56192b9d800b43 144 80084c40 hk_psx::music::want_read
+o 4343ad119c042ba0 139 80084e80 hk_psx::disc::start_prefetch
+o e54fe6a1bb36845c 68 800850ac hk_psx::disc::start_tail
+o ad8797d0f15f5769 109 800851bc hk_psx::disc::start_spill
+o 957b57d6d489804b 291 80085370 hk_psx::ambience::want_prefetch
+o 9a3fa13f9e07981d 66 800857fc hk_psx::disc::maybe_park
+o 23370f7595a65044 123 80085904 <hk_psx::alpha_scissor_cache::Axis>::interval
+o ef35bb608160994a 118 80085af0 <hk_psx::persist::Store>::set
+o 86c1bb9d1a0fec99 80 80085cc8 <hk_format::world_meta::Region>::object
+o 87b6c5ea5f50bec3 173 80085e08 <hk_psx::enemies::EnemyWorld>::arena_step
+o b9afd54dd15f8d96 974 800860bc hk_psx::scenery_geometry::subdivide_in
+o 437e0b1288ba90ac 27 80086ff4 <hk_format::world_meta::Object>::state_id
+o 578fa94b2e02d849 53 80087060 <core::iter::adapters::flatten::FlattenCompat<hk_format::world_meta::Points, core::result::IntoIter<[i32; 2]>> as core::iter::traits::iterator::Iterator>::next @hk_psx
+o f2739e0961708fd6 993 80087134 <hk_psx::enemies::Actor>::new
+o 4970d5bd5f59fdf2 18 800880b8 <hk_psx::disc::Cache>::style_art
+o 2c63c0ecd62b5dad 27 80088100 <hk_format::world_meta::Object>::flags
+o b075866205caa188 28 8008816c <hk_format::world_meta::Object>::extra
+o 9bc75a86899eec1a 392 800881dc <hk_psx::camera::Camera>::triggers
+o 69f07c2a371eac09 64 800887fc <hk_format::world_meta::Object>::polygons
+o 6a60de5d8ace8e25 59 800888fc <hk_format::world_meta::Polygon>::points
+o b89e02b9d6c8a57a 26 800889e8 <hk_format::world_meta::Object>::source_id
+o f1d292b50df2af66 239 80088a50 <hk_sim::fsm3::Tree>::pass
+o 05deb8318152adb7 2064 80088e0c hk_psx::world::particles::break_effects::tick_specs_with_tracks::<&hk_psx::world::terrain::{closure#0}> @hk_psx
+o 4f0cc4c9dc14f4cb 53 8008ae4c psx_rt::present::wait_slot_empty_on::<psx_rt::present::Hardware> @psx_rt
+o 60b1a3447172836c 453 8008af20 <hk_psx::world::particles::Pool>::tick
+o 0dcd3fd843f2c5ba 499 8008b634 hk_sim::runner_senses::line_of_sight_near::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 2e2675e0f59ba95d 354 8008be00 <hk_sim::runner_senses::Sweep>::new
+o dc5247a682fda670 136 8008c388 <psx_rt::present::Presenter>::submit
+o 2450826546def3a1 102 8008c5a8 <hk_sim::fsm3::Tree>::step
+o 4e9060d6bedf172a 182 8008c740 hk_psx::render::occlusion_scratch::dynamic_hidden
+o 33cd15f9b6ac497f 207 8008ca18 hk_psx::render::draw_visibility::set_opacity
+o 01c6a80efceb24d2 73 8008cd54 hk_psx::world::particles::perspective::scale
+o d0ea0ab50f243642 279 8008ce78 hk_psx::ability_art::presentation::draw_slash
+o 322bdd2b1ec7683d 31 8008d2d4 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<core::option::Option<(hk_psx::world::Region, hk_format::Room)>, hk_psx::frame::simulate::{closure#8}::{closure#0}> @hk_psx
+o c4fb28d4cc241e04 219 8008d350 <hk_psx::camera::Camera>::update_camera
+o 1fb7659878c89f6d 402 8008d6bc <hk_psx::camera::Camera>::update_target
+o 92bafb36dc4d2b85 146 8008dd04 <hk_sim::fsm3::Tree>::drain
+o de124cee7f345e5c 56 8008df4c hk_psx::persist::get
+o 3d3d461034b50e21 5572 8008e02c hk_psx::frame::interact
+o 73d70991b46e7fc7 52 8009373c <hk_psx::camera::Camera>::slow_down
+o 75c9218d3bf332c6 189 8009380c hk_psx::enemies::edges_near
+o 19bfb3c2bf4ebe8f 327 80093b00 <hk_psx::save::Save>::decode
+o d95d3ac8163ec2a6 303 8009401c <hk_psx::world::State>::spell_strike
+o 5ae2baddb19ab232 301 800944d8 hk_psx::enemies::climber_ray_hit::<hk_psx::world::terrain::{closure#0}>::{closure#0} @hk_psx
+o d5df975a2bf1cf50 41 8009498c <hk_psx::world::State>::break_object
+o b20c279be080f2b1 355 80094a30 <hk_psx::pickups::World>::collect::<hk_psx::frame::interact::{closure#2}> @hk_psx
+o 724509b3fdaeef3a 53 80094fbc <hk_psx::pickups::World>::kneel_tick
+o e0c64e0bf5212cec 614 80095090 hk_psx::render::collect_occluders
+o 22a2ff6b906156b0 183 80095a28 psx_math::int32::isqrt_u64
+o 5e0d234641a85ad0 300 80095d04 <hk_psx::ambience::state::Mixer>::release
+o 907c23458cf41b5d 75 800961b4 hk_psx::open_chest
+o f7294ba97cebaa4e 281 800962e0 <hk_sim::script3::Scripts>::tick::<hk_psx::script::tick::{closure#1}> @hk_psx
+o 68c7502a7cf2e1c3 1544 80096744 <hk_psx::geo::Coin>::step::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 86d5b18ddd64c1a9 72 80097f64 <core::ops::range::Range<usize> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<usize, hk_sim::terrain_thunk::edge_in_box::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<()>> @hk_sim
+o e0c72cae4b24f270 279 80098084 hk_psx::geo_render::draw_art
+o 3077223113243141 34 800984e0 <hk_sim::fsm3::Tree>::enter
+o 102e10cef49969a8 93 80098568 hk_psx::render::draw_visibility::set_visible
+o 90054f143474ba8f 183 800986dc hk_psx::world::particles::break_effects::stretch_corners
+o 57d46b46c4e14105 19 800989b8 hk_psx::title_card::npcs_inert
+o 55b5bd12b33825d5 325 80098a04 hk_sim::combat::segments_intersect
+o 67ee749c2db2ebb8 76 80098f18 <hk_psx::world::State>::refresh_edges
+o d12644a3a3518c55 131 80099048 <hk_psx::alpha_scissor_cache::Secondary>::prepare
+o 93e8845090fe230a 204 80099254 <hk_psx::world::Breakables as core::iter::traits::iterator::Iterator>::next
+o 3d3dc5d6f5a8ba41 68 80099584 hk_psx::battle_gates::set_poses
+o a857599dcb2f8f28 319 80099694 <hk_psx::world::CameraLock>::touches
+o 51aa6716ed27bfa4 1225 80099b90 <hk_psx::shade::World>::tick::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 7eb490ce7cf1c83b 209 8009aeb4 hk_psx::strike_shade
+o d167a386bc27534a 149 8009b1f8 <hk_psx::cheats::Settings>::params
+o 3a563a8f1f794929 69 8009b44c <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::sync_source @psx_cdstream
+o 3eb233cd12a6bd58 55 8009b560 <hk_psx::camera::Camera>::look
+o b6c92ad966b499dc 165 8009b63c hk_psx::camera::smooth_damp
+o dc0c8303af4386b1 805 8009b8d0 hk_psx::render::collect_tile_coverage
+o 64ae0989553a4793 27 8009c564 <hk_sim::fsm3::Tree>::age
+o df00d25db3f3424d 20 8009c5d0 psx_cdstream::console::leave::<psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>> @psx_cdstream
+o 12607b13b223c288 192 8009c620 hk_psx::render::draw_visibility::set_gain
+o 17c76b0ba6ffbf22 293 8009c920 hk_psx::world::particles::break_effects::collide::<core::iter::adapters::copied::Copied<core::slice::iter::Iter<[i32; 4]>>> @hk_psx
+o bbfd1a43ac128e3e 72 8009cdb4 <psx_rt::present::Presenter>::begin_frame
+o 3910693f547b31e4 107 8009ced4 hk_sim::fsm3::dispatch
+o 701da2864c8b5522 202 8009d080 hk_psx::title_card::big_line
+o a9025c6b5fe93d97 531 8009d3a8 hk_psx::render::derive_draw
+o 1dd647a7b4d30839 139 8009dbf4 <hk_psx::camera::Camera>::lock_to_area
+o 61ec1ff30dbf1f47 83 8009de20 hk_sim::fsm3::layout
+o d520e4dafcf09540 66 8009df6c <hk_format::world_meta::Region>::objects
+o 726ba7cde800b045 148 8009e074 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, core::iter::adapters::filter::filter_try_fold<hk_format::world_meta::Object, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, hk_psx::world::benches::{closure#1}, core::iter::adapters::map::map_try_fold<hk_format::world_meta::Object, hk_psx::world::Bench, (), core::ops::control_flow::ControlFlow<hk_psx::world::Bench>, hk_psx::world::benches::{closure#2}, core::iter::traits::iterator::Iterator::find::check<hk_psx::world::Bench, <hk_psx::bench::State>::tick::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
+o 43587a96cc546aeb 123 8009e2c4 hk_psx::render::tile_coverage::claim
+o 20eb0419705197cb 401 8009e4b0 <hk_psx::geo::World>::publish
+o 649f5e2f61c3ba8e 195 8009eaf4 hk_psx::frame::simulate::{closure#3} @hk_psx
+o 9fbdcdc3fd5a2865 121 8009ee00 hk_psx::render::template
+o 823c2bd51c33491e 8 8009efe4 psx_cdstream::console::enter::<psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>> @psx_cdstream
+o 8dcce14f30e25b4a 85 8009f004 hk_psx::ability_fx::parts_of
+o abfd27cef5c7cae8 260 8009f158 <hk_format::Room>::frame_tile
+o 803486606e6d1c1f 145 8009f568 hk_psx::render::draw_visibility::reset_visibility
+o e475ce5d1d83b4e0 24 8009f7ac hk_psx::dialogue::number
+o 80c705f2a6a3c618 59 8009f80c psx_pad::pad_begin::<psx_io::periph::ControllerPort> @psx_pad
+o 0ac25e01f9c49292 266 8009f8f8 <hk_psx::world::State>::bind_triggers
+o e4efb3336db9e8d8 309 8009fd20 hk_psx::render::prepare_back_prefix
+o 5e2f26b589c1a2ba 21 800a01f4 hk_psx::boss_fx::take
+o 3a33b196e3ef51b8 18 800a0248 hk_psx::enemies::take_fk_dust
+o 89551132798db31e 458 800a0290 <hk_sim::runner_senses::Sweep>::hits_edge_exact
+o e105f22f92aa6230 228 800a09b8 hk_psx::render::scenery
+o f7ff3f3c4a778494 141 800a0d48 hk_psx::persist::apply
+o c340eb810d7daf35 42 800a0f7c <hk_format::Room>::frame
+o fa14b72e61da8a29 172 800a1024 hk_psx::ability_art::locate
+o 91ff0da617ee7a7a 71 800a12d4 hk_psx::render::restore_tile_coverage
+o d7bc0794942d8e24 188 800a13f0 hk_psx::enemies::push_sprite_if_room
+o 6192f262d661c547 1656 800a16e0 <hk_psx::geo::World>::strike::<hk_psx::strike_geo::{closure#0}> @hk_psx
+o 5a8270a5b7f2335c 56 800a30c0 hk_psx::modules::pool_want
+o 092e47386e8e910c 480 800a31a0 hk_psx::world::fill_edges
+o 41e2845f1fc35554 112 800a3920 hk_sim::actors::spawn_separation
+o ac89eab0da5efb52 2488 800a3ae0 hk_psx::render::collect_solid_core
+o bce878e8b0be5938 431 800a61c0 hk_psx::props::corners
+o d15e7ae59c639416 139 800a687c <hk_psx::enemies::Actor>::apply_battle_scene
+o 9e0169ba60cbb246 107 800a6aa8 hk_psx::render::prepare_tile_coverage
+o e8fff640cffd5f94 10 800a6c54 <hk_sim::fsm3::Block>::state
+o 88d102e1297d8dee 57 800a6c7c <hk_psx::save_ui::Ui as core::cmp::PartialEq>::eq
+o 3245f3e6862737af 54 800a6d60 hk_psx::dialogue::prompt_fade_out
+o 17029bed4b5f9c5e 134 800a6e38 hk_psx::dialogue::pause_backdrop
+o 0d7512cb78ec6f89 31 800a7050 <hk_cache::Cache>::is_resident
+o 97f391bcf23406d5 27 800a70cc hk_psx::battle_gates::scene_mask
+o 131dd100da6e051e 72 800a7138 <hk_format::Room>::frame_grid
+o b15c11e7979eaa92 292 800a7258 hk_psx::ambience::cut
+o 8f9bdab36a375285 10 800a76e8 hk_psx::disc::checkpoint
+o bbe3f49cd57355e1 103 800a7710 psx_vram::upload_bytes_aligned
+o 758f70a599e49f5c 27 800a78ac <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<(), hk_psx::frame::simulate::{closure#3}> @hk_psx
+o 392538b41f62a07b 1675 800a7918 hk_psx::render::init
+o a64431e3258ac2c4 98 800a9344 hk_psx::dialogue::text_gain
+o c4ebd8bdece79cff 162 800a94cc <psx_mc::fs::DataCursor>::read_exact::<hk_psx::save::SlotOne> @hk_psx
+o 5f6c3525d175eb7f 28 800a9754 <hk_format::Room>::draw_pool_index
+o 88cb4d9e8383cb4d 112 800a97c4 hk_psx::modules::wanted
+o e3602a7df60d1dac 625 800a9984 hk_psx::modules::pool_service
+o 3ae21da628922e76 26 800aa348 psx_math::fmt::u32_dec
+o e197c780ce9afea5 51 800aa3b0 hk_psx::display::append
+o c9f18ea6aab42d74 27 800aa47c <hk_format::world_meta::Object>::polygon_count
+o 6df67ed09700da0b 290 800aa4e8 <hk_psx::geo::World>::reset_enemies
+o e92e3a548f0dac1b 35 800aa970 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<(), hk_psx::main::{closure#14}> @hk_psx
+o 7bf7efe722aff4eb 288 800aa9fc <psx_mc::hardware::HardwareCard as psx_mc::Block>::read_frame @hk_psx
+o a07b05c4570b12df 75 800aae7c hk_psx::audio::cocoon_break
+o c472feb6928e9fea 179 800aafa8 hk_psx::render::texture_sub
+o 180aab293efe3e49 170 800ab274 <hk_psx::enemies::EnemyWorld>::reset_scene
+o 5bf4de38e1877d1a 315 800ab51c hk_psx::ability_art::presentation::submit
+o 1f4a846a48ed8ef2 288 800aba08 <psx_io::cd::reader::SectorReader>::start_read_seek_first_with
+o 0960c5ae8de5f8cb 269 800abe88 hk_psx::ambience::prefetch_done
+o 49acea11eca5462d 20 800ac2bc <hk_psx::disc::Cache>::preload
+o 9bbb4a263f7361f0 127 800ac30c hk_psx::render::opaque_groups::claim
+o 2576de4cf6713b8c 52 800ac508 hk_psx::modules::scene_modules
+o 06dcdfaf82f73e82 16 800ac5d8 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<u32, hk_psx::frame::render::{closure#6}> @hk_psx
+o 1a205a06086a0cbf 16 800ac618 <psx_rt::scratchpad::ScratchpadStack<0, 1024>>::stack_entry::<u32, hk_psx::frame::render::{closure#14}> @hk_psx
+o 1e9d4391c550d68c 296 800ac658 hk_psx::modules::service
+o 7ab16ad8a318cfe7 168 800acaf8 hk_psx::audio::nail_kind
+o 0475db7c8f593f53 184 800acd98 <hk_psx::frame::Game>::carry_streamed_art
+o 621f6396fbbe4067 67 800ad078 hk_psx::modules::carry
+o 15161e634e91f75f 269 800ad184 psx_spu::dma_write
+o 6f9a2357a9ed6533 265 800ad5b8 hk_psx::dialogue::ornament_color
+o 83e2378a22b3bb12 264 800ad9dc hk_psx::dialogue::ornate_frame
+o 458b3ce714c93b11 117 800addfc <hk_psx::disc::Cache>::find_xa
+o 6f07fe533e328ac5 287 800adfd0 <hk_psx::disc::Cache>::locate_box
+o ab5d7a41194d89d2 92 800ae44c <hk_psx::render::tile_events::Events<704>>::build @hk_psx
+o bf7588607b82e43a 69 800ae5bc psx_gpu::wait_idle_impl
+o 8f9bdab36a375285 10 800ae6d0 psx_rt::present::wait_idle_on::<psx_rt::present::Hardware> @psx_rt
+o 0d2709e75a917925 27 800ae6f8 <hk_format::world_meta::Object>::kind
+o 4ff3099b70ddfc0c 98 800ae764 hk_psx::render::core_map_cache::interval
+o 13e5df50585ff7cb 483 800ae8ec <hk_sim::runner_senses::EdgeColumns>::build
+o 1b36de9677b35906 6 800af078 hk_psx::render::record_dynamic_hidden_quad
+o 1ace7e30c061100b 22 800af090 <psx_cdstream::console::Mmio<true, true, true> as psx_cdstream::hw::CdHw>::finish_response @psx_cdstream
+o 8f9bdab36a375285 10 800af0e8 hk_psx::persist::set
+o e01572176ae0c921 11 800af110 psx_io::gpu::handoff::run_armed_guard
+o e306183dc040ccda 35 800af13c psx_rt::present::wait_drawn_idle_on::<psx_rt::present::Hardware> @psx_rt
+o 810d7549ec0703d2 25 800af1c8 psx_io::gpu::write_commands_when_ready_slow
+o d00e0b5e4974df3a 299 800af22c psx_cdstream::console::on_counted_interrupt
+o a67d409ba7ad4d97 29 800af6d8 psx_io::gpu::handoff::write_commands_slow
+o d30bc0718cd1f67b 113 800af74c hk_psx::battle_gates::arena_entry
+o f375b5a14040b5db 83 800af910 hk_psx::disc::land_pool
+o 645db41d166aeaf4 8 800afa5c hk_psx::disc::cd_stream::received
+o 8be4d1653093b90c 261 800afa7c hk_psx::frame::secret_feedback
+o 8db2d461ac39d5f7 139 800afe90 <hk_sim::script3::Scripts>::seat
+o 28ec6a2b296df7aa 6 800b00bc <hk_sim::fsm3::Ctx>::set_scratch8
+o d4532441ceb8ace8 219 800b00d4 <hk_psx::cheats::Settings>::hurt
+o 92a116eddc12bc82 70 800b0440 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::command @psx_cdstream
+o 54a78309ef5673a9 249 800b0558 <hk_psx::disc::Cache>::spill_plan
+o 70d87823a1de3a00 113 800b093c hk_psx::disc::member
+o dd7d1d3a62d663db 46 800b0b00 hk_psx::apply_hurt
+o 3c820e441c6f2cae 20 800b0bb8 psx_io::gpu::handoff::write_command_slow
+o 431e73022a1f60c4 21 800b0c08 psx_io::cd::drain_response_limited
+o b04a6b55dc63ebb1 40 800b0c5c <psx_cdstream::console::Mmio<true, true, true> as psx_cdstream::hw::CdHw>::pop_sector @psx_cdstream
+o d6a53ab6bd7d26d2 247 800b0cfc hk_psx::persist::snapshot
+o 539147770802537a 112 800b10d8 hk_psx::audio::pool_stop
+o f89cc82e3b578b4f 283 800b1298 <hk_psx::impact::Pool>::spawn
+o d87c1b5c4de43829 239 800b1704 hk_psx::disc::prefetch_take
+o a01dd808a204dc1c 49 800b1ac0 <hk_psx::disc::Cache>::window_sectors
+o 65928932de77da48 402 800b1b84 hk_psx::scene_sfx::play_one_of
+o 3dca3deb736a2f98 249 800b21cc <hk_psx::pickups::World>::strike
+o 620900d915b9adab 820 800b25b0 <hk_psx::world::particles::Pool>::spawn
+o 19b1bab962882454 226 800b3280 hk_psx::music::stream::hardware::upload
+o 23745e5e4b27c4ba 92 800b3608 hk_psx::geo_audio::pickup
+o b42ade820be5973d 26 800b3778 hk_psx::dialogue::ramp
+o bdeb114a4606e885 60 800b37e0 <hk_psx::world::State>::tick_break_particles
+o 2e80781cf80c623e 155 800b38d0 psx_mc::fs::entry_name_eq
+o b73527f394d364cd 12 800b3b3c psx_io::cd::ack_all_and_reset_parameters
+o aa1f0210cf0b7455 204 800b3b6c hk_psx::disc::chunk_spec
+o 46712766be139703 232 800b3e9c hk_psx::nail_bounds
+o d99e32fa14dfb2c7 228 800b423c <hk_sim::fsm3::Tree>::init
+o a84c69a3d770775c 71 800b45cc hk_psx::audio::ui_confirm
+o dfd5ec73373f5c92 116 800b46e8 psx_vram::upload_bytes
+o 9ecd951c0cc6a9f1 222 800b48b8 hk_psx::modules::next_background
+o 51ee560e7b49cc3d 79 800b4c30 <psx_math::wide::WideU>::cmp_ratio
+o 2258f476f454cab6 52 800b4d6c <hk_psx::world::State>::hit_impact
+o 621466a7844283fa 28 800b4e3c psx_cdstream::console::wait_room
+o 2126b65bff5a2dea 220 800b4eac <hk_psx::disc::Cache>::restore_spill
+o ccafee935acfe79f 218 800b521c hk_psx::scene_sfx::loop_tick
+o 84e25f86a53c42c1 216 800b5584 hk_psx::modules::admit_art
+o f039d1adcc8a7944 216 800b58e4 <psx_math::wide::WideU>::scale_by_ratio
+o ef17d2b7e5cd809e 132 800b5c44 <hk_psx::enemies::GruzRuntime>::frame_box
+o 341f1c63477774f2 11 800b5e54 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::pause @psx_cdstream
+o 0367b446759c736b 289 800b5e80 <hk_psx::geo::World>::spawn_enemy
+o 386585ee11abfa26 282 800b6304 <hk_sim::shade::Shade>::chase
+o a3d622048b813caa 50 800b676c psx_math::int32::mul_div_i32.2300
+o 36723e7183c70182 59 800b6834 <psx_cdstream::engine::Engine<psx_cdstream::console::Mmio<true, true, true>, 0, 0, false, false, true>>::pause_complete @psx_cdstream
+o 5d4b8f572e4ce1bc 108 800b6920 psx_cdstream::console::counted::submit
+o fd009a792e34994c 91 800b6ad0 hk_psx::audio::enemy_death
+o 89405b2a9ab27121 46 800b6c3c psx_io::gpu::wait_ready_slow
+o 9e13e1a98a904672 116 800b6cf4 <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::wait_completion
+o cfa2710221e2c645 29 800b6ec4 <hk_format::world_meta::Region>::object_count
+o d12bb55ac5aee62d 84 800b6f38 <hk_psx::enemies::EnemyWorld>::sync_arena
+o 90541ed9df2dff58 135 800b7088 <hk_psx::disc::Cache>::audio_bank
+o 6a6d34ebdde6bb77 70 800b72a4 psx_cdstream::engine::location
+o 0502afde564c6bed 180 800b73bc <hk_psx::geo::Coin>::flung
+o b43ca914ee60a48b 11 800b768c memmove
+o 3c820e441c6f2cae 20 800b76b8 psx_io::gpu::handoff::write_display_control_slow
+o 37c3d0e12ad4aca8 53 800b7708 <hk_format::world_meta::Points as core::iter::traits::iterator::Iterator>::next
+o cd9d87f34c48e209 45 800b77dc <hk_sim::nail_response::NailResponse>::contact
+o 23c821775848dd1c 43 800b7890 <hk_sim::actors::ActorHealth>::strike
+o 23db7723e9031a65 68 800b793c <psx_gpu::prim::QuadTextured>::with_material
+o c782dac07e303f59 346 800b7a4c <hk_psx::disc::Cache>::camera_view
+o 416c30509a5ceeba 405 800b7fb4 core::iter::adapters::flatten::and_then_or_clear::<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, hk_format::world_meta::Object, <core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}> as core::iter::traits::iterator::Iterator>::next> @hk_psx
+o 74793fbe02333a75 302 800b8608 <core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::WorldMeta>, core::iter::adapters::flatten::FlatMap<core::option::IntoIter<hk_format::world_meta::Region>, core::iter::adapters::filter::Filter<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}::{closure#0}>, hk_psx::world::reveal_objects::{closure#1}>, hk_psx::world::reveal_masks::{closure#0}> as core::iter::traits::iterator::Iterator>::next @hk_psx
+o c02ebe4cc87b6ef8 761 800b8ac0 <hk_psx::enemies::EnemyWorld>::tick::<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1} @hk_psx
+o e0cb37cd4bd1dc34 88 800b96a4 <hk_sim::runner::Runner>::walk::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
+o e53bc4f49ff34dfb 53 800b9804 hk_psx::dialogue::save_notice::{closure#1} @hk_psx
+o c262cf46e83ec793 23 800b98d8 hk_psx::boss_hooks::bind_bank
+o b48bfe6c11724156 193 800b9934 hk_sim::runner_audio::valid_fragment
+o 69ccf66274e7bcf1 205 800b9c38 hk_psx::bind_view
+o 0f948ff0d375bd81 214 800b9f6c <hk_psx::disc::Cache>::window_fits_at
+o 04147554ee228b4a 49 800ba2c4 hk_psx::disc::start_music
+o 21e8edc71812c5cc 9 800ba388 psx_rt::dispatch::detach
+o f49e3091de97eccc 170 800ba3ac hk_psx::scene_sfx::play_pitched
+o 22f410209514f794 18 800ba654 hk_psx::modules::reclaim
+o dd4ac97a9daa7df4 19 800ba69c psx_rt::dispatch::attach
+o e18855e9b82522c2 212 800ba6e8 hk_psx::dialogue::caps_text
+o 25ffd63eb648b209 53 800baa38 <hk_psx::enemies::HuskGuardRuntime>::clip
+o c0d4839ecad0fcf4 82 800bab0c <hk_sim::runner::Runner>::pause::<<hk_psx::enemies::Actor>::advance<hk_psx::world::terrain::{closure#0}, <hk_psx::enemies::EnemyWorld>::tick<hk_psx::runner_event, hk_psx::frame::simulate::{closure#8}>::{closure#1}>::{closure#0}> @hk_psx
+o 8759e4c57cf0b17e 211 800bac54 hk_psx::modules::fetch_pending
+o d0af8692007ee094 22 800bafa0 hk_psx::focus_audio::interrupt
+o 011a64c8d1ca7510 193 800baff8 hk_psx::render::remember_cpu_view
+o 22a2ff6b906156b0 183 800bb2fc psx_math::int32::isqrt_u64.2297
+o d66b2b2de980e14c 209 800bb5d8 hk_psx::disc::sector
+o 8652b045b00071d9 204 800bb91c hk_psx::world::region_actor
+o 5959558d6f11497a 21 800bbc4c hk_psx::actor_persistence::killed
+o 8e822f8de31db6e1 169 800bbca0 <hk_psx::world::Breakable>::hit_by
+o d820672a2d3f0fa9 8 800bbf44 hk_psx::title::close
+o bc242a4ca512e314 15 800bbf64 __psx_rt_dispatch_update
+o bd611b650bbe5350 147 800bbfa0 <hk_psx::secret_breaks::Hits>::nail
+o d820672a2d3f0fa9 8 800bc1ec <psx_pack::WordFnv32>::update
+o c9715d4589abd4c9 156 800bc20c <hk_sim::corpse::Corpse>::spawn
+o 89449cb3e54be21d 104 800bc47c hk_sim::buzz::distance_fly_height
+o 3ac1306c2b070a4d 94 800bc61c hk_psx::dialogue::cancel
+o db6beed9307ca99c 382 800bc794 hk_psx::audio::pool_key
+o de33163f434f43ba 45 800bcd8c <hk_psx::world::State>::enemy_death_particles
+o 06799a04444d3520 209 800bce40 hk_psx::modules::art_begin
+o a9309d4b9b4e220c 202 800bd184 hk_psx::disc::group_of
+o 51fb7ee0c7c04e11 201 800bd4ac <psx_mc::Card<hk_psx::save::SlotOne>>::read @hk_psx
+o a91c7d167722919c 168 800bd7d0 hk_psx::dialogue::panel
+o 230626ec8237f213 14 800bda70 hk_psx::persist::reset
+o f0d7fcb7e979f8ad 84 800bdaa8 hk_psx::modules::missing_art_chunk
+o e0e05399eb50402e 103 800bdbf8 hk_psx::modules::plan
+o e019e1f1bb6c024d 59 800bdd94 hk_psx::ability_fx::raise
+o 9076608f33487771 514 800bde80 <hk_psx::geo::World>::queue
+o f94781c99f3d764e 316 800be688 <hk_psx::modules::Install>::run
+o 9b3b69c6f9ce2776 10 800beb78 hk_psx::world::particles::break_effects::spawn_specs
+o 8b2b19f73181a1cb 69 800beba0 hk_psx::modules::package
+o fd439fefe9d7e158 200 800becb4 hk_psx::dialogue::board_backdrop
+o df3dac39089eb377 199 800befd4 hk_psx::charms::presentation::icon_sized
+o 9ba3abedbdecdfa6 198 800bf2f0 hk_psx::take_pickup
+o 5c3403f602190426 196 800bf608 hk_psx::enemies::segment_hits_edges
+o 5199ea0ecbac410d 112 800bf918 hk_psx::world::inside
+o e6f6638a9ee40824 82 800bfad8 psx_rt::cache::wait_for_quiet::<psx_rt::cache::HwBus> @psx_rt
+o 0c82a273d01c8468 165 800bfc20 <hk_psx::modules::Place>::consider
+o 99e1bd9cbc57e5ba 162 800bfeb4 <core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<hk_format::world_meta::Objects>, (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, core::iter::adapters::filter::filter_try_fold<hk_format::world_meta::Object, (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, hk_psx::world::region_actors::{closure#1}, core::iter::adapters::map::map_try_fold<hk_format::world_meta::Object, (hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec), (), core::ops::control_flow::ControlFlow<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec)>, hk_psx::world::region_actors::{closure#2}, core::iter::traits::iterator::Iterator::find::check<(hk_sim::actors::ActorPlacement, &hk_sim::actors::ActorSpec), <hk_psx::enemies::EnemyWorld>::spec_in::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0} @hk_psx
+o 6f360fe99881bc80 162 800c013c hk_psx::draw_at
+o 97a2d0ef007d3a45 162 800c03c4 hk_psx::frame::save_record
+o 226b204fb475261f 161 800c064c hk_sim::runner::gas_polygon
+o 647fe0b5229adba2 71 800c08d0 hk_psx::render::resident_quad_tinted
+o a58729e449027b15 266 800c09ec compiler_builtins::mem::memmove
+o 01ad0d4cd32f1fe7 204 800c0e14 hk_sim::actors::spawn_separation::range
+o 56f40f3cee53803d 75 800c1144 hk_psx::modules::claim_top
+o 03ffca3a16ad3d92 42 800c1270 <psx_rt::cache::HwBus as psx_rt::cache::Bus>::dma_busy
+o dbef7c5005a641cf 159 800c1318 <hk_psx::world::State>::apply_mask
+o 71783a5cd4e73f80 158 800c1594 <hk_psx::disc::Cache>::split_b_base
+o 6ca2b815cb0648e9 25 800c180c hk_sim::waves::summon_delay
+o b28c6819aa762895 18 800c1870 <psx_pack::WordFnv32>::update_raw
+o fa471544ee7bb304 66 800c18b8 hk_psx::render::quad_words
+o 0845c9a4ae4a47a1 29 800c19c0 psx_rt::cache::spin_until_idle::<psx_rt::cache::HwBus> @psx_rt
+o 1fb985231f8f3b65 19 800c1a34 psx_rt::cache::flush_instruction_cache
+o 21cefd354e893023 279 800c1a80 hk_psx::modules::allocate_in
+o 96b41ed77370e2fb 62 800c1edc hk_psx::modules::pool_has_room
+o 2f7bf2f9562ffc0f 11 800c1fd4 hk_psx::actor_bank::clear
+o bde671fd3bcb5841 157 800c2000 <hk_psx::camera::Camera>::enter_scene
+o e0a45b910b0c3f5d 69 800c2274 <hk_format::Room>::stream_pixels.2206
+o e265ae432e13c8e4 31 800c2388 __psx_rt_flush_i_cache
+o f6b1de138969a364 71 800c2404 hk_psx::modules::flush_instruction_cache_idle
+o 1e9cb4a113852de8 156 800c2520 <hk_psx::props::World>::fling
+o 6838bcc458ad0806 156 800c2790 hk_sim::wire::decode_spec
+o 43249eff24e57422 151 800c2a00 hk_psx::disc::room_drive
+o 285a3149420d01d3 78 800c2c5c <psx_pad::controllers::Slot>::settle::<psx_io::periph::ControllerPort> @hk_psx
+o c79c4cec344b604c 24 800c2d94 hk_psx::actor_persistence::key
+o 6767f9ce27af16db 42 800c2df4 psx_math::int32::mul_div_i32
+o 2cf9dfc3789834c6 119 800c2e9c <core::array::iter::IntoIter<[i32; 2], 4> as core::iter::traits::iterator::Iterator>::min_by_key::<i32, hk_sim::actors::spawn_separation::{closure#0}> @hk_sim
+o b453b328566f12e4 47 800c3078 psx_math::wide_div::rounded_magnitude
+o bb10b9211a5e15ac 150 800c3134 <hk_psx::world::debris::Pool>::publish
+o e1e3781e4a64cfbd 149 800c338c hk_psx::disc::spill_upload
+o 0084345be1c2195c 147 800c35e0 <psx_io::cd::reader::ReaderPause as psx_io::cd::pause::PauseDrive>::status
+o 06cdf8dcbf2bbc03 146 800c382c hk_psx::input::begin_scene_load
+o d6287be942f4c850 146 800c3a74 hk_psx::scene_sfx::play_shared
+o 821bb5a07ae3270f 138 800c3cbc psx_io::cd::try_command_until_complete_inner
+o 6aa3e2eed7ae7fc9 43 800c3ee4 <hk_psx::world::particles::Pool>::spawn_break_at
+o d60bee85db749b16 154 800c3f90 hk_psx::modules::gap_in
+o c4941e46e1ac46b2 109 800c41f8 <hk_sim::runner::Runner>::attack
+o 54c142c40ef04061 107 800c43ac <hk_psx::frame::Game>::carry_ability_art
+o ee4683e12afd7fd6 137 800c4558 hk_psx::disc::cut_music
+o 00ae6088a7356cd5 52 800c477c hk_psx::props::stalactite_dust
+o 9f53613739da45ed 96 800c484c <hk_psx::pickups::World>::enter_scene
+o b48daab4e11e03fe 137 800c49cc hk_psx::dialogue::draw_prompt
+o c8f4ebe07e489d63 131 800c4bf0 <hk_sim::fsm3::Tree>::transition
+o 04457bba191cb560 131 800c4dfc <psx_io::cd::xa::Engine>::begin_read_at::<psx_io::periph::Cd> @psx_io
+o a62d49ff107bb7f4 130 800c5008 hk_psx::charms::publish
+o e6ed0379a6292fd7 130 800c5210 <psx_io::periph::Cd>::command_within
+o 95caf4b314f074b2 130 800c5418 psx_math::wide_div::divrem_wide
+o 1a96597e5f501144 124 800c5620 <psx_mc::Card<hk_psx::save::SlotOne>>::read_dir @hk_psx
+o ac017724ffa155b9 36 800c5810 <hk_psx::camera::Camera>::seat
+o 0956c39f353cf410 129 800c58a0 <psx_mc::fs::DataWriter>::flush_frame::<hk_psx::save::SlotOne> @hk_psx
+o 919551ba885b95c5 129 800c5aa4 <hk_psx::enemies::Actor>::fly_body::<hk_psx::world::terrain::{closure#0}> @hk_psx
+o 5ffcfaeb211c826e 67 800c5ca8 hk_psx::audio::ui_select
+o 99111b2a96f9bc34 5 800c5db4 hk_psx::modules::release_claim
+o 66dee1cd74a98d93 40 800c5dc8 hk_psx::publish_walk_senses
+o 0585d05f957bf1c8 32 800c5e68 <hk_sim::fsm3::Ctx>::bit
+o 56f299b4bc07ab6b 64 800c5ee8 <hk_sim::fsm3::Ctx>::value_of
+o fe637c6b1fe88de2 10 800c5fe8 <hk_sim::fsm3::Ctx>::scratch32
+o f2bdd11f1262b454 36 800c6010 <hk_sim::fsm3::Ctx>::set_bit
+o 89e4305ea2f07eaf 10 800c60a0 <hk_sim::fsm3::Ctx>::scratch16
+o 7b257cd324507542 8 800c60c8 <hk_sim::fsm3::Ctx>::set_scratch16
+o a633cea320d2aaab 247 800c60e8 __psx_rt_exception_handler
+o f175fa328bae719b 8 800c64c4 <hk_sim::fsm3::Ctx>::scratch8
+o 6d15a895e4d04703 32 800c64e4 <hk_sim::fsm3::Ctx>::array
+o 8ebead02c673849b 11 800c6564 <hk_sim::fsm3::Block>::dead
+o 612d4fd80b17f1e6 7 800c6590 <hk_sim::fsm3::Ctx>::set_scratch32
+o be2c809f2420cad1 18 800c65ac <hk_sim::fsm3::Ctx>::bit_of
+o 8e1dd6490c231583 15 800c65f4 <hk_sim::fsm3::Ctx>::event
+o 68a73899d7db4c1f 88 800c6630 __psx_rt_dispatch_tramp
+o 51ad1761f91d0cc6 74 800c6790 hk_psx::disc::tail_service
