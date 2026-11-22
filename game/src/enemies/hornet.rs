@@ -173,7 +173,7 @@ pub fn tick(
         return;
     }
     let damage = cheats.params(crate::VITAL_PARAMS).nail_damage as i32;
-    let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind: nail.kind as u8, damage, facing: player.facing });
+    let strike = (!polygon.is_empty()).then_some(Strike { polygon, kind: nail.kind as u8, damage, facing: nail.facing(player) });
     let input = Input {
         hero: [player.x, player.y],
         hero_body: body,

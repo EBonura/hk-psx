@@ -528,7 +528,7 @@ fn strike_lifeblood(
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     lifeblood::strike(life, scene, &polygon[..source.len()])
 }
@@ -545,7 +545,7 @@ fn strike_great_door(
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     door.strike(scene, &polygon[..source.len()])
 }
@@ -556,7 +556,7 @@ fn nail_bounds(nail: &Nail, player: &Player) -> Option<[i32; 4]> {
     }
     let mut b = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
     for p in NAIL_POLYGONS[nail.kind as usize] {
-        let (x, y) = (player.x - p[0] * player.facing, player.y + p[1]);
+        let (x, y) = (player.x - p[0] * nail.facing(player), player.y + p[1]);
         b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
     }
     Some(b)
@@ -628,7 +628,7 @@ fn strike_chests(
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     pickups.strike(&polygon[..source.len()], body)
 }
@@ -648,13 +648,13 @@ fn strike_props(
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     // `damages_enemy`'s direction: 0 right, 90 up, 180 left, 270 down.
     let direction = match nail.kind {
         2 => props::NailDirection::Up,
         3 => props::NailDirection::Down,
-        _ if player.facing > 0 => props::NailDirection::Right,
+        _ if nail.facing(player) > 0 => props::NailDirection::Right,
         _ => props::NailDirection::Left,
     };
     let strike = props.strike(&polygon[..source.len()], body, direction, |local| {
@@ -679,7 +679,7 @@ fn strike_shade(shade: &mut shade::World, nail: &Nail, player: &Player, damage: 
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     shade.strike(&polygon[..source.len()], damage)
 }
@@ -694,7 +694,7 @@ fn strike_shroom(region: &world::Region, nail: &Nail, player: &mut Player) -> bo
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     for shroom in world::shrooms(region) {
         if hk_sim::polygon_hits_box(&polygon[..source.len()], shroom.bounds) {
@@ -820,7 +820,7 @@ fn strike_totems(scene: usize, nail: &Nail, player: &Player, swing: u32) -> u16 
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     soul_totems::strike(scene, &polygon[..source.len()], swing)
 }
@@ -832,7 +832,7 @@ fn strike_geo(geo: &mut geo::World, scene: usize, nail: &Nail, player: &Player) 
     let mut polygon = [[0; 2]; 16];
     assert!((3..=16).contains(&source.len()));
     for (dst, p) in polygon.iter_mut().zip(source) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
     }
     geo.strike(scene, &polygon[..source.len()], |each| {
         // The scene's rocks, read from its admitted bank one at a time.

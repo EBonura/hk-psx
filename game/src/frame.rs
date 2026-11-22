@@ -614,7 +614,10 @@ pub fn render(
         );
     }
     if let Some(f) = effect_frame {
-        draw_frame(room, f, &game.player, camera, 128);
+        // A wall slash draws SlashEffect mirrored, as its NailSlash.scale is.
+        let mut slash = game.player;
+        slash.facing = game.nail.facing(&game.player);
+        draw_frame(room, f, &slash, camera, 128);
         prims += 1;
     }
     if let Some(i) = ball_frame {
@@ -1606,7 +1609,9 @@ pub fn simulate(
             game.attacks = game.attacks.wrapping_add(1);
             game.geo.begin_attack();
             audio::nail_kind(game.nail.kind);
-            game.thunk.start(game.nail.kind);
+            // DoAttack hands CheckForTerrainThunk the stick's direction, which a
+            // wall slash (kind 0) does not change.
+            game.thunk.start(Nail::direction(vertical, &game.player));
         }
         // `CheckForTerrainThunk`: the swing's box cast, once a tick for 0.12 s, plays the tink off terrain.
         scene_sfx::tick();
@@ -2049,7 +2054,7 @@ pub fn simulate(
                 sides = source.len();
                 for (dst, p) in polygon.iter_mut().zip(source) {
                     *dst = [
-                        game.player.x - p[0] * game.player.facing,
+                        game.player.x - p[0] * game.nail.facing(&game.player),
                         game.player.y + p[1],
                     ];
                 }

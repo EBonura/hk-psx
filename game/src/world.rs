@@ -1314,7 +1314,7 @@ impl State {
         let mut transformed = [[0; 2]; 16];
         let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
         for (dst, src) in transformed.iter_mut().zip(*points) {
-            *dst = [player.x - src[0] * player.facing, player.y + src[1]];
+            *dst = [player.x - src[0] * nail.facing(player), player.y + src[1]];
             bounds[0] = bounds[0].min(dst[0]);
             bounds[1] = bounds[1].min(dst[1]);
             bounds[2] = bounds[2].max(dst[0]);
@@ -1357,7 +1357,7 @@ impl State {
                     }
                     continue;
                 }
-                particles::pool().spawn_break(region.scene, id, nail.kind as u8, player.facing);
+                particles::pool().spawn_break(region.scene, id, nail.kind as u8, nail.facing(player));
                 // `Breakable.Hit`: the nail's impact at the mid-point between it and the object,
                 // and Dust Hit Med there.
                 let ob = object.bounds();
@@ -1379,7 +1379,7 @@ impl State {
                 );
                 if debris_here() {
                     self.debris
-                        .spawn(region.scene, owner_fragments(id), nail.kind as u8, player.facing);
+                        .spawn(region.scene, owner_fragments(id), nail.kind as u8, nail.facing(player));
                 }
                 result.broken += 1;
                 result.last_broken = Some(id);
