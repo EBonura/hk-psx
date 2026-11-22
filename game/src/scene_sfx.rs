@@ -290,12 +290,6 @@ pub fn gate_switch(at: [i32; 2]) {
 pub fn vine_cut(at: [i32; 2]) {
     play_one_of(&[VINE_PLAT_CUT], at, hk_sim::fixed::ACTOR_ROLLOFF);
 }
-/// The scene's terrain boxes and their kind bits (the cook's TERRAIN_BOX rows for `scene`).
-pub fn terrain_boxes(scene: usize) -> (&'static [[i32; 4]], &'static [u8]) {
-    let first = TERRAIN_BOX_SCENE.iter().position(|&s| s as usize == scene).unwrap_or(0);
-    let count = TERRAIN_BOX_SCENE[first..].iter().take_while(|&&s| s as usize == scene).count();
-    (&TERRAIN_BOX[first..first + count], &TERRAIN_BOX_KIND[first..first + count])
-}
 /// Ticks left before a TinkEffect answers again (`repeatDelay`, 0.25 s), one for the port's
 /// TinkEffect surfaces together rather than one per object.
 static mut TINK_WAIT: u8 = 0;

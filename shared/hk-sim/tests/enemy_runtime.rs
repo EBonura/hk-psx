@@ -479,11 +479,8 @@ mod battle_gates {
     pub fn floor() -> u8 {
         FLOOR.with(|f| f.get())
     }
-    pub fn armour_tink_hidden(_: [i32; 4]) -> bool {
-        false
-    }
-    pub fn is_armour_tink(_: [i32; 4]) -> bool {
-        false
+    pub fn armour_tinger(_: [i32; 4]) -> Option<bool> {
+        None
     }
 }
 /// The camera and the SPU, which the boss reaches through two global modules
