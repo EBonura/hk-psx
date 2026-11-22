@@ -104,8 +104,11 @@ pub enum Trim {
 /// ["secret_walls"], ["secret_floors"], ["secret_breaks"] (either,
 /// host/secret_breaks.py), ["chests"], ["shinies"], ["pieces"]
 /// (host/pickups.py), ["stalactites"] (scenes with a stalactite hazard),
-/// ["arena", name, ...] for scenes whose arena the port drives, or
-/// ["family", actor name prefix]. A clip two scenes need is one row
+/// ["arena", name, ...] for scenes whose arena the port drives,
+/// ["family", actor name prefix], ["grass"], ["drips"], ["corpse_smash"],
+/// ["all"] (every scene), ["gate_switches"] (scenes with a `Switch Control`
+/// gate switch) or ["nail_reject"] (scenes with an actor whose block plays
+/// `sword_hit_reject`). A clip two scenes need is one row
 /// naming both. Rates follow the measured share of source energy above the new
 /// Nyquist (hk-audit/audio-census/prices.json).
 #[derive(Clone, PartialEq, Debug)]
@@ -996,6 +999,49 @@ pub const EVENTS: &[Event] = &[
         90,
         None,
     ),
+    // hk-sound PROPOSAL section 5, item 5: the nail's tinks and the lever, late rows after the ones above, so a
+    // tight scene refuses these before any of them. Clips and owners as the install has them (hk-fix 2026-11-22,
+    // read through UnityPy and the Assembly-CSharp IL):
+    // * HeroController.CheckForTerrainThunk (every swing, every room): a hit spawns `nailTerrainImpactEffectPrefab`
+    //   (resources.assets 4719, `Nail Terrain Hit Effect`), whose AudioSource plays `sword_terrain_temp` on awake at
+    //   volume 1, 2D (pan level 0, so no rolloff), pitch 0.75 to 1.25 (`AudioSourcePitchRandomizer`).
+    // * The gate switch's `Switch Control` FSM, `Hit` state (Crossroads_06, Fungus1_22): AudioPlayerOneShotSingle
+    //   of `switch_gate_switch` through the Audio Player Actor (ACTOR_ROLLOFF) at the switch, volume 1, pitch 1.
+    // * A nail blocked by armour: TinkEffect's `blockEffect` and HealthManager.Invincible's `blockHitPrefab` (unless
+    //   `preventInvincibleEffect`) are `Block Hit v2` and `Block Hit` (resources.assets 4957 and 4956), whose
+    //   AudioSource plays `sword_hit_reject` on awake at volume 1 with the actor curve (39 to 47.06 units). The port
+    //   plays it where it models such a block: the Husk Warrior's shield (`Zombie Shield`, preventInvincibleEffect
+    //   0) and the Durandoo's detached `Shell` (`Acid Flyer`, a TinkEffect).
+    ev(
+        "nail_terrain",
+        "resources.assets",
+        1236,
+        "sword_terrain_temp",
+        11025,
+        &["all"],
+        91,
+        None,
+    ),
+    ev(
+        "switch_gate_switch",
+        "sharedassets7.assets",
+        106,
+        "switch_gate_switch",
+        11025,
+        &["gate_switches"],
+        92,
+        None,
+    ),
+    ev(
+        "nail_reject",
+        "resources.assets",
+        1278,
+        "sword_hit_reject",
+        11025,
+        &["nail_reject"],
+        93,
+        None,
+    ),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's. The Husk Guard of Crossroads_21 plays the
@@ -1592,6 +1638,32 @@ fn scene_needs(
         .flatten()
         .copied()
         .collect();
+    // Every scene: the terrain tink can sound wherever the Knight swings.
+    let all: HashSet<i64> = scenes.iter().filter_map(|s| s["scene_id"].as_i64()).collect();
+    // A `Switch Control` gate switch (host/world_links.py): a lever that waits before it opens. A Vine
+    // Platform's cut (no wait) and a Toll Machine (paid, not struck) are not this switch.
+    let gate_switches: HashSet<i64> = regions
+        .iter()
+        .filter(|r| {
+            r["levers"].as_array().into_iter().flatten().any(|l| {
+                l["open_ticks"].as_i64().unwrap_or(0) > 0 && !l["toll"].as_bool().unwrap_or(false)
+            })
+        })
+        .map(scene_of)
+        .collect();
+    // The blocks the port plays `sword_hit_reject` for: the Husk Warrior's shield and the Durandoo's shell.
+    let nail_reject: HashSet<i64> = regions
+        .iter()
+        .filter(|r| {
+            r["actors"].as_array().into_iter().flatten().any(|a| {
+                a.get("movement_supported").is_some_and(|m| m.as_bool().unwrap_or(false))
+                    && ["Zombie Shield", "Acid Flyer"]
+                        .iter()
+                        .any(|f| jstr(a, "name").starts_with(f))
+            })
+        })
+        .map(scene_of)
+        .collect();
     // The Great Door's `Break 1`, `Break 2` and `Break` play `breakable_wall_death` as a secret wall does.
     let door_scenes: HashSet<i64> = regions
         .iter()
@@ -1697,6 +1769,9 @@ fn scene_needs(
             "grass" => grass.clone(),
             "drips" => drips.clone(),
             "corpse_smash" => corpse_smash.clone(),
+            "all" => all.clone(),
+            "gate_switches" => gate_switches.clone(),
+            "nail_reject" => nail_reject.clone(),
             "family" => families.get(kind[1]).cloned().unwrap_or_default(),
             other => return err(format!("unknown scene sound selector {other}")),
         };
@@ -2105,7 +2180,11 @@ fn assemble(
 
 // ---------------------------------------------------------------- output
 
-fn rust(banks: &BTreeMap<i64, Bank>, owners: &BTreeMap<i64, (i64, &'static str)>) -> String {
+fn rust(
+    banks: &BTreeMap<i64, Bank>,
+    owners: &BTreeMap<i64, (i64, &'static str)>,
+    no_thunk: &[(i64, [i64; 4])],
+) -> String {
     let mut lines = vec![
         "// Generated by host/scene_sfx.py: per-scene one-shot banks, read at the scene gate."
             .to_string(),
@@ -2169,7 +2248,62 @@ fn rust(banks: &BTreeMap<i64, Bank>, owners: &BTreeMap<i64, (i64, &'static str)>
             })
             .collect::<String>()
     ));
+    lines.push("/// World boxes (Q16: x0, y0, x1, y1) of the colliders an active NonThunker sits on, by guest scene id:".into());
+    lines.push("/// a terrain edge inside one gives no nail tink (HeroController.CheckForTerrainThunk).".into());
+    lines.push(format!(
+        "pub static NO_THUNK:&[(u8,[i32;4])]=&[{}];",
+        no_thunk
+            .iter()
+            .map(|(scene, b)| format!("({scene},[{},{},{},{}]),", b[0], b[1], b[2], b[3]))
+            .collect::<String>()
+    ));
     lines.join("\n") + "\n"
+}
+
+/// `HeroController.CheckForTerrainThunk` gives no tink off a collider whose GameObject carries an active
+/// `NonThunker` (the King's Pass doors, arena gates, the False Knight's terrain block, chests). Their world
+/// boxes per scene, from the collider shapes on each such object, sorted by scene. A collider the shape reader
+/// does not know (an EdgeCollider2D) or a trigger is left out: a trigger is never terrain.
+fn no_thunk_boxes(source: &Source, scenes: &[J]) -> Result<Vec<(i64, [i64; 4])>> {
+    use crate::common::{collider_polygons, component_records, go_of, q16};
+    use hk_unity::scene::Scene;
+    let mut out = Vec::new();
+    for s in scenes {
+        let id = s["scene_id"].as_i64().ok_or("scene id")?;
+        let sc = Scene::new(source, &jstr(s, "file")).map_err(|e| e.to_string())?;
+        let mut gids: Vec<i64> = sc
+            .objects
+            .iter()
+            .filter(|o| o.typename == "NonThunker")
+            .filter(|o| o.tree.get("active").is_some_and(Value::truthy))
+            .filter_map(|o| go_of(&o.tree))
+            .collect();
+        gids.sort();
+        gids.dedup();
+        let mut boxes = Vec::new();
+        for gid in gids {
+            for (_, kind, tree) in component_records(&sc, gid) {
+                if !matches!(kind, "BoxCollider2D" | "PolygonCollider2D")
+                    || tree.get("m_IsTrigger").is_some_and(Value::truthy)
+                {
+                    continue;
+                }
+                let Ok(polygons) = collider_polygons(&sc, gid, kind, tree) else {
+                    continue;
+                };
+                let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+                for (x, y) in polygons.iter().flatten() {
+                    b = [b[0].min(*x), b[1].min(*y), b[2].max(*x), b[3].max(*y)];
+                }
+                boxes.push([q16(b[0])?, q16(b[1])?, q16(b[2])?, q16(b[3])?]);
+            }
+        }
+        boxes.sort();
+        boxes.dedup();
+        out.extend(boxes.into_iter().map(|b| (id, b)));
+    }
+    out.sort();
+    Ok(out)
 }
 
 fn float_or_null(v: Option<f64>) -> Json {
@@ -2216,7 +2350,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     }
     std::fs::write(
         root.join("data/scene_sfx.rs"),
-        rust(&banks, &break_owners(&report)),
+        rust(&banks, &break_owners(&report), &no_thunk_boxes(source, &scenes)?),
     )
     .map_err(|e| e.to_string())?;
     let mut events = Vec::new();
@@ -2667,9 +2801,10 @@ mod tests {
             free_after: 0,
             fitted: None,
         };
-        let text = rust(&[(0, bank)].into_iter().collect(), &BTreeMap::new());
+        let text = rust(&[(0, bank)].into_iter().collect(), &BTreeMap::new(), &[(3, [1, 2, 3, 4])]);
         let index = EVENTS.iter().position(|e| e.name == "bench_rest").unwrap();
         assert!(text.contains(&format!("({index},64,0,32,4000,{}),", pitch_register(4000))));
+        assert!(text.contains("pub static NO_THUNK:&[(u8,[i32;4])]=&[(3,[1,2,3,4]),];"));
     }
 
     #[test]
