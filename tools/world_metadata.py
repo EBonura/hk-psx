@@ -373,8 +373,10 @@ def encode_scene(scene, rows):
             damage = int(record["damage"])
             if not 1 <= len(record["world_polygons"]) <= 8 or not 0 <= damage < 65536:
                 raise ValueError("hazard outside guest bounds")
+            # Third word: 1 when a TinkEffect on the hazard answers the nail (game/src/world.rs `hazard_tink`).
             add_object("hazard", record, 0xFFFFFFFF, 8, record["bounds"], "world_polygons",
-                       (q(record["position"][0]), damage | (int(damagehero_respawns(record["hazard_type"])) << 16), 0))
+                       (q(record["position"][0]), damage | (int(damagehero_respawns(record["hazard_type"])) << 16),
+                        int(bool(record.get("tink")))))
         for record in row.get("checkpoints", []):
             if record.get("fire_once") or not 1 <= len(record["world_polygons"]) <= 8:
                 raise ValueError("checkpoint outside guest bounds")

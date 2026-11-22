@@ -1060,15 +1060,18 @@ def hazard_sources(sc, bounds=None):
         # switch with it; baked as scenery they hurt at the spawn point all fight.
         if gid in health_gos or any(a in health_gos for a in sc.ancestor_gos(gid)) or not sc.active(gid):
             continue
-        for collider in _colliders(sc, gid, _component_records(sc, gid)):
+        records = _component_records(sc, gid)
+        tink = any(typ == 'TinkEffect' and data.get('m_Enabled') for _, typ, data in records)
+        for collider in _colliders(sc, gid, records):
             if 'bounds' not in collider:
                 continue
             box = collider['bounds']
             if bounds and (box[2] < bounds[0] or box[0] > bounds[2] or box[3] < bounds[1] or box[1] > bounds[3]):
                 continue
+            # A TinkEffect on the hazard (spikes, worms) answers the nail with `sword_hit_reject`.
             result.append({**collider, 'source': sc.sid(sid), 'collider_source': collider['source'], 'name': sc.gos[gid]['m_Name'],
                            'damage': tree['damageDealt'], 'hazard_type': tree['hazardType'],
-                           'position': sc.point(gid)})
+                           'position': sc.point(gid), 'tink': tink})
     if len(result) > 64:
         raise ValueError('hazard region exceeds bounded 64-shape pool')
     return result
