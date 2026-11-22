@@ -2455,7 +2455,20 @@ fn scan(source: &Source, scenes: &[J], report: &J, gate_switches: &HashSet<i64>)
             gids
         };
         let non_thunkers = on("NonThunker", "active");
-        let tinkers = on("TinkEffect", "m_Enabled");
+        // A TinkEffect component, or the `tink_effect` FSM two gates carry instead (Fungus1_22's `Metal Gate`
+        // path 2049, Crossroads_ShamanTemple's `Bone Gate` 2144): its `Blocked Hit` plays the same
+        // `sword_hit_reject` (resources.assets 1278) at pitch 0.85 to 1.15 through the audio actor, and
+        // spawns the same block effect.
+        let mut tinkers = on("TinkEffect", "m_Enabled");
+        tinkers.extend(
+            sc.objects
+                .iter()
+                .filter(|o| o.typename == "PlayMakerFSM")
+                .filter(|o| o.tree.get("fsm").and_then(|f| f.get("name")).and_then(Value::str).as_deref() == Some("tink_effect"))
+                .filter_map(|o| go_of(&o.tree)),
+        );
+        tinkers.sort();
+        tinkers.dedup();
         let name = |gid: i64| sc.go(gid).and_then(|g| str_of(g, "m_Name").ok()).unwrap_or_default();
         let mut boxes: Vec<([i64; 4], u8)> = Vec::new();
         let mut gids: Vec<i64> = non_thunkers.iter().chain(&tinkers).copied().collect();
