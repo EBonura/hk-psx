@@ -34,6 +34,8 @@ env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}",
 env_remove = ["HK_GUEST_FEATURES", "HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
 map = "game.map"
+# Until the batch search lands a stamped game/hk.layout, the ship disc is unplaced; an install refuses without it.
+layout_files = ["game/hk.layout"]
 
 # The route-input twin: what the route tapes replay (validate) and the speed windows measure.
 # It runs last, so the tree's dist/, .hkpsx and build/ hold its artifacts, which validate reads.
