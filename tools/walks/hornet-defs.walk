@@ -27,9 +27,21 @@ def dash_coming $hlive && (($hs == 2 && $age >= 19) || $hs == 3) && $adx < 52428
 def dash_end ($hdx < 0 ? $hx + 373555 : $hx - 373555)
 # She is winding up the needle (48 ticks) and the Knight is inside its reach (7.7 units out and back, a little more with the needle's length).
 def throw_near $hlive && $hs == 35 && $adx < 622592
+# Her air dash: ADash Antic (14, about 26 ticks hovering) takes its aim at the Knight as it starts and keeps it (a Knight who moves during
+# it is not followed), then Fire (17), Firing L/R (18, 19) and A Dash (15, about 19 ticks) run down that line to where he stood; its hit
+# box reaches about 2.7 units from her where she comes down. Standing through it, or leaving at Fire, loses a mask nearly every time.
+# So from the start of the wind-up he runs off the aimed point: away from her when there are 4 units of room behind him, else under her
+# (she hovers high through the wind-up) and on to the far side. The way he faces is the latch: once past the first 8 ticks of the wind-up
+# a Knight facing her keeps going under her and one facing away keeps going away, to the wall at most, so neither run turns back.
+def air_threat $hlive && ($hs == 14 || $hs == 15 || $hs == 17 || $hs == 18 || $hs == 19) && $adx < 786432
+def adash_early $hs == 14 && $age < 8
+def hunder_right $air_threat && $hdx > 0 && (($adash_early && $px < 1376256) || (!$adash_early && i32(HK_PLAYER_FACING) > 0))
+def hunder_left $air_threat && $hdx <= 0 && (($adash_early && $px > 2097152) || (!$adash_early && i32(HK_PLAYER_FACING) < 0))
+def flee_left $air_threat && $hdx > 0 && $px > 1146880 && !$hunder_right
+def flee_right $air_threat && $hdx <= 0 && $px < 2326528 && !$hunder_left
 # Focus: masks missing, SOUL for it (or one under way), on the ground, and no hit box can reach him for the next stretch: the Knight is
 # still invulnerable from a hit and she is not near, or she is throwing from beyond the needle's reach (the throw is 100 ticks in which she stays put).
-def hheal $focus && !$g_dash && !$dash_coming && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504 || (u32(HK_HEALTH) <= 3 && $adx > 327680 && $hcalm && !$dash_coming))
+def hheal $focus && !$g_dash && !$dash_coming && !$air_threat && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504 || (u32(HK_HEALTH) <= 3 && $adx > 327680 && $hcalm && !$dash_coming))
 
 # Vengeful Spirit at her when SOUL is spare (more than a Focus needs), she is calm and 5 to 12 units off at his height, and he faces her: a cast owns him for about 24 ticks.
 def hcast u32(HK_SOUL) >= 66 && u32(HK_WALK_READY) == 1 && $hlive && $level && $adx > 327680 && $adx < 786432 && $hcalm && !$dash_coming && (($hdx > 0 && i32(HK_PLAYER_FACING) > 0) || ($hdx <= 0 && i32(HK_PLAYER_FACING) < 0))
