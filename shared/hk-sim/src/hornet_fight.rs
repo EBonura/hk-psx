@@ -67,7 +67,14 @@ pub enum Effect {
     Shake { average: bool },
     /// The boss died: the corpse tree has been spawned.
     Died,
+    /// The nail struck the thrown needle's `Needle Tink` (a TinkEffect: `sword_hit_reject`), at its box's centre.
+    Tink { at: [i32; 2] },
 }
+
+/// Object 8 is `Needle Tink`, the Needle's child (hk-fsm boss `hornet_inputs`). `Setup and Follow` moves it to the
+/// Needle's parent and has it follow the Needle, which in the tree it does as the Needle's child; `Throw` turns its
+/// collider on and `Throw Recover` and `Stun Start` off.
+const NEEDLE_TINK: u8 = 8;
 
 /// Index into the tree's PlayerData reserve, as cooked (`boss::HORNET_FIELDS`).
 pub mod field {
@@ -324,6 +331,10 @@ impl Fight {
             if struck & (1 << o) != 0 && f as u8 == fight::FSM_ENCOUNTER {
                 self.boss.tree().event(f as u8, fight::EV_ATTACKED);
             }
+        }
+        if struck & (1 << NEEDLE_TINK) != 0 {
+            let b = world_box(&self.boss.world, NEEDLE_TINK);
+            sink(Effect::Tink { at: [b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2] });
         }
         let e = self.boss.world.ent[0];
         if self.phase == Phase::Dying || !e.on(flag::COLLIDER) || !self.boss.world.active_in_hierarchy(0) {
@@ -768,6 +779,15 @@ mod collider_tests {
             assert_eq!(fight::ENTS[h as usize].damage, 1);
             assert!(fight::ENTS[h as usize].box_size[0] > 0);
         }
+    }
+
+    #[test]
+    fn the_needle_tink_is_the_needles_trigger_child() {
+        // `Needle Tink`: a 3.2466 by 0.2511 trigger box under the Needle, its collider off until `Throw`.
+        let e = &fight::ENTS[NEEDLE_TINK as usize];
+        assert_eq!(e.parent, NEEDLE);
+        assert!(e.flags & flag::TRIGGER != 0 && e.flags & flag::COLLIDER == 0);
+        assert_eq!((e.box_size[0] / 64, e.box_size[1] / 64), (3324, 257));
     }
 
     #[test]
