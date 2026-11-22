@@ -101,6 +101,10 @@ pub fn hazard_sources(sc: &Scene, bounds: Option<[f64; 4]>) -> Result<Vec<Json>>
             continue;
         }
         let records = component_records(sc, gid);
+        // A TinkEffect on the hazard (spikes, worms) answers the nail with `sword_hit_reject`.
+        let tink = records
+            .iter()
+            .any(|r| r.1 == "TinkEffect" && r.2.get("m_Enabled").is_some_and(Value::truthy));
         let Json::List(found) = colliders(sc, gid, &records)? else {
             continue;
         };
@@ -129,6 +133,7 @@ pub fn hazard_sources(sc: &Scene, bounds: Option<[f64; 4]>) -> Result<Vec<Json>>
                         crate::music::value_json(get(&o.tree, "hazardType")?),
                     ),
                     ("position", point_json(sc, gid)?),
+                    ("tink", Json::Bool(tink)),
                 ],
             ));
         }
