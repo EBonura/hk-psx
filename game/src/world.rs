@@ -1331,7 +1331,12 @@ impl State {
                 }
                 continue;
             }
-            if !self.broken(id)
+            // A vine platform's cut (flag 16 with no gate delay) answers side slashes only: the
+            // original's `VinePlatformCut.OnTriggerEnter2D` returns for the nail's `direction` in
+            // [45, 135) (up) and [225, 360) (down), so the port's kinds 0 and 1 cut it, 2 and 3 do not.
+            let vine_refuses = flags & 16 != 0 && flags >> 6 == 0 && nail.kind >= 2;
+            if !vine_refuses
+                && !self.broken(id)
                 && overlap(bounds, object.bounds())
                 && object.hit_by(polygon)
                 && self.hit_object(id, flags)
