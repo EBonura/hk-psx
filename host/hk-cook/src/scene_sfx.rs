@@ -2272,6 +2272,13 @@ fn assemble(
 
 // ---------------------------------------------------------------- output
 
+/// `value / unit` for a 16-bit ENTRIES field: twelve bytes a row instead of twenty, which is resident RAM.
+/// SPU addresses are in 8-byte units (the SPU's own), chunk offsets and clip lengths in 16-byte ADPCM blocks.
+fn packed(value: i64, unit: i64) -> u16 {
+    assert!(value % unit == 0, "ENTRIES field {value} is not a multiple of {unit}");
+    u16::try_from(value / unit).expect("ENTRIES field exceeds 16 bits")
+}
+
 fn rust(
     banks: &BTreeMap<i64, Bank>,
     owners: &BTreeMap<i64, (i64, &'static str)>,
@@ -2309,10 +2316,10 @@ fn rust(
             let index = EVENTS.iter().position(|x| x.name == e.event).unwrap();
             entries.push(format!(
                 "({index},{},{},{},{},{}),",
-                e.spu_address,
-                e.offset,
-                e.bytes,
-                e.rate,
+                packed(e.spu_address, 8),
+                packed(e.offset as i64, 16),
+                packed(e.bytes as i64, 16),
+                packed(e.rate, 1),
                 pitch_register(e.rate)
             ));
         }
@@ -2324,10 +2331,10 @@ fn rust(
         rows.concat()
     ));
     lines.push(
-        "/// (event, SPU address, offset in the scene chunk, bytes, rate, pitch register).".into(),
+        "/// (event, SPU address / 8, offset in the scene chunk / 16, bytes / 16, rate, pitch register).".into(),
     );
     lines.push(format!(
-        "pub static ENTRIES:&[(u8,u32,u32,u32,u32,u16)]=&[{}];",
+        "pub static ENTRIES:&[(u8,u16,u16,u16,u16,u16)]=&[{}];",
         entries.concat()
     ));
     lines.push("/// Ordinary Breakables whose break clip is a scene-bank event: (scene * 128 + state, event), sorted.".into());
@@ -3155,7 +3162,8 @@ mod tests {
             &[(8, "switch_gate_gate", 45, [5, 6])],
         );
         let index = EVENTS.iter().position(|e| e.name == "bench_rest").unwrap();
-        assert!(text.contains(&format!("({index},64,0,32,4000,{}),", pitch_register(4000))));
+        // Address in 8-byte units, offset and length in 16-byte blocks.
+        assert!(text.contains(&format!("({index},8,0,2,4000,{}),", pitch_register(4000))));
         assert!(text.contains("pub static TERRAIN_BOX:&[[i32;4]]=&[[1,2,3,4],];"));
         assert!(text.contains("pub static TERRAIN_BOX_SCENE:&[u8]=&[3,];"));
         assert!(text.contains("pub static TERRAIN_BOX_KIND:&[u8]=&[3,];"));
