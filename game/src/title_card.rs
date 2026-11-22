@@ -4,8 +4,9 @@
 //! the current one arms the card; a controller that waits for its trigger
 //! holds it until the Knight is inside that box; then the source's pause (first
 //! visit or later visit) runs and the card fades in, holds and fades out
-//! (AreaTitleController.Finish). The current area is PlayerData `currentArea`,
-//! saved with the game (`persist::CURRENT_AREA`), so a Continue does not announce
+//! (AreaTitleController.Finish). The current area is PlayerData `currentArea`
+//! (the area's AreaTitleController `areaID`, `AREA_IDS`), saved with the game
+//! and also written by the Town's `Area Resetter` FSM, so a Continue does not announce
 //! the area the save was made in again. A sub-area (King's Pass, the shaman
 //! temple) always shows its small card and never becomes the current area, so
 //! coming back out of it announces nothing. `Only On Revisit` controllers stay
@@ -101,9 +102,12 @@ fn state() -> &'static mut State {
 fn visited(title: u8) -> bool {
     persist::get(Kind::Visited, title as usize, 0).is_some()
 }
-/// PlayerData `currentArea`: the title index plus one, 0 for none.
-fn current_area() -> u8 {
-    persist::level(persist::CURRENT_AREA)
+/// PlayerData `currentArea`: an area's `areaID`, which `Finish` compares with.
+fn current_area() -> i32 {
+    crate::player_data::store().get(crate::player_data::CURRENT_AREA)
+}
+fn area_id(title: u8) -> i32 {
+    i32::from(AREA_IDS[title as usize])
 }
 fn show(title: u8, style: Style, delay: u16) {
     let s = state();
@@ -122,7 +126,7 @@ pub fn enter_scene(scene: usize) {
     let s = state();
     s.armed = None;
     if let Some(i) = AREAS.iter().position(|a| a.scene as usize == scene) {
-        if AREAS[i].sub_area || AREAS[i].title + 1 != current_area() {
+        if AREAS[i].sub_area || area_id(AREAS[i].title) != current_area() {
             s.armed = Some(i);
             s.triggered = AREAS[i].trigger.is_none();
             s.wait = if visited(AREAS[i].title) {
@@ -210,10 +214,10 @@ pub fn tick(body: [i32; 4]) {
         return;
     }
     let seen = visited(area.title);
-    if (area.only_on_revisit && !seen) || area.title + 1 == current_area() {
+    if (area.only_on_revisit && !seen) || area_id(area.title) == current_area() {
         return;
     }
-    persist::set_level(persist::CURRENT_AREA, area.title + 1);
+    crate::player_data::store().set(crate::player_data::CURRENT_AREA, area_id(area.title));
     persist::set(Kind::Visited, area.title as usize, 0, 1);
     let style = if seen { Style::Seen } else { Style::Area };
     show(area.title, style, timing(style).0);

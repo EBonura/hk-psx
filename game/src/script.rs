@@ -188,6 +188,8 @@ pub fn tick(scene: usize, body: [i32; 4]) {
             for (slot, &field) in FIELD_MAP.iter().enumerate() {
                 pd.set(field, STORE[slot]);
             }
+            // `openedMapperShop` is HK_WORLD_PLAYER bit 22.
+            crate::persist::publish();
         }
         HK_SCRIPT_ACTIVE = report.active;
         HK_SCRIPT_TRANSITIONS += report.transitions;

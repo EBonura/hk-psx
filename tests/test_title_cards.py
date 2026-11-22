@@ -24,6 +24,11 @@ class TitleCardTests(unittest.TestCase):
         self.assertIn('Area{scene:1,title:0,trigger:Some([0,0,65536,65536]),unvisited_ticks:0,visited_ticks:120,only_on_revisit:false,sub_area:false},', text)
         self.assertIn('only_on_revisit:false,sub_area:true},', text)
         self.assertIn('Area{scene:0,title:1,trigger:None,', text)
+        self.assertIn('pub const AREA_IDS:[u8;3]=[0,0,0];', text)
+        text = title_cards.rust(areas, ['DIRTMOUTH', 'KINGSPASS', 'FALSE_KNIGHT'],
+                                [['', 'Dirtmouth', 'The Fading Town'], ['', "King's Pass", ''], ['', 'False Knight', '']],
+                                {'DIRTMOUTH': 1, 'KINGSPASS': 0})
+        self.assertIn('pub const AREA_IDS:[u8;3]=[1,0,0];', text)
 
 
 if __name__ == '__main__':

@@ -42,18 +42,21 @@ pub const FALSE_KNIGHT_FIRST_PLOP: Field = 1;
 pub const SHAMAN: Field = 24;
 /// Ids below this were `persist`'s PlayerData bits.
 pub const LEGACY_BITS: usize = 32;
-/// `fireballLevel`, then `quakeLevel`, `screamLevel` and the port's area title
-/// (`persist::level`).
+/// `fireballLevel`, then `quakeLevel` and `screamLevel` (`persist::level`).
 pub const FIREBALL_LEVEL: Field = 32;
-/// Id 22, `port.openedMapperShop`, is Cornifer's panel's copy of
-/// `openedMapperShop` (`mapper.rs`); id 39 is the original, which the
-/// Crossroads_06 FSM writes through the script bank. They are one field in the
-/// source; joining them changes `HK_WORLD_PLAYER` bit 22 and `HK_SCRIPT_FLAGS`
-/// on routes, so it is left to a deliberate step (docs/SAVE.md). Likewise id 35,
-/// `port.areaTitle`, is `title_card.rs`'s area (the title index plus one), not
-/// the source's `currentArea` (a map zone, id 37), which the Town's
-/// `Area Resetter` FSM writes. Ids 36 to 42 are bound to the cooked script bank
-/// by name (`script::FIELD_MAP`).
+/// Ids 36 to 42 are bound to the cooked script bank by name
+/// (`script::FIELD_MAP`). Two of them are also written by port code:
+/// `currentArea`, the area's AreaTitleController `areaID`, by the title card
+/// (`title_card.rs`) as the Town's `Area Resetter` FSM writes it; and
+/// `openedMapperShop` by Cornifer's panel (`mapper.rs`) as the Crossroads_06 FSM
+/// does. Until the merge the port kept its own copy of each, at the retired ids
+/// 22 (`HK_WORLD_PLAYER` bit 22, which now publishes `openedMapperShop`) and 35
+/// (the title index plus one); `fold_retired` carries an older record's values
+/// across.
+pub const CURRENT_AREA: Field = 37;
+pub const OPENED_MAPPER_SHOP: Field = 39;
+const RETIRED_MAPPER: Field = 22;
+const RETIRED_AREA_TITLE: Field = 35;
 /// Sly's bools, in the order `data/shop.rs` numbers them (`Flag::Slot`). The
 /// harness checks the names against the cooked `FLAG_NAMES`.
 pub const SHOP_FLAGS: [Field; 12] = [43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54];
@@ -96,7 +99,7 @@ pub const NAMES: [&str; COUNT] = [
     "hasPinBench",
     "metCornifer",
     "corniferIntroduced",
-    "port.openedMapperShop",
+    "port.retired.openedMapperShop",
     "metIselda",
     "shaman",
     "port.retired.shamanHigh",
@@ -109,7 +112,7 @@ pub const NAMES: [&str; COUNT] = [
     "fireballLevel",
     "quakeLevel",
     "screamLevel",
-    "port.areaTitle",
+    "port.retired.areaTitle",
     "seenFocusTablet",
     "currentArea",
     "corn_crossroadsLeft",
@@ -227,7 +230,26 @@ impl PlayerData {
                 bits |= 1 << id;
             }
         }
+        bits |= u32::from(self.flag(OPENED_MAPPER_SHOP)) << RETIRED_MAPPER;
         bits | (self.values[SHAMAN] as u32 & 3) << SHAMAN
+    }
+    /// An older record's copies onto the fields they duplicated: Cornifer's
+    /// `openedMapperShop` bit ORed into the original's, and the title card's area
+    /// (a title index plus one) as that title's `areaID` in `currentArea`, which
+    /// it overrides because it is what the title card last announced.
+    /// `area_ids` is `title_card::AREA_IDS`. Both retired ids read zero after.
+    pub fn fold_retired(&mut self, area_ids: &[u8]) {
+        if self.flag(RETIRED_MAPPER) {
+            self.put(OPENED_MAPPER_SHOP, true);
+        }
+        let title = self.values[RETIRED_AREA_TITLE] as usize;
+        if let Some(&id) = title.checked_sub(1).and_then(|t| area_ids.get(t)) {
+            if id != 0 {
+                self.values[CURRENT_AREA] = i32::from(id);
+            }
+        }
+        self.values[RETIRED_MAPPER] = 0;
+        self.values[RETIRED_AREA_TITLE] = 0;
     }
     /// The bits back onto their fields: every bit its own bool, except 24 and 25,
     /// which are `shaman`'s value.
@@ -394,13 +416,12 @@ const _: () = {
         (p::HAS_PIN_BENCH, "hasPinBench"),
         (p::MET_CORNIFER, "metCornifer"),
         (p::CORNIFER_INTRODUCED, "corniferIntroduced"),
-        (p::OPENED_MAPPER_SHOP, "port.openedMapperShop"),
+        (p::OPENED_MAPPER_SHOP, "openedMapperShop"),
         (p::MET_ISELDA, "metIselda"),
         (p::HORNET_1_DEFEATED, "hornet1Defeated"),
         (FIREBALL_LEVEL as u32 + p::FIREBALL_LEVEL as u32, "fireballLevel"),
         (FIREBALL_LEVEL as u32 + p::QUAKE_LEVEL as u32, "quakeLevel"),
         (FIREBALL_LEVEL as u32 + p::SCREAM_LEVEL as u32, "screamLevel"),
-        (FIREBALL_LEVEL as u32 + p::CURRENT_AREA as u32, "port.areaTitle"),
     ];
     let mut i = 0;
     while i < named.len() {

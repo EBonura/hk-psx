@@ -263,13 +263,19 @@ fn record() -> Save {
         version: 6,
     }
 }
-/// Every field off its default, each to its own value.
+/// Every field a build writes off its default, each to its own value. The
+/// retired ids stay zero: no build writes them, and a load folds them away.
 fn everything() -> PlayerData {
     let mut pd = PlayerData::new();
     for id in 0..COUNT {
-        pd.set(id, (id as i32 + 1) * -7 + 3);
+        if !player_data::NAMES[id].starts_with("port.retired") {
+            pd.set(id, (id as i32 + 1) * -7 + 3);
+        }
     }
     pd
+}
+fn live_fields() -> usize {
+    player_data::NAMES.iter().filter(|n| !n.starts_with("port.retired")).count()
 }
 /// A world with one of every kind, in the store's own order.
 fn world() -> persist::Store {
@@ -315,12 +321,20 @@ fn shop_flag_names() -> Vec<String> {
 const FALSE_KNIGHT_SCENE: usize = 11;
 const STARTING_MASKS: u8 = 5;
 const SOUL_PER_VESSEL: u16 = 33;
-struct Bank { fields: Vec<usize>, fnv: u32 }
+/// `title_card::AREA_IDS` out of the generated table (host/title_cards.py).
+fn area_ids() -> Vec<u8> {
+    let root = std::path::Path::new(file!()).parent().unwrap().parent().unwrap().to_path_buf();
+    let text = std::fs::read_to_string(root.join("data/title_cards.rs")).expect("data/title_cards.rs");
+    let ids = text.split("pub const AREA_IDS:").nth(1).expect("AREA_IDS: run host/title_cards.py")
+        .split("=[").nth(1).unwrap().split(']').next().unwrap();
+    ids.split(',').map(|n| n.parse().unwrap()).collect()
+}
+struct Bank { fields: Vec<usize>, names: Vec<String>, fnv: u32, area_ids: Vec<u8> }
 fn bank() -> Bank {
     let (names, fnv) = cooked_bank();
     let fields = names.iter().map(|n| player_data::find(n)).collect::<Vec<_>>();
     assert!(fields.iter().all(|&f| f < COUNT), "a cooked script field has no player_data row: {names:?}");
-    Bank { fields, fnv }
+    Bank { fields, names, fnv, area_ids: area_ids() }
 }
 fn build(bank: &Bank) -> Build<'_> {
     Build {
@@ -329,6 +343,7 @@ fn build(bank: &Bank) -> Build<'_> {
         false_knight_scene: Some(FALSE_KNIGHT_SCENE),
         starting_masks: STARTING_MASKS,
         soul_per_vessel: SOUL_PER_VESSEL,
+        area_ids: &bank.area_ids,
     }
 }
 /// A record through the HKS6 loader: decode, then migrate into fresh stores.
@@ -374,7 +389,7 @@ fn every_field_survives_the_round_trip() {
     let pd = everything();
     let store = world();
     let bytes = encode(&save, &pd, store.items());
-    assert_eq!(bytes.len(), LEN + COUNT * 6 + store.items().len() * 4);
+    assert_eq!(bytes.len(), LEN + live_fields() * 6 + store.items().len() * 4);
     let (back, loaded, items, restored) = load(&bytes, &bank()).expect("a record this module just wrote must decode");
     assert_eq!(back.scene, save.scene);
     assert_eq!(back.seat, save.seat);
@@ -401,9 +416,20 @@ fn a_new_game_is_the_shortest_record_and_the_longest_fits_the_buffer() {
         assert!(full.set(Kind::Breakable, 1, local, 1));
     }
     let bytes = encode(&record(), &everything(), full.items());
-    assert_eq!(bytes.len(), MAX_LEN);
+    assert_eq!(bytes.len(), MAX_LEN - (COUNT - live_fields()) * 6);
     let (_, pd, store, _) = load(&bytes, &bank()).unwrap();
     assert_eq!((pd, store.items().len()), (everything(), persist::MAX_ITEMS));
+    // The longest any build could have written: an HKS6 record from before the
+    // merge, with the retired ids set too. It fits, and loads folded.
+    let mut all = everything();
+    for id in 0..COUNT {
+        all.set(id, (id as i32 + 1) * -7 + 3);
+    }
+    let bytes = encode(&record(), &all, full.items());
+    assert_eq!(bytes.len(), MAX_LEN);
+    let (_, pd, _, _) = load(&bytes, &bank()).unwrap();
+    assert_eq!(pd.get(player_data::find("port.retired.openedMapperShop")), 0);
+    assert_eq!(pd.get(player_data::find("port.retired.areaTitle")), 0);
     // The psx-mc container ahead of the payload is 16 bytes, and a file owns
     // one 8,192-byte block whose first two frames are its title and icon.
     assert!(16 + MAX_LEN <= 8192 - 256);
@@ -417,12 +443,13 @@ fn a_field_the_record_does_not_mention_reads_as_its_default_and_no_other_moves()
     // identity check could never do (one new field reset all of them).
     let pd = everything();
     let bytes = encode(&record(), &pd, &[]);
-    for id in 0..COUNT {
+    let live = live_fields();
+    for entry in 0..live {
         let mut older = bytes.clone();
-        let at = 54 + id * 6;
-        assert_eq!(u16::from_le_bytes([older[at], older[at + 1]]) as usize, id);
+        let at = 54 + entry * 6;
+        let id = u16::from_le_bytes([older[at], older[at + 1]]) as usize;
         older.drain(at..at + 6);
-        let count = (COUNT - 1) as u16;
+        let count = (live - 1) as u16;
         older[52..54].copy_from_slice(&count.to_le_bytes());
         fix(&mut older);
         let (_, back, _, _) = load(&older, &bank()).expect("a record missing a field still loads");
@@ -705,16 +732,52 @@ fn new_boot(bytes: &[u8], bank: &Bank) -> Option<(Booted, PlayerData, persist::S
     assert_eq!(restored.items, store.items().len());
     Some((booted, pd, store))
 }
+/// The one deliberate difference from the HKS5 guest: the two fields the port
+/// kept apart from the source's are merged. `openedMapperShop` is the script's
+/// value or Cornifer's bit 22, and `HK_WORLD_PLAYER` bit 22 then reads it; the
+/// title card's area (HKS5 level 3, a title index plus one) becomes that area's
+/// `areaID` in `currentArea` and stops being a level. Returns the HKS5 state
+/// with that applied, and the names of what it changed.
+fn merged(old: &Booted, bank: &Bank) -> (Booted, Vec<String>) {
+    let mut b = Booted { scripts: old.scripts.clone(), items: old.items.clone(), shop: old.shop, ..*old };
+    let slot = |name: &str| bank.names.iter().position(|n| n == name);
+    let mut changed = Vec::new();
+    if let Some(om) = slot("openedMapperShop") {
+        if b.scripts[om] == 0 && b.player_bits >> 22 & 1 != 0 {
+            b.scripts[om] = 1;
+            changed.push("openedMapperShop 0 -> 1 (Cornifer's bit 22)".to_string());
+        }
+        if b.scripts[om] != 0 && b.player_bits >> 22 & 1 == 0 {
+            b.player_bits |= 1 << 22;
+            changed.push("HK_WORLD_PLAYER bit 22 0 -> 1 (the script's openedMapperShop)".to_string());
+        }
+    }
+    let title = b.levels[3] as usize;
+    if let (Some(ca), Some(&id)) = (slot("currentArea"), title.checked_sub(1).and_then(|t| bank.area_ids.get(t))) {
+        if id != 0 && b.scripts[ca] != i32::from(id) {
+            changed.push(format!("currentArea {} -> {id} (title card area {})", b.scripts[ca], title - 1));
+            b.scripts[ca] = i32::from(id);
+        }
+    }
+    if b.levels[3] != 0 {
+        changed.push(format!("port.areaTitle {} -> retired", b.levels[3]));
+        b.levels[3] = 0;
+    }
+    (b, changed)
+}
 /// Both readers on one record, and the HKS6 record the next bench writes from
-/// what was loaded, which must load back to the same stores.
-fn same_state_both_ways(bytes: &[u8], bank: &Bank, what: &str) {
-    let want = old_boot(bytes, bank).unwrap_or_else(|| panic!("{what}: the HKS5 reader refuses it"));
+/// what was loaded, which must load back to the same stores. Returns what the
+/// merge changed against the HKS5 guest; nothing else may differ.
+fn same_state_both_ways(bytes: &[u8], bank: &Bank, what: &str) -> Vec<String> {
+    let old = old_boot(bytes, bank).unwrap_or_else(|| panic!("{what}: the HKS5 reader refuses it"));
+    let (want, changed) = merged(&old, bank);
     let (got, pd, store) = new_boot(bytes, bank).unwrap_or_else(|| panic!("{what}: HKS6 refuses it"));
     assert_eq!(got, want, "{what}");
     let (save, _, _) = Save::decode(bytes).unwrap();
     let again = encode(&save, &pd, store.items());
     let (_, pd2, store2, _) = load(&again, bank).unwrap();
     assert_eq!((pd2, store2.items()), (pd, store.items()), "{what}: the HKS6 resave");
+    changed
 }
 
 fn old_record(version: u8) -> old::Save {
@@ -808,6 +871,19 @@ fn card_records(image: &[u8]) -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// What the merge changes in the committed fixtures, and nothing else: the two
+/// copies of fungus1-31-bench.mcd, the only fixtures written after the script
+/// bank named these fields. (Title indices: 0 Crossroads, areaID 2; 2
+/// Greenpath, areaID 3.)
+const MERGE_CHANGES: &[&str] = &[
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX01: HK_WORLD_PLAYER bit 22 0 -> 1 (the script's openedMapperShop)",
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX01: currentArea -1 -> 3 (title card area 2)",
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX01: port.areaTitle 3 -> retired",
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX00: HK_WORLD_PLAYER bit 22 0 -> 1 (the script's openedMapperShop)",
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX00: currentArea -1 -> 2 (title card area 0)",
+    "fungus1-31-bench.mcd BASLUS-00000HKPSX00: port.areaTitle 1 -> retired",
+];
+
 #[test]
 fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
     // tools/cards/*.mcd are what the test walks boot from, written by the HKS4
@@ -820,6 +896,7 @@ fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
         .filter(|p| p.extension().is_some_and(|e| e == "mcd")).collect();
     cards.sort();
     let (mut records, mut versions, mut taken) = (0, [0; 7], 0);
+    let mut changes = Vec::new();
     for card in &cards {
         let image = std::fs::read(card).unwrap();
         for (name, payload) in card_records(&image) {
@@ -827,7 +904,9 @@ fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
             if !name.starts_with("BASLUS-00000HKPSX") || name.ends_with("MS") {
                 continue;
             }
-            same_state_both_ways(&payload, &bank, &what);
+            for change in same_state_both_ways(&payload, &bank, &what) {
+                changes.push(format!("{what}: {change}"));
+            }
             let (save, _, _) = Save::decode(&payload).unwrap();
             versions[save.version as usize] += 1;
             taken += usize::from(new_boot(&payload, &bank).unwrap().0.scripts_taken);
@@ -838,6 +917,12 @@ fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
         cards.len(), versions[4], versions[5]);
     assert!(cards.len() >= 50 && records >= cards.len());
     assert!(versions[4] > 0 && versions[5] > 0, "both older formats are covered");
+    // Every fixture field the openedMapperShop and currentArea merge changes.
+    // Nothing else may differ from the HKS5 guest (same_state_both_ways).
+    for change in &changes {
+        eprintln!("merge: {change}");
+    }
+    assert_eq!(changes, MERGE_CHANGES);
 }
 
 #[test]
