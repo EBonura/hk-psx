@@ -56,6 +56,39 @@ pub enum Effect {
         combo: u16,
         combo_charm: u8,
     },
+    /// Quick Focus: `Set Focus Speed` takes `Time Per MP Drain CH` (microseconds).
+    FocusDrain(u16),
+    /// Deep Focus: `Deep Focus Speed` multiplies the drain time after Quick
+    /// Focus has set it, and `Set HP Amount` heals `heal` masks.
+    DeepFocus {
+        numerator: u16,
+        denominator: u16,
+        heal: u16,
+    },
+    /// Steady Body: `RecoilLeft`/`RecoilRight` return early, so a nail hit
+    /// recoils for this many ticks (none).
+    NailRecoil(u16),
+    /// Shaman Stone: Vengeful Spirit's `Fireball Control` `Set Damage` writes
+    /// the charmed damage and scales the ball, which scales its collider.
+    Fireball {
+        damage: u16,
+        x: (u16, u16),
+        y: (u16, u16),
+    },
+    /// Dashmaster: `HeroDash` arms `DASH_COOLDOWN_CH` (ticks).
+    DashCooldown(u16),
+    /// Quick Slash: `Attack` and `DoAttack` take `ATTACK_DURATION_CH` and
+    /// `ATTACK_COOLDOWN_TIME_CH` (ticks).
+    AttackTiming { duration: u16, cooldown: u16 },
+    /// Spell Twister: `Set Spell Cost` writes `MP Cost`.
+    SpellCost(u16),
+    /// Sprintmaster: `Move` on the ground runs at `RUN_SPEED_CH`, or at
+    /// `RUN_SPEED_CH_COMBO` with `combo_charm` (Dashmaster) worn too (Q16).
+    RunSpeed {
+        alone: i32,
+        combo: i32,
+        combo_charm: u8,
+    },
 }
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/charms.rs"));
 
@@ -358,6 +391,47 @@ fn compose(s: &State, mut p: HeroParams) -> HeroParams {
                 denominator,
             } => {
                 v.nail_damage = v.nail_damage.saturating_mul(numerator) / denominator;
+            }
+            // Charm order puts Quick Focus (7) before Deep Focus (34), the
+            // order `Set Focus Speed` and `Deep Focus Speed` run in.
+            Effect::FocusDrain(us) => p.focus.drain_interval_us = us,
+            Effect::DeepFocus {
+                numerator,
+                denominator,
+                heal,
+            } => {
+                let us = u32::from(p.focus.drain_interval_us) * u32::from(numerator)
+                    / u32::from(denominator);
+                p.focus.drain_interval_us = us.min(u32::from(u16::MAX)) as u16;
+                p.focus.heal_amount = heal;
+            }
+            Effect::NailRecoil(ticks) => p.nail_response.recoil_ticks = ticks,
+            Effect::Fireball { damage, x, y } => {
+                p.fireball.damage = damage;
+                let b = &mut p.fireball.bounds;
+                for i in [0, 2] {
+                    b[i] = b[i] * i32::from(x.0) / i32::from(x.1);
+                }
+                for i in [1, 3] {
+                    b[i] = b[i] * i32::from(y.0) / i32::from(y.1);
+                }
+            }
+            Effect::DashCooldown(ticks) => p.dash_cooldown_ticks = ticks,
+            Effect::AttackTiming { duration, cooldown } => {
+                p.attack.duration = duration;
+                p.attack.cooldown = cooldown;
+            }
+            Effect::SpellCost(cost) => p.fireball.cost = cost,
+            Effect::RunSpeed {
+                alone,
+                combo,
+                combo_charm,
+            } => {
+                p.ground_speed = if s.equipped(combo_charm as usize) {
+                    combo
+                } else {
+                    alone
+                };
             }
             Effect::None | Effect::SoulOnDamage { .. } => {}
         }
@@ -789,6 +863,14 @@ mod tests {
     const SOUL_EATER: usize = 21;
     const FRAGILE_HEART: usize = 23;
     const FRAGILE_STRENGTH: usize = 25;
+    const QUICK_FOCUS: usize = 7;
+    const STEADY_BODY: usize = 14;
+    const SHAMAN_STONE: usize = 19;
+    const DASHMASTER: usize = 31;
+    const QUICK_SLASH: usize = 32;
+    const SPELL_TWISTER: usize = 33;
+    const DEEP_FOCUS: usize = 34;
+    const SPRINTMASTER: usize = 37;
     /// The cooked hero record with the vitals above, so the vital asserts do
     /// not move with a recook.
     fn hero_base() -> HeroParams {
@@ -814,6 +896,14 @@ mod tests {
         assert_eq!(State::charm(SOUL_EATER).name, "Soul Eater");
         assert_eq!(State::charm(FRAGILE_HEART).name, "Fragile Heart");
         assert_eq!(State::charm(FRAGILE_STRENGTH).name, "Fragile Strength");
+        assert_eq!(State::charm(QUICK_FOCUS).name, "Quick Focus");
+        assert_eq!(State::charm(STEADY_BODY).name, "Steady Body");
+        assert_eq!(State::charm(SHAMAN_STONE).name, "Shaman Stone");
+        assert_eq!(State::charm(DASHMASTER).name, "Dashmaster");
+        assert_eq!(State::charm(QUICK_SLASH).name, "Quick Slash");
+        assert_eq!(State::charm(SPELL_TWISTER).name, "Spell Twister");
+        assert_eq!(State::charm(DEEP_FOCUS).name, "Deep Focus");
+        assert_eq!(State::charm(SPRINTMASTER).name, "Sprintmaster");
         assert!(State::charm(FRAGILE_HEART).fragile && State::charm(FRAGILE_STRENGTH).fragile);
         assert!(State::charm(36).bound);
         // Every charm is drawable with the guest's ASCII glyph strip.
@@ -948,6 +1038,58 @@ mod tests {
         assert_eq!(p.max_health, 5 + 2);
         // (int)(5 * 1.5f) truncates to 7.
         assert_eq!(p.nail_damage, 7);
+    }
+    #[test]
+    fn the_numeric_charms_set_the_source_values() {
+        let base = hero_base();
+        let mut s = owning(&[
+            QUICK_FOCUS,
+            STEADY_BODY,
+            SHAMAN_STONE,
+            DASHMASTER,
+            QUICK_SLASH,
+            SPELL_TWISTER,
+            SPRINTMASTER,
+            DEEP_FOCUS,
+        ]);
+        s.notches = 20;
+        let worn = |s: &mut State, charms: &[usize]| {
+            s.equipped = psx_math::Mask64::EMPTY;
+            for &c in charms {
+                assert_eq!(s.toggle(c), Ok(true), "charm {c}");
+            }
+            compose(s, base)
+        };
+        // Nothing worn is the cooked record.
+        let p = worn(&mut s, &[]);
+        assert_eq!(p.focus.drain_interval_us, base.focus.drain_interval_us);
+        assert_eq!(p.ground_speed, base.ground_speed);
+        // `Time Per MP Drain CH` 0.018 s.
+        assert_eq!(worn(&mut s, &[QUICK_FOCUS]).focus.drain_interval_us, 18_000);
+        // `RecoilLeft`/`RecoilRight` return before arming the recoil.
+        assert_eq!(worn(&mut s, &[STEADY_BODY]).nail_response.recoil_ticks, 0);
+        // `Fireball Control` `Set Damage`: 20 damage, scale 1.3 by 1.6.
+        let f = worn(&mut s, &[SHAMAN_STONE]).fireball;
+        assert_eq!(f.damage, 20);
+        assert_eq!(f.bounds[2], base.fireball.bounds[2] * 13 / 10);
+        assert_eq!(f.bounds[3], base.fireball.bounds[3] * 8 / 5);
+        // DASH_COOLDOWN_CH 0.4 s, ATTACK_DURATION_CH 0.28 s, ATTACK_COOLDOWN_TIME_CH 0.25 s.
+        assert_eq!(worn(&mut s, &[DASHMASTER]).dash_cooldown_ticks, 24);
+        let a = worn(&mut s, &[QUICK_SLASH]).attack;
+        assert_eq!((a.duration, a.cooldown), (17, 15));
+        // `Set Spell Cost`'s `Mage` state.
+        assert_eq!(worn(&mut s, &[SPELL_TWISTER]).fireball.cost, 24);
+        // RUN_SPEED_CH 10 alone, RUN_SPEED_CH_COMBO 11.5 with Dashmaster.
+        assert_eq!(worn(&mut s, &[SPRINTMASTER]).ground_speed, 10 * 65536);
+        assert_eq!(
+            worn(&mut s, &[SPRINTMASTER, DASHMASTER]).ground_speed,
+            23 * 32768
+        );
+        // Deep Focus multiplies whatever drain Quick Focus left: 0.018 s * 1.65,
+        // or `Time Per MP Drain UnCH` 0.027 s * 1.65 alone, and heals two masks.
+        let p = worn(&mut s, &[QUICK_FOCUS, DEEP_FOCUS]).focus;
+        assert_eq!((p.drain_interval_us, p.heal_amount), (29_700, 2));
+        assert_eq!(worn(&mut s, &[DEEP_FOCUS]).focus.drain_interval_us, 44_550);
     }
     #[test]
     fn grubsong_charges_soul_on_a_hit_that_landed() {

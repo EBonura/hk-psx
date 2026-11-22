@@ -23,7 +23,11 @@ The effects come from the assembly and from the two FSMs that own a number:
 `HeroController::CharmUpdate` (23 raises maxHealth by 2), the serialized
 HeroController constants (`INVUL_TIME_STAL`, `RECOIL_DURATION_STAL`,
 `GRUB_SOUL_MP`), `Set Slash Damage` (25 multiplies nail damage by 1.5) and
-`Fury` (6 multiplies by 1.75 at one mask). A charm whose effect none of these
+`Fury` (6 multiplies by 1.75 at one mask). The parameter charms (7, 14, 19,
+31 to 34, 37) are read from the readers that swap in a charmed value:
+HeroController's `Move`, `HeroDash`, `Attack`, `DoAttack` and `RecoilLeft`/
+`RecoilRight`, `Spell Control`'s focus states, `Set Spell Cost` and Vengeful
+Spirit's `Fireball Control`. A charm whose effect none of these
 express is cooked as `Effect::None`, and the guest refuses to equip it rather
 than pretending it does something; `unimplemented` in the report says why for
 each one.
@@ -438,6 +442,158 @@ def grubsong(bodies, constants):
     return {'alone': alone, 'combo': combo, 'combo_charm': 35}
 
 
+def _charm_reads(body):
+    """The `equippedCharm_N` ids a method body reads, in order."""
+    return [int(m.group(1)) for op, operand in body if op == 'ldfld' and isinstance(operand, str)
+            for m in [re.fullmatch(r'equippedCharm_(\d+)', operand)] if m]
+
+
+def _field_after_charm(body, charm, fields):
+    """The first of `fields` a body loads after it tests `equippedCharm_<charm>`."""
+    start = next(i for i, (op, operand) in enumerate(body)
+                 if op == 'ldfld' and operand == f'equippedCharm_{charm}')
+    return next(operand for op, operand in body[start:] if op == 'ldfld' and operand in fields)
+
+
+def movement_charms(bodies, constants):
+    """Sprintmaster, Dashmaster and Quick Slash: HeroController constants each
+    reader swaps in when it finds the charm worn.
+
+    `Move` tests 37, then onGround, then 31 for `RUN_SPEED_CH_COMBO`, and
+    falls back to 37 alone for `RUN_SPEED_CH`; in the air it always runs at
+    `RUN_SPEED`. `HeroDash` arms `DASH_COOLDOWN_CH` with 31 (its other read of
+    31 is the down dash, which the port has no state for). `Attack` and
+    `DoAttack` take `ATTACK_DURATION_CH` and `ATTACK_COOLDOWN_TIME_CH` with 32.
+    Ticks follow the base cook: `round` for the dash cooldown (host/cook.py)
+    and `ticks` for the attack (host/combat.py), so a charm and its base can
+    never disagree by a rounding rule.
+    """
+    move = bodies[('HeroController', 'Move')]
+    assert _charm_reads(move) == [37, 31, 37], f'Move now reads {_charm_reads(move)}'
+    speeds = [operand for op, operand in move if op == 'ldfld' and operand in
+              ('RUN_SPEED', 'RUN_SPEED_CH', 'RUN_SPEED_CH_COMBO')]
+    assert speeds == ['RUN_SPEED_CH_COMBO', 'RUN_SPEED_CH', 'RUN_SPEED'], f'Move speeds {speeds}'
+    on_ground = [i for i, (op, operand) in enumerate(move) if operand == 'onGround']
+    first_37 = next(i for i, (op, operand) in enumerate(move) if operand == 'equippedCharm_37')
+    assert any(i > first_37 for i in on_ground), 'Sprintmaster no longer needs the ground'
+    dash = bodies[('HeroController', 'HeroDash')]
+    assert 31 in _charm_reads(dash)
+    cooldowns = [operand for op, operand in dash if op == 'ldfld' and operand in ('DASH_COOLDOWN', 'DASH_COOLDOWN_CH')]
+    assert cooldowns == ['DASH_COOLDOWN_CH', 'DASH_COOLDOWN'], f'HeroDash cooldowns {cooldowns}'
+    assert _field_after_charm(bodies[('HeroController', 'Attack')], 32,
+                              ('ATTACK_DURATION', 'ATTACK_DURATION_CH')) == 'ATTACK_DURATION_CH'
+    assert _field_after_charm(bodies[('HeroController', 'DoAttack')], 32,
+                              ('ATTACK_COOLDOWN_TIME', 'ATTACK_COOLDOWN_TIME_CH')) == 'ATTACK_COOLDOWN_TIME_CH'
+    for name in ('RUN_SPEED_CH', 'RUN_SPEED_CH_COMBO', 'DASH_COOLDOWN_CH', 'ATTACK_DURATION_CH',
+                 'ATTACK_COOLDOWN_TIME_CH'):
+        assert math.isfinite(constants[name]) and constants[name] > 0, f'invalid {name}'
+    assert constants['RUN_SPEED'] < constants['RUN_SPEED_CH'] < constants['RUN_SPEED_CH_COMBO']
+    assert constants['DASH_COOLDOWN_CH'] < constants['DASH_COOLDOWN']
+    return {
+        'sprintmaster': {'alone': round(constants['RUN_SPEED_CH'] * 65536),
+                         'combo': round(constants['RUN_SPEED_CH_COMBO'] * 65536), 'combo_charm': 31,
+                         'units_per_second': [constants['RUN_SPEED_CH'], constants['RUN_SPEED_CH_COMBO']]},
+        'dashmaster_cooldown_ticks': round(constants['DASH_COOLDOWN_CH'] * 60),
+        'quick_slash': {'duration': ticks(constants['ATTACK_DURATION_CH']),
+                        'cooldown': ticks(constants['ATTACK_COOLDOWN_TIME_CH'])},
+    }
+
+
+def steady_body(bodies):
+    """Charm 14: `RecoilLeft` and `RecoilRight` return before arming a recoil.
+
+    Their only charm read is 14, on the early-return chain ahead of
+    `recoilingLeft`/`recoilingRight` being set, so the nail recoil is zero ticks.
+    """
+    for side in ('RecoilLeft', 'RecoilRight'):
+        body = bodies[('HeroController', side)]
+        assert _charm_reads(body) == [14], f'{side} now reads {_charm_reads(body)}'
+        test = next(i for i, (op, operand) in enumerate(body) if operand == 'equippedCharm_14')
+        assert body[test + 1][0].startswith('brtrue'), f'{side} no longer skips on charm 14'
+    return 0
+
+
+def focus_charms(source):
+    """Quick Focus and Deep Focus from `Spell Control`, the FSM host/focus.py
+    already cooks the base drain from.
+
+    `Set Focus Speed` sets `Time Per MP Drain` to the UnCH value and, with 7,
+    to the CH value; `Deep Focus Speed` then multiplies it with 34; `Set HP
+    Amount` heals 1, or 2 with 34.
+    """
+    from superdash import _fsm
+    from focus import fsm_variables
+    fsm = _fsm(source, 'Spell Control')
+    states = _states(fsm)
+    variables = fsm_variables(fsm)
+    quick = _actions(states['Set Focus Speed'], 'SetFloatValue')
+    assert [_named(a['floatValue']) for a in quick] == ['Time Per MP Drain UnCH', 'Time Per MP Drain CH']
+    gate = _actions(states['Set Focus Speed'], 'PlayerDataBoolTest')
+    assert len(gate) == 1 and _named(gate[0]['boolName']) == 'equippedCharm_7' and gate[0]['isFalse'] == 'FINISHED'
+    deep = states['Deep Focus Speed']
+    gate = _actions(deep, 'PlayerDataBoolTest')
+    assert len(gate) == 1 and _named(gate[0]['boolName']) == 'equippedCharm_34' and gate[0]['isFalse'] == 'FINISHED'
+    multiply = _actions(deep, 'FloatMultiply')
+    assert len(multiply) == 1 and _named(multiply[0]['floatVariable']) == 'Time Per MP Drain'
+    heal = states['Set HP Amount']
+    gate = _actions(heal, 'PlayerDataBoolTest')
+    assert len(gate) == 1 and _named(gate[0]['boolName']) == 'equippedCharm_34' and gate[0]['isFalse'] == 'FINISHED'
+    heals = [_plain(a['intValue']) for a in _actions(heal, 'SetIntValue')]
+    assert len(heals) == 2 and heals[0] == 1, f'Set HP Amount writes {heals}'
+    numerator, denominator = _ratio(_plain(multiply[0]['multiplyBy']))
+    drain = variables['Time Per MP Drain CH']
+    return {
+        'quick_focus_drain_us': round(drain * 1_000_000), 'quick_focus_seconds': drain,
+        'deep_focus': {'numerator': numerator, 'denominator': denominator, 'heal': heals[1],
+                       'multiplier': _plain(multiply[0]['multiplyBy'])},
+    }
+
+
+def spell_twister(source):
+    """Charm 33: `Set Spell Cost` writes `Spell Control`'s `MP Cost`."""
+    _, fsm = _fsm_named(source, 'Set Spell Cost')
+    states = _states(fsm)
+    gate = _actions(states['Check'], 'PlayerDataBoolTest')
+    assert len(gate) == 1 and _named(gate[0]['boolName']) == 'equippedCharm_33' \
+        and gate[0]['isTrue'] == 'MAGE', 'Set Spell Cost no longer branches on charm 33'
+    costs = {}
+    for state in ('Normal', 'Mage'):
+        write = _actions(states[state], 'SetFsmInt')
+        assert len(write) == 1 and _named(write[0]['fsmName']) == 'Spell Control' \
+            and _named(write[0]['variableName']) == 'MP Cost', f'{state} no longer writes MP Cost'
+        costs[state] = _plain(write[0]['setValue'])
+    assert costs['Mage'] < costs['Normal'], f'Spell Twister costs {costs}'
+    return costs['Mage']
+
+
+def shaman_stone(source):
+    """Charm 19 on Vengeful Spirit: the ball's `Fireball Control` `Set Damage`.
+
+    Found the way host/spells.py finds the base: `Spell Control`'s `Fireball 1`
+    spawns `Fireball Top`, whose `Fireball Cast` spawns `Fireball`. With 19 the
+    state writes the second `damageDealt` and sets the scale, which scales the
+    BoxCollider2D's offset and size alike, so the guest scales the cooked box.
+    """
+    from spells import _fsm_on, _named_child
+    from superdash import _fsm
+    file = source.file('resources.assets')
+    control = _states(_fsm(source, 'Spell Control'))
+    caster = _named_child(source, file, control['Fireball 1'], 'Fireball Top')
+    cast = _states(_fsm_on(source, file, caster, 'Fireball Cast'))
+    ball = _named_child(source, file, cast['Cast Right'], 'Fireball')
+    state = _states(_fsm_on(source, file, ball, 'Fireball Control'))['Set Damage']
+    gate = _actions(state, 'PlayerDataBoolTest')
+    assert len(gate) == 1 and _named(gate[0]['boolName']) == 'equippedCharm_19' and gate[0]['isFalse'] == 'FINISHED'
+    damages = [_plain(a['setValue']) for a in _actions(state, 'SetFsmInt')
+               if _named(a['variableName']) == 'damageDealt']
+    assert len(damages) == 2 and damages[1] > damages[0], f'Set Damage writes {damages}'
+    scales = [(_plain(a['x']), _plain(a['y'])) for a in _actions(state, 'SetScale')]
+    assert len(scales) == 2 and scales[0] == (1.0, 1.0), f'Set Damage scales {scales}'
+    x, y = scales[1]
+    return {'damage': damages[1], 'base_damage': damages[0], 'scale': [x, y],
+            'x': _ratio(x), 'y': _ratio(y)}
+
+
 # Why each charm the cook cannot express is left unequippable. Every entry names
 # the port system that is missing, not the charm's flavour.
 UNIMPLEMENTED = {
@@ -445,20 +601,19 @@ UNIMPLEMENTED = {
     2: 'no map or compass system in the port',
     5: 'no Baldur Shell actor, and Focus has no absorbing shell state',
     6: 'the 1.75 multiplier is chosen per swing against live health, which the '
-       'VitalParams composition point cannot see',
-    7: 'Focus already cooks only the un-charmed drain rate (Time Per MP Drain UnCH)',
+       'HeroParams composition point cannot see',
     8: 'Lifeblood masks are granted by lifeblood.rs cocoons, not by a bench charm hook',
     9: 'Lifeblood masks are granted by lifeblood.rs cocoons, not by a bench charm hook',
     10: 'no spore cloud actor and no Defender’s Crest trail',
     11: 'no Fluke spell variant; Vengeful Spirit is the only cast the port has',
     12: 'no contact-damage retaliation path on the hero',
-    13: 'nail reach is cooked per slash polygon; no runtime scale applies',
-    14: 'the hero bounce is NailResponse, which is not part of VitalParams',
+    13: 'NailSlash scales about its own pivot, and the slash polygons are cooked in '
+        'hero space without it',
     15: 'enemy knockback is per-actor recoil in hk-sim, with no hero modifier',
     16: 'no dash shadow damage volume',
     17: 'no spore cloud actor',
-    18: 'nail reach is cooked per slash polygon; no runtime scale applies',
-    19: 'spell damage and size are cooked into FIREBALL_PARAMS',
+    18: 'NailSlash scales about its own pivot, and the slash polygons are cooked in '
+        'hero space without it',
     22: 'no Hatchling minion actor',
     24: 'enemy Geo drops are cooked per actor with no multiplier hook',
     26: 'no nail art charge in the port',
@@ -467,21 +622,36 @@ UNIMPLEMENTED = {
     28: 'no Focus movement state',
     29: 'no mask regeneration timer',
     30: 'Dream Nail has no charge time or essence economy here',
-    31: 'no dash cooldown or ground-dash restriction to relax',
-    32: 'no attack cooldown in the port: Nail drives the swing directly',
-    33: 'spell cost is a single cooked constant with no charm branch',
-    34: 'Focus heals exactly one mask and has no charged variant',
     35: 'no Grubberfly beam projectile',
     36: 'quest states, Void Heart binding and the dream world are outside the slice',
-    37: 'run speed is cooked into PARAMS with no runtime modifier',
     38: 'no Dreamshield minion actor',
     39: 'no Weaverling minion actor',
     40: 'no Grimmchild minion actor',
 }
 
 
-def _effect(charm_id, shell, bonuses, heart, nails, grub):
+def _effect(charm_id, shell, bonuses, heart, nails, grub, numeric):
     """The generated `Effect` literal for one charm, or None when unexpressed."""
+    if charm_id == 7:
+        return 'Effect::FocusDrain(%d)' % numeric['focus']['quick_focus_drain_us']
+    if charm_id == 14:
+        return 'Effect::NailRecoil(%d)' % numeric['steady_body_recoil_ticks']
+    if charm_id == 19:
+        f = numeric['shaman_stone']
+        return 'Effect::Fireball{damage:%d,x:(%d,%d),y:(%d,%d)}' % (f['damage'], *f['x'], *f['y'])
+    if charm_id == 31:
+        return 'Effect::DashCooldown(%d)' % numeric['movement']['dashmaster_cooldown_ticks']
+    if charm_id == 32:
+        q = numeric['movement']['quick_slash']
+        return 'Effect::AttackTiming{duration:%d,cooldown:%d}' % (q['duration'], q['cooldown'])
+    if charm_id == 33:
+        return 'Effect::SpellCost(%d)' % numeric['spell_twister_cost']
+    if charm_id == 34:
+        d = numeric['focus']['deep_focus']
+        return 'Effect::DeepFocus{numerator:%d,denominator:%d,heal:%d}' % (d['numerator'], d['denominator'], d['heal'])
+    if charm_id == 37:
+        r = numeric['movement']['sprintmaster']
+        return 'Effect::RunSpeed{alone:%d,combo:%d,combo_charm:%d}' % (r['alone'], r['combo'], r['combo_charm'])
     if charm_id == 3:
         return ('Effect::SoulOnDamage{alone:%d,combo:%d,combo_charm:%d}'
                 % (grub['alone'], grub['combo'], grub['combo_charm']))
@@ -511,7 +681,7 @@ def _ratio(multiplier, limit=64):
     raise ValueError(f'{multiplier} is not a small rational')
 
 
-def charm_table(catalogue, shell, bonuses, heart, nails, grub, table):
+def charm_table(catalogue, shell, bonuses, heart, nails, grub, table, numeric):
     """Every charm as a cooked guest row: name, cost, wrapped text and effect."""
     rows = []
     for charm in catalogue:
@@ -521,7 +691,7 @@ def charm_table(catalogue, shell, bonuses, heart, nails, grub, table):
         assert all(32 <= ord(c) <= 126 for c in name), f'charm {charm["id"]} name is not drawable'
         pages = wrap_page(charm['descriptions'][desc_key], table, DESC_WIDTH, DESC_LINES)
         assert len(pages) == 1, f'charm {charm["id"]} description needs {len(pages)} panels'
-        effect = _effect(charm['id'], shell, bonuses, heart, nails, grub)
+        effect = _effect(charm['id'], shell, bonuses, heart, nails, grub, numeric)
         rows.append({
             'id': charm['id'], 'name': name, 'name_key': name_key, 'description_key': desc_key,
             'cost': charm['notch_cost'], 'lines': pages[0], 'effect': effect,
@@ -906,13 +1076,22 @@ def source_charm_values(source, assembly, scenes):
     bodies = _method_bodies(Path(assembly), {
         ('HeroController', 'SoulGain'), ('HeroController', 'CharmUpdate'),
         ('HeroController', 'TakeDamageCharmEffects'), ('PlayerData', 'CalculateNotchesUsed'),
-        ('GameManager', 'RefreshOvercharm')})
+        ('GameManager', 'RefreshOvercharm'), ('HeroController', 'Move'),
+        ('HeroController', 'HeroDash'), ('HeroController', 'Attack'), ('HeroController', 'DoAttack'),
+        ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight')})
     hero, constants = hero_constants(source)
     base_soul, bonuses = soul_per_hit_charms(bodies)
     heart = fragile_heart_bonus(bodies)
     nails = nail_multipliers(source)
     shell = stalwart_shell(constants)
     grub = grubsong(bodies, constants)
+    numeric = {
+        'movement': movement_charms(bodies, constants),
+        'steady_body_recoil_ticks': steady_body(bodies),
+        'focus': focus_charms(source),
+        'spell_twister_cost': spell_twister(source),
+        'shaman_stone': shaman_stone(source),
+    }
     # CalculateNotchesUsed is the source's own notch sum, and RefreshOvercharm
     # its own overcharm predicate; both must agree with the FSM contract above.
     notch_fields = {operand for op, operand in bodies[('PlayerData', 'CalculateNotchesUsed')]
@@ -922,7 +1101,7 @@ def source_charm_values(source, assembly, scenes):
     refresh = [operand for op, operand in bodies[('GameManager', 'RefreshOvercharm')] if op == 'ldfld']
     assert refresh[:3] == ['playerData', 'charmSlotsFilled', 'playerData'] and 'charmSlots' in refresh, \
         'RefreshOvercharm no longer compares filled against slots'
-    rows = charm_table(catalogue, shell, bonuses, heart, nails, grub, advances())
+    rows = charm_table(catalogue, shell, bonuses, heart, nails, grub, advances(), numeric)
     icons = icon_measurement(source, catalogue, -(-len(catalogue) // ((SHEET_PX // 16) ** 2)))
     # No size the screen can seat means no icons, and the board stays text only
     # rather than losing rows or description lines to make one fit.
@@ -940,7 +1119,7 @@ def source_charm_values(source, assembly, scenes):
         'effects': {
             'soul_per_hit_base': base_soul, 'soul_per_hit_charms': bonuses,
             'fragile_heart_masks': heart, 'nail_multipliers': nails,
-            'stalwart_shell_ticks': shell, 'grubsong': grub,
+            'stalwart_shell_ticks': shell, 'grubsong': grub, 'parameter_charms': numeric,
         },
         'charms': rows,
         'implemented': [r['id'] for r in rows if r['effect']],
@@ -960,6 +1139,12 @@ def source_charm_values(source, assembly, scenes):
             'row carries its first state only, and the charm is unequippable regardless.',
             'Notch acquisition is not implemented: the save carries the starting three and '
             'Salubra, the Shrooms and Fog Canyon are outside the slice.',
+            'Dashmaster applies DASH_COOLDOWN_CH only: HeroDash also lets it dash downwards, '
+            'and the port has no down-dash state.',
+            'Shaman Stone scales Vengeful Spirit\'s collider and damage; the ball\'s sprite '
+            'is drawn at its cooked size.',
+            'Quick Slash shortens the attack state and its cooldown; the slash clips play at '
+            'their cooked rate.',
         ],
     }
 
