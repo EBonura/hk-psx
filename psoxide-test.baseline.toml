@@ -1,22 +1,29 @@
 # Written by `psoxide-test bless`; edit only by blessing again (decision 4: a bar changes by editing
 # psoxide-test.toml with a reason, never by hand-editing these numbers).
 schema = 1
-blessed_commit = "c9a0415f43ed19e9ce7f6bde3206507c4031e12d"
-sdk_pin = "b3008d5fe2b5485958cffc4eabee59e885830139"
+blessed_commit = "9c17c2e06d9c5cbc689bab7efa801c545c7ceaec+dirty"
+sdk_pin = "6bfe478ff0e0c6e226cdf67b164df311c1658fec"
 
 [size.ship]
-text = 818256
+text = 818700
 data = 256440
 bss = 796116
-free = 111340
+free = 110828
 
 [speed.c37-stand]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
-flips = [978, 980, 982, 983, 984, 986, 986, 987]
-work_per_frame = [1234287, 1231770, 1229264, 1227457, 1226768, 1224274, 1224269, 1223021]
-frame_work_p99 = [2196828, 2196828, 2196828, 2196828, 2196828, 2196828, 2196828, 2196828]
-vblanks = ["2:767,3:178,4:30,5:2", "2:773,3:174,4:30,5:2", "2:779,3:170,4:30,5:2", "2:782,3:168,4:30,5:2", "2:786,3:165,4:30,5:2", "2:790,3:163,4:30,5:2", "2:791,3:162,4:30,5:2", "2:793,3:161,4:30,5:2"]
-legacy_trusted = "cb79bfb4d3cdc2c68706063bdac67e9841fa9db9+dirty"
+flips = [934, 937, 938, 941, 943, 945, 947, 947]
+work_per_frame = [1291843, 1287711, 1286340, 1282243, 1279526, 1276812, 1275268, 1275268]
+frame_work_p99 = [2196628, 2196587, 2196452, 2196452, 2196446, 2196446, 2196338, 2196307]
+vblanks = ["2:648,3:240,4:45", "2:654,3:238,4:44", "2:658,3:237,4:42", "2:664,3:235,4:41", "2:669,3:234,4:39", "2:674,3:232,4:38", "2:676,3:233,4:37", "2:676,3:234,4:36"]
+
+[[speed.c37-stand.layouts]]
+path = "game/hk.layout"
+sha256 = "e769466ce350c2353d314975b26c518e95c48997ead51aeb5e5b5357e7b7a928"
+
+[speed.c37-stand.layouts.searched]
+rounds = 1
+seed = 4
 
 [speed.c37-stand.identity]
 tape = "tools/tapes/c37-stand.pxtape"
@@ -28,11 +35,18 @@ gate_revision = "97cd078f9d2a33eb6aff274541bccc118f5b12e8"
 
 [speed.kings-return]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
-flips = [553, 554, 554, 555, 556, 558, 559, 559]
-work_per_frame = [1190828, 1188683, 1188682, 1186544, 1184414, 1180176, 1178067, 1178066]
-frame_work_p99 = [1648404, 1648404, 1648404, 1648404, 1648404, 1648337, 1648337, 1648337]
-vblanks = ["2:461,3:88,4:3", "2:463,3:87,4:3", "2:464,3:86,4:3", "2:467,3:84,4:3", "2:471,3:81,4:3", "2:477,3:77,4:3", "2:478,3:77,4:3", "2:480,3:75,4:3"]
-legacy_trusted = "cb79bfb4d3cdc2c68706063bdac67e9841fa9db9+dirty"
+flips = [527, 527, 528, 530, 530, 531, 533, 535]
+work_per_frame = [1250483, 1248403, 1247081, 1242391, 1241356, 1240055, 1234383, 1229777]
+frame_work_p99 = [1648826, 1648826, 1648826, 1648826, 1648826, 1648826, 1648782, 1648782]
+vblanks = ["2:383,3:140,4:3", "2:385,3:138,4:3", "2:388,3:136,4:3", "2:391,3:135,4:3", "2:393,3:133,4:3", "2:396,3:131,4:3", "2:401,3:129,4:2", "2:406,3:126,4:2"]
+
+[[speed.kings-return.layouts]]
+path = "game/hk.layout"
+sha256 = "e769466ce350c2353d314975b26c518e95c48997ead51aeb5e5b5357e7b7a928"
+
+[speed.kings-return.layouts.searched]
+rounds = 1
+seed = 4
 
 [speed.kings-return.identity]
 tape = "tools/tapes/kings-return.pxtape"
@@ -43,152 +57,152 @@ launch_args = ["--embedded-playtest", "--memcard", "build/harness/twin/card-king
 gate_revision = "97cd078f9d2a33eb6aff274541bccc118f5b12e8"
 
 [journeys.walk-ability-dash]
-ticks = 1201
+ticks = 1198
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-ability-wings]
-ticks = 1162
+ticks = 1159
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-baldur-spell]
-ticks = 5430
+ticks = 4540
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-cheat-geo]
-ticks = 537
+ticks = 534
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crest-save-reload]
-ticks = 20824
+ticks = 20818
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crossroads-shortcut]
-ticks = 1677
+ticks = 1676
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-earned-focus]
-ticks = 4821
+ticks = 4818
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-false-knight-from-bench-47]
-ticks = 17708
+ticks = 17703
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-06]
-ticks = 4048
+ticks = 3316
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-07-to-30]
-ticks = 6643
+ticks = 6683
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-22-gate]
-ticks = 1320
+ticks = 1305
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-31]
-ticks = 4234
+ticks = 4152
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-31-bench-to-hornet]
-ticks = 17780
+ticks = 16407
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05]
-ticks = 1505
+ticks = 1500
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05-restore]
-ticks = 1230
+ticks = 1228
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-21]
-ticks = 1387
+ticks = 1384
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-greenpath-east]
-ticks = 6906
+ticks = 6867
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-greenpath-west]
-ticks = 11278
+ticks = 10532
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-counter-31]
-ticks = 1243
+ticks = 1242
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-death]
-ticks = 3770
+ticks = 4288
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-fight]
-ticks = 14152
+ticks = 11559
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-husk-hits]
-ticks = 4898
+ticks = 4897
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-menu-sfx]
-ticks = 884
+ticks = 882
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-exit]
-ticks = 3128
+ticks = 3124
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-spell]
-ticks = 1820
+ticks = 1817
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-crest]
-ticks = 35995
+ticks = 35809
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-greenpath]
-ticks = 51588
+ticks = 51649
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-hornet]
-ticks = 78303
+ticks = 76949
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-plant-trap-kill]
-ticks = 1689
+ticks = 1754
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-secret-c03-reload]
-ticks = 921
+ticks = 918
 open_loop = 0
 clock_waits = 0
 
@@ -198,51 +212,51 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-shortcut-reload]
-ticks = 954
+ticks = 953
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-smoke]
-ticks = 7115
+ticks = 7113
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-tiktik-ceiling]
-ticks = 786
+ticks = 783
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-title-cards]
-ticks = 2624
+ticks = 2619
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-pay]
-ticks = 1150
+ticks = 1149
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-refuse]
-ticks = 1143
+ticks = 1142
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-reload]
-ticks = 2486
+ticks = 2484
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-vine-platform]
-ticks = 997
+ticks = 995
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-well-safe]
-ticks = 961
+ticks = 960
 open_loop = 0
 clock_waits = 0
 
 [host]
 
 [maps]
-ship = "75a68e3d7a59b2bb962f7fc7c89310ece21fb60a6521ecd64828fe1b7a72e0cc"
+ship = "aeb0af933cafd68b099467bbd64206da48c7849ba3f4bb2b1ca79227dd495088"
