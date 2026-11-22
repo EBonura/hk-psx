@@ -84,12 +84,21 @@ impl Pacing {
         )
     }
 
-    /// Which ceilings the replay is over, as sentences.
+    /// Which ceilings the replay is over, as sentences. Under a light landing psoxide-test sets
+    /// `PSOXIDE_LANDING_SLACK_PERMILLE` (50): the frame-time and over-2-vblank ceilings, which
+    /// move with code placement, are judged that much higher. The committed ceilings, and every
+    /// run without the variable (installs, plain validate), are unchanged.
     pub fn failures(&self, pins: &PacingPins) -> Vec<String> {
+        self.failures_with(pins, landing_slack_permille())
+    }
+
+    fn failures_with(&self, pins: &PacingPins, slack: u64) -> Vec<String> {
+        let loose = |c: u64| (c * (1000 + slack)).div_ceil(1000);
+        let note = if slack > 0 { format!(" (landing allowance {slack} permille)") } else { String::new() };
         let mut out = Vec::new();
-        if let Some(ceiling) = pins.frame_time {
+        if let Some(ceiling) = pins.frame_time.map(loose) {
             if self.frame_time() > ceiling {
-                out.push(format!("frame time {} over {ceiling} (hundredths of a vblank)", self.frame_time()));
+                out.push(format!("frame time {} over {ceiling} (hundredths of a vblank){note}", self.frame_time()));
             }
         }
         if let Some(ceiling) = pins.long_frames {
@@ -97,8 +106,8 @@ impl Pacing {
                 out.push(format!("{} frames of {LONG_FRAME}+ vblanks over {ceiling}", self.long));
             }
         }
-        if self.over > pins.pacing {
-            out.push(format!("{} frames over 2 vblanks over {}", self.over, pins.pacing));
+        if self.over > loose(pins.pacing) {
+            out.push(format!("{} frames over 2 vblanks over {}{note}", self.over, loose(pins.pacing)));
         }
         out
     }
@@ -117,6 +126,11 @@ impl Pacing {
             long_frames: Some(plus(self.long, 25) + 2),
         }
     }
+}
+
+/// The light-landing allowance psoxide-test passes to host checks, in permille (0 when unset).
+fn landing_slack_permille() -> u64 {
+    std::env::var("PSOXIDE_LANDING_SLACK_PERMILLE").ok().and_then(|v| v.parse().ok()).unwrap_or(0).min(100)
 }
 
 /// Fold per-row figures into [`Pacing`]. `rows` is `(gameplay, flip, view binds)` per route-log
