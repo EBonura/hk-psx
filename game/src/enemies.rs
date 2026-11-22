@@ -73,9 +73,10 @@ pub fn cloak_waiting() -> bool {
 }
 use psx_math::{Wide, WideU};
 use hk_sim::{
-    ActorController, ActorHealth, ActorSpec, AttackParams, Hit, Hurt, Nail, Params, Player, Vitals,
+    ActorController, ActorHealth, ActorSpec, HeroAttacks, Hit, Hurt, Params, Player, Vitals,
     WalkState, MAX_ACTORS, ONE,
 };
+use hk_sim::hero_attack::Class;
 
 /// `Recoil.UpdatePhysics` for one tick: the actor's solver is stepped
 /// once more at the recoil velocity. A macro rather than a function because `Player::step` is generic over the terrain
@@ -5125,17 +5126,19 @@ impl Events {
         }
     }
     /// `EnemyDreamnailReaction`: a live Dream Nail slash over `hurt_box` pays the actor's SOUL once.
-    fn dream_reaction(&mut self, taken: &mut bool, soul: u16, slash: &[[i32; 2]], hurt_box: [i32; 4]) {
-        if !slash.is_empty() && soul != 0 && !*taken && hk_sim::polygon_hits_box(slash, hurt_box) {
-            *taken = true;
-            self.dream_soul = self.dream_soul.saturating_add(soul);
+    fn dream_reaction(&mut self, taken: &mut bool, soul: u16, attacks: &HeroAttacks, hurt_box: [i32; 4]) {
+        for slash in attacks.of(Class::Dream) {
+            if soul != 0 && !*taken && slash.hits(hurt_box) {
+                *taken = true;
+                self.dream_soul = self.dream_soul.saturating_add(soul);
+            }
         }
     }
 }
 /// NailSlash's answer to a strike that reached a target: the recoil and pogo the Knight takes.
-fn nail_answer(vitals: &Vitals, response: &mut hk_sim::NailResponse, nail: &Nail, player: &mut Player) {
-    if vitals.can_control() {
-        response.contact(crate::NAIL_RESPONSE_PARAMS, nail.kind, nail.facing(player), player);
+fn nail_answer(vitals: &Vitals, response: &mut hk_sim::NailResponse, attacks: &HeroAttacks, player: &mut Player) {
+    if let (true, Some(hit)) = (vitals.can_control(), attacks.slash()) {
+        response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
     }
 }
 /// Waves started, members landed and members counted dead by a waves arena.
@@ -6080,13 +6083,9 @@ impl EnemyWorld {
         state: &mut State,
         player: &mut Player,
         vitals: &mut Vitals,
-        nail: &Nail,
-        dream: &hk_sim::DreamNail,
-        // Vengeful Spirit's world box while one is in flight, and its damage.
-        ball: Option<([i32; 4], u16)>,
+        // This tick's live hero attacks (`crate::hero_attacks`).
+        attacks: &HeroAttacks,
         response: &mut hk_sim::NailResponse,
-        attack: AttackParams,
-        polygons: [&[[i32; 2]]; 4],
         cheats: crate::cheats::Settings,
         camera: [i32; 3],
         mut runner_event: impl FnMut(RunnerEvent),
@@ -6107,28 +6106,6 @@ impl EnemyWorld {
             kills: 0,
             hurt: Hurt::Ignored,
             dream_soul: 0,
-        };
-        // The Dream Nail carries its own polygon, live for the whole slash.
-        let mut dream_points = [[0; 2]; 16];
-        let dream_polygon: &[[i32; 2]] = if dream.hitting() {
-            let src = crate::DREAM_NAIL_POLYGON;
-            for (dst, p) in dream_points.iter_mut().zip(src) {
-                *dst = [player.x - p[0] * player.facing, player.y + p[1]];
-            }
-            &dream_points[..src.len()]
-        } else {
-            &dream_points[..0]
-        };
-        let mut points = [[0; 2]; 16];
-        let polygon = if nail.hitting(attack) {
-            let src = polygons[nail.kind as usize];
-            assert!((3..=16).contains(&src.len()));
-            for (dst, p) in points.iter_mut().zip(src) {
-                *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-            }
-            &points[..src.len()]
-        } else {
-            &points[..0]
         };
         let body = [
             player.x - crate::PARAMS.half_width,
@@ -6363,35 +6340,26 @@ impl EnemyWorld {
             // hurts from `Hero Damager` rather than its body.
             if let Some(mut boss) = actor.gruz() {
                 let mut reached = false;
-                if let Some((box_, damage)) = ball {
-                    let (_, hit) =
-                        actor.strike_gruz(&mut boss, spec, &|b| overlap(box_, b), damage);
+                for attack in attacks.iter().filter(|a| a.class != Class::Dream) {
+                    if actor.health.dead {
+                        break;
+                    }
+                    let (hit_box, hit) =
+                        actor.strike_gruz(&mut boss, spec, &|b| attack.hits(b), attack.damage);
+                    let slash = attack.class == Class::Slash;
+                    reached |= slash && hit_box;
                     if hit.landed() {
                         events.hits += 1;
-                    }
-                    if hit == Hit::Killed {
-                        events.kills += 1;
-                    }
-                }
-                if !polygon.is_empty() && !actor.health.dead {
-                    let nail_damage = cheats.params(crate::VITAL_PARAMS).nail_damage;
-                    let (hit_box, hit) = actor.strike_gruz(
-                        &mut boss,
-                        spec,
-                        &|b| hk_sim::polygon_hits_box(polygon, b),
-                        nail_damage,
-                    );
-                    reached = hit_box;
-                    if hit.landed() {
-                        events.hits += 1;
-                        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                        if slash {
+                            vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                        }
                     }
                     if hit == Hit::Killed {
                         events.kills += 1;
                     }
                 }
                 if reached {
-                    nail_answer(vitals, response, nail, player);
+                    nail_answer(vitals, response, attacks, player);
                 }
                 let (frame, _) = boss.frame_box(spec.bounds);
                 let b = boss.body(frame);
@@ -6401,7 +6369,7 @@ impl EnemyWorld {
                     actor.x + b[2],
                     actor.y + b[3],
                 ];
-                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, hurt_box);
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, attacks, hurt_box);
                 if !actor.health.dead && boss.controller.hurts() {
                     let d = boss.body(crate::gruz_art::GZ_DAMAGER_BOX);
                     if overlap(
@@ -6435,34 +6403,27 @@ impl EnemyWorld {
                 let away = if actor.x >= player.x { 1 } else { -1 };
                 let speed = crate::mawlek_art::MW_CORPSE_FLING;
                 let fling = |kind: u16| hk_sim::components::death_fling(kind, away, speed);
-                if let Some((box_, damage)) = ball {
-                    let (_, hit) = actor.strike_mawlek(
+                for attack in attacks.iter().filter(|a| a.class != Class::Dream) {
+                    if actor.health.dead {
+                        continue;
+                    }
+                    let (hit_box, hit) = actor.strike_mawlek(
                         &mut boss,
                         spec,
-                        &|b| overlap(box_, b),
-                        damage,
-                        fling(0),
+                        &|b| attack.hits(b),
+                        attack.damage,
+                        fling(attack.kind),
                     );
+                    let slash = attack.class == Class::Slash;
+                    reached |= slash && hit_box;
                     if hit.landed() {
                         events.hits += 1;
-                    }
-                }
-                if !polygon.is_empty() {
-                    if !actor.health.dead {
-                        let nail_damage = cheats.params(crate::VITAL_PARAMS).nail_damage;
-                        let (hit_box, hit) = actor.strike_mawlek(
-                            &mut boss,
-                            spec,
-                            &|b| hk_sim::polygon_hits_box(polygon, b),
-                            nail_damage,
-                            fling(nail.kind),
-                        );
-                        reached = hit_box;
-                        if hit.landed() {
-                            events.hits += 1;
+                        if slash {
                             vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
                         }
                     }
+                }
+                if let Some(slash) = attacks.slash() {
                     // `nail_clash_tink`: the slash entering a live swipe
                     // collider parries it once, with the recoil a wall gives.
                     for arm in 0..2 {
@@ -6473,7 +6434,7 @@ impl EnemyWorld {
                         );
                         if boss.arm_hitbox[arm]
                             && !boss.parried[arm]
-                            && hk_sim::polygon_hits_box(polygon, arm_box)
+                            && slash.hits(arm_box)
                         {
                             boss.parried[arm] = true;
                             reached = true;
@@ -6484,9 +6445,9 @@ impl EnemyWorld {
                     }
                 }
                 if reached {
-                    nail_answer(vitals, response, nail, player);
+                    nail_answer(vitals, response, attacks, player);
                 }
-                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, attacks, bounds);
                 if !actor.health.dead {
                     let mut damage = 0;
                     if overlap(body, bounds) {
@@ -6514,35 +6475,29 @@ impl EnemyWorld {
             // so it does not take the shared Runner/flyer path below.
             if let Some(mut boss) = actor.false_knight() {
                 let mut reached = false;
-                if let Some((box_, damage)) = ball {
-                    let (_, hit) =
-                        actor.strike_false_knight(&mut boss, spec, &|b| overlap(box_, b), damage);
-                    if hit.landed() {
-                        events.hits += 1;
-                    }
-                }
-                if !polygon.is_empty() {
-                    let nail_damage = cheats.params(crate::VITAL_PARAMS).nail_damage;
+                for attack in attacks.iter().filter(|a| a.class != Class::Dream) {
                     let (hit_box, hit) = actor.strike_false_knight(
                         &mut boss,
                         spec,
-                        &|b| hk_sim::polygon_hits_box(polygon, b),
-                        nail_damage,
+                        &|b| attack.hits(b),
+                        attack.damage,
                     );
-                    reached = hit_box;
+                    let slash = attack.class == Class::Slash;
+                    reached |= slash && hit_box;
                     if hit.landed() {
                         events.hits += 1;
-                        vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
-                        // The nail's centre is where hkref's streaks start (`boss_fx::HIT`).
-                        let n = polygon.len() as i32;
-                        let at = polygon.iter().fold([0, 0], |a, p| [a[0] + p[0] / n, a[1] + p[1] / n]);
-                        crate::boss_fx::request(crate::boss_fx::HIT, at[0], at[1], actor.scene);
+                        if slash {
+                            vitals.gain_soul_on_nail_hit(cheats.params(crate::VITAL_PARAMS));
+                            // The nail's centre is where hkref's streaks start (`boss_fx::HIT`).
+                            let at = attack.centre();
+                            crate::boss_fx::request(crate::boss_fx::HIT, at[0], at[1], actor.scene);
+                        }
                     }
                 }
                 if reached {
-                    nail_answer(vitals, response, nail, player);
+                    nail_answer(vitals, response, attacks, player);
                 }
-                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
+                events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, attacks, bounds);
                 // The body's own DamageHero, which the stagger switches off, and
                 // the `Hitter` trigger the attacks switch on, which reaches
                 // nearly eight units ahead of the body the source never moves.
@@ -6562,8 +6517,9 @@ impl EnemyWorld {
             // A fireball passes through what it hits: Fireball Control only
             // listens for the terrain layer, so the enemy's own invulnerability
             // window is what stops it hitting twice.
-            if let Some((box_, damage)) = ball {
-                if overlap(box_, bounds) {
+            for attack in attacks.of(Class::Spell) {
+                let damage = attack.damage;
+                if attack.hits(bounds) {
                     // A shut Blocker's shell turns the ball the way it turns
                     // the nail: `IsBlockingByDirection` answers for every
                     // cardinal while `SetInvincible` is up.
@@ -6592,12 +6548,12 @@ impl EnemyWorld {
                     }
                 }
             }
-            events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, dream_polygon, bounds);
+            events.dream_reaction(&mut actor.dream_taken, spec.dream_soul, attacks, bounds);
             let shell = actor.acid_flyer_shell(spec);
             let tile = actor.mosquito_tile(spec);
-            if !polygon.is_empty()
-                && (hk_sim::polygon_hits_box(polygon, bounds)
-                    || tile.is_some_and(|t| hk_sim::polygon_hits_box(polygon, t)))
+            let slash = attacks.slash();
+            if let Some(hit) =
+                slash.filter(|hit| hit.hits(bounds) || tile.is_some_and(|t| hit.hits(t)))
             {
                 if deferred {
                     other = resident(region.scene, x, y, &mut actor.located);
@@ -6607,15 +6563,10 @@ impl EnemyWorld {
                 // NailSlash finds `BigBouncer` on the Acid Flyer's body and
                 // calls BounceHigh for a down-slash instead of Bounce.
                 if vitals.can_control() && !actor.buried() {
-                    if shell.is_some() && nail.kind == 3 {
+                    if shell.is_some() && hit.pogo() {
                         response.bounce_high(crate::NAIL_RESPONSE_PARAMS, player);
                     } else {
-                        response.contact(
-                            crate::NAIL_RESPONSE_PARAMS,
-                            nail.kind,
-                            nail.facing(player),
-                            player,
-                        );
+                        response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
                     }
                 }
                 // `HealthManager::Hit` tests `IsBlockingByDirection` after the
@@ -6625,17 +6576,7 @@ impl EnemyWorld {
                 // with the cardinal `DirectionUtils::GetCardinalDirection`
                 // would have produced: 0 right, 1 up, 2 left, 3 down. A raised
                 // front shield leaves the down one open, which is the pogo.
-                let cardinal = match nail.kind {
-                    2 => 1u8,
-                    3 => 3,
-                    _ => {
-                        if nail.facing(player) > 0 {
-                            0
-                        } else {
-                            2
-                        }
-                    }
-                };
+                let cardinal = hit.cardinal();
                 let health_params = match (actor.zombie_shield(), actor.blocker()) {
                     (Some(shield), _) => hk_sim::EnemyParams {
                         invincible: shield.controller.blocks(cardinal),
@@ -6661,10 +6602,7 @@ impl EnemyWorld {
                     },
                     _ => spec.health,
                 };
-                match actor.health.strike(
-                    health_params,
-                    cheats.params(crate::VITAL_PARAMS).nail_damage,
-                ) {
+                match actor.health.strike(health_params, hit.damage) {
                     Hit::Damaged | Hit::Killed => {
                         events.hits += 1;
                         if actor.health.dead {
@@ -6728,14 +6666,14 @@ impl EnemyWorld {
                                     *corpse_spec,
                                     actor.x,
                                     actor.y,
-                                    nail.kind,
-                                    nail.facing(player),
+                                    hit.kind,
+                                    hit.facing,
                                     actor.source_id,
                                 );
                                 // EmitCorpse chooses world X sign from the hit cardinal,
                                 // cancelling the parent actor sign for horizontal strikes.
-                                corpse.facing = if nail.kind < 2 {
-                                    -nail.facing(player)
+                                corpse.facing = if hit.kind < 2 {
+                                    -hit.facing
                                 } else {
                                     actor.walk.direction
                                 };
@@ -6767,7 +6705,7 @@ impl EnemyWorld {
                             if let Some(mut runner) = actor.runner() {
                                 let actions = runner.controller.took_damage(player.x, actor.x);
                                 actor.apply_runner_actions(&mut runner, actions, &mut runner_event);
-                                if nail.kind < 2 && begin_recoil {
+                                if hit.kind < 2 && begin_recoil {
                                     let senses = actor.runner_senses(
                                         &runner,
                                         spec,
@@ -6842,7 +6780,7 @@ impl EnemyWorld {
                             }
                         } else if begin_recoil {
                             if let (Some(roller), true) =
-                                (actor.baldur_mut(), nail.kind < 2 && !dead)
+                                (actor.baldur_mut(), hit.kind < 2 && !dead)
                             {
                                 // Recoil's global RECOIL HORIZONTAL: Recoil Decel resets the roll speed.
                                 let actions = roller.controller.horizontal_recoil();
@@ -6872,10 +6810,10 @@ impl EnemyWorld {
                                 }
                             });
                             actor.recoil_left = recoil_ticks;
-                            actor.recoil = match nail.kind {
+                            actor.recoil = match hit.kind {
                                 2 => [0, recoil_speed],
                                 3 => [0, -recoil_speed],
-                                _ => [nail.facing(player) * recoil_speed, 0],
+                                _ => [hit.facing * recoil_speed, 0],
                             };
                         }
                     }
@@ -6899,19 +6837,14 @@ impl EnemyWorld {
                     }
                     _ => {}
                 }
-            } else if let (false, Some(shell)) = (polygon.is_empty(), shell) {
+            } else if let (Some(hit), Some(shell)) = (slash, shell) {
                 // The detached `Shell` holds no HealthManager: a slash there
                 // only tinks (its recoils are NailSlash's own) or, from above,
                 // takes an ordinary Bounce.
-                if hk_sim::polygon_hits_box(polygon, shell) && vitals.can_control() {
+                if hit.hits(shell) && vitals.can_control() {
                     // The Shell's TinkEffect: `Block Hit v2`.
                     crate::scene_sfx::tink();
-                    response.contact(
-                        crate::NAIL_RESPONSE_PARAMS,
-                        nail.kind,
-                        nail.facing(player),
-                        player,
-                    );
+                    response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
                 }
             }
             // The Acid Flyer's Shell carries its own DamageHero.
@@ -7083,7 +7016,7 @@ impl EnemyWorld {
         // Greenpath's Hornet, while her arena's module is resident (game/src/enemies/hornet.rs).
         #[cfg(feature = "hornet")]
         if region.scene == hornet::HORNET_ART_SCENE && crate::modules::loaded(crate::modules::HORNET) {
-            hornet::tick(&mut events, player, vitals, response, nail, cheats, body, polygon, camera, state, region, room);
+            hornet::tick(&mut events, player, vitals, response, attacks, cheats, body, camera, state, region, room);
         }
         events
     }
@@ -8039,27 +7972,14 @@ pub fn pogo_contact(
     region: &Region,
     state: &State,
     player: &mut Player,
-    nail: &Nail,
-    attack: AttackParams,
-    polygons: [&[[i32; 2]]; 4],
+    attacks: &HeroAttacks,
     response: &mut hk_sim::NailResponse,
 ) -> bool {
-    if !nail.hitting(attack) {
+    let Some(hit) = attacks.slash() else {
         return false;
-    }
-    let src = polygons[nail.kind as usize];
-    assert!((3..=16).contains(&src.len()));
-    let mut points = [[0; 2]; 16];
-    let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-    for (dst, p) in points.iter_mut().zip(src) {
-        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
-        bounds[0] = bounds[0].min(dst[0]);
-        bounds[1] = bounds[1].min(dst[1]);
-        bounds[2] = bounds[2].max(dst[0]);
-        bounds[3] = bounds[3].max(dst[1]);
-    }
+    };
     for target in crate::world::pogo_targets(region) {
-        if nail.kind != 3 && !target.horizontal_and_up() {
+        if !hit.pogo() && !target.horizontal_and_up() {
             continue;
         }
         if target.breakable().is_some_and(|id| state.broken(id)) {
@@ -8069,17 +7989,12 @@ pub fn pogo_contact(
         if tinger == Some(false) {
             continue;
         }
-        if overlap(bounds, target.bounds()) && target.hit_by(&points[..src.len()]) {
+        if overlap(hit.bounds, target.bounds()) && target.hit_by(hit.points()) {
             // `FK Armour`'s `Tinger` is a TinkEffect as well as a bounce.
             if tinger.is_some() {
                 crate::scene_sfx::tink();
             }
-            response.contact(
-                crate::NAIL_RESPONSE_PARAMS,
-                nail.kind,
-                nail.facing(player),
-                player,
-            );
+            response.contact(crate::NAIL_RESPONSE_PARAMS, hit.kind, hit.facing, player);
             return true;
         }
     }
@@ -8425,6 +8340,18 @@ mod hatcher_pool_tests {
 mod runner_runtime_tests {
     use super::*;
     use hk_sim::runner::{Swipe, Walker};
+    use hk_sim::{AttackParams, Nail};
+    /// The tick's attack list with only the nail in it, at the base damage, as
+    /// `crate::hero_attacks` gathers it.
+    fn slash(nail: &Nail, attack: AttackParams, poly: &[[i32; 2]], player: &Player) -> HeroAttacks {
+        let mut attacks = HeroAttacks::new();
+        if let Some(hit) =
+            hk_sim::HeroHit::nail(nail, attack, [poly; 4], player, crate::VITAL_PARAMS.nail_damage)
+        {
+            attacks.push(hit);
+        }
+        attacks
+    }
     pub(super) const SPEC: ActorSpec = ActorSpec {
         controller: ActorController::Runner {
             idle_clip: 2,
@@ -8761,18 +8688,15 @@ mod runner_runtime_tests {
         world.sync_region(&r);
         nail.active = true;
         nail.age = 1;
+        let attacks = slash(&nail, attack, poly, &player);
         let hit = world.tick(
             &r,
             &room,
             &mut state,
             &mut player,
             &mut vitals,
-            &nail,
-            &hk_sim::DreamNail::new(),
-            None,
+            &attacks,
             &mut response,
-            attack,
-            [poly; 4],
             cheats,
             [0, AT.y, -2496922],
             |e| events.push(e),
@@ -8789,18 +8713,15 @@ mod runner_runtime_tests {
             .any(|e| e.kind == RunnerEventKind::AudioPlay));
         assert_eq!(world.actors[0].unwrap().recoil_left, 9);
         let after_first = events.len();
+        let attacks = slash(&nail, attack, poly, &player);
         world.tick(
             &r,
             &room,
             &mut state,
             &mut player,
             &mut vitals,
-            &nail,
-            &hk_sim::DreamNail::new(),
-            None,
+            &attacks,
             &mut response,
-            attack,
-            [poly; 4],
             cheats,
             [0, AT.y, -2496922],
             |e| events.push(e),
@@ -8817,18 +8738,15 @@ mod runner_runtime_tests {
             actor.recoil_left = 0;
             player.x = actor.x;
             player.y = actor.y;
+            let attacks = slash(&nail, attack, poly, &player);
             let result = world.tick(
                 &r,
                 &room,
                 &mut state,
                 &mut player,
                 &mut vitals,
-                &nail,
-                &hk_sim::DreamNail::new(),
-                None,
+                &attacks,
                 &mut response,
-                attack,
-                [poly; 4],
                 cheats,
                 [0, AT.y, -2496922],
                 |e| events.push(e),
@@ -8994,18 +8912,15 @@ mod runner_runtime_tests {
             [-3 * ONE, 3 * ONE],
         ][..];
         let mut events = Vec::new();
+        let attacks = slash(&nail, attack, poly, &player);
         let hit = world.tick(
             &r,
             &room,
             &mut State,
             &mut player,
             &mut vitals,
-            &nail,
-            &hk_sim::DreamNail::new(),
-            None,
+            &attacks,
             &mut hk_sim::NailResponse::new(),
-            attack,
-            [poly; 4],
             crate::cheats::Settings {
                 invincible: true,
                 ..crate::cheats::Settings::new()
@@ -9045,19 +8960,8 @@ mod runner_runtime_tests {
                 &mut State,
                 &mut Player::spawn(30 * ONE, AT.y),
                 &mut Vitals::new(crate::VITAL_PARAMS),
-                &Nail::new(),
-                &hk_sim::DreamNail::new(),
-                None,
+                &HeroAttacks::new(),
                 &mut hk_sim::NailResponse::new(),
-                AttackParams {
-                    duration: 20,
-                    cooldown: 24,
-                    alternate_reset: 30,
-                    hit_start: 1,
-                    hit_end: 8,
-                    ..AttackParams::ZERO
-                },
-                [&[]; 4],
                 crate::cheats::Settings::new(),
                 [0, AT.y, -2496922],
                 |e| events.push(e),

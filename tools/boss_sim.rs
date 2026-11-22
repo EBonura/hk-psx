@@ -421,14 +421,9 @@ impl Sim {
         let button = held(B_SQUARE) && self.vitals.can_control() && !locked;
         self.nail.tick(ATTACK_PARAMS, button, vertical, &mut self.player);
 
-        let mut points = [[0i32; 2]; 16];
-        let polygon: &[[i32; 2]] = if self.nail.hitting(ATTACK_PARAMS) {
-            let src = NAIL_POLYGONS[self.nail.kind as usize];
-            for (dst, p) in points.iter_mut().zip(src) {
-                *dst = [self.player.x - p[0] * self.player.facing, self.player.y + p[1]];
-            }
-            &points[..src.len()]
-        } else { &points[..0] };
+        // The guest's hit record (hk_sim::hero_attack): a wall slash is mirrored out of the wall.
+        let slash = hk_sim::HeroHit::nail(&self.nail, ATTACK_PARAMS, NAIL_POLYGONS, &self.player,
+            VITAL_PARAMS.nail_damage);
         let hero_body = self.hero_body();
 
         if !self.body.dead { self.body.tick(); }
@@ -449,18 +444,16 @@ impl Sim {
         let mut hurt = Hurt::Ignored;
         if !self.body.dead && self.controller.phase() != fk::Phase::Dormant {
             let mut reached = false;
-            if !polygon.is_empty() {
-                let (hit_box, hit) = self.strike(world,
-                    |b| hk_sim::polygon_hits_box(polygon, b), VITAL_PARAMS.nail_damage);
+            if let Some(slash) = &slash {
+                let (hit_box, hit) = self.strike(world, |b| slash.hits(b), slash.damage);
                 reached = hit_box;
                 if matches!(hit, hk_sim::Hit::Damaged | hk_sim::Hit::Killed) {
                     self.hits += 1;
                     self.vitals.gain_soul_on_nail_hit(VITAL_PARAMS);
                 }
             }
-            if reached && self.vitals.can_control() {
-                let (kind, facing) = (self.nail.kind, self.player.facing);
-                self.response.contact(NAIL_RESPONSE_PARAMS, kind, facing, &mut self.player);
+            if let (true, true, Some(slash)) = (reached, self.vitals.can_control(), &slash) {
+                self.response.contact(NAIL_RESPONSE_PARAMS, slash.kind, slash.facing, &mut self.player);
             }
             let mut damage = 0;
             if self.contact_damage != 0 && overlap(hero_body, self.boss_bounds(world)) {

@@ -106,7 +106,8 @@ dash,wall,superdash,dream");
             state.edge_reader(&region, room));
         if nail.tick(ATTACK_PARAMS, held("square"), held("up") as i32 - held("down") as i32, &mut player) { swings += 1; }
         let body = [player.x - PARAMS.half_width, player.y + PARAMS.bottom, player.x + PARAMS.half_width, player.y + PARAMS.top];
-        let strike = state.strike(&region, &nail, ATTACK_PARAMS, NAIL_POLYGONS, &player, swings, body);
+        let strike = hk_sim::HeroHit::nail(&nail, ATTACK_PARAMS, NAIL_POLYGONS, &player, 0)
+            .map_or_else(world::Strike::default, |hit| state.strike(&region, &hit, player.x, swings, body));
         state.tick();
         broken += strike.broken;
         let previous_checkpoint = checkpoint;

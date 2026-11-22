@@ -19,7 +19,7 @@ pub fn take_scripted_terrain_changed() -> bool {
 
 #[path = "particles.rs"]
 pub mod particles;
-use hk_sim::{AttackParams, Grass, Nail, Params, Player, ONE};
+use hk_sim::{Grass, HeroHit, Params, Player, ONE};
 
 /// Route telemetry: draws the last `State::apply` hid for state another view lists
 /// (`KIND_REMOTE_ART`): a cut patch or broken stone seen from a view that only draws it.
@@ -1286,7 +1286,7 @@ impl State {
             }
         }
     }
-    /// Source nail active windows and exact transformed source target polygons.
+    /// The live nail swing against the exact transformed source target polygons.
     /// Breakable.Hit breaks on the first hit; health counters are not invented.
     /// A hidden wall or cracked floor counts its hits instead (secret_breaks):
     /// `swing` names the nail swing, which lands once per target, and `body`
@@ -1294,33 +1294,13 @@ impl State {
     pub fn strike(
         &mut self,
         region: &Region,
-        nail: &Nail,
-        params: AttackParams,
-        polygons: [&[[i32; 2]]; 4],
-        player: &Player,
+        hit: &HeroHit,
+        hero_x: i32,
         swing: u32,
         body: [i32; 4],
     ) -> Strike {
         let mut result = Strike::default();
-        if !nail.hitting(params) {
-            return result;
-        }
-        let Some(points) = polygons.get(nail.kind as usize) else {
-            return result;
-        };
-        if !(3..=16).contains(&points.len()) {
-            return result;
-        }
-        let mut transformed = [[0; 2]; 16];
-        let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
-        for (dst, src) in transformed.iter_mut().zip(*points) {
-            *dst = [player.x - src[0] * nail.facing(player), player.y + src[1]];
-            bounds[0] = bounds[0].min(dst[0]);
-            bounds[1] = bounds[1].min(dst[1]);
-            bounds[2] = bounds[2].max(dst[0]);
-            bounds[3] = bounds[3].max(dst[1]);
-        }
-        let polygon = &transformed[..points.len()];
+        let (polygon, bounds) = (hit.points(), hit.bounds);
         for object in region_breakables(region) {
             let id = object.id();
             let flags = object.object.flags();
@@ -1334,7 +1314,7 @@ impl State {
             // A vine platform's cut (flag 16 with no gate delay) answers side slashes only: the
             // original's `VinePlatformCut.OnTriggerEnter2D` returns for the nail's `direction` in
             // [45, 135) (up) and [225, 360) (down), so the port's kinds 0 and 1 cut it, 2 and 3 do not.
-            let vine_refuses = flags & 16 != 0 && flags >> 6 == 0 && nail.kind >= 2;
+            let vine_refuses = flags & 16 != 0 && flags >> 6 == 0 && hit.kind >= 2;
             if !vine_refuses
                 && !self.broken(id)
                 && overlap(bounds, object.bounds())
@@ -1357,14 +1337,14 @@ impl State {
                     }
                     continue;
                 }
-                particles::pool().spawn_break(region.scene, id, nail.kind as u8, nail.facing(player));
+                particles::pool().spawn_break(region.scene, id, hit.kind as u8, hit.facing);
                 // `Breakable.Hit`: the nail's impact at the mid-point between it and the object,
                 // and Dust Hit Med there.
                 let ob = object.bounds();
                 let mid = |a: usize, b: usize| {
                     Wide::of(bounds[a]).plus(bounds[b]).plus(ob[a]).plus(ob[b]).div_pow2(2).low()
                 };
-                let sign = if Wide::of(ob[0]).plus(ob[2]).div_pow2(1).cmp_i32(player.x).is_ge() {
+                let sign = if Wide::of(ob[0]).plus(ob[2]).div_pow2(1).cmp_i32(hero_x).is_ge() {
                     1
                 } else {
                     -1
@@ -1379,7 +1359,7 @@ impl State {
                 );
                 if debris_here() {
                     self.debris
-                        .spawn(region.scene, owner_fragments(id), nail.kind as u8, nail.facing(player));
+                        .spawn(region.scene, owner_fragments(id), hit.kind as u8, hit.facing);
                 }
                 result.broken += 1;
                 result.last_broken = Some(id);
@@ -1408,7 +1388,7 @@ impl State {
                     let sign = if Wide::of(patch.grass.bounds[0])
                         .plus(patch.grass.bounds[2])
                         .div_pow2(1)
-                        .cmp_i32(player.x)
+                        .cmp_i32(hero_x)
                         .is_ge()
                     {
                         1
