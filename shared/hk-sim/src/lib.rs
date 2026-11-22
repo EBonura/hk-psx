@@ -384,10 +384,32 @@ impl Player {
             SuperDash::Charging(t) => SuperDash::Charging(t + 1),
             SuperDash::Ready if !held => {
                 self.vy = 0;
+                // `Direction Wall` (after `Wall Charge`, chosen when the charge
+                // started off the ground) sends FlipSprite and launches against
+                // the old facing: away from the wall the Knight faced into.
+                if !self.grounded {
+                    self.face_away_from_wall();
+                }
                 SuperDash::Travelling(0)
             }
             other => other,
         };
+    }
+    /// HeroController.FlipSprite as a dash or a wall Crystal Heart calls it
+    /// off a wall: the slide faces the Knight into the wall
+    /// (LookForInput's FaceLeft/FaceRight), so the flip turns him away.
+    pub fn face_away_from_wall(&mut self) {
+        self.facing = -self.facing;
+    }
+    /// FixedUpdate turns the Knight to move_input only outside a dash
+    /// (`dashing`, `backDashing`), a wall slide and a wall jump's lock; the
+    /// Superdash FSM's RelinquishControl holds the facing from charge to
+    /// recovery as well.
+    pub fn can_turn(&self) -> bool {
+        self.dash_left == 0
+            && !self.wall_sliding
+            && !self.wall_locked
+            && self.super_dash == SuperDash::Off
     }
     pub fn step(
         &mut self,
@@ -398,7 +420,13 @@ impl Player {
         edge: impl Fn(usize) -> [i32; 4],
     ) {
         let dir = dir.clamp(-1, 1);
-        if dir != 0 {
+        // HeroDash: a dash taken off a wall slide turns away from the wall
+        // (FlipSprite); otherwise it faces whichever direction is held. The
+        // dash_input that started it ran this tick, before this step.
+        let dash_started = self.dash_left == p.dash_ticks && p.dash_ticks != 0;
+        if dash_started && self.wall_sliding {
+            self.face_away_from_wall();
+        } else if dir != 0 && (dash_started || self.can_turn()) {
             self.facing = dir;
         }
         let jump_pressed = jump && !self.was_jump;
@@ -1703,6 +1731,81 @@ mod combination_tests {
         }
         // Three cooldowns can yield at most three more dashes, never one a tick.
         assert!(dashes <= 4, "{dashes} dashes in three cooldowns");
+    }
+    #[test]
+    fn a_wall_slide_holds_the_facing_into_the_wall() {
+        let mut p = knight();
+        slide_up_the_wall(&mut p);
+        assert_eq!(p.facing, 1);
+        // Holding away inside WALL_STICKY_STEPS keeps the slide and, with it,
+        // FixedUpdate's turn stays off.
+        p.step(P, -1, false, 2, room());
+        assert!(p.wall_sliding);
+        assert_eq!(p.facing, 1);
+    }
+    #[test]
+    fn a_dash_off_a_wall_slide_launches_away_from_the_wall() {
+        let mut p = knight();
+        slide_up_the_wall(&mut p);
+        let x = p.x;
+        p.dash_input(P, true);
+        // Held into the wall: HeroDash's FlipSprite wins over the stick, and
+        // the stick cannot turn the dash back while it runs.
+        for _ in 0..P.dash_ticks {
+            p.step(P, 1, false, 2, room());
+            assert_eq!(p.facing, -1);
+        }
+        assert!(p.x < x - 4 * ONE, "travelled away from the wall: {}", p.x - x);
+    }
+    #[test]
+    fn a_dash_turns_to_the_stick_when_it_starts_and_not_after() {
+        let mut p = knight();
+        p.grounded = true;
+        p.facing = 1;
+        p.dash_input(P, true);
+        p.step(P, -1, false, 2, room());
+        assert_eq!(p.facing, -1, "HeroDash FaceLeft");
+        p.step(P, 1, false, 2, room());
+        assert_eq!(p.facing, -1, "no turn while dashing");
+    }
+    #[test]
+    fn a_wall_crystal_heart_launches_away_from_the_wall() {
+        // High on the wall, so the charge's slide does not reach the floor.
+        let mut p = knight();
+        p.x = 4 * ONE - P.half_width;
+        p.y = 30 * ONE;
+        p.grounded = false;
+        p.vy = -ONE;
+        // The first step finds the wall, the second takes the slide.
+        p.step(P, 1, false, 2, room());
+        p.step(P, 1, false, 2, room());
+        assert!(p.wall_sliding);
+        for _ in 0..P.super_dash_charge_ticks {
+            p.super_dash_input(P, true);
+            p.step(P, 1, false, 2, room());
+        }
+        assert_eq!(p.super_dash, SuperDash::Ready);
+        assert_eq!(p.facing, 1, "the charge holds the facing into the wall");
+        p.super_dash_input(P, false);
+        let x = p.x;
+        p.step(P, 1, false, 2, room());
+        assert!(matches!(p.super_dash, SuperDash::Travelling(_)));
+        assert_eq!(p.facing, -1);
+        assert!(p.x < x);
+    }
+    #[test]
+    fn a_wall_jump_keeps_facing_away_through_its_lock() {
+        let mut p = knight();
+        slide_up_the_wall(&mut p);
+        p.was_jump = false;
+        p.step(P, 1, true, 2, room());
+        assert!(p.wall_locked);
+        for _ in 0..P.wall_lock_short {
+            p.step(P, 1, true, 2, room());
+            if p.wall_locked {
+                assert_eq!(p.facing, -1);
+            }
+        }
     }
     #[test]
     fn a_double_jump_is_still_available_after_a_wall_jump() {

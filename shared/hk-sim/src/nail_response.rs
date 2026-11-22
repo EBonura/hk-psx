@@ -72,11 +72,12 @@ impl NailResponse {
         count: usize,
         edge: impl Fn(usize) -> [i32; 4],
     ) {
-        let face = if dir == 0 {
-            player.facing
-        } else {
-            dir.signum()
-        };
+        // Player::step turns toward the motion it is given, which a recoil can
+        // point against the stick. FixedUpdate turns to move_input alone, and
+        // only while Player::can_turn; whatever the step itself set (a dash off
+        // the wall, a wall slide, a wall jump) stands.
+        let facing = player.facing;
+        let turn = dir != 0 && player.can_turn();
         let mut vx = dir.clamp(-1, 1) * p.speed;
         if self.recoil_left != 0 {
             self.recoil_left -= 1;
@@ -107,7 +108,9 @@ impl NailResponse {
         }
         p.speed = vx.abs();
         player.step(p, vx.signum(), jump && !bouncing, count, edge);
-        player.facing = face;
+        if player.can_turn() {
+            player.facing = if turn { dir.signum() } else { facing };
+        }
         if bouncing {
             player.was_jump = jump;
         }
@@ -166,6 +169,22 @@ mod tests {
         response.step(R, p(), &mut player, 1, false, 0, |_| [0; 4]);
         assert!(player.x > x);
         assert_eq!(x, -(R.recoil_speed / 60) * 11);
+    }
+    #[test]
+    fn the_stick_does_not_turn_a_dash_or_a_wall_jump_lock() {
+        let mut response = NailResponse::new();
+        let mut player = Player::spawn(0, 10 * ONE);
+        player.facing = -1;
+        player.dash_left = 5;
+        response.step(R, p(), &mut player, 1, false, 0, |_| [0; 4]);
+        assert_eq!(player.facing, -1);
+        player.dash_left = 0;
+        player.wall_locked = true;
+        response.step(R, p(), &mut player, 1, false, 0, |_| [0; 4]);
+        assert_eq!(player.facing, -1);
+        player.wall_locked = false;
+        response.step(R, p(), &mut player, 1, false, 0, |_| [0; 4]);
+        assert_eq!(player.facing, 1);
     }
     #[test]
     fn upslash_clamps_rising_velocity_without_inventing_downward_kick() {

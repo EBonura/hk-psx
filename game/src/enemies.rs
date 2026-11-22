@@ -5135,7 +5135,7 @@ impl Events {
 /// NailSlash's answer to a strike that reached a target: the recoil and pogo the Knight takes.
 fn nail_answer(vitals: &Vitals, response: &mut hk_sim::NailResponse, nail: &Nail, player: &mut Player) {
     if vitals.can_control() {
-        response.contact(crate::NAIL_RESPONSE_PARAMS, nail.kind, player.facing, player);
+        response.contact(crate::NAIL_RESPONSE_PARAMS, nail.kind, nail.facing(player), player);
     }
 }
 /// Waves started, members landed and members counted dead by a waves arena.
@@ -6124,7 +6124,7 @@ impl EnemyWorld {
             let src = polygons[nail.kind as usize];
             assert!((3..=16).contains(&src.len()));
             for (dst, p) in points.iter_mut().zip(src) {
-                *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+                *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
             }
             &points[..src.len()]
         } else {
@@ -6613,7 +6613,7 @@ impl EnemyWorld {
                         response.contact(
                             crate::NAIL_RESPONSE_PARAMS,
                             nail.kind,
-                            player.facing,
+                            nail.facing(player),
                             player,
                         );
                     }
@@ -6629,7 +6629,7 @@ impl EnemyWorld {
                     2 => 1u8,
                     3 => 3,
                     _ => {
-                        if player.facing > 0 {
+                        if nail.facing(player) > 0 {
                             0
                         } else {
                             2
@@ -6729,13 +6729,13 @@ impl EnemyWorld {
                                     actor.x,
                                     actor.y,
                                     nail.kind,
-                                    player.facing,
+                                    nail.facing(player),
                                     actor.source_id,
                                 );
                                 // EmitCorpse chooses world X sign from the hit cardinal,
                                 // cancelling the parent actor sign for horizontal strikes.
                                 corpse.facing = if nail.kind < 2 {
-                                    -player.facing
+                                    -nail.facing(player)
                                 } else {
                                     actor.walk.direction
                                 };
@@ -6875,7 +6875,7 @@ impl EnemyWorld {
                             actor.recoil = match nail.kind {
                                 2 => [0, recoil_speed],
                                 3 => [0, -recoil_speed],
-                                _ => [player.facing * recoil_speed, 0],
+                                _ => [nail.facing(player) * recoil_speed, 0],
                             };
                         }
                     }
@@ -6909,7 +6909,7 @@ impl EnemyWorld {
                     response.contact(
                         crate::NAIL_RESPONSE_PARAMS,
                         nail.kind,
-                        player.facing,
+                        nail.facing(player),
                         player,
                     );
                 }
@@ -8052,7 +8052,7 @@ pub fn pogo_contact(
     let mut points = [[0; 2]; 16];
     let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
     for (dst, p) in points.iter_mut().zip(src) {
-        *dst = [player.x - p[0] * player.facing, player.y + p[1]];
+        *dst = [player.x - p[0] * nail.facing(player), player.y + p[1]];
         bounds[0] = bounds[0].min(dst[0]);
         bounds[1] = bounds[1].min(dst[1]);
         bounds[2] = bounds[2].max(dst[0]);
@@ -8077,7 +8077,7 @@ pub fn pogo_contact(
             response.contact(
                 crate::NAIL_RESPONSE_PARAMS,
                 nail.kind,
-                player.facing,
+                nail.facing(player),
                 player,
             );
             return true;

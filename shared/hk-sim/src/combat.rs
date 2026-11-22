@@ -41,6 +41,11 @@ pub struct Nail {
     pub age: u16,
     /// Normal, alternate, up, down: matches the cooked polygon/effect order.
     pub kind: u16,
+    /// HeroController.Attack's wall slash: a swing started in a wall slide
+    /// uses WallSlash whatever the stick says. Its slash is SlashEffect with
+    /// NailSlash.scale.x negated (-1.62 against Slash's 1.60), so it is kind 0
+    /// mirrored: aimed out of the wall, away from the facing.
+    pub wall: bool,
     cooldown: u16,
     since_attack: u16,
     alternate: bool,
@@ -63,6 +68,7 @@ impl Nail {
             active: false,
             age: 0,
             kind: 0,
+            wall: false,
             cooldown: 0,
             since_attack: u16::MAX,
             alternate: false,
@@ -112,14 +118,17 @@ impl Nail {
             if self.since_attack > p.alternate_reset {
                 self.alternate = false;
             }
-            self.kind = if vertical > 0 {
-                2
-            } else if vertical < 0 && !player.grounded {
-                3
-            } else {
-                let k = u16::from(self.alternate);
-                self.alternate = !self.alternate;
-                k
+            // Attack tests wallSliding before the direction it was given, and
+            // leaves altAttack alone on that branch.
+            self.wall = player.wall_sliding;
+            self.kind = match Self::direction(vertical, player) {
+                _ if self.wall => 0,
+                0 => {
+                    let k = u16::from(self.alternate);
+                    self.alternate = !self.alternate;
+                    k
+                }
+                d => d,
             };
             self.age = 0;
             self.active = true;
@@ -132,6 +141,27 @@ impl Nail {
             player.animation_tick = self.age as u32;
         }
         start
+    }
+    /// DoAttack's choice from the stick: 2 up, 3 down (airborne only), else 0.
+    /// CheckForTerrainThunk gets this even when Attack turns it into a wall slash.
+    pub fn direction(vertical: i32, player: &Player) -> u16 {
+        if vertical > 0 {
+            2
+        } else if vertical < 0 && !player.grounded {
+            3
+        } else {
+            0
+        }
+    }
+    /// The side the swing's polygon, effect and `damages_enemy` direction take:
+    /// the facing, or its mirror for a wall slash (Attack sets direction 180
+    /// for a wall slash facing right, 0 for a normal slash facing right).
+    pub fn facing(&self, player: &Player) -> i32 {
+        if self.wall {
+            -player.facing
+        } else {
+            player.facing
+        }
     }
     pub fn effect_clip(&self) -> usize {
         9 + self.kind as usize
@@ -160,7 +190,7 @@ impl Nail {
         let mut polygon = [[0; 2]; 16];
         for (dst, src) in polygon.iter_mut().zip(points) {
             // The original Knight collection faces left at positive scale X.
-            *dst = [player.x - src[0] * player.facing, player.y + src[1]];
+            *dst = [player.x - src[0] * self.facing(player), player.y + src[1]];
         }
         let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
         for point in &polygon[..points.len()] {
@@ -301,6 +331,53 @@ mod tests {
         }
         assert!(n.tick(P, true, 0, &mut a));
         assert_eq!((n.kind, a.animation), (1, 5));
+    }
+    #[test]
+    fn a_swing_in_a_wall_slide_is_the_mirrored_wall_slash_in_any_direction() {
+        for vertical in [0, 1, -1] {
+            let mut n = Nail::new();
+            let mut a = Player::spawn(0, 0);
+            a.wall_sliding = true;
+            a.facing = 1;
+            assert!(n.tick(P, true, vertical, &mut a));
+            assert!(n.wall);
+            assert_eq!(n.kind, 0);
+            assert_eq!(n.facing(&a), -1, "out of the wall");
+        }
+        // The terrain check still takes the stick's direction.
+        let mut a = Player::spawn(0, 0);
+        a.wall_sliding = true;
+        assert_eq!(Nail::direction(1, &a), 2);
+        // A wall slash does not advance the alternate swing.
+        let mut n = Nail::new();
+        a.wall_sliding = true;
+        n.tick(P, true, 0, &mut a);
+        for _ in 0..P.cooldown {
+            n.tick(P, false, 0, &mut a);
+        }
+        a.wall_sliding = false;
+        assert!(n.tick(P, true, 0, &mut a));
+        assert_eq!((n.kind, n.wall, n.facing(&a)), (0, false, a.facing));
+    }
+    #[test]
+    fn a_wall_slash_cuts_on_the_far_side() {
+        let tri = [[-200, 0], [-100, 100], [-100, -100]];
+        let ps = [&tri[..]; 4];
+        let grass = [Grass {
+            bounds: [-155, -5, -145, 5],
+            off_draw: 0,
+            on_draw: 1,
+        }];
+        let mut n = Nail::new();
+        let mut a = Player::spawn(0, 0);
+        a.wall_sliding = true;
+        a.facing = 1;
+        let mut cut = 0;
+        n.tick(P, true, 0, &mut a);
+        for _ in 0..2 {
+            n.tick(P, false, 0, &mut a);
+        }
+        assert_eq!(n.cut_grass(P, ps, &grass, &a, &mut cut), 1);
     }
     #[test]
     fn grounded_down_becomes_horizontal_air_down_and_up_are_distinct() {
