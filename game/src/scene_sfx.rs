@@ -73,6 +73,7 @@ pub const fn chunk(scene: usize) -> (usize, u32) {
 pub fn invalidate() {
     unsafe {
         CURRENT = NONE;
+        SWITCH_CLOCK = SWITCH_IDLE;
         LOOPING = None;
         HK_SCENE_SFX_SCENE = 0;
     }
@@ -276,23 +277,44 @@ pub fn nail_terrain() {
     play_pitched(NAIL_TERRAIN, scale);
 }
 /// A gate switch at `at` was struck (`Switch Control`'s `Hit`: AudioPlayerOneShotSingle through
-/// the audio actor at the switch).
+/// the audio actor at the switch). The gate it opens plays its own sounds on its way open
+/// (`SWITCH_SOUNDS`), timed from now.
 pub fn gate_switch(at: [i32; 2]) {
     play_one_of(&[SWITCH_GATE_SWITCH], at, hk_sim::fixed::ACTOR_ROLLOFF);
+    unsafe {
+        SWITCH_CLOCK = 0;
+    }
 }
-/// The scene's `NonThunker` boxes (the cook's NO_THUNK rows for `scene`).
-pub fn no_thunk(scene: usize) -> &'static [[i32; 4]] {
-    let first = NO_THUNK_SCENE.iter().position(|&s| s as usize == scene).unwrap_or(0);
-    let count = NO_THUNK_SCENE[first..].iter().take_while(|&&s| s as usize == scene).count();
-    &NO_THUNK[first..first + count]
+/// A vine platform's `Vine` at `at` was cut (`VinePlatformCut.Cut`: PlayOneShot of `cutSound` on
+/// the platform's AudioSource, whose rolloff is the actor curve).
+pub fn vine_cut(at: [i32; 2]) {
+    play_one_of(&[VINE_PLAT_CUT], at, hk_sim::fixed::ACTOR_ROLLOFF);
+}
+/// The scene's terrain boxes and their kind bits (the cook's TERRAIN_BOX rows for `scene`).
+pub fn terrain_boxes(scene: usize) -> (&'static [[i32; 4]], &'static [u8]) {
+    let first = TERRAIN_BOX_SCENE.iter().position(|&s| s as usize == scene).unwrap_or(0);
+    let count = TERRAIN_BOX_SCENE[first..].iter().take_while(|&&s| s as usize == scene).count();
+    (&TERRAIN_BOX[first..first + count], &TERRAIN_BOX_KIND[first..first + count])
 }
 /// Ticks left before a TinkEffect answers again (`repeatDelay`, 0.25 s), one for the port's
 /// TinkEffect surfaces together rather than one per object.
 static mut TINK_WAIT: u8 = 0;
-/// One simulation tick of the TinkEffect delay.
+/// Ticks since the last gate switch was struck, while a `SWITCH_SOUNDS` row may still be due;
+/// `SWITCH_IDLE` otherwise.
+static mut SWITCH_CLOCK: u16 = SWITCH_IDLE;
+const SWITCH_IDLE: u16 = 600;
+/// One simulation tick of the TinkEffect delay and of the opening gate's sounds.
 pub fn tick() {
     unsafe {
         TINK_WAIT = TINK_WAIT.saturating_sub(1);
+        if SWITCH_CLOCK < SWITCH_IDLE {
+            SWITCH_CLOCK += 1;
+            for &(scene, event, tick, at) in SWITCH_SOUNDS {
+                if tick == SWITCH_CLOCK && scene as usize == CURRENT {
+                    play_one_of(&[event], at, hk_sim::fixed::ACTOR_ROLLOFF);
+                }
+            }
+        }
     }
 }
 /// Armour turned the nail at `at`: the `Block Hit` prefab's AudioSource (`sword_hit_reject`,
@@ -300,16 +322,20 @@ pub fn tick() {
 pub fn nail_reject(at: [i32; 2]) {
     play_one_of(&[NAIL_REJECT], at, hk_sim::fixed::ACTOR_ROLLOFF);
 }
-/// A TinkEffect at `at` answered the nail (`Block Hit v2`, the same clip), at most once per
-/// 15 ticks.
-pub fn tink(at: [i32; 2]) {
-    unsafe {
+/// A TinkEffect answered the nail (`Block Hit v2`, the same clip), at most once per 15 ticks.
+/// `TinkEffect.OnTriggerEnter2D` sets the spawned effect's pitch in 0.85 to 1.15. It spawns the
+/// effect within two units of the Knight, always inside the curve's full-volume 39 units of the
+/// camera, so it plays at full level.
+pub fn tink() {
+    let scale = unsafe {
         if TINK_WAIT != 0 {
             return;
         }
         TINK_WAIT = 15;
-    }
-    nail_reject(at);
+        TABLE_RANDOM = NrLcg::step(TABLE_RANDOM);
+        3482 + psx_math::WideU::mul(TABLE_RANDOM, 1229).high()
+    };
+    play_pitched(NAIL_REJECT, scale);
 }
 /// Where the resident bank holds `event`, with the rate it was cooked at, its
 /// gain, its pitch register and its bytes, for a caller that plays it on a voice of its own.

@@ -1617,10 +1617,15 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
-            let no_thunk = scene_sfx::no_thunk(r.scene);
+            let (boxes, kinds) = scene_sfx::terrain_boxes(r.scene);
             let player = game.player;
-            if game.thunk.tick(&player, body, room.counts[5], game.state.edge_reader(r, room), no_thunk) {
+            let struck = game.thunk.tick(&player, body, room.counts[5], game.state.edge_reader(r, room), boxes, kinds);
+            if struck & hk_sim::terrain_thunk::THUNK != 0 {
                 scene_sfx::nail_terrain();
+            }
+            // A gate's, a toll gate's or the lift block's TinkEffect.
+            if struck & hk_sim::terrain_thunk::TINK != 0 {
+                scene_sfx::tink();
             }
         }
         // HeroController.Bounce returns early while cState.shroomBouncing,
@@ -1687,6 +1692,9 @@ pub fn simulate(
         }
         if let Some(at) = strike.gate_switch_at {
             scene_sfx::gate_switch(at);
+        }
+        if let Some(at) = strike.vine_cut_at {
+            scene_sfx::vine_cut(at);
         }
         // Barrels, poles and wagons break with their own clip where the scene bank has room.
         if let Some(event) = strike.last_broken.and_then(scene_sfx::break_sound) {
@@ -2197,6 +2205,12 @@ pub fn simulate(
             .world_metadata()
             .region(meta_region)
             .expect("admitted world metadata covers the selected region");
+        // Spikes and worms carry a TinkEffect: the nail on one answers with `sword_hit_reject`.
+        if let Some(nail) = crate::nail_bounds(&game.nail, &game.player) {
+            if game.state.hazard_tink(bank_region, nail) {
+                scene_sfx::tink();
+            }
+        }
         if let Some((damage, hazard, direction)) =
             game.state
                 .hazard_contact(bank_region, &game.player, PARAMS, |id| {
