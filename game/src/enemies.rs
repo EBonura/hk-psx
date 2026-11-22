@@ -8065,12 +8065,13 @@ pub fn pogo_contact(
         if target.breakable().is_some_and(|id| state.broken(id)) {
             continue;
         }
-        if crate::battle_gates::armour_tink_hidden(target.bounds()) {
+        let tinger = crate::battle_gates::armour_tinger(target.bounds());
+        if tinger == Some(false) {
             continue;
         }
         if overlap(bounds, target.bounds()) && target.hit_by(&points[..src.len()]) {
             // `FK Armour`'s `Tinger` is a TinkEffect as well as a bounce.
-            if crate::battle_gates::is_armour_tink(target.bounds()) {
+            if tinger.is_some() {
                 crate::scene_sfx::tink();
             }
             response.contact(
