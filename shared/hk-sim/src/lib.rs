@@ -350,6 +350,13 @@ impl Player {
             self.dash_queue += 1;
         }
     }
+    /// What `HeroController::Bounce` and `BounceHigh` do to the Knight besides
+    /// arming the bounce (`NailResponse` holds that): a pogo hands back the
+    /// double jump and the air dash, as `doubleJumped` and `airDashed` clear.
+    pub fn bounce(&mut self) {
+        self.double_jumped = false;
+        self.air_dashed = false;
+    }
     /// `HeroController::ShroomBounce`, which NailSlash's down slash calls in
     /// place of the ordinary bounce when the target carries a BounceShroom.
     /// Both air abilities come back and the rise replaces the velocity
