@@ -6,8 +6,11 @@
 //! for 2.0 units (right when `facingRight` differs from `wallSliding`), up from its top or down
 //! from its bottom for 1.5 units, against the Terrain layers. A hit on a non-trigger collider
 //! whose GameObject has no active `NonThunker` spawns `nailTerrainImpactEffectPrefab`, whose
-//! AudioSource plays the tink, and ends the checks. The source then recoils the Knight off a
-//! side or up hit; the port does not (it never has), so this models the sound's trigger only.
+//! AudioSource plays the tink, and ends the checks. It then recoils the Knight: a side hit calls
+//! `RecoilLeft` when `facingRight` (else `RecoilRight`), an up hit `RecoilDown`, a down hit nothing.
+//! Those are the methods a nail hit on an enemy calls, so `recoil` answers through the same
+//! `NailResponse::contact` (hero prefab: RECOIL_HOR_VELOCITY 3.75, RECOIL_HOR_STEPS 8,
+//! RECOIL_DOWN_VELOCITY 0, cooked into `NailResponseParams`).
 //!
 //! The cast here is the swept box against the room's terrain edges: an edge that crosses or
 //! lies in the box's whole path counts, the nearest or not. An edge with both ends in one of
@@ -18,7 +21,7 @@
 //! the lift's `Inactive Block`): the source's answers the nail slash's trigger, the port's the cast
 //! striking an edge inside the object's box. The box holds edges exactly while the object is there
 //! (an open gate's edges are lifted), and an object the nail can reach is one the cast reaches.
-use crate::{combat::segments_intersect, empty_edge, Player, ONE};
+use crate::{combat::segments_intersect, empty_edge, NailResponse, NailResponseParams, Player, ONE};
 
 /// 0.12 s at 60 Hz: the checks at 0, 1/60, ... 7/60 s (the timer is tested after each frame's
 /// `deltaTime` comes off it, and the eighth leaves it at 0.0033 s).
@@ -115,6 +118,14 @@ impl TerrainThunk {
             self.left = 0;
         }
         out
+    }
+    /// `CheckForTerrainThunk`'s recoil after a `THUNK`: the side slash's `RecoilLeft`/`RecoilRight`
+    /// (away from `facing`, wall slide or not) is `contact` kind 0, the up slash's `RecoilDown`
+    /// kind 2; the down slash has none. `contact` keeps `RecoilLeft`'s refusal while recoiling.
+    pub fn recoil(&self, response: &mut NailResponse, p: NailResponseParams, player: &mut Player) {
+        if self.dir < 2 {
+            response.contact(p, self.dir as u16 * 2, player.facing, player);
+        }
     }
 }
 
@@ -254,6 +265,67 @@ mod tests {
         // Another scene's box answers nothing here.
         t.start(0);
         assert_eq!(t.tick(&player(1), BODY, 1, |_| gate_face, &[gate], &[6], &[BOX_TINK], 5), THUNK);
+    }
+
+    const R: NailResponseParams = NailResponseParams {
+        recoil_ticks: 11,
+        recoil_speed: 15 * ONE / 4,
+        bounce_ticks: 15,
+        high_bounce_ticks: 17,
+        bounce_speed: 12 * ONE,
+        down_speed: 0,
+    };
+    /// One swing of `kind` against `edges`, recoiling on a thunk as the game does.
+    fn swing(kind: u16, p: &mut Player, edges: &[[i32; 4]], no: &[[i32; 4]]) -> NailResponse {
+        let mut t = TerrainThunk::new();
+        let mut r = NailResponse::new();
+        t.start(kind);
+        while t.active() {
+            if run(&mut t, p, edges, no) {
+                t.recoil(&mut r, R, p);
+            }
+        }
+        r
+    }
+
+    #[test]
+    fn a_side_slash_on_terrain_recoils_away_from_facing() {
+        let mut p = player(1);
+        let r = swing(0, &mut p, &[WALL_RIGHT], &[]);
+        assert_eq!((r.recoil_left, r.recoil_direction), (R.recoil_ticks, -1));
+        let wall_left = [-2 * ONE, -4 * ONE, -2 * ONE, 4 * ONE];
+        let r = swing(1, &mut player(-1), &[wall_left], &[]);
+        assert_eq!((r.recoil_left, r.recoil_direction), (R.recoil_ticks, 1));
+        let r = swing(0, &mut player(-1), &[WALL_RIGHT], &[]);
+        assert_eq!(r.recoil_left, 0, "a wall behind the Knight is not struck");
+    }
+
+    #[test]
+    fn an_up_slash_on_a_ceiling_is_recoil_down_and_a_down_slash_none() {
+        let ceiling = [-4 * ONE, 3 * ONE, 4 * ONE, 3 * ONE];
+        let floor = [-4 * ONE, -ONE, 4 * ONE, -ONE];
+        let mut p = player(1);
+        p.vy = 10 * ONE;
+        p.jumping = true;
+        let r = swing(2, &mut p, &[ceiling], &[]);
+        assert_eq!((p.vy, p.jumping, r.recoil_left), (R.down_speed, false, 0));
+        let mut p = player(1);
+        p.vy = -5 * ONE;
+        let r = swing(3, &mut p, &[floor], &[]);
+        assert_eq!((p.vy, r), (-5 * ONE, NailResponse::new()), "no bounce, no recoil");
+    }
+
+    #[test]
+    fn a_non_thunker_box_gives_no_recoil() {
+        let door = [2 * ONE, -ONE, 2 * ONE + ONE / 2, 3 * ONE];
+        let door_face = [2 * ONE, -ONE, 2 * ONE, 3 * ONE];
+        let r = swing(0, &mut player(1), &[door_face], &[door]);
+        assert_eq!(r, NailResponse::new());
+        let ceiling = [-4 * ONE, 3 * ONE, 4 * ONE, 3 * ONE];
+        let mut p = player(1);
+        p.vy = 10 * ONE;
+        swing(2, &mut p, &[ceiling], &[[-5 * ONE, 2 * ONE, 5 * ONE, 4 * ONE]]);
+        assert_eq!(p.vy, 10 * ONE);
     }
 
     #[test]
