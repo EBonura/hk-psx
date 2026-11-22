@@ -60,7 +60,7 @@ map = "game.map"
 # cache that a cook publishes into.
 [originals]
 hollow-knight = "3521cb92cf9d68f48de9063aa3d3fabf75b0670b7451c519079e43c9723496de"
-sdk = "60460ffafb791049af0737510eadcab24594493cb38ab4e47d2674b11bf985ea"
+sdk = "50e10bdfc7719c76ceac8da8d2e1a91da9784843de0047706ccb7c7008409eda"
 
 [[size]]
 build = "ship"
