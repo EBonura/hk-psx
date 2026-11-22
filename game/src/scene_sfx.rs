@@ -270,11 +270,17 @@ pub fn drip(at: [i32; 2]) {
 /// The nail struck terrain (`HeroController.CheckForTerrainThunk`): the impact effect's
 /// AudioSource is 2D (no rolloff) and `AudioSourcePitchRandomizer` picks its pitch in 0.75 to 1.25.
 pub fn nail_terrain() {
+    play_random_pitch(NAIL_TERRAIN, 3072, 2049);
+}
+/// `event` at a pitch scale drawn from `low` to `low + span - 1` (/ 4096): the terrain tink's and
+/// the TinkEffect's pitch randomisers share one body.
+#[inline(never)]
+fn play_random_pitch(event: u8, low: u32, span: u32) {
     let scale = unsafe {
         TABLE_RANDOM = NrLcg::step(TABLE_RANDOM);
-        3072 + psx_math::WideU::mul(TABLE_RANDOM, 2049).high()
+        low + psx_math::WideU::mul(TABLE_RANDOM, span).high()
     };
-    play_pitched(NAIL_TERRAIN, scale);
+    play_pitched(event, scale);
 }
 /// A gate switch at `at` was struck (`Switch Control`'s `Hit`: AudioPlayerOneShotSingle through
 /// the audio actor at the switch). The gate it opens plays its own sounds on its way open
@@ -320,16 +326,15 @@ pub fn nail_reject(at: [i32; 2]) {
 /// `TinkEffect.OnTriggerEnter2D` sets the spawned effect's pitch in 0.85 to 1.15. It spawns the
 /// effect within two units of the Knight, always inside the curve's full-volume 39 units of the
 /// camera, so it plays at full level.
+#[inline(never)]
 pub fn tink() {
-    let scale = unsafe {
+    unsafe {
         if TINK_WAIT != 0 {
             return;
         }
         TINK_WAIT = 15;
-        TABLE_RANDOM = NrLcg::step(TABLE_RANDOM);
-        3482 + psx_math::WideU::mul(TABLE_RANDOM, 1229).high()
-    };
-    play_pitched(NAIL_REJECT, scale);
+    }
+    play_random_pitch(NAIL_REJECT, 3482, 1229);
 }
 /// Where the resident bank holds `event`, with the rate it was cooked at, its
 /// gain, its pitch register and its bytes, for a caller that plays it on a voice of its own.
