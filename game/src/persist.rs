@@ -126,30 +126,30 @@ pub const HAS_CITY_KEY: u32 = 8;
 /// The map and its mapper, from bit 16 so the abilities and pickups other
 /// branches add below it do not collide with them. `hasMap` (any map bought),
 /// `mapCrossroads`, `hasQuill`, `hasPinBench`, `metCornifer`,
-/// `corniferIntroduced`, `openedMapperShop` (Cornifer's copy of it: see
-/// `player_data`), `metIselda`. `mapDirtmouth` is a new-save default that
-/// nothing clears, so it has no bit.
+/// `corniferIntroduced`, `openedMapperShop`, `metIselda`. `mapDirtmouth` is a
+/// new-save default that nothing clears, so it has no bit. `openedMapperShop` is
+/// the original's field (id 39), which the Crossroads_06 FSM writes too; it
+/// was bit 22 until the merge and `HK_WORLD_PLAYER` still publishes it there.
 pub const HAS_MAP: u32 = 16;
 pub const MAP_CROSSROADS: u32 = 17;
 pub const HAS_QUILL: u32 = 18;
 pub const HAS_PIN_BENCH: u32 = 19;
 pub const MET_CORNIFER: u32 = 20;
 pub const CORNIFER_INTRODUCED: u32 = 21;
-pub const OPENED_MAPPER_SHOP: u32 = 22;
+pub const OPENED_MAPPER_SHOP: u32 = 39;
 pub const MET_ISELDA: u32 = 23;
 /// `hornet1Defeated`: Greenpath's Hornet beaten. The Cloak Corpse's shiny (the
 /// Mothwing Cloak) is offered once it is set.
 pub const HORNET_1_DEFEATED: u32 = 26;
 /// PlayerData small integers, by index from `player_data::FIREBALL_LEVEL`:
-/// `fireballLevel`, `quakeLevel`, `screamLevel`, and the area title
-/// (title_card.rs: the title index plus one of the area last announced, 0 for
-/// none; `player_data::PORT_AREA_TITLE`).
+/// `fireballLevel`, `quakeLevel`, `screamLevel`. HKS5 kept a fourth, the title
+/// card's area (title index plus one), which is `currentArea` now.
 pub const FIREBALL_LEVEL: usize = 0;
 #[allow(dead_code)]
 pub const QUAKE_LEVEL: usize = 1;
 #[allow(dead_code)]
 pub const SCREAM_LEVEL: usize = 2;
-pub const CURRENT_AREA: usize = 3;
+/// The levels HKS5 recorded (its layout; `save::migrate` reads them).
 pub const LEVELS: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -364,6 +364,7 @@ pub fn load(save: &crate::save::Save, profile: usize) -> bool {
         false_knight_scene: crate::world::false_knight_scene(),
         starting_masks: crate::shop::STARTING_MASKS,
         soul_per_vessel: crate::shop::SOUL_PER_VESSEL,
+        area_ids: &crate::title_card::AREA_IDS,
     };
     let restored = crate::title::load_player(
         profile,

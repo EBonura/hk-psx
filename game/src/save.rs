@@ -237,6 +237,8 @@ pub struct Build<'a> {
     pub false_knight_scene: Option<usize>,
     pub starting_masks: u8,
     pub soul_per_vessel: u16,
+    /// `title_card::AREA_IDS`: each title's `areaID`, for an older record's area.
+    pub area_ids: &'a [u8],
 }
 /// What `migrate` restored, for the loader's telemetry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -390,7 +392,10 @@ const _: () = assert!(
 /// - The script reserve (74 to 138, its field-list identity at 138) goes to the
 ///   fields the running bank names in those slots, only when the identity is
 ///   this bank's; otherwise it is dropped, which is what the HKS5 guest did.
-/// - HKS5's `persist` bits (152) and levels (156) go to their fields.
+/// - HKS5's `persist` bits (152) and levels (156) go to their fields, then the
+///   two the port kept apart from the source's are folded into it
+///   (`PlayerData::fold_retired`): Cornifer's `openedMapperShop` bit is ORed
+///   into the original field and the title card's area becomes `currentArea`.
 /// - HKS4 kept the False Knight's arena `Activated` and `falseKnightFirstPlop`
 ///   in the reserve's top two slots; they become the bits and the arena's
 ///   SceneData item, as HKS5's `persist::migrate_hks4` did.
@@ -411,6 +416,8 @@ pub fn migrate(
     }
     if save.version == 6 {
         pd.decode(player);
+        // An HKS6 record from before the merge may still name the retired ids.
+        pd.fold_retired(build.area_ids);
         return Restored { items: installed, scripts: true };
     }
     let b = player;
@@ -475,6 +482,7 @@ pub fn migrate(
             }
         }
     }
+    p.fold_retired(build.area_ids);
     Restored { items: installed, scripts }
 }
 /// Frame retries before an error stands. A silicon card read under load has

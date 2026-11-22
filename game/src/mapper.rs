@@ -350,7 +350,8 @@ pub use live::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    struct Pd(u32);
+    // PlayerData field ids reach 39 (`openedMapperShop`), so the fake holds 64.
+    struct Pd(u64);
     impl Player for Pd {
         fn get(&self, b: u32) -> bool {
             self.0 & (1 << b) != 0
