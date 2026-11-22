@@ -291,13 +291,16 @@ pub fn floor() -> u8 {
 /// gone: `Battle Control`'s `Init` destroys the armour, bounce box and all,
 /// unless the arena was already won.
 pub fn armour_tink_hidden(bounds: [i32; 4]) -> bool {
+    !unsafe { ARMOUR } && is_armour_tink(bounds)
+}
+/// Whether a nail-bounce box is `FK Armour`'s `Tinger`.
+pub fn is_armour_tink(bounds: [i32; 4]) -> bool {
     // The world bank rounds a box its own way; a sixteenth of a unit is far
     // below anything two different bounce boxes could share.
     const SLACK: i32 = 4096;
-    !unsafe { ARMOUR }
-        && FK_ARMOUR_TINK
-            .iter()
-            .any(|b| (0..4).all(|i| (b[i] - bounds[i]).abs() <= SLACK))
+    FK_ARMOUR_TINK
+        .iter()
+        .any(|b| (0..4).all(|i| (b[i] - bounds[i]).abs() <= SLACK))
 }
 /// `BG CLOSE`, broadcast to every gate in the room when the hero crosses the
 /// trigger. This is the direction that seals an arena: the gate's edges are in

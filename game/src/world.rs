@@ -811,6 +811,8 @@ pub struct Strike {
     pub impact_dropped: u16,
     /// The middle of the gate switch this swing struck (Q16 world), where its `Hit` sound plays.
     pub gate_switch_at: Option<[i32; 2]>,
+    /// The middle of the vine this swing cut (Q16 world), where `VinePlatformCut`'s sound plays.
+    pub vine_cut_at: Option<[i32; 2]>,
     /// A hidden wall or cracked floor this swing hit or broke.
     pub secret: Option<SecretEvent>,
 }
@@ -1340,10 +1342,13 @@ impl State {
                 if flags & 16 != 0 {
                     result.broken += 1;
                     // A `Switch Control` switch waits before it opens (its `Hit` state); a Vine
-                    // Platform's cut does not, and plays no switch sound.
+                    // Platform's cut does not, and plays its own sound.
+                    let b = object.bounds();
+                    let at = Some([b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2]);
                     if flags >> 6 != 0 {
-                        let b = object.bounds();
-                        result.gate_switch_at = Some([b[0] / 2 + b[2] / 2, b[1] / 2 + b[3] / 2]);
+                        result.gate_switch_at = at;
+                    } else {
+                        result.vine_cut_at = at;
                     }
                     continue;
                 }
@@ -2090,6 +2095,24 @@ impl State {
             self.trigger(region, META_HAZARD, body_box(player, params), &skip)?,
             player,
         )
+    }
+    /// Whether the nail's world box `nail` reaches a hazard whose third word marks a TinkEffect
+    /// (spikes, worms: tools/world_metadata.py), through the same bound table as `hazard_contact`.
+    #[inline(never)]
+    pub fn hazard_tink(&mut self, region: meta::Region, nail: [i32; 4]) -> bool {
+        let tinks = |object: meta::Object| {
+            object.extra(2) != 0 && object.polygons().flatten().any(|p| bank_polygon_hits(p, nail))
+        };
+        self.bind_triggers(region);
+        let t = &self.triggers;
+        if t.overflow {
+            return region.objects().flatten().any(|o| {
+                o.kind() == META_HAZARD && overlap(nail, o.bounds()) && tinks(o)
+            });
+        }
+        (0..t.hazards as usize).any(|slot| {
+            overlap(nail, t.bounds[slot]) && region.object(t.object[slot] as usize).is_some_and(|o| tinks(o))
+        })
     }
     /// Authored hazard checkpoint trigger, distinct from a bench or death save:
     /// spawn point and facing from the admitted scene bank.

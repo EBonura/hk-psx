@@ -6904,8 +6904,8 @@ impl EnemyWorld {
                 // only tinks (its recoils are NailSlash's own) or, from above,
                 // takes an ordinary Bounce.
                 if hk_sim::polygon_hits_box(polygon, shell) && vitals.can_control() {
-                    // The Shell's TinkEffect: `Block Hit v2` at the collider's centre.
-                    crate::scene_sfx::tink([shell[0] / 2 + shell[2] / 2, shell[1] / 2 + shell[3] / 2]);
+                    // The Shell's TinkEffect: `Block Hit v2`.
+                    crate::scene_sfx::tink();
                     response.contact(
                         crate::NAIL_RESPONSE_PARAMS,
                         nail.kind,
@@ -8069,6 +8069,10 @@ pub fn pogo_contact(
             continue;
         }
         if overlap(bounds, target.bounds()) && target.hit_by(&points[..src.len()]) {
+            // `FK Armour`'s `Tinger` is a TinkEffect as well as a bounce.
+            if crate::battle_gates::is_armour_tink(target.bounds()) {
+                crate::scene_sfx::tink();
+            }
             response.contact(
                 crate::NAIL_RESPONSE_PARAMS,
                 nail.kind,

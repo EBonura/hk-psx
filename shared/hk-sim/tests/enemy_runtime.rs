@@ -482,6 +482,9 @@ mod battle_gates {
     pub fn armour_tink_hidden(_: [i32; 4]) -> bool {
         false
     }
+    pub fn is_armour_tink(_: [i32; 4]) -> bool {
+        false
+    }
 }
 /// The camera and the SPU, which the boss reaches through two global modules
 /// the real guest keeps in `static mut`. A shared static cannot be asserted
@@ -605,7 +608,7 @@ mod scene_sfx {
     pub fn loop_stop() {}
     pub fn corpse_smash(_at: [i32; 2]) {}
     pub fn nail_reject(_at: [i32; 2]) {}
-    pub fn tink(_at: [i32; 2]) {}
+    pub fn tink() {}
     pub fn play(event: u8) {
         if event != ASPID_SPIT {
             crate::boss_effects::record("scene voice");

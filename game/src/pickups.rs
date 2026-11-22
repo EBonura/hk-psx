@@ -228,6 +228,18 @@ impl World {
         }
         None
     }
+    /// Whether the nail's polygon is on a chest whose lid has finished opening: the chest's
+    /// `Opened` child, active from `Chest Control`'s `Opened` state, carries a TinkEffect. The
+    /// chest's own box stands in for `Opened`'s (as wide, 0.31 units taller at the top).
+    #[inline(never)]
+    pub fn opened_hit(&self, polygon: &[[i32; 2]]) -> bool {
+        self.chests.iter().flatten().any(|c| {
+            let spec = &CHESTS[c.index as usize];
+            c.open
+                && u32::from(c.age) * spec.open_fps >= u32::from(spec.open_count) * 60 * 256
+                && polygon_hits_box(polygon, spec.body)
+        })
+    }
     /// One tick of pickups. `inspect` is UP held while the Knight is free to
     /// inspect; a shiny answers the press (`START INSPECT`), a piece the
     /// Knight's touch (`GET`). `taken` records each one taken.
