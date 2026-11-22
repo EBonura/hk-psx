@@ -1,14 +1,14 @@
 # Written by `psoxide-test bless`; edit only by blessing again (decision 4: a bar changes by editing
 # psoxide-test.toml with a reason, never by hand-editing these numbers).
 schema = 1
-blessed_commit = "cb79bfb4d3cdc2c68706063bdac67e9841fa9db9+dirty"
+blessed_commit = "6c9a95849d495f0695f4b86847657b2026983013+dirty"
 sdk_pin = "b3008d5fe2b5485958cffc4eabee59e885830139"
 
 [size.ship]
-text = 815692
-data = 254200
-bss = 796100
-free = 116156
+text = 818256
+data = 256440
+bss = 796116
+free = 111340
 
 [speed.c37-stand]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
@@ -16,6 +16,15 @@ flips = [978, 980, 982, 983, 984, 986, 986, 987]
 work_per_frame = [1234287, 1231770, 1229264, 1227457, 1226768, 1224274, 1224269, 1223021]
 frame_work_p99 = [2196828, 2196828, 2196828, 2196828, 2196828, 2196828, 2196828, 2196828]
 vblanks = ["2:767,3:178,4:30,5:2", "2:773,3:174,4:30,5:2", "2:779,3:170,4:30,5:2", "2:782,3:168,4:30,5:2", "2:786,3:165,4:30,5:2", "2:790,3:163,4:30,5:2", "2:791,3:162,4:30,5:2", "2:793,3:161,4:30,5:2"]
+legacy_trusted = "cb79bfb4d3cdc2c68706063bdac67e9841fa9db9+dirty"
+
+[speed.c37-stand.identity]
+tape = "tools/tapes/c37-stand.pxtape"
+tape_sha256 = "ad7e1daee2b5fd12eeba398be4b4a5f2b4becccb198bfb365dc0342812c6a928"
+window = "polls 700..2900"
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+launch_args = ["--embedded-playtest", "--memcard", "build/harness/twin/card-secret-c37.mcd"]
+gate_revision = "97cd078f9d2a33eb6aff274541bccc118f5b12e8"
 
 [speed.kings-return]
 offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
@@ -23,154 +32,163 @@ flips = [553, 554, 554, 555, 556, 558, 559, 559]
 work_per_frame = [1190828, 1188683, 1188682, 1186544, 1184414, 1180176, 1178067, 1178066]
 frame_work_p99 = [1648404, 1648404, 1648404, 1648404, 1648404, 1648337, 1648337, 1648337]
 vblanks = ["2:461,3:88,4:3", "2:463,3:87,4:3", "2:464,3:86,4:3", "2:467,3:84,4:3", "2:471,3:81,4:3", "2:477,3:77,4:3", "2:478,3:77,4:3", "2:480,3:75,4:3"]
+legacy_trusted = "cb79bfb4d3cdc2c68706063bdac67e9841fa9db9+dirty"
+
+[speed.kings-return.identity]
+tape = "tools/tapes/kings-return.pxtape"
+tape_sha256 = "43bbf7bfd24a07216bab80ebfeac875ee70330451cb71449729e0e0c7a4fcc42"
+window = "polls 700..1900"
+offsets = [-48, -36, -24, -12, 0, 12, 24, 36]
+launch_args = ["--embedded-playtest", "--memcard", "build/harness/twin/card-kings-return.mcd"]
+gate_revision = "97cd078f9d2a33eb6aff274541bccc118f5b12e8"
 
 [journeys.walk-ability-dash]
-ticks = 1200
+ticks = 1196
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-ability-wings]
-ticks = 1161
+ticks = 1159
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-baldur-spell]
-ticks = 5429
+ticks = 5428
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-cheat-geo]
-ticks = 535
+ticks = 534
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crest-save-reload]
-ticks = 20807
+ticks = 20845
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-crossroads-shortcut]
-ticks = 1675
+ticks = 1676
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-earned-focus]
-ticks = 4819
+ticks = 4816
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-false-knight-from-bench-47]
-ticks = 17696
+ticks = 17711
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-06]
-ticks = 3315
+ticks = 3350
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-07-to-30]
-ticks = 6462
+ticks = 6587
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-22-gate]
-ticks = 1304
+ticks = 1305
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-31]
-ticks = 4122
+ticks = 4140
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-fungus1-31-bench-to-hornet]
-ticks = 18650
+ticks = 22447
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05]
-ticks = 1501
+ticks = 1500
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-05-restore]
-ticks = 1229
+ticks = 1228
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-geo-rock-21]
-ticks = 1386
+ticks = 1384
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-greenpath-east]
-ticks = 6857
+ticks = 6864
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-greenpath-west]
-ticks = 11438
+ticks = 11415
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-counter-31]
-ticks = 1243
+ticks = 1242
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-death]
-ticks = 3641
+ticks = 4287
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-hornet-fight]
-ticks = 11523
+ticks = 10641
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-husk-hits]
-ticks = 4890
+ticks = 4920
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-menu-sfx]
-ticks = 883
+ticks = 882
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-exit]
-ticks = 3124
+ticks = 3123
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-mound-spell]
-ticks = 1820
+ticks = 1818
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-crest]
-ticks = 36014
+ticks = 36017
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-greenpath]
-ticks = 51781
+ticks = 51817
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-new-game-to-hornet]
-ticks = 79226
+ticks = 83367
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-plant-trap-kill]
-ticks = 1755
+ticks = 1757
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-secret-c03-reload]
-ticks = 920
+ticks = 918
 open_loop = 0
 clock_waits = 0
 
@@ -180,37 +198,37 @@ open_loop = 0
 clock_waits = 0
 
 [journeys.walk-shortcut-reload]
-ticks = 951
+ticks = 953
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-smoke]
-ticks = 7114
+ticks = 7113
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-tiktik-ceiling]
-ticks = 785
+ticks = 783
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-title-cards]
-ticks = 2620
+ticks = 2619
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-pay]
-ticks = 1150
+ticks = 1149
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-refuse]
-ticks = 1143
+ticks = 1142
 open_loop = 0
 clock_waits = 0
 
 [journeys.walk-toll-31-reload]
-ticks = 2486
+ticks = 2484
 open_loop = 0
 clock_waits = 0
 
@@ -227,4 +245,4 @@ clock_waits = 0
 [host]
 
 [maps]
-ship = "cb41c18b32942e7fd31a123d348e00430c0571d121dd51f4bc2c7864882ab19d"
+ship = "d00ae519202f5044a9234ff40e57edc54a2fa7067ff0d851e7b6794c5a6086f3"
