@@ -315,6 +315,16 @@
     "hk_psx::world::owner_fragments"
   ],
   [
+    "hk_psx::world::State::strike",
+    "debris",
+    "hk_psx::world::debris::decode"
+  ],
+  [
+    "hk_psx::world::State::strike",
+    "debris",
+    "hk_psx::world::owner_fragments"
+  ],
+  [
     "hk_psx::frame::simulate",
     "lifeblood",
     "hk_psx::lifeblood::World::strike_with"
