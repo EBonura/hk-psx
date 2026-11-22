@@ -59,9 +59,15 @@ pub static mut HK_SCENE_SFX_BYTES: u32 = 0;
 #[no_mangle]
 pub static mut HK_SCENE_SFX_SCENE: u32 = 0;
 
-fn entries(scene: usize) -> &'static [(u8, u32, u32, u32, u32, u16)] {
+/// An ENTRIES row as cooked: (event, SPU address / 8, chunk offset / 16, bytes / 16, rate, pitch register).
+type Packed = (u8, u16, u16, u16, u16, u16);
+fn entries(scene: usize) -> &'static [Packed] {
     let (_, _, first, count) = BANKS[scene];
     &ENTRIES[first as usize..first as usize + count as usize]
+}
+/// A row widened: (event, SPU address, chunk offset, bytes, rate, pitch register).
+fn unpack(e: &Packed) -> (u8, u32, u32, u32, u32, u16) {
+    (e.0, u32::from(e.1) * 8, u32::from(e.2) * 16, u32::from(e.3) * 16, u32::from(e.4), e.5)
 }
 /// The chunk `scene`'s group carries: its length and FNV-1a.
 pub const fn chunk(scene: usize) -> (usize, u32) {
@@ -85,7 +91,8 @@ pub fn overwritten(lo: u32, hi: u32) {
     if current != NONE
         && entries(current)
             .iter()
-            .any(|&(_, a, _, n, _, _)| a < hi && lo < a + n)
+            .map(unpack)
+            .any(|(_, a, _, n, _, _)| a < hi && lo < a + n)
     {
         invalidate();
     }
@@ -97,7 +104,7 @@ pub fn upload(scene: usize, bytes: &[u8]) {
     invalidate();
     assert!(bytes.len() == BANKS[scene].0 as usize);
     let mut total = 0u32;
-    for &(event, address, offset, len, _, _) in entries(scene) {
+    for (event, address, offset, len, _, _) in entries(scene).iter().map(unpack) {
         assert!(address % 16 == 0 && offset % 16 == 0);
         crate::ambience::forget(address, address + len);
         let clip = &bytes[offset as usize..(offset + len) as usize];
@@ -345,7 +352,7 @@ fn lookup(event: u8) -> Option<(u32, u32, i16, u16, u32)> {
     } else {
         entries(current).iter().find(|e| e.0 == event)
     };
-    let Some(&(_, address, _, bytes, rate, pitch)) = found else {
+    let Some((_, address, _, bytes, rate, pitch)) = found.map(unpack) else {
         unsafe {
             HK_SCENE_SFX_MISSED = HK_SCENE_SFX_MISSED.saturating_add(1);
         }
@@ -402,14 +409,15 @@ pub fn play(event: u8) {
 /// after a heavier sound took its voice) and otherwise only moves the volume. A zero level
 /// silences it without key off, so it keeps its place in the loop.
 pub fn loop_tick(event: u8, level: i32) {
-    let Some(&(_, address, _, _, rate, pitch)) = (unsafe {
+    let Some((_, address, _, _, rate, pitch)) = (unsafe {
         let current = CURRENT;
         if current == NONE {
             None
         } else {
             entries(current).iter().find(|e| e.0 == event)
         }
-    }) else {
+    })
+    .map(unpack) else {
         return;
     };
     let (_, gain, _) = EVENT_PARAMS[event as usize];
