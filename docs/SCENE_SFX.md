@@ -32,6 +32,20 @@ resident banks, which are full. The model is ambience's.
   `host/hk-cook/src/ambience.rs` refuses a catalogue whose cues need more than
   ambience's three pool voices (7, 8, 9) across a transition.
 
+## The spell block
+
+Desolate Dive's and Howling Wraiths' sounds (`hero_quake_spell_prepare` 3,000 Hz, `hero_quake_spell_impact` 3,000 Hz,
+`hero_scream_spell` 5,512 Hz; 960 + 3,280 + 9,568 = 13,808 bytes, rates and measured losses beside their rows) can sound in
+any scene, and a row in every scene's bank costs twelve bytes of resident RAM a scene. They are `["spells"]` rows, admitted to
+no scene, cooked into one block at one SPU address: the highest address the most scenes leave free after their stems and
+banks (`spell_block`; today 0x4ABC0, the top of the ambience region, free in 62 of 66 scenes: not Tutorial_01, Crossroads_04,
+Crossroads_09 or Crossroads_10, whose banks use it). The block rides at the end of the chunk of the free scenes the Knight
+can enter with it gone: those a gate away from a scene that is not free, and the bench scenes he continues or respawns at
+(14 today, `BANKS` flag `SPELL_CARRIED`). `upload` sends it only when it is not in SPU already; a bank that uses its bytes
+(`SPELL_CLOBBERED`) or any stem written over them (`overwritten`) clears `SPELL_READY`. While it is set `play` finds the
+three in `SPELL_ROWS`; otherwise they miss, and the caller plays the stand-in. `.hkpsx/scene-sfx.json` `spells` lists the
+address, the scenes where it is free and the carriers.
+
 ## API (guest)
 
 ```rust

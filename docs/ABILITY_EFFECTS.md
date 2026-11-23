@@ -14,8 +14,8 @@ where each piece lives. Source records are from the installed Windows build (`re
 | Monarch Wings double jump | `Double J Wings` (`Double Jump Wings 2`, 6 frames at 16 fps), `White Flash DJ` (holds 0.125 s, fades in 0.4 s), `Double J Feather` (moth feathers, 65 a second for 0.4 s) | the wings from `art_fx`; the flash as a small round glow of blue light (one cooked frame, 3.2 units across, held 8 ticks and faded over 24); the feathers are not presented (their texture is not in a scene's particle art) |
 | Vengeful Spirit | `Fireball Top`: `Fireball Blast`, `particles`, `white_light`; the ball sheds soul orbs (80 a second); `Wall Impact` when a wall stops it, `Ball End` when it expires | `Fireball Blast` and `Wall Impact` from `art_fx_spell`, `Ball End` (linked art); the orbs are not presented (a cloud of about thirty more quads in a spell fight, which tipped the Baldur fight from 2 to 3 vblanks a frame on 150 of its frames) |
 | Focus, heal | Lines Anim, Burst, White Flash R, Dust, Can Focus Particles | already presented (`focus_fx.rs`) |
-| Desolate Dive | `Q Charge`, `Q Trail`, `Q Flash Start`, `Q Flash Slam`, `Q Slam` (`Quake Blast`), `Q1 Pillar`, `Q Orbs`; the Knight's `Quake Antic`, `Quake Fall`, `Quake Land` | the Knight's three clips and `Q Slam` from the `art_spell` pack (`ability_fx::quake_land` at the landing). Not cooked: `Q Charge`, `Q Trail`, the two flashes, `Q1 Pillar`, `Q Orbs`, and the spell's sounds (`hero_quake_spell_prepare`, `hero_quake_spell_impact`): the hard landing's sound stands in. Where the pack is not resident the earlier stand-ins play (the Crystal Heart's ground charge, the ordinary fall, `HardLand`, the Focus dust). `BigShake` and `EnemyKillShake` are the camera's |
-| Howling Wraiths | `Scr Heads` (`Scream1`), `Scr Base`, `Scr Orbs`; the Knight's `Scream Start`, `Scream`, `Scream End` | the Knight's three clips and `Scr Heads` from `art_spell` (`ability_fx::scream` at the burst). Not cooked: `Scr Base`, `Scr Orbs` and `hero_scream_spell`: the fireball's cast sound stands in. Without the pack the fireball's antic and cast clips stand in for the body. `BigShake` is the camera's |
+| Desolate Dive | `Q Charge`, `Q Trail`, `Q Flash Start`, `Q Flash Slam`, `Q Slam` (`Quake Blast`), `Q1 Pillar`, `Q Orbs`; the Knight's `Quake Antic`, `Quake Fall`, `Quake Land` | the Knight's three clips and `Q Slam` from the `art_spell` pack (`ability_fx::quake_land` at the landing). Not cooked: `Q Charge`, `Q Trail`, the two flashes, `Q1 Pillar`, `Q Orbs`, and the spell's sounds stand in where the spell block is not in SPU (the hard landing's sound at the landing). Where the pack is not resident the earlier stand-ins play (the Crystal Heart's ground charge, the ordinary fall, `HardLand`, the Focus dust). `BigShake` and `EnemyKillShake` are the camera's |
+| Howling Wraiths | `Scr Heads` (`Scream1`), `Scr Base`, `Scr Orbs`; the Knight's `Scream Start`, `Scream`, `Scream End` | the Knight's three clips and `Scr Heads` from `art_spell` (`ability_fx::scream` at the burst). Not cooked: `Scr Base`, `Scr Orbs`. Where the spell block is not in SPU the fireball's cast sound stands in for `hero_scream_spell`, at the burst. Without the pack the fireball's antic and cast clips stand in for the body. `BigShake` is the camera's |
 | Nail arts | `Cyclone Slash`, `Great Slash`, `Dash Slash` | the abilities are not in the port |
 | Crystal Heart | the `SD *` effects | not presented (the body poses are) |
 
@@ -96,9 +96,10 @@ carry slot. The nine effect slots and the sixth carry slot unrolled `ability_fx:
 `modules::carry`/`wanted`/`fetch_pending`, which are now built for size; with that, free RAM below the module pool went from
 5,148 to 5,724 bytes.
 
-The spells' sounds are not cooked. The Focus range of SPU RAM, where the ability one-shots ride, has 32 bytes left, and the
-three clips need about 19 KB at the lowest rates the ability ladder allows; a per-scene bank row (`["all"]`, docs/SCENE_SFX.md)
-costs a 12-byte `ENTRIES` row per scene and event in resident RAM (about 2.4 KB for the three across 66 scenes).
+The spells' sounds are the scene banks' spell block (docs/SCENE_SFX.md, "The spell block"): `hero_quake_spell_prepare` at the
+cast (`Quake Antic`), `hero_quake_spell_impact` at the landing (`Quake1 Land`, the landing's only sound), `hero_scream_spell` at
+the cast (`Scream Antic1`), each `AudioPlay` at volume 1 and pitch 1 in `Spell Control`. They play wherever the block is in SPU
+(`scene_sfx::spell_ready`); elsewhere the stand-ins above play.
 
 ## Pins
 
