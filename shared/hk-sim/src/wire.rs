@@ -343,6 +343,10 @@ fn encode_controller(c: &ActorController, w: &mut Writer) {
             w.u8(20);
             w.u16(idle_clip);
         }
+        C::FatFly { attack_clip, shot_clip, impact_clip } => {
+            w.u8(23);
+            w.u16s(&[attack_clip, shot_clip, impact_clip]);
+        }
         C::MossCharger { clips, range } => {
             w.u8(22);
             w.u16s(&clips);
@@ -370,7 +374,7 @@ fn encode_controller(c: &ActorController, w: &mut Writer) {
 /// decoder reads a payload with one loop over this table and builds the variant from the numbers, which
 /// takes a fraction of the code of a reader call per field (`Runner`, tag 3, carries a nested enum and
 /// is read by hand).
-const SHAPES: [&[u8]; 23] = [
+const SHAPES: [&[u8]; 24] = [
     &[1],
     &[4, 4, 4, 4],
     &[],
@@ -394,6 +398,7 @@ const SHAPES: [&[u8]; 23] = [
     &[2],
     &[2, 2, 2, 2, 4, 4, 4, 4, 2, 4],
     &[2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4],
+    &[2, 2, 2],
 ];
 const MAX_FIELDS: usize = 24;
 
@@ -457,6 +462,7 @@ fn decode_controller(r: &mut Reader) -> Option<ActorController> {
         19 => C::FsmActor { family: a[0] as u8, clips: clips(&a, 1), trigger: coords(&a, 9) },
         20 => C::Static { idle_clip: a[0] as u16 },
         22 => C::MossCharger { clips: clips(&a, 0), range: coords(&a, 7) },
+        23 => C::FatFly { attack_clip: a[0] as u16, shot_clip: a[1] as u16, impact_clip: a[2] as u16 },
         _ => C::FalseKnight {
             jump_antic_clip: a[0] as u16,
             land_clip: a[1] as u16,
