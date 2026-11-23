@@ -213,33 +213,35 @@ pub fn retire_boss() {
 }
 /// Carried data: (module, manifest scene) pairs gameplay asked for, which the
 /// scene's gate loads like its own art (`carry`).
-const CARRY_SLOTS: usize = 5;
+/// Every package host/code_modules.py `CARRIED` names can be asked for at once.
+const CARRY_SLOTS: usize = 6;
 static mut CARRIED: [(u8, u16); CARRY_SLOTS] = [(u8::MAX, u16::MAX); CARRY_SLOTS];
-/// Per manifest scene, which of the optional carried packs (the Knight's ability effects, `art_fx`
-/// then `art_fx_spell`) fit in the pool beside the scene's own modules: bits 0 and 1 beside the Death
-/// and respawn clips, bits 2 and 3 beside those and the Shade's art as well (the build's guarantee), bits
-/// 4 and 5 beside the Death and respawn clips and the room less what its boss has given back (`retire_boss`).
-/// The build writes it into the image (host/hk-build/module_publish.rs).
+/// Per manifest scene, which of the optional carried packs (the Knight's ability art, `art_fx`, `art_fx_spell`
+/// then `art_spell`) fit in the pool beside the scene's own modules: bits 0 to 2 beside the Death and respawn
+/// clips, bits 3 to 5 beside those and the Shade's art as well (the build's guarantee), bits 6 to 8 beside the
+/// Death and respawn clips and the room less what its boss has given back (`retire_boss`). The build writes it
+/// into the image (host/hk-build/module_publish.rs).
 #[no_mangle]
-pub static mut HK_FX_FIT: [u8; SCENE_MODULES.len()] = [0x0f; SCENE_MODULES.len()];
+pub static mut HK_FX_FIT: [u16; SCENE_MODULES.len()] = [0x3f; SCENE_MODULES.len()];
 /// The optional packs that fit in `scene` now: `HK_FX_FIT`'s light row, or its full row while the
 /// Shade's art is wanted there (`shade`).
 pub fn fx_fit(scene: usize, shade: bool) -> u8 {
     let fit = unsafe { HK_FX_FIT[scene] };
     let retired = scene == unsafe { CURRENT } && !unsafe { RETIRED }.is_empty();
-    (if retired {
-        fit >> 4
+    ((if retired {
+        fit >> 6
     } else if shade {
-        fit >> 2
+        fit >> 3
     } else {
         fit
-    }) & 3
+    }) & 7) as u8
 }
 /// Ask for carried data module `m` (one with its own chunk, host/code_modules.py
 /// `CARRIED`) to be resident whenever manifest scene `scene` is, or for no scene
 /// (`None`). A gate into that scene reads it with the scene's art; it is pinned
 /// while the scene is current and evictable otherwise. Cheap: call it whenever
 /// the answer may have changed.
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn carry(m: usize, scene: Option<usize>) {
     let slots = unsafe { &mut *(&raw mut CARRIED) };
@@ -253,6 +255,7 @@ pub fn carry(m: usize, scene: Option<usize>) {
     }
 }
 /// Every module `scene` needs: its rooms' own and what is carried into it.
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 fn wanted(scene: usize) -> Mods {
     let mut w = scene_modules(scene);
@@ -1503,6 +1506,7 @@ pub fn hold_carry() {
     }
 }
 /// A pool fetch still needs the drive (planned, or reading).
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn fetch_pending() -> bool {
     if unsafe { !CARRY_SETTLED } || matches!(pf().state, Pf::Want | Pf::Reading) {
