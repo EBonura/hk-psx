@@ -35,6 +35,34 @@ pub fn start(fb: &mut DoubleBuffer) {
     }
     present::set_cap(PresentCap::HZ30);
 }
+
+/// Test discs (`route-input`) skip the boot splash: their tapes press the title's buttons by pad poll from
+/// boot, and the splash polls the pad every frame for its skip press. Data and not a `cfg` in code, so the
+/// twin links the same code as the shipping build (docs/HOT-TEXT.md); 1 and 2, so both builds keep it in
+/// `.data`. Exported, so the compiler cannot fold it.
+#[no_mangle]
+static mut HK_BOOT_SPLASH: u8 = if cfg!(feature = "route-input") { 1 } else { 2 };
+
+/// The shared PSoXide boot splash (psx-splash: the Bonnie Studios mark and its line, 150 VBlanks, skipped
+/// by a fresh Cross, Circle or Start), once at boot before the title. After `start`, with no frame handed
+/// over: it draws into the program's own buffers and leaves them black for the title's first frame.
+#[inline(never)]
+#[optimize(size)]
+pub fn boot_splash(fb: &mut DoubleBuffer) {
+    // SAFETY: a plain read of the flag above.
+    if unsafe { core::ptr::read_volatile(&raw const HK_BOOT_SPLASH) } != 2 {
+        return;
+    }
+    // SAFETY: nothing else touches the GPU until the splash returns: no frame has been handed over.
+    let mut dma = unsafe { psx_io::periph::GpuDma::steal() };
+    psx_splash::show(
+        psx_gpu::Gpu::from_dma_mut(&mut dma),
+        fb,
+        "Built with PSoXide",
+        psx_display::Brightness::new(crate::display::brightness()),
+        || psx_pad::ButtonState::from_bits(crate::input::poll_bits()),
+    );
+}
 fn presenter() -> &'static mut Presenter {
     // SAFETY: set once by `start`; the main thread is the only caller.
     unsafe { (*(&raw mut PRESENTER)).as_mut().expect("presentation not started") }
