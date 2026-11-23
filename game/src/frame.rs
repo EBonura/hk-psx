@@ -1255,8 +1255,26 @@ pub fn simulate(
         let cast_blocked = !game.vitals.can_control() || game.door.pending() || read_consumes;
         game.cast.has_fireball =
             game.settings.cheats.spell || persist::level(persist::FIREBALL_LEVEL) > 0;
+        // Dive and Wraiths: a level above 1 plays as level 1 (host/spells.py).
+        game.cast.has_quake =
+            game.settings.cheats.quake || persist::level(persist::QUAKE_LEVEL) > 0;
+        game.cast.has_scream =
+            game.settings.cheats.scream || persist::level(persist::SCREAM_LEVEL) > 0;
+        game.cast.aim = i8::from(pad.is_held(button::UP)) - i8::from(pad.is_held(button::DOWN));
         let was_antic = game.cast.phase == hk_sim::CastPhase::Antic;
         let hero = hero_params::get(game.settings.cheats);
+        // A Dive or Wraiths already running goes on before anything new is cast.
+        match game.player.spell_tick(&QUAKE_PARAMS, &SCREAM_PARAMS) {
+            hk_sim::SpellCue::None => {}
+            cue => {
+                // `TakeMP` in `Level Check 2` and `Scream Burst 1`: the same `MP Cost`.
+                game.vitals.soul = game.vitals.soul.saturating_sub(hero.fireball.cost);
+                if cue == hk_sim::SpellCue::Burst {
+                    camera::request(camera::Shake::Big);
+                    ability_sound(audio::FIREBALL);
+                }
+            }
+        }
         game.cast.tick(
             hero.fireball,
             FIREBALL_ANTIC_TICKS,
@@ -1274,6 +1292,19 @@ pub fn simulate(
             &game.player,
             cast_blocked,
         );
+        if let Some(choice) = game.cast.take_chosen() {
+            // RelinquishControl: no bounce carries into the spell.
+            game.nail_response = hk_sim::NailResponse::new();
+            if choice == hk_sim::Choice::Quake {
+                game.player.start_quake(&QUAKE_PARAMS);
+                // `Quake Antic`'s EnemyKillShake.
+                camera::request(camera::Shake::Kill);
+                unsafe { HK_SPELL_QUAKES = HK_SPELL_QUAKES.wrapping_add(1) }
+            } else {
+                game.player.start_scream();
+                unsafe { HK_SPELL_SCREAMS = HK_SPELL_SCREAMS.wrapping_add(1) }
+            }
+        }
         // `Fireball Top`'s `Cast Left`/`Cast Right` play the cast as the ball leaves.
         if was_antic && game.cast.phase == hk_sim::CastPhase::Recoil {
             ability_sound(audio::FIREBALL);
@@ -1289,6 +1320,7 @@ pub fn simulate(
                 // CanFocus wants cState.onGround, which a hard landing leaves false.
                 grounded: game.player.grounded && !game.player.hard_landing(),
                 can_start: game.vitals.can_control()
+                    && !game.player.casting()
                     && !game.door.pending()
                     && (!game.nail.active || game.nail.age >= hero.focus.attack_recovery_ticks),
             },
@@ -1419,6 +1451,7 @@ pub fn simulate(
                 || asking)
                 && game.vitals.can_control()
                 && !game.player.hard_landing()
+                && !game.player.casting()
                 && !game.nail.active;
             let leave = !asking
                 && [
@@ -1469,6 +1502,7 @@ pub fn simulate(
             || game.bench.locks_control()
             || game.save_ui.modal()
             || game.cast.locks_control()
+            || game.player.casting()
             || game.pickups.kneeling()
             // `Update` skips LookForInput in `hard_landing`, and CanJump, CanAttack and CanDash
             // refuse the state: no steering, jump, dash or strike until the timer runs out.
@@ -1574,11 +1608,25 @@ pub fn simulate(
         );
         // FallCheck, ShouldHardLand and DoHardLanding. A gate entry's drop is `no_input` in the
         // source, which lands through FinishedEnteringScene, never a hard landing.
-        let hard = game
-            .player
-            .hard_landing_tick(hard_landing::RULE, was_grounded, !game.door.entering());
+        // A Dive's fall is `no_input` too: it lands in `Quake1 Land`, never a hard landing.
+        let hard = game.player.hard_landing_tick(
+            hard_landing::RULE,
+            was_grounded,
+            !game.door.entering() && !game.player.casting(),
+        );
         if hard {
             hard_landing::landed(r.scene, &mut game.player);
+        }
+        // `Quake1 Land`: BigShake, and the hard landing's sound and dust stand in for the
+        // uncooked `Q Slam` blast, its orbs and the land clip's own sound.
+        let quake_landed = game.player.spell == hk_sim::HeroSpell::QuakeLand(0);
+        if quake_landed {
+            camera::request(camera::Shake::Big);
+            world::particles::pool().spawn_break_at(
+                r.scene,
+                focus_fx::DUST_OWNER,
+                [game.player.x, game.player.y],
+            );
         }
         hard_landing::tick(&game.player);
         audio::movement_tick(
@@ -1587,7 +1635,7 @@ pub fn simulate(
             (game.door.entry_footsteps() || (dir != 0 && !locked))
                 && game.vitals.can_control()
                 && game.vitals.recoil_velocity(VITAL_PARAMS).is_none(),
-            hard,
+            hard || quake_landed,
         );
         let vertical = i32::from(pad.is_held(button::UP)) - i32::from(pad.is_held(button::DOWN));
         let attacked = game.nail.tick(

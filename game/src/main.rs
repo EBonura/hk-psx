@@ -216,6 +216,11 @@ pub static mut HK_GRASS_CUT_MASK: u32 = 0;
 pub static mut HK_NAIL_ATTACK_COUNT: u32 = 0;
 #[no_mangle]
 pub static mut HK_FOCUS_STARTED: u32 = 0;
+/// Desolate Dives and Howling Wraiths cast (started, whatever ended them).
+#[no_mangle]
+pub static mut HK_SPELL_QUAKES: u32 = 0;
+#[no_mangle]
+pub static mut HK_SPELL_SCREAMS: u32 = 0;
 #[no_mangle]
 pub static mut HK_FOCUS_COMPLETED: u32 = 0;
 #[no_mangle]
@@ -257,7 +262,25 @@ fn ability_pose(
     dream: &hk_sim::DreamNail,
     cast: &hk_sim::Cast,
 ) -> Option<(usize, u32)> {
-    use hk_sim::{CastPhase, DreamPhase};
+    use hk_sim::{CastPhase, DreamPhase, HeroSpell};
+    // Dive and Wraiths own the body outright. Their clips (`Quake Antic`, `Quake Land`,
+    // `Scream Start`, `Scream`) are not cooked: the Crystal Heart's ground charge, the
+    // hard landing's crouch and the fireball's cast stand in, and the fall keeps the
+    // ordinary falling pose.
+    match player.spell {
+        HeroSpell::QuakeAntic(t) => return Some((ability_art::SD_CHARGE_GROUND, t as u32)),
+        // `HardLand` runs at 12.5 fps; see `hard_landing::pose`.
+        HeroSpell::QuakeLand(t) => return Some((ability_art::HARD_LAND, t as u32 * 25 / 24)),
+        HeroSpell::Scream(t) => {
+            let antic = SCREAM_PARAMS.antic_ticks;
+            return Some(if t < antic {
+                (ability_art::FIREBALL_ANTIC, t as u32)
+            } else {
+                (ability_art::FIREBALL_CAST, (t - antic) as u32)
+            });
+        }
+        HeroSpell::Off | HeroSpell::QuakeDown => {}
+    }
     if cast.phase != CastPhase::Off {
         let clip = if cast.phase == CastPhase::Antic {
             ability_art::FIREBALL_ANTIC
@@ -518,9 +541,10 @@ pub static mut HK_GEO_LOST: u32 = 0;
 #[no_mangle]
 pub static mut HK_BLUE_HEALTH: u32 = 0;
 /// This tick's live hero attacks, gathered once after the Knight has moved
-/// and swung: Vengeful Spirit's ball, the nail swing, the Dream Nail slash, in
-/// the order the receivers have always taken them. Every receiver reads its
+/// and swung: Vengeful Spirit's ball, Dive's or Wraiths' hits, the nail swing,
+/// the Dream Nail slash, in the order the receivers have always taken them. Every receiver reads its
 /// hits from here (hk_sim::hero_attack).
+#[inline(never)]
 fn hero_attacks(
     nail: &Nail,
     cast: &hk_sim::Cast,
@@ -538,6 +562,7 @@ fn hero_attacks(
             cast.ball.facing,
         ));
     }
+    player.spell_hits(&QUAKE_PARAMS, &SCREAM_PARAMS, &mut attacks);
     if nail.hitting(hero.attack) {
         let damage = hero.vitals.nail_damage;
         if let Some(hit) = HeroHit::nail(nail, hero.attack, NAIL_POLYGONS, player, damage) {
@@ -757,7 +782,7 @@ fn apply_hurt(
         damage,
         direction,
         hazard,
-        player.shadow_dashing,
+        player.ignores_contact(),
     );
     respond_to_hurt(hurt, player, nail, response, focus);
     hurt
