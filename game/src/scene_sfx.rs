@@ -13,6 +13,11 @@
 //! bank does not hold (not cooked for this scene, or refused for room) is a
 //! no-op, counted in `HK_SCENE_SFX_MISSED`, so a call site never has to know
 //! which scenes carry which sounds.
+//!
+//! The spells' sounds (`HERO_QUAKE_SPELL_*`, `HERO_SCREAM_SPELL`) are one block
+//! at one address (`SPELL_SPU`) that no bank holds: a carrying scene's chunk ends
+//! with it and uploads it when it is not in SPU, and it stays playable until a
+//! stem or a bank writes over it (`SPELL_READY`).
 use crate::audio::{self, Claim, Weight};
 use psx_fx::NrLcg;
 use psx_spu::{self as spu, SpuAddr};
@@ -59,10 +64,14 @@ pub static mut HK_SCENE_SFX_BYTES: u32 = 0;
 #[no_mangle]
 pub static mut HK_SCENE_SFX_SCENE: u32 = 0;
 
+/// Whether Desolate Dive's and Howling Wraiths' sounds (`SPELL_ROWS`) are at `SPELL_SPU`: set when a
+/// carrying scene's bank uploads them (`SPELL_CARRIED`), cleared when anything writes those bytes.
+static mut SPELL_READY: bool = false;
+
 /// An ENTRIES row as cooked: (event, SPU address / 8, chunk offset / 16, bytes / 16, rate, pitch register).
 type Packed = (u8, u16, u16, u16, u16, u16);
 fn entries(scene: usize) -> &'static [Packed] {
-    let (_, _, first, count) = BANKS[scene];
+    let (_, _, first, count, _) = BANKS[scene];
     &ENTRIES[first as usize..first as usize + count as usize]
 }
 /// A row widened: (event, SPU address, chunk offset, bytes, rate, pitch register).
@@ -71,7 +80,7 @@ fn unpack(e: &Packed) -> (u8, u32, u32, u32, u32, u16) {
 }
 /// The chunk `scene`'s group carries: its length and FNV-1a.
 pub const fn chunk(scene: usize) -> (usize, u32) {
-    let (len, fnv, _, _) = BANKS[scene];
+    let (len, fnv, _, _, _) = BANKS[scene];
     (len as usize, fnv)
 }
 /// The resident bank is gone (a new admission began, or something else wrote
@@ -88,6 +97,7 @@ pub fn invalidate() {
 /// overlaps, so a play never keys on bytes that are no longer its clip.
 #[inline(never)]
 pub fn overwritten(lo: u32, hi: u32) {
+    spell_overwritten(lo, hi);
     let current = unsafe { CURRENT };
     if current != NONE
         && entries(current)
@@ -98,14 +108,42 @@ pub fn overwritten(lo: u32, hi: u32) {
         invalidate();
     }
 }
+/// The spell block's bytes `lo..hi` are about to be written over.
+fn spell_overwritten(lo: u32, hi: u32) {
+    if lo < SPELL_SPU + SPELL_BYTES && SPELL_SPU < hi {
+        unsafe {
+            SPELL_READY = false;
+        }
+    }
+}
 /// `bytes` is the checked chunk for guest scene `scene`. Uploads every entry to
-/// its cooked address, a slice at a time with the pad serviced between.
+/// its cooked address, a slice at a time with the pad serviced between, then the
+/// spell block at the chunk's end when it carries one and the block is not in SPU.
 pub fn upload(scene: usize, bytes: &[u8]) {
     stop_all();
     invalidate();
-    assert!(bytes.len() == BANKS[scene].0 as usize);
+    let (size, _, _, _, spells) = BANKS[scene];
+    assert!(bytes.len() == size as usize);
+    if spells & SPELL_CLOBBERED != 0 {
+        unsafe {
+            SPELL_READY = false;
+        }
+    }
+    let rows = entries(scene);
+    let carried = spells & SPELL_CARRIED != 0 && !spell_ready();
+    // The block as one more row, of no event (`u8::MAX`): its clips are `SPELL_ROWS`.
+    let block: Packed = (
+        u8::MAX,
+        (SPELL_SPU / 8) as u16,
+        (size.wrapping_sub(SPELL_BYTES) / 16) as u16,
+        (SPELL_BYTES / 16) as u16,
+        0,
+        0,
+    );
     let mut total = 0u32;
-    for (event, address, offset, len, _, _) in entries(scene).iter().map(unpack) {
+    for (event, address, offset, len, _, _) in
+        rows.iter().chain(carried.then_some(&block)).map(unpack)
+    {
         assert!(address % 16 == 0 && offset % 16 == 0);
         crate::ambience::forget(address, address + len);
         let clip = &bytes[offset as usize..(offset + len) as usize];
@@ -118,6 +156,11 @@ pub fn upload(scene: usize, bytes: &[u8]) {
             make_loop(address, clip);
         }
         total += len;
+    }
+    if carried {
+        unsafe {
+            SPELL_READY = true;
+        }
     }
     unsafe {
         CURRENT = scene;
@@ -194,7 +237,11 @@ const fn weight(event: u8) -> Weight {
         | GRUZ_GUSHING
         | BIG_FLY_STOMACHE_PROBLEMS_1
         | BIG_FLY_STOMACHE_PROBLEMS_2
-        | BIG_FLY_STOMACHE_PROBLEMS_FINAL_AND_EXPLODE => Weight::Boss,
+        | BIG_FLY_STOMACHE_PROBLEMS_FINAL_AND_EXPLODE
+        // The Knight's spells, as the hard landing the Dive's impact replaces.
+        | HERO_QUAKE_SPELL_PREPARE
+        | HERO_QUAKE_SPELL_IMPACT
+        | HERO_SCREAM_SPELL => Weight::Boss,
         ZOMBIE_SHIELD_RAISE
         | ZOMBIE_SHIELD_MOVE
         | ZOMBIE_GUARD_CLUB
@@ -346,9 +393,15 @@ pub fn tink() {
 }
 /// Where the resident bank holds `event`, with the rate it was cooked at, its
 /// gain, its pitch register and its bytes, for a caller that plays it on a voice of its own.
+#[inline(never)]
 fn lookup(event: u8) -> Option<(u32, u32, i16, u16, u32)> {
     let current = unsafe { CURRENT };
-    let found = if current == NONE {
+    // The spells' rows follow every other event's (host/hk-cook/src/scene_sfx.rs SPELLS).
+    let found = if event >= HERO_QUAKE_SPELL_PREPARE {
+        SPELL_ROWS
+            .get(usize::from(event - HERO_QUAKE_SPELL_PREPARE))
+            .filter(|_| spell_ready())
+    } else if current == NONE {
         None
     } else {
         entries(current).iter().find(|e| e.0 == event)
@@ -383,6 +436,12 @@ pub fn break_sound(id: usize) -> Option<u8> {
         .binary_search_by_key(&id, |&(owner, _)| owner)
         .ok()
         .map(|at| BREAK_SOUNDS[at].1)
+}
+/// Whether the spells' sounds (`HERO_QUAKE_SPELL_PREPARE`, `HERO_QUAKE_SPELL_IMPACT`, `HERO_SCREAM_SPELL`)
+/// are in SPU, so `play` plays them: not where the scene's stems or bank use their bytes, nor until a scene
+/// that carries them is entered after something did.
+pub fn spell_ready() -> bool {
+    unsafe { SPELL_READY }
 }
 /// Whether the resident bank holds `event`, without counting a miss.
 pub fn resident(event: u8) -> bool {
