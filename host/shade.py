@@ -148,6 +148,27 @@ PARRY_RECOILS = {'No Box Right': 'RecoilLeft', 'No Box Left': 'RecoilRight', 'No
                  'No Box Down': 'Bounce'}
 
 
+# iTween.EaseType.easeInOutCubic.
+EASE_IN_OUT_CUBIC = 5
+
+
+def _check_retreat(fsm):
+    """Retreat Start turns the body collider off and Retreat Reset back on; the
+    retreat itself is iTweenMoveTo to Start Pos over 1 s on easeInOutCubic."""
+    _check_actions(fsm, 'Retreat Start', {'SetCollider': {'active': False}})
+    _check_actions(fsm, 'Retreat Reset', {'SetCollider': {'active': True}})
+    data = _state_actions(fsm, 'Retreat')['actionData']
+    tweens = [i for i, n in enumerate(data['actionNames']) if n.rsplit('.', 1)[-1] == 'iTweenMoveTo' and data['actionEnabled'][i]]
+    if len(tweens) != 1 or not _near(_scalar(action_fields(data, tweens[0])['time']), 1.):
+        raise ValueError('unsupported Shade Retreat tween')
+    i = tweens[0]
+    end = data['actionStartIndex'][i + 1] if i + 1 < len(data['actionNames']) else len(data['paramName'])
+    ease = [int.from_bytes(bytes(data['byteData'][data['paramDataPos'][k]:data['paramDataPos'][k] + 4]), 'little')
+            for k in range(data['actionStartIndex'][i], end) if data['paramName'][k] == 'easeType']
+    if ease != [EASE_IN_OUT_CUBIC]:
+        raise ValueError(f'Shade Retreat tween eases with {ease}')
+
+
 def _check_parry(source, slash_components):
     fsms = [source.read(obj)['fsm'] for typename, obj in slash_components if typename == 'PlayMakerFSM']
     if len(fsms) != 1 or fsms[0]['name'] != 'nail_clash_tink':
@@ -229,6 +250,7 @@ def audit(source):
     _check_actions(fsm, 'Slash Antic', {'Tk2dPlayAnimationWithEvents': {'clipName': 'Slash Antic'},
                                         'DistanceFly': {'distance': 3., 'speedMax': 4., 'acceleration': .2}})
     _check_actions(fsm, 'Slash', {'Wait': {'time': .0829999968409538, 'finishEvent': 'SLASH'}})
+    _check_retreat(fsm)
     _check_actions(fsm, 'Right', {'SetVelocity2d': {'x': 8.}})
     _check_actions(fsm, 'Left', {'SetVelocity2d': {'x': -8.}})
     variables = {v['name']: v['value'] for group in fsm['variables'].values() if isinstance(group, list)
@@ -392,7 +414,7 @@ def cook():
                   'Every particle system, the death orbs, the Soul Orb HUD event, the light effect and all Shade audio are not presented.',
                   'Parrying the Slash (nail_clash_tink) recoils the Knight and gives the parry invulnerability; FreezeMoment(3), '
                   'NailParryRecover and the Nail Clash Effect are not reproduced, as for the Mawlek.',
-                  'The Slash polygon becomes its axis-aligned bounds and the retreat iTween path a straight interpolation.',
+                  'The Slash polygon becomes its axis-aligned bounds and the retreat iTween path a straight line (on its easeInOutCubic).',
                   'The Fireball, Quake, Scream, Friendly, Lake and Jar branches are unreachable at this port levels and are not implemented.'],
               'payload_sha256': hashlib.sha256(payload).hexdigest(),
               'rust_sha256': hashlib.sha256(text.encode()).hexdigest(),
