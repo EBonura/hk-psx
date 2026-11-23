@@ -849,6 +849,7 @@ pub fn interact(
         // The charm board's own cursor and whether it is up: the same select and submit
         // clips the pause list answers with (the inventory's own clips are not cooked).
         let board = (game.pause_menu.charms.open, game.pause_menu.charms.row);
+        game.pause_menu.charms.at_bench = game.bench.at_bench();
         if game.pause_menu.step(
             pad.bits(),
             &mut game.settings.sfx,

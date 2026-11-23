@@ -165,6 +165,11 @@ class CharmColumnTests(unittest.TestCase):
             self.assertLessEqual(width(name), col, name)
             for line in joined.split('\\n'):
                 self.assertLessEqual(width(line), col, line)
+        # `Charm Equip Msg` stands in the description's place, so it is wrapped to the same column.
+        reminder = re.search(r'BENCH_REMINDER:&str="([^"]*)";', text).group(1).split('\\n')
+        self.assertTrue(reminder and len(reminder) <= 11)
+        for line in reminder:
+            self.assertLessEqual(width(line), col, line)
         source = (ROOT / 'game/src/charms.rs').read_text()
         messages = re.findall(r'Refusal::\w+(?:\(_\))? => "([^"]*)"', source)
         self.assertEqual(len(messages), 6)

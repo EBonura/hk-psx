@@ -104,6 +104,10 @@ pub enum Refusal {
     Broken,
     Bound,
     NoEffect,
+    /// `Deactivate UI` and `Set Current Item Num` test `atBench` first: away from a bench the
+    /// board can be read but nothing goes on or comes off, and `Bench Reminder` raises `Charm
+    /// Equip Msg`. Its line is `BENCH_REMINDER`, drawn over the description column while it stands.
+    NotAtBench,
 }
 impl Refusal {
     pub fn message(self) -> &'static str {
@@ -115,6 +119,7 @@ impl Refusal {
             // Short enough for the board's description column (`COL_W`).
             Refusal::Bound => "Cannot be removed",
             Refusal::NoEffect => "No effect in this port yet",
+            Refusal::NotAtBench => BENCH_REMINDER,
         }
     }
 }
@@ -480,6 +485,8 @@ pub struct Screen {
     pub open: bool,
     pub row: usize,
     pub message: Option<Refusal>,
+    /// `PlayerData.atBench`, which the caller sets from the bench before each step.
+    pub at_bench: bool,
 }
 impl Screen {
     pub const fn new() -> Self {
@@ -487,6 +494,7 @@ impl Screen {
             open: false,
             row: 0,
             message: None,
+            at_bench: false,
         }
     }
     pub fn enter(&mut self) {
@@ -520,7 +528,13 @@ impl Screen {
             self.message = None;
         }
         if press & CROSS != 0 {
-            self.message = state().toggle(self.row + 1).err();
+            // `Got Charm` is tested before `atBench`, so an empty slot still says so.
+            let charm = self.row + 1;
+            self.message = if self.at_bench || !state().owns(charm) {
+                state().toggle(charm).err()
+            } else {
+                Some(Refusal::NotAtBench)
+            };
             publish();
         }
         false
@@ -813,7 +827,13 @@ mod presentation {
             }
             panel_text_gain(centre - panel_width(charm.name) / 2, NAME_Y, charm.name, 0x80);
             let mut y = DESC_TOP;
-            for line in charm.text.split('\n') {
+            // `Charm Equip Msg` stands over the description until the next move.
+            let text = if screen.message == Some(Refusal::NotAtBench) {
+                BENCH_REMINDER
+            } else {
+                charm.text
+            };
+            for line in text.split('\n') {
                 if line.is_empty() {
                     y += BLANK_PITCH;
                     continue;
@@ -823,8 +843,10 @@ mod presentation {
             }
         }
         let footer = match screen.message {
+            Some(Refusal::NotAtBench) => None,
             Some(refusal) => Some(refusal.message()),
-            None if !s.owns(sel + 1) => None,
+            // `Equip Prompt` moves the prompt off screen away from a bench.
+            None if !s.owns(sel + 1) || !screen.at_bench => None,
             None if s.equipped(sel + 1) => Some("Unequip"),
             None => Some("Equip"),
         };
@@ -1171,6 +1193,30 @@ mod tests {
         assert!(screen.step(0x2000) && !screen.open);
     }
     #[test]
+    fn charms_go_on_and_come_off_only_at_a_bench() {
+        *state() = State::new();
+        state().give(GRUBSONG);
+        let mut screen = Screen::new();
+        screen.enter();
+        screen.row = GRUBSONG - 1;
+        screen.step(CROSS);
+        assert_eq!(screen.message, Some(Refusal::NotAtBench));
+        assert!(!state().equipped(GRUBSONG));
+        screen.at_bench = true;
+        screen.step(CROSS);
+        assert_eq!(screen.message, None);
+        assert!(state().equipped(GRUBSONG));
+        screen.at_bench = false;
+        screen.step(CROSS);
+        assert_eq!(screen.message, Some(Refusal::NotAtBench));
+        assert!(state().equipped(GRUBSONG));
+        // An empty slot answers as it does at a bench: `Got Charm` comes first.
+        screen.row = 0;
+        screen.step(CROSS);
+        assert_eq!(screen.message, Some(Refusal::NotOwned));
+        *state() = State::new();
+    }
+    #[test]
     fn every_charm_has_an_icon_in_a_cooked_palette() {
         assert_eq!(ICON_PALETTE.len(), CHARM_COUNT);
         assert!(ICON_PALETTE
@@ -1243,7 +1289,8 @@ mod tests {
         let widest = (1..=CHARM_COUNT)
             .map(|n| {
                 let c = State::charm(n);
-                c.name.len() + c.text.len()
+                // `Charm Equip Msg` stands in for the description and takes the footer's place.
+                c.name.len() + c.text.len().max(BENCH_REMINDER.len())
             })
             .max()
             .unwrap_or(0);
