@@ -93,6 +93,7 @@ fn controllers() -> Vec<C> {
         C::AcidFlyer { amount: -5, speed: 6, lead: [7, -8], shell: [9, 10, 11, -12] },
         C::Mosquito { clips: [1, 2, 3, 4], tile: [-1, -2, -3, -4] },
         C::MossWalker { clips: [4, 3, 2, 1] },
+        C::MossCharger { clips: [7, 6, 5, 4, 3, 2, 1], range: [-9, -8, 9, 8] },
         C::Baldur { start_clip: 1, roll_clip: 2, stop_clip: 3 },
         C::Aspid { fire_clip: 1, shot_clip: 2, impact_clip: 3 },
         C::Hatcher { fire_clip: 29, max_hatched: 5 },
