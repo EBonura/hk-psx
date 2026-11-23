@@ -29,6 +29,9 @@ pub struct HeroParams {
     pub greed: bool,
     /// The reserve vessels: the shop's `MPReserveMax` and the charmed full-vessel charge.
     pub reserve: SoulReserve,
+    /// `NailSlash::StartSlash`'s localScale multiplier, Q16: `ONE` bare,
+    /// Longnail's or Mark of Pride's, or theirs together.
+    pub slash_scale: i32,
 }
 impl HeroParams {
     /// The movement record a grounded or airborne step runs with.

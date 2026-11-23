@@ -639,6 +639,62 @@ def focus_charms(source):
     }
 
 
+SLASH_OBJECTS = ('Slash', 'Alt Slash', 'Up Slash', 'Down Slash', 'WallSlash')
+
+
+def slash_size(source, bodies):
+    """Charms 13 and 18: `Slash Size Modifiers` and `NailSlash::StartSlash`.
+
+    The Knight's FSM sends `SetMantis` for 13 and `SetLongnail` for 18 to every
+    NailSlash, each with the charm's equipped bool, and StartSlash multiplies
+    the serialized `scale` into `Transform.localScale` by 1.4 with both, else
+    by the one that is set. The collider and the slash art both scale about
+    the slash transform's own position, so the guest needs each slash's pivot
+    beside the cooked polygon: `nail_pivots` returns those.
+    """
+    _, fsm = _fsm_named(source, 'Slash Size Modifiers')
+    states = _states(fsm)
+    for check, charm, method, on, off in (('Check Mantis', 13, 'SetMantis', 'Equipped', 'Unequipped'),
+                                          ('Check Longnail', 18, 'SetLongnail', 'Equipped 2', 'Unequipped 2')):
+        gate = _actions(states[check], 'PlayerDataBoolTest')
+        assert len(gate) == 1 and _named(gate[0]['boolName']) == f'equippedCharm_{charm}' \
+            and gate[0]['isTrue'] == 'EQUIPPED' and gate[0]['isFalse'] == 'UNEQUIPPED', \
+            f'Slash Size Modifiers no longer gates {method} on charm {charm}'
+        for state, value in ((on, 1), (off, 0)):
+            sends = _actions(states[state], 'SendMessage')
+            calls = {(_named(a['gameObject']['gameObject']), a['functionCall']['FunctionName'],
+                      _named(a['functionCall']['BoolParameter'])) for a in sends}
+            assert calls == {(name, method, value) for name in SLASH_OBJECTS}, f'{state} sends {calls}'
+    body = bodies[('NailSlash', 'StartSlash')]
+    flow = [operand if op == 'ldfld' else round(operand, 6) for op, operand in body
+            if (op == 'ldfld' and operand in ('mantis', 'longnail')) or op == 'ldc.r4']
+    both, mantis, longnail = flow[2], flow[5], flow[8]
+    assert flow == ['mantis', 'longnail', both, both, 'mantis', mantis, mantis, 'longnail', longnail, longnail], \
+        f'StartSlash no longer scales x and y by one factor per charm set: {flow}'
+    q16 = lambda v: round(v * 65536)
+    return {'pride': mantis, 'longnail': longnail, 'both': both,
+            'pride_q16': q16(mantis), 'longnail_q16': q16(longnail), 'both_q16': q16(both)}
+
+
+def nail_pivots(source, hero):
+    """Each NailSlash transform's local position (Slash, AltSlash, UpSlash,
+    DownSlash), the point its polygon and art scale about.
+
+    `NAIL_POLYGONS` is cooked by the full cook into data/params.rs from these
+    same objects; that table is checked here so a pivot can never sit beside a
+    polygon cooked from a different source.
+    """
+    from combat import nail_sources
+    file = source.file('resources.assets')
+    nails = nail_sources(source, file, source.read(hero)['m_GameObject']['m_PathID'])
+    polygons = 'pub const NAIL_POLYGONS: [&[[i32;2]];4] = [' + ','.join(
+        '&[' + ','.join(f'[{round(x * 65536)},{round(y * 65536)}]' for x, y in n['polygon']) + ']'
+        for n in nails) + '];'
+    assert polygons in (ROOT / 'data/params.rs').read_text(), \
+        'data/params.rs NAIL_POLYGONS was not cooked from these NailSlash objects'
+    return [[round(n['position']['x'] * 65536), round(n['position']['y'] * 65536)] for n in nails]
+
+
 def spell_twister(source):
     """Charm 33: `Set Spell Cost` writes `Spell Control`'s `MP Cost`."""
     _, fsm = _fsm_named(source, 'Set Spell Cost')
@@ -697,13 +753,9 @@ UNIMPLEMENTED = {
     10: 'no spore cloud actor and no Defender’s Crest trail',
     11: 'no Fluke spell variant; Vengeful Spirit is the only cast the port has',
     12: 'no contact-damage retaliation path on the hero',
-    13: 'NailSlash scales about its own pivot, and the slash polygons are cooked in '
-        'hero space without it',
     15: 'enemy knockback is per-actor recoil in hk-sim, with no hero modifier',
     16: 'no dash shadow damage volume',
     17: 'no spore cloud actor',
-    18: 'NailSlash scales about its own pivot, and the slash polygons are cooked in '
-        'hero space without it',
     22: 'no Hatchling minion actor',
     26: 'no nail art charge in the port',
     27: 'Joni’s Blessing converts every mask to Lifeblood, which the mask HUD '
@@ -741,6 +793,10 @@ def _effect(charm_id, shell, bonuses, heart, nails, grub, numeric):
     if charm_id == 37:
         r = numeric['movement']['sprintmaster']
         return 'Effect::RunSpeed{alone:%d,combo:%d,combo_charm:%d}' % (r['alone'], r['combo'], r['combo_charm'])
+    if charm_id in (13, 18):
+        s = numeric['slash_size']
+        alone = s['pride_q16'] if charm_id == 13 else s['longnail_q16']
+        return 'Effect::SlashScale{alone:%d,combo:%d,combo_charm:%d}' % (alone, s['both_q16'], 31 - charm_id)
     if charm_id == 3:
         return ('Effect::SoulOnDamage{alone:%d,combo:%d,combo_charm:%d}'
                 % (grub['alone'], grub['combo'], grub['combo_charm']))
@@ -795,7 +851,7 @@ def charm_table(catalogue, shell, bonuses, heart, nails, grub, table, numeric):
     return rows
 
 
-def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed, reserve_soul):
+def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed, reserve_soul, pivots):
     """The guest table. `Charm` and `Effect` are declared in game/src/charms.rs.
 
     The panel geometry is cooked with the table because the icon size sets the
@@ -826,6 +882,9 @@ def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed, res
         'pub const RESERVE_SOUL_PER_HIT:u16=%d;' % reserve_soul,
         '/// Fragile Greed\'s share of each drop count, `HealthManager::Die`\'s 0.2f as a ratio.',
         'pub const GREED_SHARE:(u16,u16)=(%d,%d);' % (greed['numerator'], greed['denominator']),
+        '/// Each NailSlash transform\'s local position (Slash, AltSlash, UpSlash, DownSlash, as',
+        '/// `NAIL_POLYGONS`), Q16: Longnail and Mark of Pride scale the polygon and the art about it.',
+        'pub const NAIL_PIVOTS:[[i32;2];4]=[' + ','.join('[%d,%d]' % tuple(p) for p in pivots) + '];',
         f"/// `Charm Equip Msg` ({reminder['sheet']} {reminder['key']}), wrapped as a description is.",
         'pub const BENCH_REMINDER:&str="' + '\\n'.join(quoted(l)[1:-1] for l in reminder['lines']) + '";',
         '/// The board, derived by `host/charms.py::panel_layout` against the 320x240',
@@ -1176,7 +1235,8 @@ def source_charm_values(source, assembly, scenes):
         ('HeroController', 'TakeDamageCharmEffects'), ('PlayerData', 'CalculateNotchesUsed'),
         ('GameManager', 'RefreshOvercharm'), ('HeroController', 'Move'),
         ('HeroController', 'HeroDash'), ('HeroController', 'Attack'), ('HeroController', 'DoAttack'),
-        ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight'), ('HealthManager', 'Die')})
+        ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight'), ('HealthManager', 'Die'),
+        ('NailSlash', 'StartSlash')})
     hero, constants = hero_constants(source)
     base_soul, bonuses, reserve_soul, reserve_bonuses = soul_per_hit_charms(bodies)
     heart = fragile_heart_bonus(bodies)
@@ -1192,6 +1252,8 @@ def source_charm_values(source, assembly, scenes):
         'focus': focus_charms(source),
         'spell_twister_cost': spell_twister(source),
         'shaman_stone': shaman_stone(source),
+        'slash_size': slash_size(source, bodies),
+        'nail_pivots': nail_pivots(source, hero),
     }
     # CalculateNotchesUsed is the source's own notch sum, and RefreshOvercharm
     # its own overcharm predicate; both must agree with the FSM contract above.
@@ -1247,6 +1309,11 @@ def source_charm_values(source, assembly, scenes):
             'is drawn at its cooked size.',
             'Quick Slash shortens the attack state and its cooldown; the slash clips play at '
             'their cooked rate.',
+            'Mark of Pride plays the " M" slash effect clips, whose later frames are different '
+            'sprites; those are not in the room atlases, so the base effect is drawn at the '
+            'scaled size instead.',
+            'Longnail and Mark of Pride scale the wall slash about the Slash pivot, as the '
+            'port draws the wall slash as the mirrored Slash.',
             'Fragile Greed adds its coins to enemy deaths only, as HealthManager.Die does; '
             'SetGeoFlashing, which makes the extra coins glint, is not drawn.',
         ],
@@ -1272,7 +1339,8 @@ def cook():
         values['charms'], values['equip_rules'], {'charmSlots': values['starting_notches']},
         icons['layout'], art, values['bench_reminder'],
         values['effects']['parameter_charms']['fragile_greed'],
-        values['effects']['parameter_charms']['reserve_soul_per_hit']))
+        values['effects']['parameter_charms']['reserve_soul_per_hit'],
+        values['effects']['parameter_charms']['nail_pivots']))
     dump(ROOT / '.hkpsx/charm-catalog.json', values)
     print(f"{values['charm_count']} charms, {values['starting_notches']} starting notches, "
           f"overcharm breaks through on attempt {values['equip_rules']['overcharm_break_attempt']}")

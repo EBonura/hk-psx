@@ -429,8 +429,25 @@ fn nail_frame(room: &Room, nail: &Nail) -> Option<usize> {
     Some((clip[0] + frame) as usize)
 }
 fn draw_frame(room: &Room, frame: usize, player: &Player, camera: (i32, i32), tint: u8) {
+    draw_frame_scaled(room, frame, player, camera, tint, [0; 2], ONE);
+}
+/// `draw_frame` with the frame's box scaled by `scale` (Q16) about the local
+/// `pivot`: the nail's effect under Longnail and Mark of Pride, whose cooked
+/// box is the slash transform's, grown as its localScale is.
+fn draw_frame_scaled(
+    room: &Room,
+    frame: usize,
+    player: &Player,
+    camera: (i32, i32),
+    tint: u8,
+    pivot: [i32; 2],
+    scale: i32,
+) {
     let f = room.frame(frame);
     let b = core::array::from_fn::<_, 4, _>(|i| i32_at(f, 4 + i * 4));
+    let low = hk_sim::hero_attack::scaled([b[0], b[1]], pivot, scale);
+    let high = hk_sim::hero_attack::scaled([b[2], b[3]], pivot, scale);
+    let b = [low[0], low[1], high[0], high[1]];
     // Full 320x240 view: original vertical FOV, horizontally cropped to 4:3.
     let coords = [(b[0], b[3]), (b[2], b[3]), (b[0], b[1]), (b[2], b[1])];
     let mut v = [(0i16, 0i16); 4];
@@ -600,7 +617,16 @@ fn hero_attacks(
     player.spell_hits(&QUAKE_PARAMS, &SCREAM_PARAMS, &mut attacks);
     if nail.hitting(hero.attack) {
         let damage = hero.vitals.nail_damage;
-        if let Some(hit) = HeroHit::nail(nail, hero.attack, NAIL_POLYGONS, player, damage) {
+        // `Slash Size Modifiers`: Longnail and Mark of Pride scale each slash about its pivot.
+        if let Some(hit) = HeroHit::nail_scaled(
+            nail,
+            hero.attack,
+            NAIL_POLYGONS,
+            &charms::NAIL_PIVOTS,
+            hero.slash_scale,
+            player,
+            damage,
+        ) {
             attacks.push(hit);
         }
     }

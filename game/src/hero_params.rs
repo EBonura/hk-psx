@@ -26,6 +26,7 @@ pub const BASE: HeroParams = HeroParams {
         max: 0,
         per_hit: crate::charms::RESERVE_SOUL_PER_HIT,
     },
+    slash_scale: hk_sim::ONE,
 };
 /// `StartSoulLimiter` sets `maxMP` to 66 while a Shade is owed, and `EndSoulLimiter` back to 99.
 const SOUL_LIMITED: u16 = 66;

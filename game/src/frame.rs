@@ -620,7 +620,15 @@ pub fn render(
         // A wall slash draws SlashEffect mirrored, as its NailSlash.scale is.
         let mut slash = game.player;
         slash.facing = game.nail.facing(&game.player);
-        draw_frame(room, f, &slash, camera, 128);
+        draw_frame_scaled(
+            room,
+            f,
+            &slash,
+            camera,
+            128,
+            charms::NAIL_PIVOTS[game.nail.kind as usize],
+            hero_params::current().slash_scale,
+        );
         prims += 1;
     }
     if let Some(i) = ball_frame {
