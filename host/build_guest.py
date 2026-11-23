@@ -304,6 +304,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if profile is None:os.environ["HK_SHARED_PUBLISHER"]="1"
     if code_modules.MEASURE_OVERLAP and not work:raise ValueError('HK_MEASURE_OVERLAP is for measurement builds under --work only')
     layered=code_modules.layer(base_linker.read_text())
+    # The boot splash's overlay (the SDK's psoxide-boot.ld), run from the module pool before the title module installs.
+    layered=code_modules.boot_layer(layered,(ROOT/'.psoxide/sdk/psoxide-boot.ld').read_text())
     linker=out/f'hk-psx-ovl-{hashlib.sha256(layered.encode()).hexdigest()[:16]}.ld'
     linker.write_text(layered)
     # A list, handed to cargo as CARGO_ENCODED_RUSTFLAGS (0x1f-separated):
@@ -314,7 +316,9 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # every code module in the output at its link address. code_modules
     # cuts the PS-X EXE (header, .text, .data) and the module images out of
     # it; --emit-relocs keeps the relocations its fixups and checks read.
-    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs',f'-Clink-arg=-Map={link_map}']
+    # The boot overlay's stored bytes lie where .bss will be (code_modules.boot_layer), so the section-overlap check is
+    # off, as for every psoxide-boot.ld program; the IMAGE, MODLINK and BOOTRUN region bounds still hold.
+    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs','-Clink-arg=-u__boot_entry','-Clink-arg=--no-check-sections',f'-Clink-arg=-Map={link_map}']
     # A panic is a BREAK at the faulting instruction (-Cpanic=immediate-abort), not a formatted message: core::fmt, the panic
     # Location records and their file names (about 23 KB of the resident image) stay out of RAM. psx-rt's exception handler
     # records Cause/EPC/BadVAddr (__psx_rt_fault_*), which the gates already read (__psx_rt_fault_count) and
@@ -355,6 +359,8 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
         place_hot_text(env,cmd,linked,link_map,out,scene_code,art)
     # No 64-bit integer, 128-bit or soft-float helper may be linked, with no opt-out.
     run(['sh',ROOT/'.psoxide/tools/guest_symbol_gate.sh',link_map],env={k:v for k,v in os.environ.items() if k!='GUEST_GATE_ALLOW'})
+    # Nothing resident may call or point into the boot overlay but main's one call of the splash.
+    code_modules.check_boot_reach(linked)
     if profile=='elf' or elf_only:
         shutil.copy2(linked,out/'hk-psx.elf')
         return {'elf':out/'hk-psx.elf'}

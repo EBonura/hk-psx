@@ -17,6 +17,7 @@ include!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/params.rs"));
 /// point (regions.json index 78, chunk 79: x 24..48, y 91..100). The drop to SPAWN is a straight
 /// fall in the shaft.
 const NEW_GAME_ENTRY: (i32, i32, usize) = (34 * 65536 + 32768, 92 * 65536, 78);
+mod boot;
 mod ability_art;
 mod ability_fx;
 mod unpack;
@@ -950,6 +951,11 @@ fn main() {
     // the card is done with SIO0. The game reads sticks as a second d-pad and buttons, so a
     // digital pad plays too.
     let _ = input::poll_bits();
+    // The PSoXide boot splash, before anything of the title: after the card (the splash polls the pad) and
+    // before the first CD read. Its code runs from the module pool, where `__boot_entry` (boot.rs) put it,
+    // so the I-cache is flushed first: a loader that ran code there before us need not have.
+    psx_rt::cache::flush_instruction_cache();
+    presentation::boot_splash(&mut fb);
     // Each slot's one line on the save screen. Geo and masks are what the
     // record holds; the source also shows play time, completion and the map
     // zone, none of which this port tracks.
