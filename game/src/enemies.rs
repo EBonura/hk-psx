@@ -5119,7 +5119,7 @@ impl Events {
             damage,
             direction,
             false,
-            player.shadow_dashing,
+            player.ignores_contact(),
         );
         if hurt != Hurt::Ignored {
             self.hurt = hurt;
@@ -6972,7 +6972,8 @@ impl EnemyWorld {
                 unsafe { HK_FK_BARRELS = HK_FK_BARRELS.saturating_add(1) }
             }
         }
-        let shadow = player.shadow_dashing;
+        // The Shade Cloak's dash and the Dive both pass contact damage.
+        let shadow = player.ignores_contact();
         let hurt = self.tick_shots(
             region,
             body,
