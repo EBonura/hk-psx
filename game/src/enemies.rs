@@ -6438,8 +6438,7 @@ impl EnemyWorld {
                         {
                             boss.parried[arm] = true;
                             reached = true;
-                            crate::camera::request(crate::camera::Shake::Kill);
-                            crate::scene_sfx::play(crate::scene_sfx::HERO_PARRY);
+                            crate::nail_parry(player);
                             unsafe { HK_MW_PARRIES = HK_MW_PARRIES.saturating_add(1) }
                         }
                     }
