@@ -629,6 +629,78 @@ def layer(script):
     return sub(r'^(    \.text : \{)$', '\n'.join(block) + r'\n\n\1', script)
 
 
+# What HK adds to the SDK's boot overlay (psoxide-boot.ld names the splash and the film player): the font the splash
+# alone draws with (no other HK code links psx_font), psx_vram's 16-bit upload (only the splash's mark and font call it),
+# HK's own call into the splash with its closure, its route-input flag and its line (game/src/presentation.rs). Input
+# section patterns, as in a linker script. `check_boot_reach` fails the build if resident code comes to call any of it.
+BOOT_SECTIONS = ('.text.*psx_font*', '.rodata.*psx_font*', '.text.*8psx_vram12upload_16bpp*',
+                 '.text.*12presentation11boot_splash*', '.data.HK_BOOT_SPLASH', '.rodata.*16BOOT_SPLASH_LINE*')
+# The only resident code that may refer into the boot overlay: the mover, and main's one call of the splash.
+BOOT_CALLERS = ('__boot_entry', 'main')
+
+
+def check_boot_reach(elf_path):
+    """Fail when resident or module code or data refers into the boot overlay other than through BOOT_CALLERS: once the title
+    module installs, the pool holds other bytes, and such a reference would run or read them. Reads the link's
+    relocations (--emit-relocs). Returns the overlay's (run address, stored address, size)."""
+    elf = Elf(elf_path)
+    if '.boot' not in elf.by_name:
+        return None
+    boot = elf.by_name['.boot']
+    index = elf.index('.boot')
+    bad = []
+    for section in ['.text', '.data'] + [s['name'] for s in elf.sections if s['name'].startswith('.mod_')]:
+        base = elf.by_name[section]['addr']
+        for offset, kind, shndx in elf.relocations(section):
+            if shndx != index:
+                continue
+            caller = elf.function_at(offset) if section == '.text' else None  # module code is never a boot caller
+            if caller not in BOOT_CALLERS:
+                bad.append(f'{section}+{offset - base:#x} ({caller or "data"})')
+    if bad:
+        raise ValueError('resident code refers into the boot overlay (it is gone after the title): ' + ', '.join(bad[:8]))
+    stored = next(v for n, v, *_ in elf.symbols if n == '__boot_lma')
+    return boot['addr'], stored, boot['size']
+
+
+def boot_layer(script, sdk_boot):
+    """The boot-only overlay of the SDK's psoxide-boot.ld, run from the module pool.
+
+    The SDK script places the overlay at the heap's start (`BOOT_VMA = __bss_end`); HK has no heap worth the name (the few
+    KB between `.bss` and the pool), so the overlay runs from the pool's base instead. The pool is outside `.bss`, so
+    psx-rt's `_start` does not clear it after the mover (game/src/boot.rs) has run, and nothing writes the pool before the
+    title module installs (game/src/main.rs: the splash runs before the first CD read). It is stored after `.data` as the SDK
+    lays it out (`__boot_lma`, read by psoxide.ld's `__load_end`).
+
+    The SDK's sections are taken from its script, not copied here, and given a region of their own (BOOTRUN, the pool):
+    linked as it is (`-T psoxide-boot.ld` with BOOT_VMA at the pool), ld.lld puts `.boot` in IMAGE, which ends at the
+    pool, and refuses the link ("section '.boot' will not fit in region 'IMAGE'", measured 11-23). They are placed
+    ahead of `.text` as the modules are, with HK's additions (BOOT_SECTIONS) beside the SDK's patterns."""
+    m = re.search(r'^SECTIONS \{\n(.*)^\}\n', sdk_boot, flags=re.M | re.S)
+    if not m or '__initial_pc = __boot_entry;' not in sdk_boot or 'INSERT AFTER .bss;' not in sdk_boot:
+        raise ValueError('psoxide-boot.ld changed; review the boot overlay layer')
+    body = m[1]
+
+    def sub(pattern, replacement, text):
+        out, count = re.subn(pattern, replacement, text, flags=re.M)
+        if count != 1:
+            raise ValueError('psoxide-boot.ld changed; review the boot overlay layer: ' + pattern)
+        return out
+    body = sub(r'^(        \*\(\.text\.\*psx_splash\* \.rodata\.\*psx_splash\*\))$',
+               r'\1\n        /* hk-psx: host/code_modules.py BOOT_SECTIONS */\n'
+               + '\n'.join(f'        *({p})' for p in BOOT_SECTIONS), body)
+    body = sub(r'^(        __boot_load_end = \.;\n    \})$', r'\1 > BOOTRUN', body)
+    body = sub(r'^(        __boot_end = \.;\n    \})$', r'\1 > BOOTRUN', body)
+    script = sub(r'^(    MODLINK \(rwx\) : [^\n]*)$',
+                 r'\1\n    BOOTRUN (rwx) : ORIGIN = %#x, LENGTH = %#x' % (pool_base(), POOL_BYTES), script)
+    block = ('    /* hk-psx: the SDK\'s boot overlay (psoxide-boot.ld), run from the module pool before the title module\n'
+             '       installs; host/code_modules.py boot_layer. */\n'
+             '    __initial_pc = __boot_entry;\n'
+             '    BOOT_VMA = POOL_BASE;\n'
+             '    BOOT_LMA = __data_end;\n' + body)
+    return sub(r'^(    \.text : \{)$', block.replace('\\', '\\\\') + r'\n\1', script)
+
+
 class Elf:
     """Just enough ELF32 little-endian reading for the linked guest."""
     def __init__(self, path):

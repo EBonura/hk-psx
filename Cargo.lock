@@ -42,6 +42,7 @@ dependencies = [
  "psx-pad",
  "psx-residency",
  "psx-rt",
+ "psx-splash",
  "psx-spu",
  "psx-telemetry",
  "psx-tick",
@@ -90,6 +91,17 @@ dependencies = [
  "psx-pack",
  "psx-rt",
  "psx-spu",
+ "psx-vram",
+]
+
+[[package]]
+name = "psx-font"
+version = "0.1.0"
+dependencies = [
+ "psx-gpu",
+ "psx-hw",
+ "psx-io",
+ "psx-math",
  "psx-vram",
 ]
 
@@ -171,6 +183,18 @@ dependencies = [
  "psx-io",
  "psx-math",
  "psx-tick",
+]
+
+[[package]]
+name = "psx-splash"
+version = "0.1.0"
+dependencies = [
+ "psx-display",
+ "psx-font",
+ "psx-gpu",
+ "psx-pad",
+ "psx-rt",
+ "psx-vram",
 ]
 
 [[package]]

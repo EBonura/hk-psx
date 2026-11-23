@@ -73,6 +73,7 @@ psx-telemetry = { path = "../.psoxide/sdk/crates/psx-telemetry" }
 psx-pack = { path = "../.psoxide/sdk/crates/psx-pack" }
 psx-spu = { path = "../.psoxide/sdk/crates/psx-spu" }
 psx-mc = { path = "../.psoxide/sdk/crates/psx-mc" }
+psx-splash = { path = "../.psoxide/sdk/crates/psx-splash" }
 
 hk-format = {path="../shared/hk-format"}
 hk-sim = {path="../shared/hk-sim"}
