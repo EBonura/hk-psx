@@ -757,6 +757,27 @@ pub static mut HK_GRUBS: u32 = 0;
 fn strike_shade(shade: &mut shade::World, attacks: &HeroAttacks) -> bool {
     attacks.slash().is_some_and(|hit| shade.strike(hit.points(), hit.damage))
 }
+/// `nail_clash_tink` on the Shade's Slash: `NailParry`'s parryInvulnTimer, EnemyKillShake, the
+/// parry sound (where the scene's bank has it), and the recoil the slash's direction picks.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", optimize(size))]
+fn parry_shade(
+    shade: &mut shade::World,
+    attacks: &HeroAttacks,
+    vitals: &hk_sim::Vitals,
+    response: &mut hk_sim::NailResponse,
+    player: &mut Player,
+) {
+    let Some(hit) = attacks.slash().filter(|hit| shade.parry(hit)) else {
+        return;
+    };
+    player.quake_invuln = shade::PARRY_INVULN_TICKS;
+    camera::request(camera::Shake::Kill);
+    scene_sfx::play(scene_sfx::HERO_PARRY);
+    if vitals.can_control() {
+        response.contact(hero_params::nail_response(), hit.kind, hit.facing, player);
+    }
+}
 /// NailSlash.OnTriggerEnter2D's shroom branch. Only the down slash reaches it,
 /// and the hero answers with ShroomBounce instead of the ordinary Bounce, so
 /// this takes the contact before the pogo targets get a look at it.

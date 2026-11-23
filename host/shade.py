@@ -12,6 +12,7 @@ from cook import tk_sprite, FOCAL, CAM_Z
 from geo import q16, rust_array
 from materials import quantize_alpha_coverage
 from focus import action_fields
+from combat import ticks
 
 SHADE = 4541
 SHADE_FSM = 21414
@@ -141,6 +142,35 @@ def _check_actions(fsm, state_name, expected):
             raise ValueError(f'unsupported Shade action set: {state_name}/{action}')
 
 
+# nail_clash_tink's answer to the hero's nail (layer 16) on the Slash child: by
+# the slash's direction, the HeroController method each No Box state calls.
+PARRY_RECOILS = {'No Box Right': 'RecoilLeft', 'No Box Left': 'RecoilRight', 'No Box Up': 'RecoilDown',
+                 'No Box Down': 'Bounce'}
+
+
+def _check_parry(source, slash_components):
+    fsms = [source.read(obj)['fsm'] for typename, obj in slash_components if typename == 'PlayMakerFSM']
+    if len(fsms) != 1 or fsms[0]['name'] != 'nail_clash_tink':
+        raise ValueError('unsupported Hollow Shade Slash parry')
+    fsm = fsms[0]
+    _check_actions(fsm, 'Detecting', {'Trigger2dEventLayer': {'collideLayer': 16, 'sendEvent': 'TAKE DAMAGE'}})
+    data = _state_actions(fsm, 'Blocked Hit')['actionData']
+    calls = [action_fields(data, i)['functionCall']['FunctionName'] for i, n in enumerate(data['actionNames'])
+             if n.rsplit('.', 1)[-1] == 'SendMessage' and data['actionEnabled'][i]]
+    if calls != ['FreezeMoment', 'NailParry']:
+        raise ValueError('nail_clash_tink Blocked Hit now calls ' + repr(calls))
+    _check_actions(fsm, 'Blocked Hit', {'SendEventByName': {'sendEvent': 'EnemyKillShake'}})
+    for state, method in PARRY_RECOILS.items():
+        _check_actions(fsm, state, {'CallMethodProper': {'behaviour': 'HeroController', 'methodName': method}})
+
+
+def _parry_invuln(source):
+    """`NailParry` sets parryInvulnTimer to INVUL_TIME_PARRY."""
+    from charms import hero_constants
+    _, hero = hero_constants(source)
+    return hero['INVUL_TIME_PARRY']
+
+
 def audit(source):
     """Raise unless the live prefab still matches the audited contract."""
     resources = source.file('resources.assets')
@@ -180,6 +210,7 @@ def audit(source):
     polygon = source.read(_one(slash_components, 'PolygonCollider2D'))
     if not polygon['m_IsTrigger'] or len(polygon['m_Points']['m_Paths']) != 1:
         raise ValueError('unsupported Hollow Shade Slash collider')
+    _check_parry(source, slash_components)
     slash_damage = source.read(_one(slash_components, 'DamageHero'))
     if slash_damage['damageDealt'] != 1 or slash_damage['hazardType'] != 1:
         raise ValueError('unsupported Hollow Shade Slash damage')
@@ -227,7 +258,8 @@ def audit(source):
         if clip is None or (len(clip['frames']), clip['fps'], clip['wrapMode']) != (frames, fps, wrap):
             raise ValueError('unsupported Hollow Shade animation: ' + name)
     return by_name, slash_bounds, {'body': list(BODY_SIZE), 'body_offset': list(BODY_OFFSET),
-                                   'alert_radius': ALERT_RADIUS, 'hp': health['hp'], 'slash_bounds': slash_bounds}
+                                   'alert_radius': ALERT_RADIUS, 'hp': health['hp'], 'slash_bounds': slash_bounds,
+                                   'parry_invuln_seconds': _parry_invuln(source)}
 
 
 def cook():
@@ -334,6 +366,8 @@ def cook():
                 BODY_OFFSET[0] - BODY_SIZE[0] / 2, BODY_OFFSET[1] - BODY_SIZE[1] / 2,
                 BODY_OFFSET[0] + BODY_SIZE[0] / 2, BODY_OFFSET[1] + BODY_SIZE[1] / 2)]) + ';',
             f'pub const ALERT_RADIUS:i32={q16(ALERT_RADIUS)};',
+            '/// `NailParry`: parryInvulnTimer = INVUL_TIME_PARRY, in 60 Hz ticks.',
+            f'pub const PARRY_INVULN_TICKS:u16={ticks(facts["parry_invuln_seconds"])};',
             'pub const SHADE_CLIPS:&[Clip]=&[' + ','.join(
                 'Clip{' + ','.join(f'{k}:{c[k]}' for k in ('start', 'count', 'fps', 'wrap')) + '}'
                 for c in clips) + '];',
@@ -356,6 +390,8 @@ def cook():
               'limitations': [
                   'Frames reach VRAM through the existing 64x64 animation slots; only the 16-colour CLUT is resident.',
                   'Every particle system, the death orbs, the Soul Orb HUD event, the light effect and all Shade audio are not presented.',
+                  'Parrying the Slash (nail_clash_tink) recoils the Knight and gives the parry invulnerability; FreezeMoment(3), '
+                  'NailParryRecover and the Nail Clash Effect are not reproduced, as for the Mawlek.',
                   'The Slash polygon becomes its axis-aligned bounds and the retreat iTween path a straight interpolation.',
                   'The Fireball, Quake, Scream, Friendly, Lake and Jar branches are unreachable at this port levels and are not implemented.'],
               'payload_sha256': hashlib.sha256(payload).hexdigest(),

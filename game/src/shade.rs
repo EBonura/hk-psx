@@ -71,6 +71,8 @@ struct Live {
     facing: i32,
     /// HealthManager invincibility between nail hits, as the actors use.
     hit_cooldown: u16,
+    /// `nail_clash_tink` answered this Slash already (one trigger entry a swing).
+    parried: bool,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Events {
@@ -174,6 +176,7 @@ impl World {
                 age: 0,
                 facing: -1,
                 hit_cooldown: 0,
+                parried: false,
             })
         } else {
             None
@@ -208,6 +211,19 @@ impl World {
             position[1] + SLASH_BOUNDS[3],
         ]
     }
+    /// `nail_clash_tink`: the nail entering the live Slash parries it, once a
+    /// Slash. The caller answers for the Knight (`NailParry` and the recoil).
+    #[inline(never)]
+    pub fn parry(&mut self, slash: &hk_sim::HeroHit) -> bool {
+        let Some(live) = self.live.as_mut() else {
+            return false;
+        };
+        if !live.control.slashing() || live.parried || !slash.hits(Self::slash_box(live.position, live.facing)) {
+            return false;
+        }
+        live.parried = true;
+        true
+    }
     /// One 60 Hz step against the scene terrain.
     pub fn tick(
         &mut self,
@@ -239,7 +255,8 @@ impl World {
                 }
                 Action::Facing(facing) => live.facing = facing,
                 Action::MoveTo(position) => live.position = position,
-                Action::Velocity(_) | Action::SlashOn | Action::SlashOff => {}
+                Action::SlashOn => live.parried = false,
+                Action::Velocity(_) | Action::SlashOff => {}
             }
         }
         let v = live.control.velocity();
@@ -535,5 +552,33 @@ mod tests {
             assert_eq!(bytes.len(), (w as usize + 3) / 4 * 2 * h as usize);
             assert!(bytes.len() <= 2048, "a frame must fit one animation slot");
         }
+    }
+    #[test]
+    fn the_nail_parries_the_live_slash_once_a_slash() {
+        let mut w = World::new();
+        w.record_death(3, [0, 0], 10, 0);
+        w.enter_scene(3);
+        // The hero two units to the left and level: Fly, Position, Slash Antic, Slash.
+        let hero = [-2 * ONE, 0];
+        let body = [hero[0] - ONE / 4, hero[1] - ONE / 2, hero[0] + ONE / 4, hero[1] + ONE / 2];
+        let slash = hk_sim::HeroHit::spell_box(hk_sim::hero_attack::Source::Nail, [-30 * ONE, -30 * ONE, 30 * ONE, 30 * ONE], 5, 1);
+        let mut parries = 0;
+        let mut slashing = 0;
+        for _ in 0..900 {
+            w.tick(hero, body, 0, |_| [0; 4]);
+            let live = w.live.as_ref().unwrap();
+            if live.control.slashing() {
+                slashing += 1;
+            }
+            if w.parry(&slash) {
+                assert!(w.live.as_ref().unwrap().control.slashing());
+                parries += 1;
+            }
+            if w.live.as_ref().unwrap().control.phase() == hk_sim::shade::Phase::SlashCd {
+                break;
+            }
+        }
+        assert!(slashing > 1, "the Slash lasts several ticks");
+        assert_eq!(parries, 1, "one parry a Slash");
     }
 }
