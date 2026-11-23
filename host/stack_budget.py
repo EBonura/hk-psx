@@ -1,10 +1,20 @@
 """Project stack reservation layered on the unchanged pinned SDK linker script."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 
 STACK_RESERVE = 48 * 1024
+# The shared resident scene core's window, 0x801FFF00 - CORE_WINDOW_BYTES .. 0x801FFF00, with the handoff block above it
+# (scene-system-1123 PLAN.md 3.2: cap 10,240 B including the core's stack, target 8,192 B). The program links for
+# RAM_SIZE = 2 MiB - the window, so STACK_INIT, the stack reserve and the module pool under it all move down by the window.
+# HK_CORE_WINDOW_BYTES measures another size; 0 links the whole 2 MiB as before the core.
+CORE_WINDOW_BYTES = int(os.environ.get('HK_CORE_WINDOW_BYTES', '10240'), 0)
+if CORE_WINDOW_BYTES % 0x100 or not 0 <= CORE_WINDOW_BYTES < 0x10000:
+    raise ValueError(f'HK_CORE_WINDOW_BYTES {CORE_WINDOW_BYTES} must be whole 256-byte lines under 64 KiB')
+RAM_SIZE = 0x200000 - CORE_WINDOW_BYTES
+STACK_INIT = 0x80000000 + RAM_SIZE - 0x100
 
 
 def prepare_linker(root, output):
@@ -17,7 +27,12 @@ def prepare_linker(root, output):
     original = source.read_text()
     if 'DEFINED(STACK_RESERVE_OVERRIDE)' not in original:
         raise ValueError('Pinned SDK has no STACK_RESERVE_OVERRIDE hook; review project reservation')
+    if 'DEFINED(RAM_SIZE_OVERRIDE)' not in original:
+        raise ValueError('Pinned SDK has no RAM_SIZE_OVERRIDE hook; review the core window')
     generated = f'STACK_RESERVE_OVERRIDE = {STACK_RESERVE:#x}; /* hk-psx: 48 KiB stack reservation */\n' + original
+    if CORE_WINDOW_BYTES:
+        generated = (f'RAM_SIZE_OVERRIDE = {RAM_SIZE:#x}; /* hk-psx: {CORE_WINDOW_BYTES} B scene-core window under 0x801FFF00 */\n'
+                     + generated)
     # Derive the filename from its contents: Cargo must relink when the budget
     # changes, even though it does not track external linker-script contents.
     digest = hashlib.sha256(generated.encode()).hexdigest()
@@ -26,7 +41,7 @@ def prepare_linker(root, output):
     (output / 'stack-linker.json').write_text(json.dumps({
         'source': str(source), 'source_sha256': hashlib.sha256(original.encode()).hexdigest(),
         'generated': str(path), 'generated_sha256': digest,
-        'stack_reserved_bytes': STACK_RESERVE,
+        'stack_reserved_bytes': STACK_RESERVE, 'core_window_bytes': CORE_WINDOW_BYTES, 'stack_init': STACK_INIT,
     }, indent=2) + '\n')
     return path
 
