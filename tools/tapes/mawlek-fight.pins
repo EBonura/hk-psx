@@ -10,7 +10,10 @@ card = mawlek.mcd
 # it proves the fight, not the way to it. Invincibility and the max nail
 # from the pause menu (KILL_CHEATS 3 says so), walk right into `Alert Range
 # New`: it wakes, leaps out of the background, roars, the EnemyBattle cue
-# starts as an XA song, and the Knight swings at it every 16 polls. Fifteen max
+# starts as an XA song, and the Knight swings at it every 16 polls. He stands
+# against terrain (he stops at x 56.75) and the nail recoils off it
+# (CheckForTerrainThunk), so from poll 1400 he steps right between every swing
+# and the recoil does not walk him out of reach (2026-11-23). Fifteen max
 # nail hits kill it, the corpse steams and blows, Boss Defeat plays from
 # XA channel 3 (HK_MUSIC_BOSS_TRACK) to its end, and the gates open 10.5 s after BATTLE END.
 # The Heart Piece `End Wait` shows 5.5 s after BATTLE END is then a running
