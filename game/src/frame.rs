@@ -1196,6 +1196,21 @@ pub fn simulate(
         // its own, so the Shade reaches it at the next bench the player
         // chooses to save at.
         let params = game.settings.cheats.params();
+        // `Set Shade` copies the three spell levels and `Check MP` sets `shadeMP`
+        // to one cast plus one per 33 SOUL of `MPReserveMax` (0 to 132).
+        {
+            let pd = crate::player_data::store();
+            let reserve = pd.get(crate::player_data::MP_RESERVE_MAX);
+            if reserve % 33 == 0 && (0..=132).contains(&reserve) {
+                pd.set(crate::player_data::SHADE_MP, 1 + reserve / 33);
+            }
+            for i in 0..3 {
+                pd.set(
+                    crate::player_data::SHADE_MP + 1 + i,
+                    i32::from(persist::level(persist::FIREBALL_LEVEL + i)),
+                );
+            }
+        }
         game.shade.record_death(
             r.scene,
             [game.player.x, game.player.y],
@@ -2067,28 +2082,39 @@ pub fn simulate(
                 idle && !game.nail.active && game.focus.animation().is_none(),
             );
         }
-        if game.shade.present_here() {
+        if game.shade.active_here() {
             let hero_body = [
                 game.player.x - PARAMS.half_width,
                 game.player.y + PARAMS.bottom,
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
+            // `nail_clash_tink` on the Shade's Slash: `NailParry`, EnemyKillShake, the
+            // parry sound, and the recoil the slash's direction picks.
+            if let Some(hit) = attacks.slash().filter(|hit| game.shade.parry(hit)) {
+                game.player.quake_invuln = shade::PARRY_INVULN_TICKS;
+                camera::request(camera::Shake::Kill);
+                scene_sfx::play(scene_sfx::HERO_PARRY);
+                if game.vitals.can_control() {
+                    game.nail_response.contact(
+                        crate::hero_params::nail_response(),
+                        hit.kind,
+                        hit.facing,
+                        &mut game.player,
+                    );
+                }
+            }
             if strike_shade(&mut game.shade, &attacks) {
                 audio::enemy_hit();
             }
-            let shade_position = game
-                .shade
-                .position()
-                .unwrap_or([game.player.x, game.player.y]);
             let shade_events = game.shade.tick(
                 [game.player.x, game.player.y],
                 hero_body,
                 room.counts[5],
                 game.state.edge_reader(r, room),
             );
-            if shade_events.touched {
-                let direction = if game.player.x < shade_position[0] {
+            if let Some(from) = shade_events.touched {
+                let direction = if game.player.x < from {
                     -1
                 } else {
                     1

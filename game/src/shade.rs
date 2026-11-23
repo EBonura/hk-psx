@@ -5,7 +5,7 @@
 //! the shared 64x64 animation slots under keys above `SCENE_TEXTURE_CAPACITY`.
 //! Only its CLUTs are resident. Behaviour is hk_sim::shade; see docs/SHADE.md.
 use psx_fx::NrLcg;
-use hk_sim::shade::{Action, Clip as Pose, Phase, Senses, Shade};
+use hk_sim::shade::{mirrored, Action, Clip as Pose, Phase, Senses, Shade, ShadowBall, Spells};
 use psx_math::Wide;
 use hk_sim::{Params, Player, ONE};
 
@@ -71,17 +71,24 @@ struct Live {
     facing: i32,
     /// HealthManager invincibility between nail hits, as the actors use.
     hit_cooldown: u16,
+    /// The body's bottom met terrain on the last step: the Quake's LAND.
+    grounded: bool,
+    /// `nail_clash_tink` answered this Slash already (one trigger entry a swing).
+    parried: bool,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Events {
-    /// Contact or Slash overlap with the hero body this tick.
-    pub touched: bool,
+    /// The x of whatever touched the hero body this tick (the Shade's body or
+    /// Slash, a spell hit, the Shadow Ball): DamageHero's direction source.
+    pub touched: Option<i32>,
     /// The Shade died: this much Geo returns to the wallet.
     pub returned_geo: u32,
 }
 pub struct World {
     record: Record,
     live: Option<Live>,
+    /// The Shadow Ball flies on its own, so it outlives the Shade's death.
+    ball: Option<ShadowBall>,
     seed: u32,
 }
 const HIT_COOLDOWN: u16 = 12;
@@ -112,6 +119,7 @@ impl World {
                 geo_pool: 0,
             },
             live: None,
+            ball: None,
             seed: 0x5ade,
         }
     }
@@ -162,18 +170,22 @@ impl World {
         self.live = None;
         self.publish();
     }
-    /// SceneManager::Start instantiates the Shade when the scene matches.
-    pub fn enter_scene(&mut self, scene: usize) {
+    /// SceneManager::Start instantiates the Shade when the scene matches;
+    /// `spells` is what its `Init` reads from PlayerData.
+    pub fn enter_scene(&mut self, scene: usize, spells: Spells) {
+        self.ball = None;
         self.live = if self.record.present && self.record.scene as usize == scene && !waits_for_hornet(scene) {
             self.seed = NrLcg::step(self.seed);
             Some(Live {
-                control: Shade::new(self.record.position, self.seed),
+                control: Shade::new(self.record.position, self.seed, spells),
                 position: self.record.position,
                 hp: self.record.hp,
                 clip: CLIP_IDLE,
                 age: 0,
                 facing: -1,
                 hit_cooldown: 0,
+                grounded: false,
+                parried: false,
             })
         } else {
             None
@@ -182,6 +194,10 @@ impl World {
     }
     pub fn present_here(&self) -> bool {
         self.live.is_some()
+    }
+    /// The Shade, or a Shadow Ball it cast, is in this scene: `tick` has work.
+    pub fn active_here(&self) -> bool {
+        self.live.is_some() || self.ball.is_some()
     }
     pub fn position(&self) -> Option<[i32; 2]> {
         self.live.as_ref().map(|l| l.position)
@@ -194,21 +210,28 @@ impl World {
             position[1] + BODY_BOUNDS[3],
         ]
     }
-    /// The Slash child's box, mirrored with the facing.
-    fn slash_box(position: [i32; 2], facing: i32) -> [i32; 4] {
-        let (x0, x1) = if facing < 0 {
-            (position[0] + SLASH_BOUNDS[0], position[0] + SLASH_BOUNDS[2])
-        } else {
-            (position[0] - SLASH_BOUNDS[2], position[0] - SLASH_BOUNDS[0])
+    /// A child's box, mirrored with the facing: the Shade's art faces left,
+    /// so its localScale x is the opposite of `facing`.
+    fn child_box(position: [i32; 2], facing: i32, local: [i32; 4]) -> [i32; 4] {
+        mirrored(position, -facing, local)
+    }
+    fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
+        a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
+    }
+    /// `nail_clash_tink`: the nail entering the live Slash parries it, once a
+    /// Slash. The caller recoils the Knight by the slash's direction.
+    pub fn parry(&mut self, slash: &hk_sim::HeroHit) -> bool {
+        let Some(live) = self.live.as_mut() else {
+            return false;
         };
-        [
-            x0,
-            position[1] + SLASH_BOUNDS[1],
-            x1,
-            position[1] + SLASH_BOUNDS[3],
-        ]
+        if !live.control.slashing() || live.parried || !slash.hits(Self::child_box(live.position, live.facing, SLASH_BOUNDS)) {
+            return false;
+        }
+        live.parried = true;
+        true
     }
     /// One 60 Hz step against the scene terrain.
+    #[cfg_attr(not(test), optimize(size))]
     pub fn tick(
         &mut self,
         hero: [i32; 2],
@@ -217,9 +240,18 @@ impl World {
         edge: impl Fn(usize) -> [i32; 4],
     ) -> Events {
         let mut events = Events::default();
+        if let Some(ball) = self.ball.as_mut() {
+            if !ball.tick() {
+                self.ball = None;
+            } else if Self::overlap(ball.bounds(BALL_BOUNDS), hero_body) {
+                events.touched = Some(ball.position[0]);
+            }
+        }
         let Some(live) = self.live.as_mut() else {
             return events;
         };
+        // DamageHero's direction is taken from where the Shade stood before it moved.
+        let before = live.position[0];
         live.age = live.age.saturating_add(1);
         let dx = live.position[0].clamp(hero_body[0], hero_body[2]) - live.position[0];
         let dy = live.position[1].clamp(hero_body[1], hero_body[3]) - live.position[1];
@@ -229,6 +261,9 @@ impl World {
             position: live.position,
             hero,
             can_see_hero,
+            quake_range: Self::overlap(Self::child_box(live.position, live.facing, QUAKE_RANGE), hero_body),
+            scream_range: Self::overlap(Self::child_box(live.position, live.facing, SCREAM_RANGE), hero_body),
+            grounded: live.grounded,
         };
         let actions = live.control.tick(senses);
         for action in actions.iter() {
@@ -239,11 +274,14 @@ impl World {
                 }
                 Action::Facing(facing) => live.facing = facing,
                 Action::MoveTo(position) => live.position = position,
-                Action::Velocity(_) | Action::SlashOn | Action::SlashOff => {}
+                Action::Shoot(facing) => self.ball = Some(ShadowBall::new(live.position, facing)),
+                Action::SlashOn => live.parried = false,
+                Action::Velocity(_) | Action::SlashOff => {}
             }
         }
         let v = live.control.velocity();
-        if v != [0; 2] && live.control.phase() != Phase::Retreat {
+        live.grounded = false;
+        if v != [0; 2] && !live.control.tweening() {
             let mut body = Player::spawn(live.position[0], live.position[1]);
             let params = Params {
                 speed: v[0].abs(),
@@ -256,20 +294,32 @@ impl World {
             body.vy = v[1];
             body.step(params, v[0].signum(), false, count, &edge);
             live.position = [body.x, body.y];
+            live.grounded = body.grounded;
         }
         if live.hit_cooldown > 0 {
             live.hit_cooldown -= 1;
         }
-        if live.control.vulnerable() {
+        let at = live.position;
+        let touched = if live.control.vulnerable() {
             let box_ = if live.control.slashing() {
-                Self::slash_box(live.position, live.facing)
+                Self::child_box(at, live.facing, SLASH_BOUNDS)
             } else {
-                Self::body(live.position)
+                Self::body(at)
             };
-            events.touched = box_[0] <= hero_body[2]
-                && box_[2] >= hero_body[0]
-                && box_[1] <= hero_body[3]
-                && box_[3] >= hero_body[1];
+            Self::overlap(box_, hero_body)
+        } else {
+            false
+        };
+        // Quake Hit and Scream Hit are their own DamageHero children.
+        let spell = (live.control.quake_hitting() && Self::overlap(Self::child_box(at, live.facing, QUAKE_HIT), hero_body))
+            || (live.control.scream_hitting() && {
+                let c = [at[0] - SCREAM_HIT[0] * live.facing, at[1] + SCREAM_HIT[1]];
+                let dx = c[0].clamp(hero_body[0], hero_body[2]) - c[0];
+                let dy = c[1].clamp(hero_body[1], hero_body[3]) - c[1];
+                hk_sim::fixed::within(dx, dy, SCREAM_HIT[2])
+            });
+        if touched || spell {
+            events.touched = Some(before);
         }
         if live.control.phase() == Phase::Gone {
             events.returned_geo = self.record.geo_pool;
@@ -307,6 +357,9 @@ impl World {
                 position,
                 hero: position,
                 can_see_hero: false,
+                quake_range: false,
+                scream_range: false,
+                grounded: false,
             })
         };
         for action in actions.iter() {
@@ -368,6 +421,18 @@ fn pose_clip(pose: Pose) -> usize {
         Pose::RetreatEnd => CLIP_RETREAT_END,
         Pose::DeathStart => CLIP_DEATH_START,
         Pose::Death => CLIP_DEATH,
+        // The spell clips are not cooked (host/shade.py `limitations`): the
+        // Shade holds Fly while it casts, dives and screams.
+        Pose::CastAntic
+        | Pose::CastCharge
+        | Pose::Cast
+        | Pose::QuakeAntic
+        | Pose::QuakeStart
+        | Pose::Quake
+        | Pose::QuakeLand
+        | Pose::ScreamAntic
+        | Pose::Scream
+        | Pose::ScreamEnd => CLIP_FLY,
     }
 }
 /// Texels for one Shade frame, for the animation cache's upload closure.
@@ -452,6 +517,10 @@ mod presentation {
             let (Some(index), Some(live)) = (self.frame_index(), self.live.as_ref()) else {
                 return 0;
             };
+            // Return Pause's SetMeshRenderer false, until Reform.
+            if live.control.hidden() {
+                return 0;
+            }
             if data().is_none() {
                 return 0;
             }
@@ -520,9 +589,9 @@ mod tests {
     fn the_shade_only_spawns_in_the_scene_that_recorded_it() {
         let mut w = World::new();
         w.record_death(3, [ONE, 2 * ONE], 10, 41);
-        w.enter_scene(4);
+        w.enter_scene(4, Spells::default());
         assert!(!w.present_here());
-        w.enter_scene(3);
+        w.enter_scene(3, Spells::default());
         assert!(w.present_here());
     }
     #[test]

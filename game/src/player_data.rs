@@ -81,8 +81,11 @@ pub const FINAL_GRUB_REWARD_COLLECTED: Field = 69;
 /// `Trink 3` and `Ore` states add to (`trinket`).
 pub const TRINKET_1: Field = 70;
 pub const ORE: Field = 73;
+/// `shadeMP`, then `shadeFireballLevel`, `shadeQuakeLevel` and `shadeScreamLevel`:
+/// what `Hero Death Anim` records for the Shade's `Init` to read (`shade.rs`).
+pub const SHADE_MP: Field = 74;
 
-pub const COUNT: usize = 74;
+pub const COUNT: usize = 78;
 pub const NAMES: [&str; COUNT] = [
     "falseKnightDefeated",
     "falseKnightFirstPlop",
@@ -158,6 +161,10 @@ pub const NAMES: [&str; COUNT] = [
     "trinket2",
     "trinket3",
     "ore",
+    "shadeMP",
+    "shadeFireballLevel",
+    "shadeQuakeLevel",
+    "shadeScreamLevel",
 ];
 /// A new game's value. Matches what the owners start on: `shop::State::new`'s
 /// five masks and `charms::State::new`'s three notches (checked where both are
@@ -426,6 +433,8 @@ const _: () = {
     assert!(same(NAMES[FINAL_GRUB_REWARD_COLLECTED], "finalGrubRewardCollected"));
     assert!(same(NAMES[TRINKET_1], "trinket1") && same(NAMES[TRINKET_1 + 1], "trinket2"));
     assert!(same(NAMES[TRINKET_1 + 2], "trinket3") && same(NAMES[ORE], "ore"));
+    assert!(same(NAMES[SHADE_MP], "shadeMP") && same(NAMES[SHADE_MP + 1], "shadeFireballLevel"));
+    assert!(same(NAMES[SHADE_MP + 2], "shadeQuakeLevel") && same(NAMES[SHADE_MP + 3], "shadeScreamLevel"));
 };
 #[cfg(not(test))]
 const _: () = {

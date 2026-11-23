@@ -1318,7 +1318,17 @@ fn main() {
             game.scene_ticks = 0;
             scene_ticks_scene = r.scene;
         }
-        game.shade.enter_scene(r.scene);
+        // The Shade's `Init` reads its spells from PlayerData.
+        game.shade.enter_scene(r.scene, {
+            let pd = player_data::store();
+            let level = |i| pd.get(player_data::SHADE_MP + i).clamp(0, 255) as u8;
+            hk_sim::shade::Spells {
+                mp: level(0),
+                fireball: level(1),
+                quake: level(2),
+                scream: level(3),
+            }
+        });
         game.props.enter_scene(r.scene, |local| {
             persist::get(persist::Kind::Grub, r.scene, local).is_some()
         });
