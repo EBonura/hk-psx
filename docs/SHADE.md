@@ -29,8 +29,17 @@ levelling with the hero's y (`targetsHeight`), and a hero within 5 units and
 0.2 of the Shade's own height triggers Slash Antic, a half-second wind-up,
 then an 8 units/s lunge whose damage box is live for the Slash state alone.
 Drifting more than 25 units (`Max Roam`) from the spawn retreats and resets it
-to Idle. Contact and the Slash each deal 1. Killing it returns the pool to the
+to Idle: the iTween takes it back over 1 s on easeInOutCubic, and its collider
+is off from Retreat Start to Retreat Reset, so it can neither be hit nor hurt
+the Knight on the way. Contact and the Slash each deal 1. Killing it returns the pool to the
 wallet, clears the record and ends the soul limiter.
+
+The nail entering the live Slash parries it once a Slash (`nail_clash_tink`,
+the same FSM as the Mawlek's arms, through `nail_parry`): `NailParry`'s 0.25 s
+of parry invulnerability, EnemyKillShake, the parry sound where the scene's
+bank has it, and the recoil the slash's direction picks (back from a side
+slash, down from an up slash, a bounce from a down slash). The Shade ignores
+the PARRIED it is sent, as Shade Control has no transition for it.
 
 While a Shade is owed, `StartSoulLimiter` caps the vessel at 66 rather than
 99, and the HUD bar with it.
@@ -42,9 +51,9 @@ in linked RAM and reach VRAM through the shared 64x64 animation slots under
 keys above `SCENE_TEXTURE_CAPACITY`; only two 16-colour CLUTs are resident, in
 the free rows above the dialogue palette. Not presented: every particle
 system, the death orbs and Soul Orb HUD event, all Shade audio, the light
-effect, the `nail_clash_tink` parry on the Slash child, and the map compass,
+effect, the parry's FreezeMoment(3), NailParryRecover and Nail Clash Effect, and the map compass,
 journal and story records. The Slash polygon becomes its axis-aligned bounds
-and the retreat iTween path a straight interpolation. The Fireball, Quake,
+and the retreat iTween path a straight line. The Fireball, Quake,
 Scream, Friendly, Lake and Jar branches are unreachable at this port's levels;
 `host/shade.py` fails the build if any of them stops being gated on a zero
 level.
