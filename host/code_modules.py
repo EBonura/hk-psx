@@ -227,12 +227,13 @@ DATA_MODULES = ('art_grub', 'art_stalactite', 'art_goam') + (('art_hornet',) if 
 # The Knight's death and respawn clips are carried too (host/ability_art.py STREAM_PACKS, the same names
 # and files, in that order): game/src/frame.rs `carry_streamed_art` asks for them when a hit could kill
 # and when he has died; `art_fx` (the Knight's ability effects, game/src/ability_fx.rs) follows him through every scene
-# once he owns an ability that draws one. Up to four packages can be asked for at once (modules.rs CARRIED).
+# once he owns an ability that draws one, as do `art_fx_spell` (Vengeful Spirit's) and `art_spell` (Desolate Dive's and
+# Howling Wraiths' poses and effects). All of them can be asked for at once (modules.rs CARRY_SLOTS).
 CARRIED = {'art_shade': 'data/shade.hk', 'art_death': 'data/art-death.hk', 'art_wake': 'data/art-wake.hk',
-           'art_fx': 'data/art-fx.hk', 'art_fx_spell': 'data/art-fx-spell.hk'}
+           'art_fx': 'data/art-fx.hk', 'art_fx_spell': 'data/art-fx-spell.hk', 'art_spell': 'data/art-spell.hk'}
 # Carried packages the pool-fit guarantee leaves out: the guest asks for one only where it fits beside the room's own
 # modules and whatever else is wanted (game/src/modules.rs `fx_fit`), and does without it where it does not.
-OPTIONAL = ('art_fx', 'art_fx_spell')
+OPTIONAL = ('art_fx', 'art_fx_spell', 'art_spell')
 # Modules the room's boss no longer needs once she has nothing left to do (game/src/modules.rs `retire_boss`): Hornet's fight code,
 # which is half of her room's pool, is dead weight from the moment the Cloak is picked up, so the optional packs are asked for
 # against the room less these (the third row of `HK_FX_FIT`) and the pool takes the Knight's ability art in her place.

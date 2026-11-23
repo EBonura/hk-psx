@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 mod disc;
 use std::{collections::BTreeSet, fs, path::Path, process::Command};
+/// Optional carried packs `HK_FX_FIT` holds a bit for in each of its three rows (game/src/modules.rs `fx_fit`).
+const FX_FIT_PACKS: usize = 3;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn owner<'a>(symbols: &[Symbol<'a>], section: usize, site: u32) -> Result<Symbol<'a>> {
@@ -649,10 +651,10 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
         table.push((need, index, listed, shadeless));
     }
     // The guest decides which optional carried packages (the Knight's ability effects) it asks for into a
-    // scene (`modules::fx_fit`): `HK_FX_FIT`, per manifest scene, one bit for each optional pack that fits
-    // beside the scene's own modules and the Death and respawn clips (bits 0, 1) or beside those and the
-    // Shade's art too (bits 2, 3), or beside the room less the modules its boss retires (bits 4, 5; modules.rs `retire_boss`), filled in
-    // the order the packs are listed.
+    // scene (`modules::fx_fit`): `HK_FX_FIT`, per manifest scene (a u16), one bit for each optional pack that fits
+    // beside the scene's own modules and the Death and respawn clips (bits 0 to 2) or beside those and the
+    // Shade's art too (bits 3 to 5), or beside the room less the modules its boss retires (bits 6 to 8; modules.rs `retire_boss`), filled in
+    // the order the packs are listed, so a later pack never takes the room of an earlier one.
     {
         let scenes = config["room_scenes"].as_array().ok_or("room_scenes")?;
         let optional: Vec<u32> = config["optional"]
@@ -679,8 +681,8 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 } as u32)
             })
             .collect::<std::result::Result<_, Box<dyn std::error::Error>>>()?;
-        if optional.len() > 2 {
-            return Err("HK_FX_FIT holds two optional packs".into());
+        if optional.len() > FX_FIT_PACKS {
+            return Err("HK_FX_FIT holds three optional packs".into());
         }
         let retire: Vec<u64> = config["retire"]
             .as_array()
@@ -702,7 +704,7 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 .find(|e| e.1 == position)
                 .map(|e| (e.0, e.3))
                 .ok_or("room need")?;
-            let mut bits = 0u8;
+            let mut bits = 0u16;
             // What the room's boss gives back once she is done: the sizes of the retired modules among its own.
             let given: u32 = config["rooms"][position]
                 .as_array()
@@ -718,18 +720,21 @@ fn assemble(elf_path: &Path, config_path: &Path, publication: &Path, output: &Pa
                 let mut room = limit.saturating_sub(need + beside);
                 for (k, bytes) in optional.iter().enumerate() {
                     if *bytes <= room {
-                        bits |= 1 << (2 * row + k);
+                        bits |= 1 << (FX_FIT_PACKS * row + k);
                         room -= bytes;
                     }
                 }
             }
-            if scene + 1 > symbol.bytes as usize {
+            if 2 * (scene + 1) > symbol.bytes as usize {
                 return Err("fx fit capacity".into());
             }
             let offset = 2048
                 + symbol.address.checked_sub(load).ok_or("fx fit load")? as usize
-                + scene;
-            *runtime.get_mut(offset).ok_or("fx fit bounds")? = bits;
+                + 2 * scene;
+            runtime
+                .get_mut(offset..offset + 2)
+                .ok_or("fx fit bounds")?
+                .copy_from_slice(&bits.to_le_bytes());
         }
     }
     table.sort_by(|a, b| b.cmp(a));
