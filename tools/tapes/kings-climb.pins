@@ -5,7 +5,12 @@ long_frames = 47
 # done on the disc, and the first cooked script to fire in Tutorial_01:
 # FLAGS bit 0 is seenFocusTablet. The climb needs no ability, it needs to
 # survive two Crawler hits, which is what the Invincibility grant buys;
-# ctrl-climb is the same tape without the grant and reaches none of it.
+# ctrl-climb was the same tape without the grant and reaches none of it.
+# Since the nail recoils off terrain (2026-11-23) this tape swings on the climb
+# only where it breaks something (tools/tapes/kings-climb.route): the swings it
+# made against the shaft walls pushed the Knight off his jumps. ctrl-climb keeps
+# the recorded swings; it passes on them, and on this tape it reports 30 frames
+# of late prop art (HK_MODULE_ART_LATE) on the path it then takes.
 HK_CHEATS = 1
 HK_SCRIPT_TRANSITIONS = 1
 HK_SCRIPT_WRITES = 1
