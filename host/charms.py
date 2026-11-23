@@ -16,7 +16,9 @@ notches back, until the fifth attempt sets `canOvercharm` and breaks through.
 Unequipping runs `Return Points` (cost back) and `End Overcharm?`, which clears
 `overcharmed` only once `filled <= slots`. `Broken?` refuses the three fragile
 charms while their `brokenCharm_N` is set, and `Royal?` refuses 36 in its bound
-quest states.
+quest states. Before any of that, `Deactivate UI` and `Set Current Item Num` test
+`atBench`: the board can be browsed anywhere, but a charm goes on or comes off only
+while resting at a bench, and off a bench `Charm Equip Msg` says so.
 
 The effects come from the assembly and from the two FSMs that own a number:
 `HeroController::SoulGain` (11 SOUL a hit, +3 with 20, +8 with 21),
@@ -244,6 +246,26 @@ def equip_rules(source):
     assert tuple(fragile) == FRAGILE, f'the fragile charms are now {fragile}'
     broken = {_named(a['boolName']) for a in _actions(states['Broken?'], 'GetPlayerDataBool')}
     assert broken == {f'brokenCharm_{n}' for n in FRAGILE}, 'Broken? no longer reads the fragile flags'
+    # The bench: `Deactivate UI` (UI CONFIRM on a collected charm) and `Set Current Item Num`
+    # (UI CONFIRM on a worn one) both test `atBench` before anything else moves, so equipping and
+    # unequipping need a bench and browsing does not. Off the bench the first sends `NOT BENCH`
+    # to `Bench Reminder`, which raises `Charm Equip Msg`; the second cancels without a word.
+    # `Equip Prompt` puts the Equip/Unequip prompt off screen (y -50) away from a bench.
+    def bench_test(state):
+        test = [a for a in _actions(states[state], 'PlayerDataBoolTest') if _named(a['boolName']) == 'atBench']
+        assert len(test) == 1, f'{state} no longer tests atBench once'
+        return test[0]
+    collected = bench_test('Deactivate UI')
+    assert collected['isFalse'] == 'NOT BENCH' and not collected['isTrue'], \
+        'Deactivate UI no longer refuses an equip away from a bench'
+    assert ('NOT BENCH', 'Bench Reminder') in {(t['fsmEvent']['name'], t['toState'])
+                                               for t in states['Deactivate UI']['transitions']}
+    assert _actions(states['Bench Reminder'], 'CreateObject'), 'Bench Reminder no longer raises its message'
+    worn = bench_test('Set Current Item Num')
+    assert worn['isFalse'] == 'CANCEL' and not worn['isTrue'], \
+        'Set Current Item Num no longer refuses an unequip away from a bench'
+    prompt = bench_test('Equip Prompt')
+    assert prompt['isFalse'] == 'FINISHED' and not prompt['isTrue'], 'Equip Prompt no longer hides the prompt'
     royal = _actions(states['Royal?'], 'IntCompare')
     assert len(royal) == 1 and _named(royal[0]['integer1']) == 'Current Item Number' \
         and _plain(royal[0]['integer2']) == BOUND, f'Royal? no longer guards charm {BOUND}'
@@ -260,7 +282,38 @@ def equip_rules(source):
         'unequip': 'charmSlotsFilled -= charmCost_N, then overcharmed = charmSlotsFilled > charmSlots',
         'fragile_charms': list(FRAGILE),
         'bound_charm': BOUND,
+        'equip_requires': 'atBench',
+        'not_at_bench': 'Bench Reminder raises Charm Equip Msg; the Equip prompt is off screen',
     }
+
+
+def bench_reminder(source, table):
+    """`Charm Equip Msg`'s line, wrapped to the description column it stands in.
+
+    `Bench Reminder` raises that prefab, whose FSM reads its text with GetLanguageString;
+    the sheet and key are read from there rather than named here.
+    """
+    file = source.file('resources.assets')
+    found = set()
+    for o in file.objects.values():
+        if o.type.name != 'MonoBehaviour' or b'Charm Equip Msg' not in o.get_raw_data():
+            continue
+        if source.typename(o) != 'PlayMakerFSM':
+            continue
+        tree = source.read(o)
+        owner = file.objects[tree['m_GameObject']['m_PathID']].read_typetree()['m_Name']
+        # `Bound Charm Msg` carries a copy of the same FSM under the same name.
+        if tree['fsm']['name'] != 'Charm Equip Msg' or owner != 'Charm Equip Msg':
+            continue
+        fsm = tree['fsm']
+        reads = [a for s in fsm['states'] for a in _actions(s, 'GetLanguageString')]
+        assert len(reads) == 1, f'Charm Equip Msg reads {len(reads)} strings'
+        found.add((_named(reads[0]['sheetName']), _named(reads[0]['convName'])))
+    assert len(found) == 1, f'the Charm Equip Msg prefab reads {sorted(found)}'
+    sheet, key = found.pop()
+    pages = wrap_page(language.sheet(source, sheet)[key], table, DESC_WIDTH, DESC_LINES)
+    assert len(pages) == 1, f'{sheet}/{key} needs {len(pages)} panels'
+    return {'sheet': sheet, 'key': key, 'lines': pages[0]}
 
 
 def _method_bodies(assembly, wanted):
@@ -704,7 +757,7 @@ def charm_table(catalogue, shell, bonuses, heart, nails, grub, table, numeric):
     return rows
 
 
-def generated_charms_rs(rows, rules, defaults, layout, art):
+def generated_charms_rs(rows, rules, defaults, layout, art, reminder):
     """The guest table. `Charm` and `Effect` are declared in game/src/charms.rs.
 
     The panel geometry is cooked with the table because the icon size sets the
@@ -731,6 +784,8 @@ def generated_charms_rs(rows, rules, defaults, layout, art):
         '/// `Overcharm Check` counts a refused attempt and breaks through on this one.',
         f"pub const OVERCHARM_BREAK_ATTEMPT:u8={rules['overcharm_break_attempt']};",
         f'pub const CHARMS:[Charm;CHARM_COUNT]=[' + ','.join(entries) + '];',
+        f"/// `Charm Equip Msg` ({reminder['sheet']} {reminder['key']}), wrapped as a description is.",
+        'pub const BENCH_REMINDER:&str="' + '\\n'.join(quoted(l)[1:-1] for l in reminder['lines']) + '";',
         '/// The board, derived by `host/charms.py::panel_layout` against the 320x240',
         '/// screen: the icon size picked the slot, the slot picked the grid.',
         f"pub const GRID_COLS:usize={GRID_COLS};",
@@ -1073,6 +1128,7 @@ def source_charm_values(source, assembly, scenes):
     ui = language.sheet(source, 'UI')
     catalogue = items.charms(source, defaults, ui)
     rules = equip_rules(source)
+    reminder = bench_reminder(source, advances())
     bodies = _method_bodies(Path(assembly), {
         ('HeroController', 'SoulGain'), ('HeroController', 'CharmUpdate'),
         ('HeroController', 'TakeDamageCharmEffects'), ('PlayerData', 'CalculateNotchesUsed'),
@@ -1116,6 +1172,7 @@ def source_charm_values(source, assembly, scenes):
         'charm_count': len(rows),
         'starting_notches': defaults['charmSlots'],
         'equip_rules': rules,
+        'bench_reminder': reminder,
         'effects': {
             'soul_per_hit_base': base_soul, 'soul_per_hit_charms': bonuses,
             'fragile_heart_masks': heart, 'nail_multipliers': nails,
@@ -1166,7 +1223,7 @@ def cook():
         preview.save(ROOT / f'.hkpsx/charm-icons/palette{i}.png')
     (ROOT / 'data/charms.rs').write_text(generated_charms_rs(
         values['charms'], values['equip_rules'], {'charmSlots': values['starting_notches']},
-        icons['layout'], art))
+        icons['layout'], art, values['bench_reminder']))
     dump(ROOT / '.hkpsx/charm-catalog.json', values)
     print(f"{values['charm_count']} charms, {values['starting_notches']} starting notches, "
           f"overcharm breaks through on attempt {values['equip_rules']['overcharm_break_attempt']}")

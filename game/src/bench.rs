@@ -97,6 +97,15 @@ impl State {
     pub fn seated(&self) -> bool {
         matches!(self.phase, Phase::Sitting(_))
     }
+    /// `PlayerData.atBench`: `Bench Control` sets it at `Start Rest` and in `Init Resting` (a
+    /// respawn asleep on the bench) and clears it at `Wake?`, as the Knight gets off.
+    pub fn at_bench(&self) -> bool {
+        match self.phase {
+            Phase::Sitting(_) => true,
+            Phase::Asleep(_) | Phase::Waking(_) => self.at_bench,
+            _ => false,
+        }
+    }
     pub fn seat(&self) -> [i32; 2] {
         self.seat
     }
