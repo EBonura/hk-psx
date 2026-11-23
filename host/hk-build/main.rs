@@ -102,6 +102,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     // placement out of data/regions.json.
     "game_map.py",
     "cornifer.py",
+    // The Grubfather's rewards (data/grubfather.rs for game/src/grubfather.rs): reads the item names
+    // the way pickups.py does, from the UI sheet.
+    "grubfather.py",
     // The Toll Machines: reads the region report's links (host/world_links.py) and the Prices and Prompts
     // sheets, writes data/toll.rs for the toll module (game/src/toll.rs).
     "tolls.py",
