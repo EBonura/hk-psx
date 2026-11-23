@@ -628,11 +628,21 @@ fn nail_bounds(attacks: &HeroAttacks) -> Option<[i32; 4]> {
 #[inline(never)]
 fn take_pickup(scene: usize, p: &pickups::Pickup) {
     persist::set(persist::Kind::Pickup, scene, p.local as usize, 1);
-    match p.grant {
+    grant_item(p.grant, p.name, p.touch);
+}
+/// What an item gives, its message and its sound: a pickup's, and a reward the
+/// Grubfather hands over (game/src/grubfather.rs).
+#[inline(never)]
+pub(crate) fn grant_item(grant: pickups::Grant, name: &'static str, touch: bool) {
+    match grant {
         pickups::Grant::Charm(n) => charms::pick_up(n as usize),
-        // A relic is only a count in the source, and nothing in the slice buys
-        // one back, so the saved pickup is the whole record.
-        pickups::Grant::Trinket(_) => {}
+        // `Trink N` and `Ore` (trinket 14): a count each, which nothing in the slice spends yet.
+        pickups::Grant::Trinket(n) => {
+            if let Some(f) = player_data::trinket(n) {
+                let pd = player_data::store();
+                pd.set(f, pd.get(f).saturating_add(1));
+            }
+        }
         pickups::Grant::CityKey => persist::set_player(persist::HAS_CITY_KEY),
         pickups::Grant::Ability(bit) => persist::set_player(bit as u32),
         pickups::Grant::MaskShard => shop::pick_up(|s| {
@@ -647,10 +657,10 @@ fn take_pickup(scene: usize, p: &pickups::Pickup) {
     }
     // An ability is `Shiny Control`'s big item: its own item-get panel names it (the Cloak's is
     // enemies/hornet.rs), so the corner banner of the charm and relic route must not name it too.
-    if !matches!(p.grant, pickups::Grant::Ability(_)) {
-        title_card::show_item(p.name);
+    if !matches!(grant, pickups::Grant::Ability(_)) {
+        title_card::show_item(name);
     }
-    scene_sfx::play(if p.touch {
+    scene_sfx::play(if touch {
         scene_sfx::HEARTPIECE_COLLECT
     } else {
         scene_sfx::SHINY_ITEM_PICKUP
