@@ -10,7 +10,7 @@ STACK_RESERVE = 48 * 1024
 # (scene-system-1123 PLAN.md 3.2: cap 10,240 B including the core's stack, target 8,192 B). The program links for
 # RAM_SIZE = 2 MiB - the window, so STACK_INIT, the stack reserve and the module pool under it all move down by the window.
 # HK_CORE_WINDOW_BYTES measures another size; 0 links the whole 2 MiB as before the core.
-CORE_WINDOW_BYTES = int(os.environ.get('HK_CORE_WINDOW_BYTES', '10240'), 0)
+CORE_WINDOW_BYTES = int(os.environ.get('HK_CORE_WINDOW_BYTES', '8192'), 0)
 if CORE_WINDOW_BYTES % 0x100 or not 0 <= CORE_WINDOW_BYTES < 0x10000:
     raise ValueError(f'HK_CORE_WINDOW_BYTES {CORE_WINDOW_BYTES} must be whole 256-byte lines under 64 KiB')
 RAM_SIZE = 0x200000 - CORE_WINDOW_BYTES
