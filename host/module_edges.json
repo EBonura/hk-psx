@@ -241,6 +241,11 @@
   ],
   [
     "hk_psx::frame::interact",
+    "grubfather",
+    "hk_psx::grubfather::live::tick"
+  ],
+  [
+    "hk_psx::frame::interact",
     "hornet_art",
     "hk_psx::enemies::hornet::convo_tick"
   ],

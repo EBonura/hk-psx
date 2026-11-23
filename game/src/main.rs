@@ -108,6 +108,7 @@ mod impact;
 mod lifeblood;
 mod look_pose;
 mod mapper;
+mod grubfather;
 mod mawlek_art;
 mod menu;
 mod modules;

@@ -806,6 +806,15 @@ pub fn interact(
     if paid > 0 {
         game.geo.take(paid, geo::GEO_PARAMS);
     }
+    // The Grubfather's `King Control` (game/src/grubfather.rs), in his room only: anywhere else
+    // the next entry is a fresh scene load. A pause stops his clock, as timeScale 0 does.
+    if crate::modules::loaded(crate::modules::GRUBFATHER) && r.scene == grubfather::GRUBFATHER_SCENE {
+        if !game.paused {
+            grubfather::tick(game.player.x, &mut game.geo);
+        }
+    } else {
+        grubfather::idle();
+    }
     // The cooked FSM programs. Their trigger volumes take the
     // same hero body the NPC range does, so a script and an NPC
     // standing in the same place agree on where the Knight is.

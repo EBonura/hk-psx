@@ -127,6 +127,8 @@ MODULES = {
     'shop': ('*6hk_psx4shop12presentation*',),
     'shaman': ('*6hk_psx6shaman4live4draw*',),
     'cornifer': ('*6hk_psx6mapper4live4tick*',),
+    # The Grubfather's King Control and his reward table (game/src/grubfather.rs); `idle` stays resident.
+    'grubfather': ('*6hk_psx10grubfather4live4tick*', '*6hk_psx10grubfather5coins*', '*6hk_psx10grubfather7REWARDS*'),
     # The Toll Machines' box (game/src/toll.rs): the range test, the Yes/No state and its drawing. Entry points are
     # guarded by `modules::loaded(TOLL)`; the rooms that place a machine carry it (data/toll.rs).
     'toll': ('*6hk_psx4toll4live4tick*', '*6hk_psx4toll4live7prepare*'),
@@ -199,6 +201,7 @@ if HORNET:
 # the room's scene id.
 ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
                 'cornifer': ('cornifer.rs', 'CORNIFER_SCENE'),
+                'grubfather': ('grubfather.rs', 'GRUBFATHER_SCENE'),
                 # Every scene that places a Toll Machine: one `Machine { scene: N,` row each.
                 'toll': ('toll.rs', r'Machine \{ scene: (\d+),'),
                 # The cocoon's scene is the `scene` field of its cooked `LIFE_SPEC`.
