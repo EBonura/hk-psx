@@ -112,6 +112,7 @@ MODULES = {
     # The Mosquito's module also holds the Acid Flyer (one room, 1.6 KB): the resident mask has 32 bits.
     'mosquito': _sim('mosquito', 'acid_flyer') + _actor('advance_mosquito', 'advance_acid_flyer'),
     'moss_walker': _sim('moss_walker') + _actor('advance_moss_walker'),
+    'fat_fly': _sim('fat_fly') + _actor('advance_fat_fly'),
     'moss_charger': _sim('moss_charger') + _actor('advance_moss_charger', 'step_moss_charger'),
     # The Baldur's module also holds the Elder Baldur's Blocker (its rooms carry both modules, so the merge costs no pool
     # bytes anywhere): a resident mask bit for the Knight's second optional effects pack.
@@ -251,7 +252,7 @@ BOOT_MODULES = tuple(m for m in ('title',) if m not in ALWAYS_RESIDENT)
 KIND_MODULE = {'Crawler': 'crawler', 'FalseKnight': 'false_knight', 'Mawlek': 'mawlek', 'HuskGuard': 'husks', 'ZombieShield': 'husks',
                'Vengefly': 'vengefly', 'Gruzzer': 'gruzzer', 'Baldur': 'baldur', 'Aspid': 'aspid',
                'Hatcher': 'hatcher', 'HatcherBaby': 'hatcher', 'Pigeon': 'pigeon', 'Climber': 'climber',
-               'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'mosquito', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker', 'MossCharger': 'moss_charger',
+               'GruzMother': ('gruz_mother', 'gruzzer'), 'GruzzerReserve': 'gruzzer', 'AcidFlyer': 'mosquito', 'Mosquito': 'mosquito', 'MossWalker': 'moss_walker', 'MossCharger': 'moss_charger', 'FatFly': 'fat_fly',
                # The Elder Baldur spits Rollers, which run the Baldur's FSM
                # (blocker_roller.rs); both live in the `baldur` module.
                'Blocker': 'baldur', 'FsmActor': 'actor_fsm'}

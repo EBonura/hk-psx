@@ -732,6 +732,7 @@ mod modules {
     pub const MOSQUITO: usize = 13;
     pub const MOSS_WALKER: usize = 14;
     pub const MOSS_CHARGER: usize = 18;
+    pub const FAT_FLY: usize = 19;
     pub fn require(_k: usize) -> bool {
         true
     }
@@ -3470,4 +3471,123 @@ fn a_moss_charger_surfaces_charges_and_one_tink_bursts_it_out_of_the_grass() {
     }
     assert!(landed > 0, "a burst Moss Charger is vulnerable");
     assert!(w.actor_state(0, 907).unwrap().2 < 15);
+}
+
+/// Fungus1_19's `Fat Fly` (`level147:400`): 10 hp, 4 small Geo, contact damage 1, the 0.89 by 0.84 body.
+const FAT_FLY: ActorSpec = ActorSpec {
+    controller: ActorController::FatFly { attack_clip: 1, shot_clip: 2, impact_clip: 3 },
+    bounds: [-26624, -29696, 31744, 25600],
+    health: EnemyParams {
+        health: 10,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: false,
+        damage_override: false,
+    },
+    walk: WalkParams {
+        speed: 0,
+        turn_ticks: 0,
+        turn_cooldown_ticks: 0,
+    },
+    walk_clip: 0,
+    turn_clip: 0,
+    corpse: None,
+    recoil_speed: 15 * ONE,
+    recoil_ticks: 9,
+    dream_soul: 33,
+};
+const FAT_FLY_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 400,
+    x: 0,
+    y: 6 * ONE,
+    initial_direction: -1,
+    ..PLACEMENT
+};
+fn fat_fly_region() -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-30 * ONE, -5 * ONE, 30 * ONE, 20 * ONE],
+        collision_bounds: [-33 * ONE, -10 * ONE, 33 * ONE, 25 * ONE],
+        actors: &[(FAT_FLY_AT, &FAT_FLY)],
+    }
+}
+/// Fly (8 at 12, loop), Attack (8 at 12, once), and the shot's Idle (4 at 20) and Impact (6 at 20, once).
+fn fat_fly_room() -> Vec<u8> {
+    let clips: [(u32, u32, u32); 4] = [(8, 12, 0), (8, 12, 2), (4, 20, 0), (6, 20, 2)];
+    let frames: u32 = clips.iter().map(|c| c.0).sum();
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, frames, clips.len() as u32, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u16, 0, 0, 4, 4, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.extend(0u32.to_le_bytes());
+    for _ in 0..frames {
+        for n in [0i32, -26624, -29696, 31744, 25600] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    let mut first = 0;
+    for (count, fps, wrap) in clips {
+        for n in [first, count, fps * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+        first += count;
+    }
+    for n in [-30 * ONE, 0, 30 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+/// The whole Obble through the guest runtime: it waits for the hero within 25 units, flies at him at four a
+/// second, and a nail hit winds it up at once: it stops and throws four shots on the diagonals.
+#[test]
+fn a_fat_fly_floats_at_the_hero_and_a_hit_makes_it_throw_four_shots() {
+    let bytes = fat_fly_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = fat_fly_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let quiet = Nail::new();
+    let mut far = Player::spawn(28 * ONE, 0);
+    for _ in 0..60 {
+        tick(&mut w, &r, &room, &mut far, &mut v, &quiet);
+    }
+    assert_eq!(w.actor_state(0, 400), Some((0, 6 * ONE, 10)), "asleep past 25 units");
+    let mut near = Player::spawn(8 * ONE, 6 * ONE);
+    for _ in 0..60 {
+        tick(&mut w, &r, &room, &mut near, &mut v, &quiet);
+    }
+    let (x, y, _) = w.actor_state(0, 400).unwrap();
+    // A second at four units a second toward the hero (to within a fixed step's rounding).
+    assert!((35 * ONE / 10..=4 * ONE).contains(&x), "x {x}");
+    assert!((y - 6 * ONE).abs() < ONE / 4, "y {y}");
+    let quads = submitted(&w, &r, &room).len();
+    // A nail hit: 10 hp less the nail, and `TAKE DAMAGE` starts the wind-up.
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 1;
+    let mut beside = Player::spawn(x + ONE, 6 * ONE);
+    let mut landed = 0;
+    for _ in 0..5 {
+        landed += tick(&mut w, &r, &room, &mut beside, &mut v, &nail).hits;
+        if landed > 0 {
+            break;
+        }
+    }
+    assert_eq!(landed, 1);
+    let mut away = Player::spawn(x + 20 * ONE, 6 * ONE);
+    let mut fired = None;
+    for n in 0..80 {
+        tick(&mut w, &r, &room, &mut away, &mut v, &quiet);
+        if submitted(&w, &r, &room).len() >= quads + 4 {
+            fired = Some(n);
+            break;
+        }
+    }
+    let n = fired.expect("four shots leave on the volley");
+    // `Attack Antic` 0.35 s and `Attack` to its trigger frame (25 ticks), give or take the hit tick.
+    assert!((40..=48).contains(&n), "volley at {n}");
 }
