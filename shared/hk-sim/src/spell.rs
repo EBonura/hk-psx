@@ -170,7 +170,7 @@ impl Cast {
             && soul >= p.cost
             && player.dash_left == 0
             && !player.attack_recovering
-            && player.spell == HeroSpell::Off
+            && !player.casting()
     }
     /// `Spell Choice`: up asks `Has Scream?`, down `Has Quake?`, and either one
     /// not owned falls through to `Has Fireball?`, which wants `fireballLevel`.
@@ -365,7 +365,7 @@ pub enum SpellCue {
 impl Player {
     /// A Dive or Wraiths owns the Knight.
     pub fn casting(&self) -> bool {
-        self.spell != HeroSpell::Off
+        !matches!(self.spell, HeroSpell::Off)
     }
     /// `TakeDamage` returns for contact damage (hazardType 1) during the dive
     /// (`SetDamageModeFSM(1)`, HAZARD_ONLY, from `Quake1 Down` to `Quake Finish`)
@@ -383,6 +383,8 @@ impl Player {
     }
     /// `Quake Antic`: `CancelParryInvuln`, then the rise (`Q On Ground`) or a
     /// hover (`Q Off Ground`).
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn start_quake(&mut self, q: &QuakeParams) {
         let rise = if self.grounded { q.antic_rise } else { 0 };
         self.relinquish();
@@ -391,12 +393,16 @@ impl Player {
         self.spell = HeroSpell::QuakeAntic(0);
     }
     /// `Scream Antic1`: still, in the air or not.
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn start_scream(&mut self) {
         self.relinquish();
         self.spell = HeroSpell::Scream(0);
     }
     /// One tick of the spell, before `step`. `Quake1 Down` ends in `step`, on
     /// the floor; everything else ends on its own clock.
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn spell_tick(&mut self, q: &QuakeParams, s: &ScreamParams) -> SpellCue {
         self.quake_invuln = self.quake_invuln.saturating_sub(1);
         let mut cue = SpellCue::None;
@@ -424,42 +430,40 @@ impl Player {
         cue
     }
     /// The spell's live hits, in world space, onto the tick's attack list.
+    #[inline(never)]
+    #[cfg_attr(target_arch = "mips", optimize(size))]
     pub fn spell_hits(&self, q: &QuakeParams, s: &ScreamParams, attacks: &mut HeroAttacks) {
-        // Knight-local x runs against the facing (the collection faces left).
-        let at = |local: [i32; 2]| [self.x - local[0] * self.facing, self.y + local[1]];
-        let side = |source, local: &[[i32; 2]], at, facing, damage| {
-            let mut hit = HeroHit::polygon(source, Class::Spell, local, at, facing);
-            hit.damage = damage;
-            hit
-        };
-        match self.spell {
+        // (source, damage, parent, Hit L's polygon, Hit U's or none). Hit L faces
+        // left (`damages_enemy` direction 180), Hit R is its mirror (0), Hit U
+        // points up (90, the up slash's cardinal).
+        let (source, damage, parent, sides, up) = match self.spell {
             HeroSpell::QuakeDown => {
                 let b = q.fall_bounds;
-                // `damages_enemy`'s direction 180.
-                attacks.push(HeroHit::spell_box(
-                    Source::Quake,
-                    [self.x + b[0], self.y + b[1], self.x + b[2], self.y + b[3]],
-                    q.fall_damage,
-                    -1,
-                ));
+                let (x, y) = (self.x, self.y);
+                let fall = [x + b[0], y + b[1], x + b[2], y + b[3]];
+                attacks.push(HeroHit::spell_box(Source::Quake, fall, q.fall_damage, -1));
+                return;
             }
             HeroSpell::QuakeLand(t) if (q.slam_from..q.slam_to).contains(&t) => {
-                let at = at(q.slam_at);
-                attacks.push(side(Source::Quake, q.slam, at, -1, q.slam_damage));
-                attacks.push(side(Source::Quake, q.slam, at, 1, q.slam_damage));
+                (Source::Quake, q.slam_damage, q.slam_at, q.slam, None)
             }
             HeroSpell::Scream(t)
                 if t >= s.antic_ticks && (s.hit_from..s.hit_to).contains(&(t - s.antic_ticks)) =>
             {
-                let at = at(s.at);
-                attacks.push(side(Source::Scream, s.sides, at, -1, s.damage));
-                attacks.push(side(Source::Scream, s.sides, at, 1, s.damage));
-                // `Hit U`'s direction 90: the up slash's cardinal.
-                let mut up = side(Source::Scream, s.up, at, -1, s.damage);
-                up.kind = 2;
-                attacks.push(up);
+                (Source::Scream, s.damage, s.at, s.sides, Some(s.up))
             }
-            _ => {}
+            _ => return,
+        };
+        // Knight-local x runs against the facing (the collection faces left).
+        let at = [self.x - parent[0] * self.facing, self.y + parent[1]];
+        for (local, facing, kind) in [(sides, -1, 0), (sides, 1, 0), (up.unwrap_or(&[]), -1, 2)] {
+            if local.is_empty() {
+                break;
+            }
+            let mut hit = HeroHit::polygon(source, Class::Spell, local, at, facing);
+            hit.damage = damage;
+            hit.kind = kind;
+            attacks.push(hit);
         }
     }
 }

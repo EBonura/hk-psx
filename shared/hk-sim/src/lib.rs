@@ -335,7 +335,7 @@ impl Player {
         // CanDash: the cooldown, no dash running, not inside an attack's
         // recovery window, and either footing, an unspent air dash or a wall.
         let allowed = self.has_dash
-            && self.spell == HeroSpell::Off
+            && matches!(self.spell, HeroSpell::Off)
             && self.dash_left == 0
             && self.dash_cooldown == 0
             && !self.attack_recovering
@@ -409,7 +409,7 @@ impl Player {
             SuperDash::Off
                 if held
                     && self.has_super_dash
-                    && self.spell == HeroSpell::Off
+                    && matches!(self.spell, HeroSpell::Off)
                     && (self.grounded || self.wall_sliding) =>
             {
                 // The entry call is the charge's first tick.
@@ -610,7 +610,7 @@ impl Player {
             SuperDash::Charging(_) | SuperDash::Ready | SuperDash::Recovering(_)
         );
         let dashing = self.dash_left > 0;
-        let (dir, speed) = if self.spell != HeroSpell::Off {
+        let (dir, speed) = if !matches!(self.spell, HeroSpell::Off) {
             // Dive and Wraiths hold the velocity they set, with gravity off
             // (`AffectedByGravity(false)`). On a floor the source's ground check
             // is a raycast; here the floor pass needs a step downwards to keep
@@ -730,7 +730,7 @@ impl Player {
             }
         }
         // `Quake1 Down`'s HERO LANDED.
-        if self.spell == HeroSpell::QuakeDown && self.grounded {
+        if matches!(self.spell, HeroSpell::QuakeDown) && self.grounded {
             self.spell = HeroSpell::QuakeLand(0);
         }
         // Source CheckTouchingWall is a raycast, so contact holds whether or
