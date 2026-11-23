@@ -135,7 +135,8 @@ def boot_art():
         # game/src/intro.rs play trusts this: the image lies inside the room-module pool (empty at the title) and
         # the program runs on the top of the pool as its stack (the game's own stack, with the main loop's
         # frame on it, stays untouched), with at least 16 KiB between the image's end and the stack pointer.
-        sp=0x801F3EF0
+        import code_modules
+        sp=code_modules.STACK_FLOOR-0x10
         if exe[:8]!=b'PS-X EXE' or load<0x801DB000 or load+size>sp-0x4000 or len(exe)<0x800+size:
             raise ValueError(f'data/intro.exe does not fit the pool: load {load:#x} size {size:#x} sp {sp:#x}')
         data=struct.pack('<5I',load,size,pc0,gp0,sp)+exe[0x800:0x800+size];intro_at=(len(blob),len(data));blob+=data+bytes(-len(data)%4)
@@ -301,6 +302,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     base_linker=prepare_linker(ROOT,out)
     # Ordinary publication uses the shared SDK tool; profiling retains its own path.
     if profile is None:os.environ["HK_SHARED_PUBLISHER"]="1"
+    if code_modules.MEASURE_OVERLAP and not work:raise ValueError('HK_MEASURE_OVERLAP is for measurement builds under --work only')
     layered=code_modules.layer(base_linker.read_text())
     linker=out/f'hk-psx-ovl-{hashlib.sha256(layered.encode()).hexdigest()[:16]}.ld'
     linker.write_text(layered)

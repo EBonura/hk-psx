@@ -74,11 +74,14 @@ ROOM_MODULE_IDS = 56
 # the module, 4,096 bytes of state and the carried Shade (99,796 bytes) in 114,432. At 100 KiB (base 0x801DAF00) the pool holds no
 # window of more than 53,504 bytes, and the build did not say so: the gate searched forever (host/hk-build module_publish.rs
 # now refuses a module wider than the widest window the pool holds).
-STACK_FLOOR = 0x801FFF00 - 0xC000
+from stack_budget import STACK_INIT, STACK_RESERVE
+# The stack reserve's floor: the pool ends there. It moves down with the scene core's window (host/stack_budget.py).
+STACK_FLOOR = STACK_INIT - STACK_RESERVE
 # 0x1B000 (+2 KiB) at the repin to SDK main c75f63928 (2026-11-06): the same module sources compile larger (debris +740 B,
 # aspid +424, climber +224, fsm3_body +180: `debris::unit` is no longer inlined, same toolchain), and the worst room (10, nine carried
 # modules) then needed 105,768 of the 104,448 B the old pool leaves after the fence.
 POOL_BYTES = 0x1B000
+MEASURE_OVERLAP = int(os.environ.get('HK_MEASURE_OVERLAP', '0'), 0)
 
 def _sim(*mods):
     return tuple(f'*6hk_sim{len(m)}{m}*' for m in mods)
@@ -587,8 +590,11 @@ def layer(script):
                  r'POOL_BASE = STACK_INIT - STACK_RESERVE - POOL_BYTES;' % POOL_BYTES, script)
     # The SDK's RAM region ends RAM_SIZE - BIOS_SIZE above the load address less the reserve; the game's ends 256 bytes
     # lower, at STACK_INIT, so the link bound agrees with `__heap_end` and the reported stack floor.
+    # HK_MEASURE_OVERLAP (bytes, measurement only, refused outside `build_guest.py --work`): lets the static image run that far
+    # into the pool so a build that does not fit yet still links and publishes, and the pool-fit gate and the map can be read.
     script = sub(r'LENGTH = EXE_HEAD_BYTES \+ RAM_SIZE - BIOS_SIZE - STACK_RESERVE$',
-                 'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES\n'
+                 'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES'
+                 + (f' + {MEASURE_OVERLAP:#x} /* hk-psx: HK_MEASURE_OVERLAP, measurement only */' if MEASURE_OVERLAP else '') + '\n'
                  f'    MODLINK (rwx) : ORIGIN = {LINK_BASE:#x}, LENGTH = {LINK_STRIDE * len(MODULES):#x}', script)
     # The BIOS loads text and data only: the SDK header's size is `__image_end`, the
     # data end rounded up to a whole sector, and `split` zero-pads the file to it.
