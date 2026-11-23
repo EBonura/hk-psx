@@ -1,8 +1,9 @@
 //! The effects of the Knight's movement abilities, drawn at him as the original's children of the
 //! Knight prefab: the Dash Burst of an ordinary dash, the wings and flash of a double jump and the puff
-//! of a wall jump (`HeroController.HeroDash`, `DoDoubleJump`, `DoWallJump`), and Vengeful Spirit's cast
-//! blast and the end of its flight (`Fireball Top`, the ball's `Wall Impact`). The clips are cooked into
-//! the `art_fx` and `art_fx_spell` packs (host/ability_art.py `FX_CLIPS`), each frame cut to parts of one
+//! of a wall jump (`HeroController.HeroDash`, `DoDoubleJump`, `DoWallJump`), Vengeful Spirit's cast
+//! blast and the end of its flight (`Fireball Top`, the ball's `Wall Impact`), Desolate Dive's slam
+//! (`Q Slam`) and Howling Wraiths' heads (`Scr Heads`). The clips are cooked into the `art_fx`,
+//! `art_fx_spell` and `art_spell` packs (host/ability_art.py `FX_CLIPS`), each frame cut to parts of one
 //! animation slot. Each plays once from the tick of the state edge that raised it; the Knight's follow
 //! him and turn with his facing, the spell's keep the place and the way they were spawned with. The double
 //! jump's `White Flash DJ` is a small round glow of blue light (one frame of `art_fx`).
@@ -16,13 +17,14 @@
 //! resident is not raised (`HK_FX_LATE` counts them), so a gate that has not read it costs one missing
 //! puff, never a stall.
 use crate::ability_art::{
-    self, BALL_END, DASH_EFFECT, FIREBALL_BLAST, FLASH_EFFECT, WALL_IMPACT, WALL_PUFF, WINGS_EFFECT,
+    self, BALL_END, DASH_EFFECT, FIREBALL_BLAST, FLASH_EFFECT, QUAKE_SLAM, SCREAM_HEADS, WALL_IMPACT,
+    WALL_PUFF, WINGS_EFFECT,
 };
 use crate::world;
 use hk_sim::Player;
 
 /// The effects, one slot each: a repeat replaces the earlier play of its own kind.
-const CLIPS: [usize; 7] = [
+const CLIPS: [usize; SLOTS] = [
     DASH_EFFECT,
     WINGS_EFFECT,
     WALL_PUFF,
@@ -30,12 +32,15 @@ const CLIPS: [usize; 7] = [
     FIREBALL_BLAST,
     WALL_IMPACT,
     BALL_END,
+    QUAKE_SLAM,
+    SCREAM_HEADS,
 ];
+const SLOTS: usize = 9;
 /// Ticks each clip plays once (the flash holds and fades instead): the clips are all play-once.
-const TICKS: [u32; 7] = {
-    let mut t = [0; 7];
+const TICKS: [u32; SLOTS] = {
+    let mut t = [0; SLOTS];
     let mut i = 0;
-    while i < 7 {
+    while i < SLOTS {
         let c = ability_art::ABILITY_CLIPS[CLIPS[i]];
         t[i] = (c.count as u32 * 60).div_ceil(c.fps);
         i += 1;
@@ -61,6 +66,13 @@ fn parts_at(i: usize, frame: usize) -> core::ops::Range<usize> {
 }
 /// Slots from here on are spawned in the world (they keep `AT` and `FACING`).
 const FIRST_WORLD: usize = 4;
+const WORLD: usize = SLOTS - FIRST_WORLD;
+/// Desolate Dive's slam and Howling Wraiths' heads: children of the Knight that `Hit Box Control` keeps
+/// facing the way they were authored whichever way he faces, so they are raised facing that way.
+const QUAKE_SLOT: usize = 7;
+const SCREAM_SLOT: usize = 8;
+/// The Knight's facing whose draw shows the Knight prefab's art as authored (the atlas faces left).
+const AUTHORED: i32 = -1;
 const FLASH: usize = 3;
 /// `White Flash DJ` (resources.assets:4989) waits 0.125 s at full alpha, then `EaseColor` takes it to
 /// nothing in 0.4 s; the cooked `Double Jump Flash` frame is a small round glow of blue light.
@@ -80,11 +92,11 @@ const BURST_PERIOD: u16 = 6;
 const IDLE: u8 = u8::MAX;
 const NO_FRAME: u16 = u16::MAX;
 
-static mut AGE: [u8; 7] = [IDLE; 7];
+static mut AGE: [u8; SLOTS] = [IDLE; SLOTS];
 /// The parts slot `i` shows this frame: first and one past the last (`NO_FRAME` first when it shows none).
-static mut PARTS: [(u16, u16); 7] = [(NO_FRAME, 0); 7];
-static mut AT: [[i32; 2]; 3] = [[0; 2]; 3];
-static mut FACING: [i32; 3] = [0; 3];
+static mut PARTS: [(u16, u16); SLOTS] = [(NO_FRAME, 0); SLOTS];
+static mut AT: [[i32; 2]; WORLD] = [[0; 2]; WORLD];
+static mut FACING: [i32; WORLD] = [0; WORLD];
 static mut WAS_ALIVE: bool = false;
 /// Effects raised so far, for the route pins.
 #[no_mangle]
@@ -97,14 +109,15 @@ pub static mut HK_FX_DASH_RAISED: u32 = 0;
 #[no_mangle]
 pub static mut HK_FX_LATE: u32 = 0;
 
-/// Start slot `slot` (a place and a direction for the world ones).
+/// Start slot `slot` (a place and a direction for the world ones). False, and nothing raised, when its
+/// art is not resident.
 #[inline(never)]
-fn raise(slot: usize, at: [i32; 2], facing: i32) {
+fn raise(slot: usize, at: [i32; 2], facing: i32) -> bool {
     if !ability_art::ready(CLIPS[slot]) {
         unsafe {
             HK_FX_LATE = HK_FX_LATE.saturating_add(1);
         }
-        return;
+        return false;
     }
     unsafe {
         AGE[slot] = 0;
@@ -114,14 +127,13 @@ fn raise(slot: usize, at: [i32; 2], facing: i32) {
         }
         HK_FX_RAISED = HK_FX_RAISED.wrapping_add(1);
     }
+    true
 }
 /// What a tick's state edges raise: `before` and `after` are the Knight around one `step`.
 #[inline(never)]
 pub fn on_edges(before: &Player, after: &Player) {
     if before.dash_left == 0 && after.dash_left > 0 && !after.shadow_dashing {
-        let raised = unsafe { HK_FX_RAISED };
-        raise(0, [0; 2], 0);
-        if unsafe { HK_FX_RAISED } != raised {
+        if raise(0, [0; 2], 0) {
             unsafe {
                 HK_FX_DASH_RAISED = HK_FX_DASH_RAISED.wrapping_add(1);
             }
@@ -139,6 +151,16 @@ pub fn on_edges(before: &Player, after: &Player) {
 #[inline(never)]
 pub fn cast(player: &Player) {
     raise(FIRST_WORLD, [player.x, player.y], player.facing);
+}
+/// Desolate Dive lands (`Quake1 Land` switches `Q Slam` on): false when its art is not here.
+#[inline(never)]
+pub fn quake_land(player: &Player) -> bool {
+    raise(QUAKE_SLOT, [player.x, player.y], -AUTHORED)
+}
+/// Howling Wraiths' burst (`Scream Burst 1` switches `Scr Heads` on).
+#[inline(never)]
+pub fn scream(player: &Player) {
+    raise(SCREAM_SLOT, [player.x, player.y], -AUTHORED);
 }
 /// One burst of the Knight's owner `owner` at `at`.
 #[inline(never)]
@@ -169,6 +191,7 @@ pub fn emit(scene: usize, player: &Player, ball: &hk_sim::Fireball) {
     }
 }
 /// One 60 Hz simulation tick: every effect ages, and ends with its clip.
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn tick() {
     for i in 0..CLIPS.len() {
@@ -187,7 +210,7 @@ pub fn tick() {
 #[inline(never)]
 pub fn clear() {
     unsafe {
-        AGE = [IDLE; 7];
+        AGE = [IDLE; SLOTS];
         WAS_ALIVE = false;
     }
 }
@@ -206,6 +229,7 @@ fn parts_of(i: usize) -> (u16, u16) {
 /// Ask for this frame's animation keys, one for each part of each live frame. False, and nothing
 /// asked for, when the cache's slots are not left for them: an effect is the one thing in a frame that
 /// may simply not draw.
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn request(needed: &mut [u16], needed_len: &mut usize) -> bool {
     let (start, room) = (*needed_len, hk_cache::SLOTS.min(needed.len()));
@@ -271,6 +295,7 @@ pub fn draw(player: &Player, camera: (i32, i32)) -> u32 {
 /// cross the floor and the arches below it (Vengeful Spirit's blast and wall impact over the bridge of the
 /// Elder Baldur's room) where the port's floor strip would otherwise hide the middle of the fan.
 #[cfg(not(test))]
+#[cfg_attr(target_arch = "mips", optimize(size))]
 #[inline(never)]
 pub fn draw_world(player: &Player, camera: (i32, i32)) -> u32 {
     let mut drawn = 0;
@@ -286,4 +311,8 @@ pub fn wants_move(player: &Player) -> bool {
 /// Whether this Knight owns Vengeful Spirit, whose effects are in `art_fx_spell`.
 pub fn wants_spell(spell: bool) -> bool {
     spell
+}
+/// Whether this Knight owns Desolate Dive or Howling Wraiths, whose poses and effects are in `art_spell`.
+pub fn wants_quake_scream(cast: &hk_sim::Cast) -> bool {
+    cast.has_quake || cast.has_scream
 }

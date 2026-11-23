@@ -189,7 +189,8 @@ impl Game {
         }
     }
     /// Carry the ability effects (`art_fx` for the movement abilities, `art_fx_spell` for Vengeful
-    /// Spirit) into the scene while the Knight owns an ability that draws one, so every gate reads them
+    /// Spirit, `art_spell` for Desolate Dive and Howling Wraiths, their poses included) into the scene
+    /// while the Knight owns an ability that draws one, so every gate reads them
     /// with the scene's own art, but only the packs that fit the pool there (`modules::fx_fit`): the
     /// guarantee the build checks, a room beside the Shade's art, the Death clip and the respawn clips, is
     /// never spent on them. Asked again only when the scene, what he owns or what fits changes: nearly
@@ -200,7 +201,8 @@ impl Game {
         static mut ASKED: (usize, u8) = (usize::MAX, 0);
         let here = crate::disc::manifest_index(current);
         let wants = u8::from(ability_fx::wants_move(&self.player))
-            | u8::from(ability_fx::wants_spell(self.cast.has_fireball)) << 1;
+            | u8::from(ability_fx::wants_spell(self.cast.has_fireball)) << 1
+            | u8::from(ability_fx::wants_quake_scream(&self.cast)) << 2;
         let wants = wants & here.map_or(0, |scene| crate::modules::fx_fit(scene, self.shade.art_wanted(current)));
         if unsafe { ASKED } == (current, wants) {
             return;
@@ -210,6 +212,7 @@ impl Game {
         }
         crate::modules::carry(crate::modules::ART_FX, here.filter(|_| wants & 1 != 0));
         crate::modules::carry(crate::modules::ART_FX_SPELL, here.filter(|_| wants & 2 != 0));
+        crate::modules::carry(crate::modules::ART_SPELL, here.filter(|_| wants & 4 != 0));
     }
     /// Screen darkness for the death fade, 0 (none) to 255 (black).
     pub fn death_shade(&self) -> u8 {
@@ -1272,6 +1275,7 @@ pub fn simulate(
                 if cue == hk_sim::SpellCue::Burst {
                     camera::request(camera::Shake::Big);
                     ability_sound(audio::FIREBALL);
+                    ability_fx::scream(&game.player);
                 }
             }
         }
@@ -1617,16 +1621,18 @@ pub fn simulate(
         if hard {
             hard_landing::landed(r.scene, &mut game.player);
         }
-        // `Quake1 Land`: BigShake, and the hard landing's sound and dust stand in for the
-        // uncooked `Q Slam` blast, its orbs and the land clip's own sound.
+        // `Quake1 Land`: BigShake and `Q Slam`'s blast; the hard landing's sound stands in for
+        // the land's own, and the Focus dust for the blast where its art is not resident.
         let quake_landed = game.player.spell == hk_sim::HeroSpell::QuakeLand(0);
         if quake_landed {
             camera::request(camera::Shake::Big);
-            world::particles::pool().spawn_break_at(
-                r.scene,
-                focus_fx::DUST_OWNER,
-                [game.player.x, game.player.y],
-            );
+            if !ability_fx::quake_land(&game.player) {
+                world::particles::pool().spawn_break_at(
+                    r.scene,
+                    focus_fx::DUST_OWNER,
+                    [game.player.x, game.player.y],
+                );
+            }
         }
         hard_landing::tick(&game.player);
         audio::movement_tick(

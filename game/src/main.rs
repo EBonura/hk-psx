@@ -263,23 +263,11 @@ fn ability_pose(
     cast: &hk_sim::Cast,
 ) -> Option<(usize, u32)> {
     use hk_sim::{CastPhase, DreamPhase, HeroSpell};
-    // Dive and Wraiths own the body outright. Their clips (`Quake Antic`, `Quake Land`,
-    // `Scream Start`, `Scream`) are not cooked: the Crystal Heart's ground charge, the
-    // hard landing's crouch and the fireball's cast stand in, and the fall keeps the
-    // ordinary falling pose.
-    match player.spell {
-        HeroSpell::QuakeAntic(t) => return Some((ability_art::SD_CHARGE_GROUND, t as u32)),
-        // `HardLand` runs at 12.5 fps; see `hard_landing::pose`.
-        HeroSpell::QuakeLand(t) => return Some((ability_art::HARD_LAND, t as u32 * 25 / 24)),
-        HeroSpell::Scream(t) => {
-            let antic = SCREAM_PARAMS.antic_ticks;
-            return Some(if t < antic {
-                (ability_art::FIREBALL_ANTIC, t as u32)
-            } else {
-                (ability_art::FIREBALL_CAST, (t - antic) as u32)
-            });
-        }
-        HeroSpell::Off | HeroSpell::QuakeDown => {}
+    // Dive and Wraiths own the body outright, in the clips `Spell Control`'s states play (the
+    // `art_spell` pack). Where the pack is not resident the Crystal Heart's ground charge, the
+    // ordinary fall, the hard landing's crouch and the fireball's cast stand in.
+    if player.spell != HeroSpell::Off {
+        return spell_pose(player);
     }
     if cast.phase != CastPhase::Off {
         let clip = if cast.phase == CastPhase::Antic {
@@ -351,6 +339,52 @@ fn ability_pose(
         return Some((ability_art::DOUBLE_JUMP, player.double_jump_tick as u32));
     }
     None
+}
+/// The Knight's pose in a Dive or Wraiths: `Quake Antic`, `Quake Fall` (looping) until the floor,
+/// `Quake Land`; `Scream Start`, `Scream` through the burst and `End Roar`, and `Scream End` for the
+/// last of the cast, which is that clip's length.
+#[inline(never)]
+fn spell_pose(player: &Player) -> Option<(usize, u32)> {
+    use hk_sim::HeroSpell;
+    if !ability_art::ready(ability_art::QUAKE_ANTIC) {
+        return spell_stand_in(player);
+    }
+    Some(match player.spell {
+        HeroSpell::QuakeAntic(t) => (ability_art::QUAKE_ANTIC, t as u32),
+        HeroSpell::QuakeLand(t) => (ability_art::QUAKE_LAND, t as u32),
+        HeroSpell::Scream(t) => {
+            let antic = SCREAM_PARAMS.antic_ticks as u32;
+            let end = antic + SCREAM_PARAMS.cast_ticks as u32 - ability_art::clip_ticks(ability_art::SCREAM_END);
+            let t = t as u32;
+            if t < antic {
+                (ability_art::SCREAM_START, t)
+            } else if t < end {
+                (ability_art::SCREAM, t - antic)
+            } else {
+                (ability_art::SCREAM_END, t - end)
+            }
+        }
+        HeroSpell::QuakeDown | HeroSpell::Off => (ability_art::QUAKE_FALL, player.animation_tick),
+    })
+}
+/// The stand-ins `spell_pose` falls back on while the `art_spell` pack is not resident; the fall keeps
+/// the ordinary falling pose (`None`).
+fn spell_stand_in(player: &Player) -> Option<(usize, u32)> {
+    use hk_sim::HeroSpell;
+    match player.spell {
+        HeroSpell::QuakeAntic(t) => Some((ability_art::SD_CHARGE_GROUND, t as u32)),
+        // `HardLand` runs at 12.5 fps; see `hard_landing::pose`.
+        HeroSpell::QuakeLand(t) => Some((ability_art::HARD_LAND, t as u32 * 25 / 24)),
+        HeroSpell::Scream(t) => {
+            let antic = SCREAM_PARAMS.antic_ticks;
+            Some(if t < antic {
+                (ability_art::FIREBALL_ANTIC, t as u32)
+            } else {
+                (ability_art::FIREBALL_CAST, (t - antic) as u32)
+            })
+        }
+        HeroSpell::QuakeDown | HeroSpell::Off => None,
+    }
 }
 fn knight_frame(room: &Room, player: &Player, focus: &hk_sim::Focus) -> usize {
     let (clip, age) = if let Some((clip, age)) = focus.animation() {
