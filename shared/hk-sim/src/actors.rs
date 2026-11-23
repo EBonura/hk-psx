@@ -85,6 +85,14 @@ pub enum ActorController {
     MossWalker {
         clips: [u16; 4],
     },
+    /// Fat Fly (Obble), driven by `crate::fat_fly::FatFly`. `walk_clip` and `turn_clip` are Fly;
+    /// `attack_clip` is Attack, and the two shot clips belong to the pooled `Spitter Shot R` the
+    /// Aspid also throws. A mirrored placement's facing rides `ActorPlacement::start_right`.
+    FatFly {
+        attack_clip: u16,
+        shot_clip: u16,
+        impact_clip: u16,
+    },
     /// Moss Charger, driven by `crate::moss_charger::MossCharger`. It has no collider of
     /// its own (the frame's box is `moss_charger::MossCharger::collider`), so the spec's
     /// box is empty. `walk_clip`/`turn_clip` are Charge and TurnRun; `clips` are every

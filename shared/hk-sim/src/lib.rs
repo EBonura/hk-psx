@@ -46,6 +46,7 @@ pub mod hornet_fight;
 pub mod husk_guard;
 pub mod mawlek;
 pub mod mosquito;
+pub mod fat_fly;
 pub mod moss_charger;
 pub mod moss_walker;
 pub mod pigeon;
