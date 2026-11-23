@@ -21,7 +21,7 @@ where each piece lives. Source records are from the installed Windows build (`re
 
 ## How it is built
 
-The clips are cooked by `host/ability_art.py` (`FX_CLIPS`) as the last two streamed packs, `art_fx` (dash, wings,
+The clips are cooked by `host/ability_art.py` (`FX_CLIPS`) as streamed packs, `art_fx` (dash, wings,
 the double jump's glow, wall puff) and `art_fx_spell` (cast blast, wall impact): carried modules like the Death and
 respawn art (docs/DEATH.md "Streamed art"). Each frame is cut at `density` screen pixels a texel at the size it is
 drawn (1.0, the Knight's own, for the dash, the wings and the puff; 1.7 for the cast blast and 1.35 for the wall
