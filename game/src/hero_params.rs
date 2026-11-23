@@ -22,6 +22,7 @@ pub const BASE: HeroParams = HeroParams {
     ground_speed: crate::PARAMS.speed,
     dash_cooldown_ticks: crate::PARAMS.dash_cooldown_ticks,
     greed: false,
+    slash_scale: hk_sim::ONE,
 };
 /// The cheat key the cache was composed for, and whether it is still current.
 static mut KEY: u8 = 0;

@@ -72,9 +72,7 @@ impl HeroHit {
     /// Knight collection faces left at positive scale X, so a local point's x
     /// is negated for a right-facing Knight. This is the one copy of the
     /// transform; every nail, wall slash and Dream Nail shape comes from it.
-    /// Kept out of line: each caller would otherwise carry its own copy of the
-    /// sixteen-point fill.
-    #[inline(never)]
+    #[inline]
     pub fn polygon(
         source: Source,
         class: Class,
@@ -82,9 +80,29 @@ impl HeroHit {
         at: [i32; 2],
         facing: i32,
     ) -> Self {
+        Self::placed(source, class, local, [0; 2], crate::ONE, at, facing)
+    }
+
+    /// `polygon` with the local points first scaled by `scale` (Q16) about the
+    /// local `pivot`, as a child transform's localScale scales its collider
+    /// about the child's own position. Kept out of line: each caller would
+    /// otherwise carry its own copy of the sixteen-point fill.
+    #[inline(never)]
+    pub fn placed(
+        source: Source,
+        class: Class,
+        local: &[[i32; 2]],
+        pivot: [i32; 2],
+        scale: i32,
+        at: [i32; 2],
+        facing: i32,
+    ) -> Self {
         assert!((3..=MAX_POINTS).contains(&local.len()));
         let points: [[i32; 2]; MAX_POINTS] = core::array::from_fn(|i| match local.get(i) {
-            Some(p) => [at[0] - p[0] * facing, at[1] + p[1]],
+            Some(p) => {
+                let p = scaled(*p, pivot, scale);
+                [at[0] - p[0] * facing, at[1] + p[1]]
+            }
             None => [0; 2],
         });
         let mut bounds = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
@@ -115,13 +133,30 @@ impl HeroHit {
         player: &Player,
         damage: u16,
     ) -> Option<Self> {
+        Self::nail_scaled(nail, p, polygons, &[[0; 2]; 4], crate::ONE, player, damage)
+    }
+
+    /// `nail` with `NailSlash::StartSlash`'s localScale multiplier (Longnail,
+    /// Mark of Pride), Q16, applied about each slash's own pivot.
+    pub fn nail_scaled(
+        nail: &Nail,
+        p: AttackParams,
+        polygons: [&[[i32; 2]]; 4],
+        pivots: &[[i32; 2]; 4],
+        scale: i32,
+        player: &Player,
+        damage: u16,
+    ) -> Option<Self> {
         if !nail.hitting(p) {
             return None;
         }
-        let mut hit = Self::polygon(
+        let kind = nail.kind as usize;
+        let mut hit = Self::placed(
             Source::Nail,
             Class::Slash,
-            polygons[nail.kind as usize],
+            polygons[kind],
+            pivots[kind],
+            scale,
             [player.x, player.y],
             nail.facing(player),
         );
@@ -278,9 +313,21 @@ impl HeroAttacks {
     }
 }
 
+/// `pivot + (point - pivot) * scale`, Q16 scale; the identity at `ONE`.
+pub fn scaled(point: [i32; 2], pivot: [i32; 2], scale: i32) -> [i32; 2] {
+    if scale == crate::ONE {
+        return point;
+    }
+    // A local offset is under 16 units (2^20 in Q16), so the product fits the 64-bit MULT.
+    core::array::from_fn(|axis| {
+        pivot[axis] + psx_math::int32::mul_shr_i32(point[axis] - pivot[axis], scale, 16)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ONE;
     const P: AttackParams = AttackParams {
         duration: 21,
         cooldown: 25,
@@ -338,6 +385,30 @@ mod tests {
             let near = [a.x - 140 * facing - 5, a.y - 5, a.x - 140 * facing + 5, a.y + 5];
             assert!(wall.hits(far));
             assert!(!wall.hits(near));
+        }
+    }
+
+    #[test]
+    fn a_scaled_slash_grows_about_its_own_pivot_on_both_sides() {
+        // Longnail's 1.15 in Q16, about a pivot at local (150, 10).
+        let scale = 75366;
+        let pivot = [150, 10];
+        let polys = [&TRI[..]; 4];
+        for facing in [1, -1] {
+            let (n, a) = swing(false, facing);
+            let plain = HeroHit::nail(&n, P, polys, &a, 5).unwrap();
+            let same = HeroHit::nail_scaled(&n, P, polys, &[pivot; 4], ONE, &a, 5).unwrap();
+            assert_eq!(same.points(), plain.points(), "ONE is the identity");
+            let long = HeroHit::nail_scaled(&n, P, polys, &[pivot; 4], scale, &a, 5).unwrap();
+            for (local, got) in TRI.iter().zip(long.points()) {
+                let want = scaled(*local, pivot, scale);
+                assert_eq!(*got, [a.x - want[0] * facing, a.y + want[1]]);
+            }
+            // The pivot itself does not move; a point 50 out moves 7 (50 * .15, truncated).
+            assert_eq!(scaled(pivot, pivot, scale), pivot);
+            assert_eq!(scaled([200, 10], pivot, scale), [207, 10]);
+            assert_eq!(scaled([100, 10], pivot, scale), [92, 10]);
+            assert_eq!(long.facing, plain.facing);
         }
     }
 

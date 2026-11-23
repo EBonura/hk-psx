@@ -27,6 +27,9 @@ pub struct HeroParams {
     /// Fragile Greed worn and unbroken, which `HealthManager::Die` tests before it raises
     /// each drop count (the game holds the cooked share).
     pub greed: bool,
+    /// `NailSlash::StartSlash`'s localScale multiplier, Q16: `ONE` bare,
+    /// Longnail's or Mark of Pride's, or theirs together.
+    pub slash_scale: i32,
 }
 impl HeroParams {
     /// The movement record a grounded or airborne step runs with.

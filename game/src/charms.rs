@@ -85,6 +85,13 @@ pub enum Effect {
     AttackTiming { duration: u16, cooldown: u16 },
     /// Spell Twister: `Set Spell Cost` writes `MP Cost`.
     SpellCost(u16),
+    /// Longnail and Mark of Pride: `NailSlash::StartSlash` multiplies the slash's
+    /// localScale by `alone` (Q16), or by `combo` with `combo_charm` worn too.
+    SlashScale {
+        alone: i32,
+        combo: i32,
+        combo_charm: u8,
+    },
     /// Sprintmaster: `Move` on the ground runs at `RUN_SPEED_CH`, or at
     /// `RUN_SPEED_CH_COMBO` with `combo_charm` (Dashmaster) worn too (Q16).
     RunSpeed {
@@ -436,6 +443,17 @@ fn compose(s: &State, mut p: HeroParams) -> HeroParams {
                 combo_charm,
             } => {
                 p.ground_speed = if s.equipped(combo_charm as usize) {
+                    combo
+                } else {
+                    alone
+                };
+            }
+            Effect::SlashScale {
+                alone,
+                combo,
+                combo_charm,
+            } => {
+                p.slash_scale = if s.equipped(combo_charm as usize) {
                     combo
                 } else {
                     alone
@@ -1133,6 +1151,32 @@ mod tests {
         let p = worn(&mut s, &[QUICK_FOCUS, DEEP_FOCUS]).focus;
         assert_eq!((p.drain_interval_us, p.heal_amount), (29_700, 2));
         assert_eq!(worn(&mut s, &[DEEP_FOCUS]).focus.drain_interval_us, 44_550);
+    }
+    #[test]
+    fn longnail_and_pride_scale_the_slash_alone_and_together() {
+        const PRIDE: usize = 13;
+        const LONGNAIL: usize = 18;
+        assert_eq!(State::charm(PRIDE).name, "Mark of Pride");
+        assert_eq!(State::charm(LONGNAIL).name, "Longnail");
+        let base = hero_base();
+        assert_eq!(base.slash_scale, hk_sim::ONE);
+        let mut s = owning(&[PRIDE, LONGNAIL]);
+        s.notches = 20;
+        let worn = |s: &mut State, charms: &[usize]| {
+            s.equipped = psx_math::Mask64::EMPTY;
+            for &c in charms {
+                assert_eq!(s.toggle(c), Ok(true), "charm {c}");
+            }
+            compose(s, base).slash_scale
+        };
+        // StartSlash: 1.15 for Longnail, 1.25 for Pride, 1.4 for both (not 1.15 * 1.25).
+        assert_eq!(worn(&mut s, &[]), hk_sim::ONE);
+        assert_eq!(worn(&mut s, &[LONGNAIL]), 75366);
+        assert_eq!(worn(&mut s, &[PRIDE]), 81920);
+        assert_eq!(worn(&mut s, &[PRIDE, LONGNAIL]), 91750);
+        assert_eq!(worn(&mut s, &[LONGNAIL, PRIDE]), 91750);
+        // The pivots are the slash transforms' local positions: the Slash sits at (-0.01, -0.41).
+        assert_eq!(NAIL_PIVOTS[0], [-655, -26870]);
     }
     #[test]
     fn grubsong_charges_soul_on_a_hit_that_landed() {
