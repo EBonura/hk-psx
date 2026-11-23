@@ -38,6 +38,13 @@ map = "game.map"
 # stage runs `psoxide-pgo followed` on it against game.map, so the disc is proven to carry the searched layout.
 order = "hot-text.order"
 layout_files = ["game/hk.layout"]
+# Keyed on every file git would hand a clone except these, so a commit that only retunes tapes,
+# rewrites docs or edits the gate's journeys reuses the receipt; anything new is keyed by default.
+# tools/walks stays in: the second command compiles it into tests/walk-*.toml, which a receipt hit
+# would leave stale. tests/ and the two harness files are the default exclusions, restated
+# because naming any replaces the default list. `clean` still rebuilds from a fresh clone.
+exclude = ["tests/", "psoxide-test.toml", "psoxide-test.baseline.toml", "docs/", "tools/tapes/",
+           "README.md", "AGENTS.md", "NEXT_PROMPT.md", "MISSING-FEATURES-hk-psx.md"]
 
 # The route-input twin: what the route tapes replay (validate) and the speed windows measure.
 # It runs last, so the tree's dist/, .hkpsx and build/ hold its artifacts, which validate reads.
@@ -57,6 +64,10 @@ env_remove = ["HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
 map = "game.map"
 order = "hot-text.order"
+# As the ship build, and tools/walks too: this build does not compile the walks. tools/cards stays
+# in, because the cards copied into out are part of what a receipt vouches for.
+exclude = ["tests/", "psoxide-test.toml", "psoxide-test.baseline.toml", "docs/", "tools/tapes/",
+           "tools/walks/", "README.md", "AGENTS.md", "NEXT_PROMPT.md", "MISSING-FEATURES-hk-psx.md"]
 
 # The original files by content (the digest is the build stage's input:NAME fact): the retail
 # install the cook read, and the SDK checkout at the pin. The cook store is not pinned: it is a
