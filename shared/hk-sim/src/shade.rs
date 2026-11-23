@@ -30,7 +30,7 @@ pub const SLASH_TICKS: u16 = 5; // Wait .083
 pub const SLASH_BOX_TICKS: u16 = 1; // Slash (2 at 24 fps) has already completed
 pub const SLASH_CD_TICKS: u16 = 10; // 2 frames at 12 fps
 pub const RETREAT_START_TICKS: u16 = 26; // 7 frames at 16 fps
-pub const RETREAT_TICKS: u16 = 60; // iTweenMoveTo time 1
+pub const RETREAT_TICKS: u16 = 60; // iTweenMoveTo time 1, easeInOutCubic
 pub const RETREAT_END_TICKS: u16 = 26;
 pub const DEATH_START_TICKS: u16 = 30; // Wait .5
 pub const DEATH_TICKS: u16 = 45; // Death, 12 frames at 16 fps
@@ -149,9 +149,13 @@ impl Shade {
     pub fn slashing(self) -> bool {
         self.phase == Phase::Slash
     }
-    /// Alive for hit and contact purposes: the death sequence is not.
+    /// Alive for hit and contact purposes: the death sequence is not, nor the
+    /// retreat from Retreat Start's SetCollider false to Retreat Reset's true.
     pub fn vulnerable(self) -> bool {
-        !matches!(self.phase, Phase::DeathStart | Phase::Death | Phase::Gone)
+        !matches!(
+            self.phase,
+            Phase::RetreatStart | Phase::Retreat | Phase::RetreatEnd | Phase::DeathStart | Phase::Death | Phase::Gone
+        )
     }
     fn random(&mut self) -> u32 {
         self.rng = psx_fx::NrLcg::step(self.rng);
@@ -381,15 +385,9 @@ impl Shade {
             }
             Phase::Retreat => {
                 self.timer -= 1;
-                let done = RETREAT_TICKS - self.timer;
-                let at = |from: i32, to: i32| {
-                    // to - from fits i32 while positions stay inside +/-2^30.
-                    from + psx_math::int32::mul_div_i32(
-                        to - from,
-                        done as i32,
-                        RETREAT_TICKS as i32,
-                    )
-                };
+                let eased = ease_in_out_cubic(((RETREAT_TICKS - self.timer) as i32) * ONE / RETREAT_TICKS as i32);
+                // to - from fits i32 while positions stay inside +/-2^30.
+                let at = |from: i32, to: i32| from + psx_math::int32::mul_shr_i32(to - from, eased, 16);
                 out.push(Action::MoveTo([
                     at(self.retreat_from[0], self.start[0]),
                     at(self.retreat_from[1], self.start[1]),
@@ -427,6 +425,16 @@ impl Shade {
         out
     }
 }
+/// iTween's easeInOutCubic of `t` in 0..=ONE (Q16): 4t^3 below half, then
+/// 1 - (2 - 2t)^3 / 2.
+fn ease_in_out_cubic(t: i32) -> i32 {
+    let cube = |v: i32| psx_math::int32::mul_shr_i32(psx_math::int32::mul_shr_i32(v, v, 16), v, 16);
+    if t < ONE / 2 {
+        4 * cube(t)
+    } else {
+        ONE - cube(2 * (ONE - t)) / 2
+    }
+}
 /// Vector2.ClampMagnitude: scale down only when longer than `max`.
 fn clamp_magnitude(v: &mut [i32; 2], max: i32) {
     let (x, y) = (v[0] >> 8, v[1] >> 8);
@@ -445,6 +453,7 @@ fn clamp_magnitude(v: &mut [i32; 2], max: i32) {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     const START: [i32; 2] = [0, 0];
     fn senses(shade: [i32; 2], hero: [i32; 2], see: bool) -> Senses {
@@ -604,5 +613,35 @@ mod tests {
         assert!(matches!(out.iter().next(), Some(Action::Velocity(_))));
         assert!(out.iter().any(|a| a == Action::Facing(-1)));
         assert_eq!(s.phase(), Phase::RetreatStart);
+    }
+    #[test]
+    fn the_retreat_is_untouchable_and_eases_in_and_out_on_a_cubic() {
+        let mut s = Shade::new(START, 5);
+        let far = [30 * ONE, 0];
+        s.tick(senses(START, far, true));
+        run(&mut s, START, far, true, STARTLE_TICKS as u32);
+        s.tick(senses(far, far, true));
+        assert_eq!(s.phase(), Phase::RetreatStart);
+        assert!(!s.vulnerable(), "Retreat Start's SetCollider false");
+        run(&mut s, far, far, true, RETREAT_START_TICKS as u32);
+        let mut path = std::vec::Vec::new();
+        for _ in 0..RETREAT_TICKS {
+            assert!(!s.vulnerable());
+            for a in s.tick(senses(far, far, true)).iter() {
+                if let Action::MoveTo(p) = a {
+                    path.push(p[0]);
+                }
+            }
+        }
+        assert_eq!(path.len(), RETREAT_TICKS as usize);
+        assert_eq!(*path.last().unwrap(), 0);
+        // Half way at half time; a sixth of the way in, 4 * (1/6)^3 of the path.
+        assert!((path[29] - 15 * ONE).abs() < ONE / 64, "{}", path[29]);
+        assert!((path[9] - (30 * ONE - 30 * ONE * 4 / 216)).abs() < ONE / 64, "{}", path[9]);
+        assert!(path.windows(2).all(|w| w[1] <= w[0]));
+        assert!(!s.vulnerable(), "still off through Retreat End");
+        run(&mut s, START, far, false, RETREAT_END_TICKS as u32);
+        assert_eq!(s.phase(), Phase::Idle);
+        assert!(s.vulnerable(), "Retreat Reset's SetCollider true");
     }
 }
