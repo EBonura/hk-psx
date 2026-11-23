@@ -74,8 +74,15 @@ pub const PORT_CHARMS_OWNED: Field = 63;
 pub const PORT_CHARMS_EQUIPPED: Field = 65;
 /// Each talkable NPC's conversation cursor, two bits per NPC (`npc_state.rs`).
 pub const PORT_NPC_CURSORS: Field = 67;
+/// The Grubfather's count of rewards paid and his last one (`grubfather.rs`).
+pub const GRUB_REWARDS: Field = 68;
+pub const FINAL_GRUB_REWARD_COLLECTED: Field = 69;
+/// `trinket1` to `trinket3`, then `ore`: the counts a shiny's `Trink 1` to
+/// `Trink 3` and `Ore` states add to (`trinket`).
+pub const TRINKET_1: Field = 70;
+pub const ORE: Field = 73;
 
-pub const COUNT: usize = 68;
+pub const COUNT: usize = 74;
 pub const NAMES: [&str; COUNT] = [
     "falseKnightDefeated",
     "falseKnightFirstPlop",
@@ -145,6 +152,12 @@ pub const NAMES: [&str; COUNT] = [
     "port.equippedCharm_1to32",
     "port.equippedCharm_33to64",
     "port.npcCursors",
+    "grubRewards",
+    "finalGrubRewardCollected",
+    "trinket1",
+    "trinket2",
+    "trinket3",
+    "ore",
 ];
 /// A new game's value. Matches what the owners start on: `shop::State::new`'s
 /// five masks and `charms::State::new`'s three notches (checked where both are
@@ -182,6 +195,17 @@ pub const fn find(name: &str) -> Field {
         i += 1;
     }
     COUNT
+}
+
+/// The field a shiny's `Trinket Num` counts in: 1 to 3 are the relics, 14 is
+/// Pale Ore (`Ore`). The others (4, the Arcane Egg; the keys and the egg, which
+/// have their own grants) have none here.
+pub fn trinket(number: u8) -> Option<Field> {
+    match number {
+        1..=3 => Some(TRINKET_1 + number as usize - 1),
+        14 => Some(ORE),
+        _ => None,
+    }
 }
 
 /// On the card: a `u16` count, then `count` entries of a `u16` id and an `i32`
@@ -397,6 +421,12 @@ pub fn snapshot() {
     pd.put_shop(crate::shop::record(), crate::shop::STARTING_MASKS, crate::shop::SOUL_PER_VESSEL);
     pd.set(PORT_NPC_CURSORS, crate::dialogue::met_bits() as i32);
 }
+const _: () = {
+    assert!(same(NAMES[GRUB_REWARDS], "grubRewards"));
+    assert!(same(NAMES[FINAL_GRUB_REWARD_COLLECTED], "finalGrubRewardCollected"));
+    assert!(same(NAMES[TRINKET_1], "trinket1") && same(NAMES[TRINKET_1 + 1], "trinket2"));
+    assert!(same(NAMES[TRINKET_1 + 2], "trinket3") && same(NAMES[ORE], "ore"));
+};
 #[cfg(not(test))]
 const _: () = {
     use crate::persist as p;
