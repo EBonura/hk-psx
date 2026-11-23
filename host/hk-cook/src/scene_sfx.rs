@@ -80,9 +80,10 @@ const LEVEL_TOLERANCE_DB: f64 = 0.5;
 const LATE_PRIORITY: i64 = 60;
 /// The encoder never resamples: the PCM goes in and out at one nominal rate.
 const NOMINAL_RATE: u32 = 22050;
-const LIMITATIONS: [&str; 2] = [
+const LIMITATIONS: [&str; 3] = [
     "Every scene clip plays at source gain 1.0 and pitch 1.0 on a voice of the shared pool (game/src/audio.rs POOL_VOICES); when every pool voice is sounding, the lightest sound is cut, never a heavier one.",
     "Arena gate sounds are cooked only for the arena the port drives (the False Knight).",
+    "The spells' sounds play only where their block's SPU bytes are free and after a scene that carries them was entered; elsewhere the stand-ins play.",
 ];
 
 /// How a row cuts its clip's tail (`trim_tail`). No catalogue row trims since
@@ -110,7 +111,8 @@ pub enum Trim {
 /// gate switch), ["nail_reject"] (scenes with an actor whose block plays
 /// `sword_hit_reject`, or a TinkEffect the port carries), ["gate_openings"]
 /// (scenes whose switch opens a gate that plays the row's clip) or
-/// ["vine_platforms"] (scenes with a vine platform). A clip two scenes need is one row
+/// ["vine_platforms"] (scenes with a vine platform) or ["spells"] (no scene: the spell block, `spell_block`).
+/// A clip two scenes need is one row
 /// naming both. Rates follow the measured share of source energy above the new
 /// Nyquist (hk-audit/audio-census/prices.json).
 #[derive(Clone, PartialEq, Debug)]
@@ -1093,6 +1095,48 @@ pub const EVENTS: &[Event] = &[
         96,
         None,
     ),
+    // Desolate Dive's and Howling Wraiths' sounds, which no per-scene row can carry: the Knight casts in any
+    // scene, and a row per scene is twelve bytes of resident RAM in each. `Spell Control` (resources.assets)
+    // plays each with `AudioPlay` on the Knight's AudioSource, volume 1, pitch 1: `hero_quake_spell_prepare`
+    // entering `Quake Antic`, `hero_quake_spell_impact` entering `Quake1 Land`, `hero_scream_spell` entering
+    // `Scream Antic1`. `["spells"]` admits them to no scene: they are one block (`spell_block`) at one SPU
+    // address that every scene but the few whose stems or bank use it leaves free, uploaded from the chunk of
+    // a scene that carries it and kept until something writes over it (SPELL_ROWS).
+    // Rates by the share of source energy above the new Nyquist, measured on the source WAV (mono, 44,100 Hz):
+    //   hero_quake_spell_prepare 3000 Hz: loss -13.2 dB (-13.7 at 5512, -15.8 at 11025), 0.55 s: what it loses
+    //                  is above 5.5 kHz, so 3000 Hz costs it almost nothing more than 5512.
+    //   hero_quake_spell_impact 3000 Hz: loss -14.1 dB (-16.8 at 5512, -19.9 at 11025), 1.90 s; `gate_slam`'s.
+    //   hero_scream_spell 5512 Hz: loss -12.2 dB (-8.9 at 4000, -15.0 at 8000), 3.03 s; `boss_final_hit`'s.
+    ev(
+        "hero_quake_spell_prepare",
+        "resources.assets",
+        1239,
+        "hero_quake_spell_prepare",
+        3000,
+        &["spells"],
+        99,
+        None,
+    ),
+    ev(
+        "hero_quake_spell_impact",
+        "resources.assets",
+        1167,
+        "hero_quake_spell_impact",
+        3000,
+        &["spells"],
+        99,
+        None,
+    ),
+    ev(
+        "hero_scream_spell",
+        "resources.assets",
+        1197,
+        "hero_scream_spell",
+        5512,
+        &["spells"],
+        99,
+        None,
+    ),
 ];
 
 /// Gruz Mother's arena gates sound like every other arena's. The Husk Guard of Crossroads_21 plays the
@@ -1110,6 +1154,72 @@ const LATE_IN: [(&str, &str, i64); 9] = [
     ("zombie_guard_club_prepare_3", "Crossroads_21", 77),
     ("zombie_guard_run_loop", "Crossroads_21", 78),
 ];
+
+/// The `["spells"]` rows, in the order of their offsets in the spell block (`spell_block`).
+const SPELLS: [&str; 3] = [
+    "hero_quake_spell_prepare",
+    "hero_quake_spell_impact",
+    "hero_scream_spell",
+];
+/// BANKS flags: the chunk ends with the spell block, and the bank writes the block's SPU bytes.
+const SPELL_CARRIED: u8 = 1;
+const SPELL_CLOBBERED: u8 = 2;
+
+/// Where the spell block goes and which chunks carry it.
+#[derive(Debug, PartialEq)]
+struct SpellPlan {
+    /// Its SPU address: free (no stem that can sound there, no bank clip) in as many scenes as any address
+    /// is, the highest such, so a bank packed first-fit from below reaches it last.
+    address: i64,
+    /// The scenes where it is free.
+    free: Vec<i64>,
+    /// The scenes whose chunk carries it: those where it is free that the Knight can enter with it gone,
+    /// from a scene where it is not free (a gate away) or from nothing (a bench he respawns or continues at).
+    carriers: Vec<i64>,
+}
+
+/// `spell_block`: plan `bytes` of spell clips against each scene's free SPU (`free`, gaps after its stems and
+/// bank), the gate graph (`edges`) and the bench scenes.
+fn spell_block(
+    free: &BTreeMap<i64, Vec<(i64, i64)>>,
+    bytes: i64,
+    span: (i64, i64),
+    edges: &[(i64, i64)],
+    benches: &HashSet<i64>,
+) -> Option<SpellPlan> {
+    let holds = |scene: &i64, at: i64| {
+        free[scene]
+            .iter()
+            .any(|&(lo, hi)| lo <= at && at + bytes <= hi)
+    };
+    let mut best: Option<(usize, i64)> = None;
+    let mut at = span.0;
+    while at + bytes <= span.1 {
+        let count = free.keys().filter(|s| holds(s, at)).count();
+        if count > 0 && best.is_none_or(|(c, _)| count >= c) {
+            best = Some((count, at));
+        }
+        at += 16;
+    }
+    let (_, address) = best?;
+    let free_in: Vec<i64> = free.keys().copied().filter(|s| holds(s, address)).collect();
+    let taken = |s: i64| !free_in.contains(&s);
+    let carriers = free_in
+        .iter()
+        .copied()
+        .filter(|&s| {
+            benches.contains(&s)
+                || edges
+                    .iter()
+                    .any(|&(a, b)| (a == s && taken(b)) || (b == s && taken(a)))
+        })
+        .collect();
+    Some(SpellPlan {
+        address,
+        free: free_in,
+        carriers,
+    })
+}
 
 // ---------------------------------------------------------------- numbers
 
@@ -1848,6 +1958,7 @@ fn scene_needs(
                 .map(|o| o.0)
                 .collect(),
             "vine_platforms" => vine_platforms.clone(),
+            "spells" => HashSet::new(),
             "family" => families.get(kind[1]).cloned().unwrap_or_default(),
             other => return err(format!("unknown scene sound selector {other}")),
         };
@@ -1897,6 +2008,86 @@ fn scene_needs(
 
 /// Where a gate opening's shared row goes in its switch's scene: after the catalogue's own rows.
 const OPENING_PRIORITY: i64 = 97;
+
+/// Cook the spell block, plan it against every scene's bank (`spell_block`) and append it to the chunks
+/// that carry it.
+fn place_spells(
+    banks: &mut BTreeMap<i64, Bank>,
+    ambience: &J,
+    report: &J,
+    clips: &mut dyn Audio,
+) -> Result<(Spells, SpellPlan)> {
+    // The guest finds a spell's row by its event (game/src/scene_sfx.rs `lookup`): they are the last rows.
+    let first = EVENTS.len() - SPELLS.len();
+    if SPELLS
+        .iter()
+        .enumerate()
+        .any(|(i, n)| EVENTS[first + i].name != *n)
+    {
+        return err("the spell rows are not the catalogue's last, in SPELLS order");
+    }
+    let (mut block, mut offsets) = (Vec::new(), Vec::new());
+    for name in SPELLS {
+        let e = EVENTS.iter().find(|e| e.name == name).ok_or("spell row")?;
+        offsets.push(block.len());
+        block.extend_from_slice(&clips.payload(e, e.rate)?);
+    }
+    let mut free = BTreeMap::new();
+    for (&scene, bank) in banks.iter() {
+        let taken: Vec<(i64, i64)> = bank
+            .entries
+            .iter()
+            .map(|e| (e.spu_address, e.spu_address + e.bytes as i64))
+            .collect();
+        free.insert(scene, subtract(&free_gaps(ambience, scene, true)?, &taken));
+    }
+    let edges: Vec<(i64, i64)> = ambience["gate_edges"]
+        .as_array()
+        .ok_or("no gate_edges")?
+        .iter()
+        .filter_map(|p| Some((p.get(0)?.as_i64()?, p.get(1)?.as_i64()?)))
+        .collect();
+    let benches: HashSet<i64> = report["regions"]
+        .as_array()
+        .ok_or("no regions")?
+        .iter()
+        .filter(|r| r["benches"].as_array().is_some_and(|b| !b.is_empty()))
+        .map(|r| r["scene_id"].as_i64().unwrap_or(0))
+        .collect();
+    let span = (
+        ambience["spu_start"].as_i64().ok_or("spu_start")?,
+        ambience["spu_ceiling"].as_i64().ok_or("spu_ceiling")?,
+    );
+    let plan = spell_block(&free, block.len() as i64, span, &edges, &benches)
+        .ok_or("the spell block fits no scene's free SPU")?;
+    let end = plan.address + block.len() as i64;
+    for bank in banks.values_mut() {
+        if bank
+            .entries
+            .iter()
+            .any(|e| e.spu_address < end && plan.address < e.spu_address + e.bytes as i64)
+        {
+            bank.spells |= SPELL_CLOBBERED;
+        }
+    }
+    for scene in &plan.carriers {
+        let bank = banks.get_mut(scene).ok_or("carrier without a bank")?;
+        if bank.entries.is_empty() {
+            bank.chunk.clear();
+        }
+        bank.chunk.extend_from_slice(&block);
+        bank.spells |= SPELL_CARRIED;
+    }
+    let address = plan.address;
+    Ok((
+        Spells {
+            block,
+            offsets,
+            address,
+        },
+        plan,
+    ))
+}
 
 /// `free_gaps`: SPU gaps between ambience's start and the ring that no stem
 /// able to be resident in `scene` occupies. With `unloaded` false, the bytes of
@@ -2098,6 +2289,8 @@ struct Bank {
     free_before: i64,
     free_after: i64,
     fitted: Option<(Vec<(String, i64)>, Moved)>,
+    /// SPELL_CARRIED and SPELL_CLOBBERED.
+    spells: u8,
 }
 
 fn set_rate(rates: &mut Vec<(String, i64)>, name: &str, rate: i64) {
@@ -2264,6 +2457,7 @@ fn assemble(
                 free_before: free,
                 free_after: left.iter().map(|(lo, hi)| hi - lo).sum(),
                 fitted,
+                spells: 0,
             },
         );
     }
@@ -2284,6 +2478,7 @@ fn rust(
     owners: &BTreeMap<i64, (i64, &'static str)>,
     terrain: &[(i64, [i64; 4], u8)],
     openings: &[(i64, &'static str, i64, [i64; 2])],
+    spells: &Spells,
 ) -> String {
     let mut lines = vec![
         "// Generated by host/scene_sfx.py: per-scene one-shot banks, read at the scene gate."
@@ -2306,11 +2501,12 @@ fn rust(
     let (mut entries, mut rows) = (Vec::new(), Vec::new());
     for bank in banks.values() {
         rows.push(format!(
-            "({},{},{},{}),",
+            "({},{},{},{},{}),",
             bank.chunk.len(),
             fnv(&bank.chunk),
             entries.len(),
-            bank.entries.len()
+            bank.entries.len(),
+            bank.spells
         ));
         for e in &bank.entries {
             let index = EVENTS.iter().position(|x| x.name == e.event).unwrap();
@@ -2324,9 +2520,12 @@ fn rust(
             ));
         }
     }
-    lines.push("/// Per guest scene id: (chunk bytes, FNV-1a, first entry, entry count).".into());
+    lines.push(
+        "/// Per guest scene id: (chunk bytes, FNV-1a, first entry, entry count, SPELL_* flags)."
+            .into(),
+    );
     lines.push(format!(
-        "pub static BANKS:[(u32,u32,u16,u8);{}]=[{}];",
+        "pub static BANKS:[(u32,u32,u16,u8,u8);{}]=[{}];",
         banks.len(),
         rows.concat()
     ));
@@ -2378,7 +2577,40 @@ fn rust(
             })
             .collect::<String>()
     ));
+    lines.push("/// The spell block (`spell_block`): its SPU address and bytes, the BANKS flags (the chunk ends with it;".into());
+    lines.push("/// the bank writes its bytes), and its clips as ENTRIES rows (the offset unused: they play from the block).".into());
+    lines.push(format!("pub const SPELL_SPU:u32={};", spells.address));
+    lines.push(format!("pub const SPELL_BYTES:u32={};", spells.block.len()));
+    lines.push(format!("pub const SPELL_CARRIED:u8={SPELL_CARRIED};"));
+    lines.push(format!("pub const SPELL_CLOBBERED:u8={SPELL_CLOBBERED};"));
+    let mut rows = String::new();
+    for (i, name) in SPELLS.iter().enumerate() {
+        let index = EVENTS.iter().position(|e| e.name == *name).unwrap();
+        let end = spells
+            .offsets
+            .get(i + 1)
+            .copied()
+            .unwrap_or(spells.block.len());
+        let rate = EVENTS[index].rate;
+        rows += &format!(
+            "({index},{},0,{},{rate},{}),",
+            packed(spells.address + spells.offsets[i] as i64, 8),
+            packed((end - spells.offsets[i]) as i64, 16),
+            pitch_register(rate)
+        );
+    }
+    lines.push(format!(
+        "pub static SPELL_ROWS:[(u8,u16,u16,u16,u16,u16);{}]=[{rows}];",
+        SPELLS.len()
+    ));
     lines.join("\n") + "\n"
+}
+
+/// The cooked spell block: its clips back to back, where each starts, and its SPU address.
+struct Spells {
+    block: Vec<u8>,
+    offsets: Vec<usize>,
+    address: i64,
 }
 
 /// A terrain box's kind bits (TERRAIN_BOX_KIND): the collider's GameObject carries an active `NonThunker`,
@@ -2708,7 +2940,8 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     let scanned = scan(source, &scenes, &report, &gate_switch_scenes(&report)?)?;
     let needs = scene_needs(root, &report, &gates, &scenes, &scanned)?;
     let mut clips = Clips::new(root, source)?;
-    let banks = assemble(&needs, &ambience, &mut clips)?;
+    let mut banks = assemble(&needs, &ambience, &mut clips)?;
+    let (spells, plan) = place_spells(&mut banks, &ambience, &report, &mut clips)?;
     let out = root.join("data/scene-sfx");
     std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
     for (scene, bank) in &banks {
@@ -2717,7 +2950,13 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
     }
     std::fs::write(
         root.join("data/scene_sfx.rs"),
-        rust(&banks, &break_owners(&report), &scanned.terrain, &scanned.openings),
+        rust(
+            &banks,
+            &break_owners(&report),
+            &scanned.terrain,
+            &scanned.openings,
+            &spells,
+        ),
     )
     .map_err(|e| e.to_string())?;
     let mut events = Vec::new();
@@ -2794,6 +3033,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
             ),
             ("free_before".into(), Json::Int(b.free_before)),
             ("free_after".into(), Json::Int(b.free_after)),
+            ("spells".into(), Json::Int(i64::from(b.spells))),
         ];
         if let Some((rates, moved)) = &b.fitted {
             fields.push((
@@ -2835,6 +3075,42 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         ("events".into(), Json::List(events)),
         ("scenes".into(), Json::Obj(scene_rows)),
         (
+            "spells".into(),
+            Json::Obj(vec![
+                ("spu_address".into(), Json::Int(spells.address)),
+                ("bytes".into(), Json::Int(spells.block.len() as i64)),
+                (
+                    "clips".into(),
+                    Json::List(
+                        SPELLS
+                            .iter()
+                            .map(|n| EVENTS.iter().find(|e| e.name == *n).unwrap())
+                            .zip(&spells.offsets)
+                            .map(|(e, offset)| {
+                                Json::Obj(vec![
+                                    ("event".into(), Json::Str(e.name.into())),
+                                    (
+                                        "clip".into(),
+                                        Json::Str(format!("{}:{}", e.file, e.path_id)),
+                                    ),
+                                    ("rate".into(), Json::Int(e.rate)),
+                                    ("offset".into(), Json::Int(*offset as i64)),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
+                (
+                    "free_in".into(),
+                    Json::List(plan.free.iter().map(|s| Json::Int(*s)).collect()),
+                ),
+                (
+                    "carriers".into(),
+                    Json::List(plan.carriers.iter().map(|s| Json::Int(*s)).collect()),
+                ),
+            ]),
+        ),
+        (
             "limitations".into(),
             Json::List(
                 LIMITATIONS
@@ -2855,9 +3131,14 @@ pub fn cook(root: &Path, source: &Source) -> Result<String> {
         .filter(|(_, b)| !b.entries.is_empty() || !b.refused.is_empty())
         .collect();
     let mut text = format!(
-        "Scene SFX: {} scenes ask for sounds, largest chunk {} bytes",
+        "Scene SFX: {} scenes ask for sounds, largest chunk {} bytes\n  spells: {} bytes at {:#x}, free in {} of {} scenes, carried by scenes {:?}",
         used.len(),
-        banks.values().map(|b| b.chunk.len()).max().unwrap_or(0)
+        banks.values().map(|b| b.chunk.len()).max().unwrap_or(0),
+        spells.block.len(),
+        spells.address,
+        plan.free.len(),
+        banks.len(),
+        plan.carriers
     );
     for (scene, bank) in used {
         let refused: Vec<String> = bank
@@ -3155,7 +3436,7 @@ mod tests {
     #[test]
     fn the_rust_table_carries_each_entrys_rate_and_pitch() {
         let bank = Bank {
-            chunk: vec![0; 32],
+            chunk: vec![0; 128],
             entries: vec![Entry {
                 event: "bench_rest",
                 spu_address: 64,
@@ -3167,13 +3448,39 @@ mod tests {
             free_before: 0,
             free_after: 0,
             fitted: None,
+            spells: SPELL_CARRIED,
+        };
+        let spells = Spells {
+            block: vec![0; 96],
+            offsets: vec![0, 32, 64],
+            address: 4096,
         };
         let text = rust(
             &[(0, bank)].into_iter().collect(),
             &BTreeMap::new(),
             &[(3, [1, 2, 3, 4], BOX_NON_THUNKER | BOX_TINK)],
             &[(8, "switch_gate_gate", 45, [5, 6])],
+            &spells,
         );
+        assert!(text.contains("pub const SPELL_SPU:u32=4096;\npub const SPELL_BYTES:u32=96;"));
+        assert!(text.contains(&format!(
+            "pub static BANKS:[(u32,u32,u16,u8,u8);1]=[(128,{},0,1,1),];",
+            fnv(&[0; 128])
+        )));
+        let prepare = EVENTS
+            .iter()
+            .position(|e| e.name == "hero_quake_spell_prepare")
+            .unwrap();
+        // Each clip at the block's address plus its offset (in 8-byte units) and its own length.
+        assert!(text.contains(&format!(
+            "pub static SPELL_ROWS:[(u8,u16,u16,u16,u16,u16);3]=[({},512,0,2,3000,{}),({},516,0,2,3000,{}),({},520,0,2,5512,{}),];",
+            prepare,
+            pitch_register(3000),
+            prepare + 1,
+            pitch_register(3000),
+            prepare + 2,
+            pitch_register(5512)
+        )));
         let index = EVENTS.iter().position(|e| e.name == "bench_rest").unwrap();
         // Address in 8-byte units, offset and length in 16-byte blocks.
         assert!(text.contains(&format!("({index},8,0,2,4000,{}),", pitch_register(4000))));
@@ -3182,6 +3489,45 @@ mod tests {
         assert!(text.contains("pub static TERRAIN_BOX_KIND:&[u8]=&[3,];"));
         let gate = EVENTS.iter().position(|e| e.name == "switch_gate_gate").unwrap();
         assert!(text.contains(&format!("pub static SWITCH_SOUNDS:&[(u8,u8,u16,[i32;2])]=&[(8,{gate},45,[5,6]),];")));
+    }
+
+    #[test]
+    fn the_spell_block_takes_the_highest_address_most_scenes_leave_free() {
+        // Scene 0 is free in 0..256, scene 1 in 64..256, scene 2 in 0..96 and scene 3 nowhere.
+        let free: BTreeMap<i64, Vec<(i64, i64)>> = [
+            (0, vec![(0, 256)]),
+            (1, vec![(64, 256)]),
+            (2, vec![(0, 96)]),
+            (3, vec![]),
+        ]
+        .into_iter()
+        .collect();
+        let plan = spell_block(&free, 32, (0, 256), &[], &HashSet::new()).unwrap();
+        // 64..96 is free in three scenes, and nothing higher is.
+        assert_eq!(plan.address, 64);
+        assert_eq!(plan.free, [0, 1, 2]);
+        assert!(plan.carriers.is_empty());
+        // Nothing fits 300 bytes.
+        assert!(spell_block(&free, 300, (0, 256), &[], &HashSet::new()).is_none());
+    }
+
+    #[test]
+    fn the_spell_block_rides_the_scenes_entered_without_it() {
+        // Free in 0, 1, 2 and 4; scene 3 uses its bytes. 2 and 4 are a gate from 3, 1 has a bench.
+        let free: BTreeMap<i64, Vec<(i64, i64)>> = [
+            (0, vec![(0, 64)]),
+            (1, vec![(0, 64)]),
+            (2, vec![(0, 64)]),
+            (3, vec![]),
+            (4, vec![(0, 64)]),
+        ]
+        .into_iter()
+        .collect();
+        let edges = [(0, 1), (1, 2), (2, 3), (3, 4)];
+        let plan = spell_block(&free, 64, (0, 64), &edges, &[1].into_iter().collect()).unwrap();
+        assert_eq!(plan.address, 0);
+        assert_eq!(plan.free, [0, 1, 2, 4]);
+        assert_eq!(plan.carriers, [1, 2, 4]);
     }
 
     #[test]
