@@ -82,13 +82,15 @@ pub enum Action {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Actions {
-    values: [Option<Action>; 4],
+    // Fly's worst tick: its velocity, a turn (Facing and TurnToFly) and the
+    // retreat's clip and SlashOff.
+    values: [Option<Action>; 5],
     count: u8,
 }
 impl Actions {
     const fn new() -> Self {
         Self {
-            values: [None; 4],
+            values: [None; 5],
             count: 0,
         }
     }
@@ -581,5 +583,26 @@ mod tests {
             s.took_damage(senses(START, [ONE, 0], false)).iter().count(),
             0
         );
+    }
+    #[test]
+    fn one_fly_tick_can_chase_turn_and_retreat_at_once() {
+        let mut s = Shade::new(START, 4);
+        let right = [10 * ONE, 0];
+        s.tick(senses(START, right, true));
+        run(&mut s, START, right, true, STARTLE_TICKS as u32);
+        assert_eq!(s.phase(), Phase::Fly);
+        s.tick(senses(START, right, true));
+        assert_eq!(s.facing(), 1);
+        // The next tick is a fixed step, and on it the hero is behind a Shade past Max Roam.
+        while s.fixed_accumulator < 10 {
+            s.tick(senses(START, right, true));
+        }
+        assert_eq!(s.phase(), Phase::Fly);
+        let far = [30 * ONE, 0];
+        let out = s.tick(senses(far, [29 * ONE, 0], true));
+        assert_eq!(out.iter().count(), 5);
+        assert!(matches!(out.iter().next(), Some(Action::Velocity(_))));
+        assert!(out.iter().any(|a| a == Action::Facing(-1)));
+        assert_eq!(s.phase(), Phase::RetreatStart);
     }
 }
