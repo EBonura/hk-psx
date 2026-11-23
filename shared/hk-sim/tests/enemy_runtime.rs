@@ -735,6 +735,7 @@ mod modules {
     pub const ACID_FLYER: usize = 12;
     pub const MOSQUITO: usize = 13;
     pub const MOSS_WALKER: usize = 14;
+    pub const MOSS_CHARGER: usize = 18;
     pub fn require(_k: usize) -> bool {
         true
     }
@@ -3326,4 +3327,151 @@ fn region_reseating_preserves_live_wave_members_and_a_scene_exit_restarts_an_unw
     tick(&mut w, &r, &room, &mut p, &mut v, &n);
     assert_eq!(standing(&w), [9001, 9002], "an unwon scene exit restarts the authored standing placements");
     persist::STORE.with(|s| assert_eq!(s.borrow().get(persist::Kind::BattleScene, 30, 0), None));
+}
+
+/// Fungus1_10's `Moss Charger (1)` (`level139:907`): 15 hp, 8 small Geo, contact damage 1, no collider
+/// of its own, and the 28-wide `Attack Range` at scale 1.175 (offset 0, 0.48 down).
+const MOSS_CHARGER: ActorSpec = ActorSpec {
+    controller: ActorController::MossCharger {
+        clips: [0, 1, 2, 3, 4, 5, 6],
+        range: [-1078067, -141783, 1078067, -51235],
+    },
+    bounds: [0; 4],
+    health: EnemyParams {
+        health: 15,
+        contact_damage: 1,
+        evasion_ticks: 12,
+        invincible: true,
+        damage_override: false,
+    },
+    walk: WalkParams {
+        speed: 0,
+        turn_ticks: 0,
+        turn_cooldown_ticks: 0,
+    },
+    walk_clip: 1,
+    turn_clip: 5,
+    corpse: None,
+    recoil_speed: 15 * ONE,
+    recoil_ticks: 9,
+    dream_soul: 33,
+};
+/// The tuft stands 1.92 units above the floor, where the bottom of its frame box rests.
+const CHARGER_AT: hk_sim::ActorPlacement = hk_sim::ActorPlacement {
+    source_id: 907,
+    x: 0,
+    y: 125952,
+    initial_direction: 1,
+    ..PLACEMENT
+};
+fn charger_region() -> world::Region {
+    world::Region {
+        scene: 0,
+        bounds: [-30 * ONE, -5 * ONE, 30 * ONE, 20 * ONE],
+        collision_bounds: [-33 * ONE, -10 * ONE, 33 * ONE, 25 * ONE],
+        actors: &[(CHARGER_AT, &MOSS_CHARGER)],
+    }
+}
+/// The charger's seven clips at their source frame counts and rates, on a floor from -30 to 30.
+fn charger_room() -> Vec<u8> {
+    // (frames, fps, wrap): Appear, Charge, Disappear, Stun, Get Up, TurnRun, Escape.
+    let clips: [(u32, u32, u32); 7] = [(6, 12, 2), (4, 15, 0), (12, 12, 2), (3, 12, 0), (4, 18, 2), (6, 12, 1), (14, 12, 2)];
+    let frames: u32 = clips.iter().map(|c| c.0).sum();
+    let mut b = Vec::from(*b"HKROOM02");
+    for n in [1u32, 1, 0, frames, clips.len() as u32, 1, 0, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    for n in [0u16, 0, 0, 4, 4, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.extend(0u32.to_le_bytes());
+    for _ in 0..frames {
+        for n in [0i32, -102400, -125952, 123904, 12288] {
+            b.extend(n.to_le_bytes());
+        }
+    }
+    let mut first = 0;
+    for (count, fps, wrap) in clips {
+        for n in [first, count, fps * 65536, wrap] {
+            b.extend(n.to_le_bytes());
+        }
+        first += count;
+    }
+    for n in [-30 * ONE, 0, 30 * ONE, 0] {
+        b.extend(n.to_le_bytes());
+    }
+    b.resize(b.len() + 32 + 32768, 0);
+    b
+}
+/// Hidden in its tuft it draws nothing and hurts nothing; the hero in its range brings it up beside him and it
+/// charges; the first nail hit on the charge is blocked (no damage) and flings it out, after which the nail hurts.
+#[test]
+fn a_moss_charger_surfaces_charges_and_one_tink_bursts_it_out_of_the_grass() {
+    let bytes = charger_room();
+    let room = hk_format::Room::parse(&bytes).unwrap();
+    let r = charger_region();
+    let mut w = enemies::EnemyWorld::new();
+    let mut v = Vitals::new(VITAL_PARAMS);
+    let quiet = Nail::new();
+    let before = v.health;
+    // Outside the range box (it ends 16.45 out): nothing shows and the tuft is harmless to stand on.
+    let mut far = Player::spawn(20 * ONE, 0);
+    for _ in 0..120 {
+        tick(&mut w, &r, &room, &mut far, &mut v, &quiet);
+    }
+    assert!(submitted(&w, &r, &room).is_empty(), "a hidden tuft draws nothing");
+    let mut over = Player::spawn(0, 0);
+    tick(&mut w, &r, &room, &mut over, &mut v, &quiet);
+    assert_eq!(v.health, before, "the tuft has no collider while hidden");
+    // In range (the hero stands on the tuft): within 0.5 to 1 s plus the appear it is out and charging.
+    let mut seen = None;
+    for n in 0..120 {
+        tick(&mut w, &r, &room, &mut over, &mut v, &quiet);
+        // `Emerge`'s SetPosition moves it off the tuft (the view's edge culls the quad that far out).
+        if w.actor_state(0, 907).unwrap().0 != 0 {
+            seen = Some(n);
+            break;
+        }
+    }
+    let n = seen.expect("it surfaces beside the hero");
+    assert!((28..=62).contains(&n), "Emerge Pause is 0.5 to 1 s: {n}");
+    let (x, _, hp) = w.actor_state(0, 907).unwrap();
+    // Fourteen units to one side of the hero, less the first frame of the quarter-speed approach.
+    assert_eq!((x.abs() + 4096, hp), (14 * ONE, 15), "fourteen units to one side, at full health");
+    // It charges at him and the charge reaches him: contact damage.
+    let mut hurt = false;
+    for _ in 0..90 {
+        tick(&mut w, &r, &room, &mut over, &mut v, &quiet);
+        if v.health < before {
+            hurt = true;
+            break;
+        }
+    }
+    assert!(hurt, "the charge hurts");
+    let (x, _, _) = w.actor_state(0, 907).unwrap();
+    // A blocked hit costs it nothing and bursts it out: it leaves the ground line.
+    let mut nail = Nail::new();
+    nail.active = true;
+    nail.age = 1;
+    let mut hero = Player::spawn(x - x.signum() * ONE, ONE);
+    let events = tick(&mut w, &r, &room, &mut hero, &mut v, &nail);
+    assert_eq!(events.hits, 0, "the charge is invincible");
+    assert_eq!(w.actor_state(0, 907).unwrap().2, 15);
+    let start_y = w.actor_state(0, 907).unwrap().1;
+    for _ in 0..6 {
+        tick(&mut w, &r, &room, &mut far, &mut v, &quiet);
+    }
+    assert!(w.actor_state(0, 907).unwrap().1 > start_y, "the burst flings it up");
+    // Once in the air it takes damage.
+    let (bx, by, _) = w.actor_state(0, 907).unwrap();
+    let mut beside = Player::spawn(bx, by - ONE / 2);
+    let mut landed = 0;
+    for _ in 0..20 {
+        landed += tick(&mut w, &r, &room, &mut beside, &mut v, &nail).hits;
+        if landed > 0 {
+            break;
+        }
+    }
+    assert!(landed > 0, "a burst Moss Charger is vulnerable");
+    assert!(w.actor_state(0, 907).unwrap().2 < 15);
 }

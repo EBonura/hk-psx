@@ -26,7 +26,7 @@ def corpse_source(source, scene, actor):
     # restores its body rather than letting it die, so nothing of it ever falls.
     if actor.get('movement_control',{}).get('no_corpse'):
         return None
-    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber','ZombieShield','MossWalker'):
+    if kind not in ('WalkLeftRight','ZombieSwipeWalker','Climber','ZombieShield','MossWalker','MossCharger'):
         raise ValueError('unvalidated corpse controller family')
     # The Shield's EnemyDeathEffects is the conventional Zombie corpse, so it is
     # read against the Runner's expectations rather than its own. If its bounce
@@ -37,6 +37,8 @@ def corpse_source(source, scene, actor):
     # four-frame looping Death Air. resetRotation is moot: only unrotated
     # floor placements are admitted.
     moss=kind=='MossWalker'
+    # `Corpse MossCharger v2`: the Crawler's launch, bounce 0.3, a two-frame Death Air and Death Land, both once.
+    charger=kind=='MossCharger'
     expected_offset={'x':0.,'y':0. if (runner or climber) else .5,'z':0.}
     expected_bounce=.2 if runner or moss else .45 if climber else .3
     # Climber corpse (.hkpsx/climber70/references.json): Death Air loops eight
@@ -44,7 +46,7 @@ def corpse_source(source, scene, actor):
     # The Mossman_Shaker's `Corpse_Mossman_Shaker` is the Runner's launch with its own three-frame Death Air and a four-frame Death Land
     # that loops from its second frame.
     shaker=runner and actor.get('name','').startswith('Mossman_Shaker')
-    expected_timing=[(12,2,3),(12,1,4)] if shaker else [(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,3),(12,2,2)]
+    expected_timing=[(12,2,3),(12,1,4)] if shaker else [(12,2,2),(12,2,2)] if charger else [(30,6,1),(12,2,8)] if runner else [(30,0,8),(15,2,3)] if climber else [(12,0,4),(12,2,2)] if moss else [(12,2,3),(12,2,2)]
     components=list(_components(scene,actor['game_object']))
     deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
     if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
