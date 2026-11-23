@@ -225,8 +225,13 @@ def place_hot_text(env,cmd,linked,link_map,out,scene_code,art):
     # sections ahead of the resident text, and `place` would count them as the fixed text the order starts after.
     run(['cargo','run','-q','--release','--locked','--manifest-path',ROOT/'.psoxide/Cargo.toml','-p','psoxide-pgo','--',
          'place',ROOT/HOT_LAYOUT,first/'resident.map',first/'runtime.exe',ROOT/'.psoxide/sdk/psoxide.ld',order],env=host)
-    text=order.read_text()
-    for real,profiled in renamed:text=re.sub(rf'^{re.escape(profiled)}$',real,text,flags=re.M)
+    text=order.read_text();placed=Path(f'{order}.placed').read_text()
+    for real,profiled in renamed:
+        text=re.sub(rf'^{re.escape(profiled)}$',real,text,flags=re.M)
+        placed=re.sub(rf'^(\S+ ){re.escape(profiled)}$',rf'\g<1>{real}',placed,flags=re.M)
+    # hot-text.order and its .placed sidecar become the order the link follows, under the link's own names: the
+    # harness collects both and runs `psoxide-pgo followed` on them against the link map.
+    order.write_text(text);Path(f'{order}.placed').write_text(placed)
     text=text.encode()
     # A new order is a new file name, so cargo reruns game/build.rs and relinks.
     named=out/f'hot-text-{hashlib.sha256(text).hexdigest()[:16]}.order'
