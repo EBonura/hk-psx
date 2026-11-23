@@ -562,23 +562,209 @@ pub static mut HK_COVERAGE_LOADS: u32 = 0;
 pub static mut HK_COVERAGE_BYTES: u32 = 0;
 #[no_mangle]
 pub static mut HK_COVERAGE_SCENE: u32 = 0;
-fn atlas_fingerprint(scene: usize) -> u32 {
-    let (start, end) = SCENE_ATLAS_RANGES[scene];
-    let (start, end) = (start as usize, end as usize);
-    let mut hash = psx_pack::Fnv32::new();
-    for a in (start..end).map(atlas) {
-        for value in [
-            a.kind as u32,
-            a.first as u32,
-            a.count as u32,
-            a.raw_len as u32,
-            a.raw_fnv,
-        ] {
-            hash.update(&value.to_le_bytes());
-        }
+/// FNV-1a over the little-endian bytes of `value`, folded into `hash`: `psx_pack::Fnv32::update` in a const fn.
+const fn fnv_word(mut hash: u32, value: u32) -> u32 {
+    let mut i = 0;
+    while i < 4 {
+        hash = (hash ^ ((value >> (8 * i)) & 0xff)).wrapping_mul(0x0100_0193);
+        i += 1;
     }
-    hash.finish()
+    hash
 }
+/// The coverage manifest's `atlas_fnv` for `scene`: FNV-1a over each atlas row's kind, first, count, raw length and raw FNV.
+const fn atlas_fingerprint(scene: usize) -> u32 {
+    let (start, end) = SCENE_ATLAS_RANGES[scene];
+    let mut hash = 0x811c_9dc5;
+    let mut i = start as usize;
+    while i < end as usize {
+        let a = atlas(i);
+        hash = fnv_word(hash, a.kind as u32);
+        hash = fnv_word(hash, a.first as u32);
+        hash = fnv_word(hash, a.count as u32);
+        hash = fnv_word(hash, a.raw_len as u32);
+        hash = fnv_word(hash, a.raw_fnv);
+        i += 1;
+    }
+    hash
+}
+/// The checks `Cache::init` ran over the generated manifests on every boot, run by the compiler instead: every
+/// operand is a `const` of this build, so a boot could only ever pass them. 0 when they hold, else the
+/// `LoadError` the boot used to return. A gate-load build only: the joint layout keeps its refusal at run time.
+const fn manifest_error() -> u8 {
+    if !SCENE_GATE_LOAD {
+        return 0;
+    }
+    if COVERAGE_MANIFEST.len() != SCENE_COUNT
+        || WORLD_META_MANIFEST.len() != SCENE_COUNT
+        || COVERAGE_ARENA_BYTES % 4 != 0
+        || WORLD_META_ARENA_BYTES % 4 != 0
+        || WORLD_META_ARENA_BYTES == 0
+        || COVERAGE_GRID_SHIFT != 2
+        || COVERAGE_GROUP_POOL_CAPACITY > 4096
+    {
+        return LoadError::Coverage as u8;
+    }
+    if SCENE_COUNT == 0 || SCENE_ARENA_BYTES % 4 != 0 || SCENE_REGIONS.len() != SCENE_COUNT {
+        return LoadError::RoomMismatch as u8;
+    }
+    let mut offset = 0usize;
+    let mut i = 0;
+    while i < SCENE_MANIFEST.len() {
+        let d = SCENE_MANIFEST[i];
+        if SCENE_GATE_LOAD {
+            offset = 0;
+        }
+        let split_bad = match split_index(i) {
+            Some(k) => {
+                // A scene read in two parts: the gap lies inside the bank, takes the head's whole length
+                // past its start in one move, and is whole sectors the drive writes in place.
+                let sp = SCENE_SPLITS[k];
+                sp.gap_len % SECTOR_BYTES != 0
+                    || sp.gap_off % 4 != 0
+                    || sp.head_len + sp.gap_len != d.raw_len
+                    || sp.gap_off > sp.head_len
+                    || sp.head_len - sp.gap_off > sp.gap_len
+            }
+            None => false,
+        };
+        if d.ram_offset != offset
+            || d.arena_capacity != SCENE_ARENA_BYTES.saturating_sub(offset)
+            || d.raw_len == 0
+            || d.raw_len > d.arena_capacity
+            || d.stored_len == 0
+            || d.stored_len.div_ceil(SECTOR_BYTES) > d.arena_capacity / SECTOR_BYTES
+            || SCENE_REGIONS[i] as usize >= REGION_SCENE_LOCAL.len()
+            || scene_index(SCENE_REGIONS[i] as usize) != i
+            || split_bad
+        {
+            return LoadError::RoomMismatch as u8;
+        }
+        offset = match offset.checked_add(d.raw_len) {
+            Some(n) => match n.checked_add(3) {
+                Some(n) => n & !3,
+                None => return LoadError::RoomMismatch as u8,
+            },
+            None => return LoadError::RoomMismatch as u8,
+        };
+        i += 1;
+    }
+    if offset > SCENE_ARENA_BYTES {
+        return LoadError::RoomMismatch as u8;
+    }
+    let owners = region_owners();
+    let mut r = 0;
+    while r < owners.len() {
+        if owners[r] as usize >= SCENE_COUNT {
+            return LoadError::RoomMismatch as u8;
+        }
+        r += 1;
+    }
+    // Each scene owns an exact contiguous atlas inventory. Exclusive
+    // scene plans overlap physical slots only across different owners.
+    if SCENE_ATLAS_RANGES.len() != SCENE_COUNT {
+        return LoadError::RoomMismatch as u8;
+    }
+    let (mut pages, mut palettes, mut previous, mut peak_pages, mut peak_palettes) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut scene = 0;
+    while scene < SCENE_ATLAS_RANGES.len() {
+        let (start, end) = SCENE_ATLAS_RANGES[scene];
+        let (start, end) = (start as usize, end as usize);
+        if start != previous || end <= start || end > ATLAS_ROWS.len() {
+            return LoadError::RoomMismatch as u8;
+        }
+        if SCENE_GATE_LOAD {
+            pages = 0;
+            palettes = 0;
+        }
+        let d = SCENE_MANIFEST[scene];
+        if d.page_base != pages || d.palette_base != palettes {
+            return LoadError::RoomMismatch as u8;
+        }
+        let mut k = start;
+        while k < end {
+            let a = atlas(k);
+            let unit = match a.kind {
+                0 => 32768usize,
+                1 => 32usize,
+                _ => return LoadError::RoomMismatch as u8,
+            };
+            let next = if a.kind == 0 { pages } else { palettes };
+            if a.scene_index != scene
+                || a.count == 0
+                || a.first != next
+                || a.count * unit != a.raw_len
+                || a.raw_len > SCENE_ARENA_BYTES
+                || a.stored_len == 0
+                || a.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
+            {
+                return LoadError::RoomMismatch as u8;
+            }
+            if a.kind == 0 {
+                pages += a.count;
+            } else {
+                palettes += a.count;
+            }
+            k += 1;
+        }
+        if pages > hk_cache::residency::STATIC_PAGES || palettes > hk_cache::residency::SCENE_CLUTS {
+            return LoadError::RoomMismatch as u8;
+        }
+        if pages > peak_pages {
+            peak_pages = pages;
+        }
+        if palettes > peak_palettes {
+            peak_palettes = palettes;
+        }
+        previous = end;
+        scene += 1;
+    }
+    if previous != ATLAS_ROWS.len()
+        || peak_pages != SCENE_TOTAL_PAGES
+        || peak_palettes != SCENE_TOTAL_PALETTES
+    {
+        return LoadError::RoomMismatch as u8;
+    }
+    let mut scene = 0;
+    while scene < COVERAGE_MANIFEST.len() {
+        let c = COVERAGE_MANIFEST[scene];
+        let d = SCENE_MANIFEST[scene];
+        if c.scene_id != d.scene_id as u32
+            || c.scene_raw_fnv != d.raw_fnv
+            || c.atlas_fnv != atlas_fingerprint(scene)
+            || c.chunk_id != COVERAGE_INDEX + scene + 1
+            || c.draw_pool_count == 0
+            || c.draw_pool_count as usize > COVERAGE_GROUP_POOL_CAPACITY
+            || c.raw_len < 80
+            || c.raw_len > COVERAGE_ARENA_BYTES
+            || c.raw_len % 4 != 0
+            || c.raw_len > SCENE_ARENA_BYTES
+            || c.stored_len == 0
+            || c.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
+        {
+            return LoadError::Coverage as u8;
+        }
+        scene += 1;
+    }
+    let mut scene = 0;
+    while scene < WORLD_META_MANIFEST.len() {
+        let m = WORLD_META_MANIFEST[scene];
+        let d = SCENE_MANIFEST[scene];
+        if m.scene_id != d.scene_id as u32
+            || m.raw_len < 160
+            || m.raw_len > WORLD_META_ARENA_BYTES
+            || m.raw_len % 4 != 0
+            || m.stored_len == 0
+            || m.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
+            || m.chunk_id != METADATA_INDEX + scene + 1
+        {
+            return LoadError::WorldMeta as u8;
+        }
+        scene += 1;
+    }
+    0
+}
+const _: () = assert!(manifest_error() == 0, "the generated scene manifests disagree; see disc.rs manifest_error");
 /// Manifest scene that owns each catalogue slot: the only per-view table the disc keeps. A slot's
 /// scene-local room index is not stored; `local_index` derives it, which holds because the views of
 /// a scene are contiguous and in order (host/pack_scenes.py `manifest` refuses a pack where they
@@ -996,15 +1182,9 @@ impl Cache {
         if self.ready {
             return Ok(());
         }
-        if !SCENE_GATE_LOAD
-            || COVERAGE_MANIFEST.len() != SCENE_COUNT
-            || WORLD_META_MANIFEST.len() != SCENE_COUNT
-            || COVERAGE_ARENA_BYTES % 4 != 0
-            || WORLD_META_ARENA_BYTES % 4 != 0
-            || WORLD_META_ARENA_BYTES == 0
-            || COVERAGE_GRID_SHIFT != 2
-            || COVERAGE_GROUP_POOL_CAPACITY > 4096
-        {
+        // The generated manifests' own consistency is a compile-time fact (`MANIFESTS_CHECKED` below); only the
+        // effect-art manifest, a `static`, is still checked here.
+        if !SCENE_GATE_LOAD {
             return Err(LoadError::Coverage);
         }
         if EFFECT_ART_MANIFEST.len() != SCENE_COUNT
@@ -1017,130 +1197,6 @@ impl Cache {
             })
         {
             return Err(LoadError::RoomMismatch);
-        }
-        if SCENE_COUNT == 0 || SCENE_ARENA_BYTES % 4 != 0 || SCENE_REGIONS.len() != SCENE_COUNT {
-            return Err(LoadError::RoomMismatch);
-        }
-        let mut offset = 0usize;
-        for (i, d) in SCENE_MANIFEST.iter().enumerate() {
-            if SCENE_GATE_LOAD {
-                offset = 0;
-            }
-            if d.ram_offset != offset
-                || d.arena_capacity != SCENE_ARENA_BYTES.saturating_sub(offset)
-                || d.raw_len == 0
-                || d.raw_len > d.arena_capacity
-                || d.stored_len == 0
-                || d.stored_len.div_ceil(SECTOR_BYTES) > d.arena_capacity / SECTOR_BYTES
-                || SCENE_REGIONS[i] as usize >= REGION_SCENE_LOCAL.len()
-                || scene_index(SCENE_REGIONS[i] as usize) != i
-                || split_index(i).is_some_and(|k| {
-                    // A scene read in two parts: the gap lies inside the bank, takes the head's whole length
-                    // past its start in one move, and is whole sectors the drive writes in place.
-                    let sp = SCENE_SPLITS[k];
-                    sp.gap_len % SECTOR_BYTES != 0
-                        || sp.gap_off % 4 != 0
-                        || sp.head_len + sp.gap_len != d.raw_len
-                        || sp.gap_off > sp.head_len
-                        || sp.head_len - sp.gap_off > sp.gap_len
-                })
-            {
-                return Err(LoadError::RoomMismatch);
-            }
-            offset = offset
-                .checked_add(d.raw_len)
-                .and_then(|n| n.checked_add(3))
-                .ok_or(LoadError::RoomMismatch)?
-                & !3;
-        }
-        if offset > SCENE_ARENA_BYTES
-            || REGION_OWNER.iter().any(|&s| s as usize >= SCENE_COUNT)
-        {
-            return Err(LoadError::RoomMismatch);
-        }
-        // Each scene owns an exact contiguous atlas inventory. Exclusive
-        // scene plans overlap physical slots only across different owners.
-        if SCENE_ATLAS_RANGES.len() != SCENE_COUNT {
-            return Err(LoadError::RoomMismatch);
-        }
-        let (mut pages, mut palettes, mut previous, mut peak_pages, mut peak_palettes) =
-            (0usize, 0usize, 0usize, 0usize, 0usize);
-        for (scene, &(start, end)) in SCENE_ATLAS_RANGES.iter().enumerate() {
-            let (start, end) = (start as usize, end as usize);
-            if start != previous || end <= start || end > ATLAS_ROWS.len() {
-                return Err(LoadError::RoomMismatch);
-            }
-            if SCENE_GATE_LOAD {
-                pages = 0;
-                palettes = 0;
-            }
-            let d = SCENE_MANIFEST[scene];
-            if d.page_base != pages || d.palette_base != palettes {
-                return Err(LoadError::RoomMismatch);
-            }
-            for a in (start..end).map(atlas) {
-                let (next, unit) = match a.kind {
-                    0 => (&mut pages, 32768usize),
-                    1 => (&mut palettes, 32usize),
-                    _ => return Err(LoadError::RoomMismatch),
-                };
-                if a.scene_index != scene
-                    || a.count == 0
-                    || a.first != *next
-                    || a.count.checked_mul(unit) != Some(a.raw_len)
-                    || a.raw_len > SCENE_ARENA_BYTES
-                    || a.stored_len == 0
-                    || a.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
-                {
-                    return Err(LoadError::RoomMismatch);
-                }
-                *next = next.checked_add(a.count).ok_or(LoadError::RoomMismatch)?;
-            }
-            if pages > hk_cache::residency::STATIC_PAGES
-                || palettes > hk_cache::residency::SCENE_CLUTS
-            {
-                return Err(LoadError::RoomMismatch);
-            }
-            peak_pages = peak_pages.max(pages);
-            peak_palettes = peak_palettes.max(palettes);
-            previous = end;
-        }
-        if previous != ATLAS_ROWS.len()
-            || peak_pages != SCENE_TOTAL_PAGES
-            || peak_palettes != SCENE_TOTAL_PALETTES
-        {
-            return Err(LoadError::RoomMismatch);
-        }
-        for (scene, c) in COVERAGE_MANIFEST.iter().enumerate() {
-            let d = SCENE_MANIFEST[scene];
-            if c.scene_id != d.scene_id as u32
-                || c.scene_raw_fnv != d.raw_fnv
-                || c.atlas_fnv != atlas_fingerprint(scene)
-                || c.chunk_id != COVERAGE_INDEX + scene + 1
-                || c.draw_pool_count == 0
-                || c.draw_pool_count as usize > COVERAGE_GROUP_POOL_CAPACITY
-                || c.raw_len < 80
-                || c.raw_len > COVERAGE_ARENA_BYTES
-                || c.raw_len % 4 != 0
-                || c.raw_len > SCENE_ARENA_BYTES
-                || c.stored_len == 0
-                || c.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
-            {
-                return Err(LoadError::Coverage);
-            }
-        }
-        for (scene, m) in WORLD_META_MANIFEST.iter().enumerate() {
-            let d = SCENE_MANIFEST[scene];
-            if m.scene_id != d.scene_id as u32
-                || m.raw_len < 160
-                || m.raw_len > WORLD_META_ARENA_BYTES
-                || m.raw_len % 4 != 0
-                || m.stored_len == 0
-                || m.stored_len.div_ceil(SECTOR_BYTES) > SCENE_ARENA_BYTES / SECTOR_BYTES
-                || m.chunk_id != METADATA_INDEX + scene + 1
-            {
-                return Err(LoadError::WorldMeta);
-            }
         }
         if !unsafe { self.reader.prepare_single_speed() } {
             return Err(LoadError::Prepare);
