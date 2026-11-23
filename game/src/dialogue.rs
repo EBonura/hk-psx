@@ -501,7 +501,7 @@ pub fn prepare(
                 // The rows do not leave room for the crest: the dim and the glow only.
                 pause_backdrop(4, false, 0);
                 caps_text(160 - caps_width("Cheats") / 2, 12, "Cheats", 0x80);
-                // Eighteen rows at the font's size do not fit: a window of eleven follows the cursor.
+                // Twenty rows at the font's size do not fit: a window of eleven follows the cursor.
                 const WINDOW: usize = 11;
                 const TOP: i16 = 32;
                 const CHEAT_PITCH: i16 = 14;

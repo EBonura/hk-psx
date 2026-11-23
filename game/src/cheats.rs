@@ -7,7 +7,7 @@ pub const PURE_NAIL_DAMAGE: u16 = 21;
 pub const MAX_MASKS: u16 = 9;
 pub const BLUE_CHEAT_CAP: u16 = 20;
 /// Toggle rows on the Cheats page, ahead of Restore, Add Lifeblood, Add Geo, Reset and Back.
-pub const CHEAT_ROWS: usize = 12;
+pub const CHEAT_ROWS: usize = 14;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub invincible: bool,
@@ -28,6 +28,11 @@ pub struct Settings {
     /// scenes and it sits inactive, so this is the only route to the board.
     /// It grants nothing else: the notch budget and every refusal still apply.
     pub charms: bool,
+    /// Desolate Dive and Howling Wraiths at level 1. Soul Master's City and
+    /// Howling Cliffs, where they are earned, are not in the port. Their rows
+    /// follow the older ones so no older row moves.
+    pub quake: bool,
+    pub scream: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -66,6 +71,8 @@ impl Settings {
             dream: false,
             spell: false,
             charms: false,
+            quake: false,
+            scream: false,
         }
     }
     pub fn enabled(&self, row: usize) -> bool {
@@ -82,6 +89,8 @@ impl Settings {
             9 => self.dream,
             10 => self.spell,
             11 => self.charms,
+            12 => self.quake,
+            13 => self.scream,
             _ => false,
         }
     }
@@ -102,6 +111,8 @@ impl Settings {
             9 => &mut self.dream,
             10 => &mut self.spell,
             11 => &mut self.charms,
+            12 => &mut self.quake,
+            13 => &mut self.scream,
             _ => return,
         };
         *value = delta > 0;
@@ -119,6 +130,9 @@ impl Settings {
             | (u32::from(self.dream) << 9)
             | (u32::from(self.spell) << 10)
             | (u32::from(self.charms) << 11)
+            // Bit 12 is `GEO_GRANTED_BIT`.
+            | (u32::from(self.quake) << 13)
+            | (u32::from(self.scream) << 14)
     }
     /// The live vitals: the cooked base, then the PlayerData Sly's counter
     /// moves (`maxHealthBase` and the SOUL reserve), then the equipped charms,
@@ -199,8 +213,9 @@ impl Settings {
         hazard: bool,
         shadow: bool,
     ) -> Hurt {
-        // A Shade Cloak dash passes through enemies but not spikes or acid.
-        // That is deliberately unlike the Invincibility cheat below.
+        // A Shade Cloak dash (and a Dive, `Player::ignores_contact`) passes through
+        // enemies but not spikes or acid. That is deliberately unlike the
+        // Invincibility cheat below.
         if hk_sim::shadow_dash_ignores(shadow, hazard) {
             return Hurt::Ignored;
         }
