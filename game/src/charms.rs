@@ -17,7 +17,7 @@
 //! implemented compose onto the cooked no-charm `HeroParams` through `hero`,
 //! which `hero_params` calls once per change, so every consumer of the live
 //! parameters sees them without each one applying the bonus itself.
-use hk_sim::{HeroParams, VitalParams, Vitals};
+use hk_sim::{HeroParams, SoulReserve, VitalParams, Vitals};
 
 /// One cooked charm. `text` is its localized description, already wrapped to
 /// the panel by the host against the same glyph advances the guest draws with:
@@ -44,8 +44,9 @@ pub enum Effect {
         hazard_invulnerable_ticks: u16,
         recoil_ticks: u16,
     },
-    /// Soul Catcher and Soul Eater, which `HeroController::SoulGain` adds.
-    SoulPerHit(u16),
+    /// Soul Catcher and Soul Eater, which `HeroController::SoulGain` adds: to its charge
+    /// below a full vessel, and to its smaller charge with the vessel full (the reserve's).
+    SoulPerHit(u16, u16),
     /// Fragile Heart: `CharmUpdate` raises `maxHealth` over `maxHealthBase`.
     MaxHealth(u16),
     /// Fragile Greed: `HealthManager::Die` adds `CeilToInt(n * 0.2f)` to each drop count
@@ -391,7 +392,10 @@ fn compose(s: &State, mut p: HeroParams) -> HeroParams {
                 v.hazard_invulnerable_ticks = hazard_invulnerable_ticks;
                 v.recoil_ticks = recoil_ticks;
             }
-            Effect::SoulPerHit(extra) => v.soul_per_hit = v.soul_per_hit.saturating_add(extra),
+            Effect::SoulPerHit(extra, reserve) => {
+                v.soul_per_hit = v.soul_per_hit.saturating_add(extra);
+                p.reserve.per_hit = p.reserve.per_hit.saturating_add(reserve);
+            }
             Effect::MaxHealth(extra) => v.max_health = v.max_health.saturating_add(extra),
             // `(int)((float)damage * 1.5f)` truncates, so integer division does too.
             Effect::NailScale {
@@ -470,9 +474,9 @@ pub fn damage_taken(damage: u16) -> u16 {
     state().damage_taken(damage)
 }
 pub fn on_damage(vitals: &mut Vitals, params: VitalParams) {
-    charge_on_damage(state(), vitals, params);
+    charge_on_damage(state(), vitals, params, crate::hero_params::current().reserve);
 }
-fn charge_on_damage(s: &State, vitals: &mut Vitals, params: VitalParams) {
+fn charge_on_damage(s: &State, vitals: &mut Vitals, params: VitalParams, reserve: SoulReserve) {
     for charm in 1..=CHARM_COUNT {
         if !s.equipped(charm) {
             continue;
@@ -488,7 +492,7 @@ fn charge_on_damage(s: &State, vitals: &mut Vitals, params: VitalParams) {
             } else {
                 alone
             };
-            vitals.add_soul(params, amount);
+            vitals.add_soul(params, reserve, amount);
         }
     }
 }
@@ -1076,8 +1080,10 @@ mod tests {
         assert_eq!(p.invulnerable_ticks, 106);
         assert_eq!(p.hazard_invulnerable_ticks, 53);
         assert_eq!(p.recoil_ticks, 5);
-        // SoulGain charges 11, and both SOUL charms stack.
+        // SoulGain charges 11, and both SOUL charms stack; with the vessel full it charges
+        // the reserve 6, and the charms add 2 and 6 there.
         assert_eq!(p.soul_per_hit, 11 + 3 + 8);
+        assert_eq!(compose(&s, hero_base()).reserve.per_hit, 6 + 2 + 6);
         assert_eq!(p.max_health, 5 + 2);
         // (int)(5 * 1.5f) truncates to 7.
         assert_eq!(p.nail_damage, 7);
@@ -1138,10 +1144,10 @@ mod tests {
     fn grubsong_charges_soul_on_a_hit_that_landed() {
         let mut s = owning(&[GRUBSONG]);
         let mut v = Vitals::new(BASE);
-        charge_on_damage(&s, &mut v, BASE);
+        charge_on_damage(&s, &mut v, BASE, SoulReserve::NONE);
         assert_eq!(v.soul, 0, "an unworn charm charges nothing");
         assert_eq!(s.toggle(GRUBSONG), Ok(true));
-        charge_on_damage(&s, &mut v, BASE);
+        charge_on_damage(&s, &mut v, BASE, SoulReserve::NONE);
         assert_eq!(v.soul, 15);
         // The 25 SOUL combo needs Grubberfly's Elegy, which stays unequippable.
         assert_eq!(State::charm(35).effect, Effect::None);

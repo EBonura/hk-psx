@@ -357,34 +357,34 @@ def _literal(instruction):
 
 
 def soul_per_hit_charms(bodies):
-    """The SOUL a nail hit grants, and what 20 and 21 add, from `SoulGain`.
+    """The SOUL a nail hit grants, and what 20 and 21 add, from `SoulGain`, for both arms.
 
-    The method has two arms: below maxMP it charges 11 and above it charges the
-    reserve 6, and each arm adds its own pair of charm bonuses. Only the first
-    arm matters here, because the port has no SOUL reserve, so this walks until
-    the second base literal appears and refuses if the shape moved.
+    Below `maxMP` it charges 11 and with the vessel full it charges 6, which
+    `AddMPCharge` then puts in the reserve vessels; each arm adds its own pair
+    of charm bonuses. A literal straight after `ldloc` is a bonus for the charm
+    last tested; any other literal starts an arm.
     """
     body = bodies[('HeroController', 'SoulGain')]
-    base, bonuses, charm = None, {}, None
-    for instruction in body:
+    arms, charm = [], None
+    for i, instruction in enumerate(body):
         op, operand = instruction
         if op == 'ldfld' and isinstance(operand, str):
             match = re.fullmatch(r'equippedCharm_(\d+)', operand)
-            charm = int(match.group(1)) if match else None
+            charm = int(match.group(1)) if match else charm
             continue
         value = _literal(instruction)
         if value is None:
             continue
-        if base is None:
-            base = value
-            continue
-        if charm is None:
-            break  # the reserve arm's own base literal; the port has no reserve
-        if charm not in bonuses:
-            bonuses[charm] = value
-    assert base == 11, f'SoulGain no longer charges 11 a hit ({base})'
-    assert bonuses == {20: 3, 21: 8}, f'SoulGain charm bonuses are now {bonuses}'
-    return base, bonuses
+        if body[i - 1][0].startswith('ldloc'):
+            assert arms and charm not in arms[-1][1], f'SoulGain bonus {value} has no arm'
+            arms[-1][1][charm] = value
+        else:
+            arms.append((value, {}))
+            charm = None
+    assert [a[0] for a in arms] == [11, 6], f'SoulGain arms now charge {[a[0] for a in arms]}'
+    assert arms[0][1] == {20: 3, 21: 8} and arms[1][1] == {20: 2, 21: 6}, f'SoulGain charm bonuses are now {arms}'
+    (base, bonuses), (reserve_base, reserve_bonuses) = arms
+    return base, bonuses, reserve_base, reserve_bonuses
 
 
 def fragile_heart_bonus(bodies):
@@ -748,7 +748,7 @@ def _effect(charm_id, shell, bonuses, heart, nails, grub, numeric):
         return ('Effect::Shell{invulnerable_ticks:%d,hazard_invulnerable_ticks:%d,recoil_ticks:%d}'
                 % (shell['invulnerable_ticks'], shell['hazard_invulnerable_ticks'], shell['recoil_ticks']))
     if charm_id in bonuses:
-        return 'Effect::SoulPerHit(%d)' % bonuses[charm_id]
+        return 'Effect::SoulPerHit(%d,%d)' % (bonuses[charm_id], numeric['reserve_soul_per_hit_charms'][charm_id])
     if charm_id == 23:
         return 'Effect::MaxHealth(%d)' % heart
     if charm_id == 24:
@@ -795,7 +795,7 @@ def charm_table(catalogue, shell, bonuses, heart, nails, grub, table, numeric):
     return rows
 
 
-def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed):
+def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed, reserve_soul):
     """The guest table. `Charm` and `Effect` are declared in game/src/charms.rs.
 
     The panel geometry is cooked with the table because the icon size sets the
@@ -822,6 +822,8 @@ def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed):
         '/// `Overcharm Check` counts a refused attempt and breaks through on this one.',
         f"pub const OVERCHARM_BREAK_ATTEMPT:u8={rules['overcharm_break_attempt']};",
         f'pub const CHARMS:[Charm;CHARM_COUNT]=[' + ','.join(entries) + '];',
+        '/// `SoulGain`\'s charge with the vessel full, which `AddMPCharge` puts in the reserve.',
+        'pub const RESERVE_SOUL_PER_HIT:u16=%d;' % reserve_soul,
         '/// Fragile Greed\'s share of each drop count, `HealthManager::Die`\'s 0.2f as a ratio.',
         'pub const GREED_SHARE:(u16,u16)=(%d,%d);' % (greed['numerator'], greed['denominator']),
         f"/// `Charm Equip Msg` ({reminder['sheet']} {reminder['key']}), wrapped as a description is.",
@@ -1176,7 +1178,7 @@ def source_charm_values(source, assembly, scenes):
         ('HeroController', 'HeroDash'), ('HeroController', 'Attack'), ('HeroController', 'DoAttack'),
         ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight'), ('HealthManager', 'Die')})
     hero, constants = hero_constants(source)
-    base_soul, bonuses = soul_per_hit_charms(bodies)
+    base_soul, bonuses, reserve_soul, reserve_bonuses = soul_per_hit_charms(bodies)
     heart = fragile_heart_bonus(bodies)
     nails = nail_multipliers(source)
     shell = stalwart_shell(constants)
@@ -1185,6 +1187,8 @@ def source_charm_values(source, assembly, scenes):
         'movement': movement_charms(bodies, constants),
         'steady_body_recoil_ticks': steady_body(bodies),
         'fragile_greed': fragile_greed(bodies),
+        'reserve_soul_per_hit': reserve_soul,
+        'reserve_soul_per_hit_charms': reserve_bonuses,
         'focus': focus_charms(source),
         'spell_twister_cost': spell_twister(source),
         'shaman_stone': shaman_stone(source),
@@ -1267,7 +1271,8 @@ def cook():
     (ROOT / 'data/charms.rs').write_text(generated_charms_rs(
         values['charms'], values['equip_rules'], {'charmSlots': values['starting_notches']},
         icons['layout'], art, values['bench_reminder'],
-        values['effects']['parameter_charms']['fragile_greed']))
+        values['effects']['parameter_charms']['fragile_greed'],
+        values['effects']['parameter_charms']['reserve_soul_per_hit']))
     dump(ROOT / '.hkpsx/charm-catalog.json', values)
     print(f"{values['charm_count']} charms, {values['starting_notches']} starting notches, "
           f"overcharm breaks through on attempt {values['equip_rules']['overcharm_break_attempt']}")

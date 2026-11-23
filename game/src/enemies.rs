@@ -6351,7 +6351,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params());
+                            crate::hero_params::soul_gain(vitals, cheats);
                         }
                     }
                     if hit == Hit::Killed {
@@ -6419,7 +6419,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params());
+                            crate::hero_params::soul_gain(vitals, cheats);
                         }
                     }
                 }
@@ -6487,7 +6487,7 @@ impl EnemyWorld {
                     if hit.landed() {
                         events.hits += 1;
                         if slash {
-                            vitals.gain_soul_on_nail_hit(cheats.params());
+                            crate::hero_params::soul_gain(vitals, cheats);
                             // The nail's centre is where hkref's streaks start (`boss_fx::HIT`).
                             let at = attack.centre();
                             crate::boss_fx::request(crate::boss_fx::HIT, at[0], at[1], actor.scene);
@@ -6688,7 +6688,7 @@ impl EnemyWorld {
                         // Through the live parameter stack, like the damage
                         // above it: SoulGain adds Soul Catcher and Soul Eater
                         // to the same 11 the cooked base carries.
-                        vitals.gain_soul_on_nail_hit(cheats.params());
+                        crate::hero_params::soul_gain(vitals, cheats);
                         // HealthManager TOOK DAMAGE precedes Recoil's global
                         // horizontal event. RecoilByDirection ignores a request
                         // while already recoiling; accepted damage still reacts.

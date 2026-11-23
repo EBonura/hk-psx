@@ -135,7 +135,7 @@ impl Settings {
             | (u32::from(self.scream) << 14)
     }
     /// The live vitals: the cooked base, then the PlayerData Sly's counter
-    /// moves (`maxHealthBase` and the SOUL reserve), then the equipped charms,
+    /// moves (`maxHealthBase`; the SOUL reserve is `HeroParams::reserve`), then the equipped charms,
     /// then the cheats. `hero_params` composes that once per change and this
     /// reads the cached result, so a bonus is applied in one place and a read
     /// costs no walk over the board.

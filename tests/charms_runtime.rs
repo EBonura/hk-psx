@@ -21,6 +21,9 @@ mod shop {
     pub fn vitals(base: hk_sim::VitalParams) -> hk_sim::VitalParams {
         base
     }
+    pub fn soul_reserve() -> u16 {
+        0
+    }
 }
 #[allow(clippy::all, unexpected_cfgs, dead_code)]
 #[path = "../game/src/cheats.rs"]

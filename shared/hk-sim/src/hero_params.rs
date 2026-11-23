@@ -9,7 +9,7 @@
 //! port cannot afford, so the game folds the same tests into this record when
 //! the board, the shop or a cheat changes, and every reader takes its value
 //! from here instead of the cooked no-charm constant.
-use crate::{AttackParams, FireballParams, FocusParams, NailResponseParams, VitalParams};
+use crate::{AttackParams, FireballParams, FocusParams, NailResponseParams, SoulReserve, VitalParams};
 
 #[derive(Clone, Copy)]
 pub struct HeroParams {
@@ -27,6 +27,8 @@ pub struct HeroParams {
     /// Fragile Greed worn and unbroken, which `HealthManager::Die` tests before it raises
     /// each drop count (the game holds the cooked share).
     pub greed: bool,
+    /// The reserve vessels: the shop's `MPReserveMax` and the charmed full-vessel charge.
+    pub reserve: SoulReserve,
 }
 impl HeroParams {
     /// The movement record a grounded or airborne step runs with.
