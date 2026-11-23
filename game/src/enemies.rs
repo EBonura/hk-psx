@@ -941,6 +941,21 @@ impl MossWalkerRuntime {
         }
     }
 }
+/// Moss Charger: the controller owns the tuft, the charge, the burst and the run, the
+/// clips and the frame's box; this runtime casts the rays it asks for and moves the body.
+#[derive(Clone, Copy)]
+struct MossChargerRuntime {
+    controller: hk_sim::moss_charger::MossCharger,
+    animation_tick: u32,
+}
+impl MossChargerRuntime {
+    fn clip(&self, spec: &ActorSpec) -> u16 {
+        let ActorController::MossCharger { clips, .. } = spec.controller else {
+            panic!("Moss Charger runtime with other metadata")
+        };
+        clips[self.controller.clip() as usize]
+    }
+}
 /// Rolling Baldur: the controller owns the roll speed, launches and clips;
 /// this runtime runs the gravity body and reports wall/ground contacts.
 #[derive(Clone, Copy)]
@@ -1610,6 +1625,7 @@ enum Runtime {
     AcidFlyer(AcidFlyerRuntime),
     Mosquito(MosquitoRuntime),
     MossWalker(MossWalkerRuntime),
+    MossCharger(MossChargerRuntime),
     Baldur(BaldurRuntime),
     Aspid(AspidRuntime),
     Hatcher(HatcherRuntime),
@@ -1737,6 +1753,13 @@ impl Actor {
             crate::modules::require(crate::modules::MOSS_WALKER).then_some(m)
         } else {
             None
+        }
+    }
+    /// By reference: the runtime is wide, and a copy out and back is resident code at every site.
+    fn moss_charger(&self) -> Option<&MossChargerRuntime> {
+        match &self.runtime {
+            Runtime::MossCharger(m) if crate::modules::require(crate::modules::MOSS_CHARGER) => Some(m),
+            _ => None,
         }
     }
     /// A buried Moss Walker: `SetInvincible` with preventInvincibleEffect (no
@@ -2096,6 +2119,15 @@ impl Actor {
                     ),
                     animation_tick: 0,
                 }),
+                // `Init`: `X Min`/`X Max` are the tuft's x less/plus half the range box's width, 2 inside.
+                ActorController::MossCharger { range, .. } => Runtime::MossCharger(MossChargerRuntime {
+                    controller: hk_sim::moss_charger::MossCharger::new(
+                        [placement.x, placement.y],
+                        (range[2] - range[0]) / 2 - hk_sim::moss_charger::RANGE_MARGIN,
+                        seed,
+                    ),
+                    animation_tick: 0,
+                }),
                 ActorController::Mosquito { .. } => Runtime::Mosquito(MosquitoRuntime {
                     controller: hk_sim::mosquito::Mosquito::new([placement.x, placement.y], seed),
                     animation_tick: 0,
@@ -2295,6 +2327,9 @@ impl Actor {
         let b = spec.bounds;
         if self.fsm_ready() {
             return self.fsm_bounds();
+        }
+        if let Some(m) = self.moss_charger() {
+            return m.controller.collider_or(NO_FRAME_BOX);
         }
         if let Some(climber) = self.climber() {
             // The source box collider turns with the transform; at rest the
@@ -2610,6 +2645,11 @@ impl Actor {
                 self.x.abs() < 512 * ONE && self.y.abs() < 512 * ONE,
                 "enemy left validated Q16 scene bounds"
             );
+            return;
+        }
+        if self.moss_charger().is_some() {
+            self.spawn_state = SpawnState::Ready;
+            self.advance_moss_charger(spec, count, &edge, context);
             return;
         }
         if let Some(mut m) = self.mosquito() {
@@ -3193,6 +3233,131 @@ impl Actor {
         self.y = body.y;
         self.vy = body.vy;
         self.grounded = body.grounded;
+    }
+    /// One 60 Hz step of the Moss Charger: the senses its FSM reads this tick (the range box
+    /// while hidden, `Charge`'s two rays every second frame, the run's two every frame,
+    /// `Dig Check` while digging, the floor contact of the last move), the FSM, then the
+    /// body: none while it has no collider (hidden, or the last `Escape` frames), else the
+    /// frame's box against terrain with the gravity scale it last set.
+    // Its own function so the family can stream as a code module.
+    #[inline(never)]
+    fn advance_moss_charger(
+        &mut self,
+        spec: &ActorSpec,
+        count: usize,
+        edge: &impl Fn(usize) -> [i32; 4],
+        context: RunnerContext,
+    ) {
+        let (ActorController::MossCharger { range, .. }, Runtime::MossCharger(mut runtime)) =
+            (spec.controller, self.runtime)
+        else {
+            return;
+        };
+        self.step_moss_charger(&mut runtime, range, count, edge, context);
+        self.runtime = Runtime::MossCharger(runtime);
+    }
+    #[inline(always)]
+    fn step_moss_charger(
+        &mut self,
+        m: &mut MossChargerRuntime,
+        range: [i32; 4],
+        count: usize,
+        edge: &impl Fn(usize) -> [i32; 4],
+        context: RunnerContext,
+    ) {
+        use hk_sim::moss_charger as mc;
+        let need = m.controller.needs();
+        let pos = [self.x, self.y];
+        let dir = m.controller.dir();
+        let mut senses = mc::Senses {
+            hero_x: context.hero[0],
+            ground_hit: true,
+            dig_ground: true,
+            floor: self.grounded,
+            ..mc::Senses::default()
+        };
+        if need.range {
+            let s = m.controller.start();
+            senses.in_range = overlap(
+                context.hero_body,
+                [s[0] + range[0], s[1] + range[1], s[0] + range[2], s[1] + range[3]],
+            );
+        }
+        // `fromPosition` is added as written and the direction is world (identity transform), so
+        // the offsets ahead are given signed here and the ray is never mirrored.
+        let ray = |origin: [i32; 2], direction: [i32; 2], length: i32| {
+            climber_ray_hit(
+                hk_sim::climber::Ray {
+                    position: pos,
+                    rotation_degrees_q16: 0,
+                    scale_x_sign: 1,
+                    local_origin: origin,
+                    local_direction: direction,
+                    length,
+                    layer_mask: 256,
+                },
+                count,
+                edge,
+            )
+            .is_some()
+        };
+        if need.charge_rays {
+            let o = mc::CHARGE_FORWARD_ORIGIN;
+            senses.forward_hit = ray(o, [dir * ONE, 0], mc::CHARGE_FORWARD_LENGTH);
+            let g = mc::CHARGE_GROUND_ORIGIN;
+            senses.ground_hit = ray([dir * g[0], g[1]], [0, -ONE], mc::CHARGE_GROUND_LENGTH);
+        }
+        if need.run_rays {
+            senses.forward_hit = ray([0, 0], [dir * ONE, 0], mc::RUN_FORWARD_LENGTH);
+            let g = mc::RUN_GROUND_ORIGIN;
+            senses.ground_hit = ray([dir * g[0], g[1]], [0, -ONE], mc::RUN_GROUND_LENGTH);
+        }
+        if need.dig_ray {
+            senses.dig_ground = ray([0, 0], [0, -ONE], mc::DIG_LENGTH);
+        }
+        let step = m.controller.tick(senses);
+        if let Some(p) = step.teleport {
+            self.x = p[0];
+            self.y = p[1];
+            self.grounded = false;
+        }
+        m.animation_tick = if step.play.is_some() { 0 } else { m.animation_tick.saturating_add(1) };
+        self.walk.direction = m.controller.dir();
+        let v = m.controller.velocity();
+        // `Recoil.preventRecoilUp`: an upward strike moves nothing.
+        if self.recoil[1] > 0 {
+            self.recoil_left = 0;
+        }
+        let Some(b) = m.controller.collider() else {
+            self.x += v[0] / 60;
+            self.y += v[1] / 60;
+            self.vy = v[1];
+            self.grounded = false;
+            m.controller.moved_to([self.x, self.y], v);
+            return;
+        };
+        let offset = b[0] + (b[2] - b[0]) / 2;
+        let mut p = Params {
+            speed: v[0].abs(),
+            gravity: m.controller.gravity_scale() * 60,
+            fall: 100 * ONE,
+            half_width: (b[2] - b[0]) / 2,
+            bottom: b[1],
+            top: b[3],
+            ..Params::ZERO
+        };
+        let mut body = Player::spawn(self.x + offset, self.y);
+        body.vy = v[1];
+        let before = body.x;
+        body.step(p, v[0].signum(), false, count, edge);
+        // A blocking contact zeroes the normal velocity (Box2D, no friction).
+        let vx = if v[0] != 0 && body.x - before != v[0] / 60 { 0 } else { v[0] };
+        recoil_step!(self, body, p, count, edge, horizontal);
+        self.x = body.x - offset;
+        self.y = body.y;
+        self.vy = body.vy;
+        self.grounded = body.grounded;
+        m.controller.moved_to([self.x, self.y], [vx, body.vy]);
     }
     /// One 60 Hz step of the Mosquito: senses (the 8.68 alert circle against
     /// the hero body, then the terrain ray), the FSM, and the gravity-free
@@ -5701,6 +5866,7 @@ impl EnemyWorld {
                 Runtime::Mawlek(_) => 18,
                 Runtime::GruzMother(_) => 19,
                 Runtime::FsmActor(_) => 20,
+                Runtime::MossCharger(_) => 21,
             };
             let flags =
                 a.grounded as u32 | (a.health.dead as u32) << 1 | ((a.health.flash > 0) as u32) << 2;
@@ -6600,6 +6766,11 @@ impl EnemyWorld {
                         invincible: true,
                         ..spec.health
                     },
+                    // `HealthManager.invincible` from the start; `In Air` clears it.
+                    _ if matches!(actor.runtime, Runtime::MossCharger(_)) => hk_sim::EnemyParams {
+                        invincible: actor.moss_charger().is_some_and(|m| m.controller.invincible()),
+                        ..spec.health
+                    },
                     _ => spec.health,
                 };
                 match actor.health.strike(health_params, hit.damage) {
@@ -6623,6 +6794,7 @@ impl EnemyWorld {
                                 Runtime::AcidFlyer(f) => f.controller.die(),
                                 Runtime::Mosquito(m) => m.controller.die(),
                                 Runtime::MossWalker(m) => m.controller.die(),
+                                Runtime::MossCharger(m) => m.controller.die(),
                                 Runtime::Baldur(r) => r.controller.die(),
                                 Runtime::Aspid(a) => a.controller.die(),
                                 Runtime::Hatcher(h) => h.controller.die(),
@@ -6820,6 +6992,15 @@ impl EnemyWorld {
                     // `HealthManager::Invincible` sends BLOCKED HIT, which only
                     // the four Shield states answer: the bump, then the chain.
                     Hit::Blocked => {
+                        // `BLOCKED HIT` -> `Line Loop`, which bursts it out of the grass (its
+                        // preventInvincibleEffect keeps the block silent).
+                        if let (Runtime::MossCharger(m), true) =
+                            (&mut actor.runtime, crate::modules::require(crate::modules::MOSS_CHARGER))
+                        {
+                            if m.controller.blocked_hit(cardinal).play.is_some() {
+                                m.animation_tick = 0;
+                            }
+                        }
                         if let Runtime::ZombieShield(shield) = &mut actor.runtime {
                             let actions = shield.controller.blocked_hit();
                             if !actions.is_empty() {
@@ -7105,6 +7286,18 @@ impl EnemyWorld {
                     m.animation_tick,
                     (actor.x, actor.y),
                     m.controller.facing(),
+                )
+            } else if let Some(m) = actor.moss_charger() {
+                // `SetMeshRenderer` off in the tuft. The art faces right at scale +1, which this
+                // draw path calls -1.
+                if !m.controller.visible() {
+                    continue;
+                }
+                (
+                    m.clip(spec),
+                    m.animation_tick,
+                    (actor.x, actor.y),
+                    -m.controller.dir(),
                 )
             } else if let Some(m) = actor.mosquito() {
                 (

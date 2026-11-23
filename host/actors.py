@@ -423,6 +423,18 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Moss Charger has no Walker and no collider of its own; the name and its
+        # NonBouncer are the gate (host/moss_charger.py).
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Moss Charger') \
+                and any(kind == 'NonBouncer' for _, kind, _ in records):
+            from moss_charger import recognize as recognize_charger
+            try:
+                control = recognize_charger(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         # Gruz Mother (`Giant Fly`): its own controller, by name, ahead of the
         # Gruzzer gate (whose `Fly` prefix it does not share anyway).
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'] == 'Giant Fly' \
@@ -734,6 +746,12 @@ def generated_actor_records(region):
         wanted = bool(control.get('trigger_body'))
         colliders = [collider for collider in actor['colliders']
                      if 'bounds' in collider and bool(collider.get('trigger')) == wanted]
+        if control.get('no_body_collider'):
+            # No serialized collider: the controller hands the guest the frame's box. The spec's own box is the
+            # empty one at the origin.
+            if colliders:
+                raise ValueError('collider-less controller with a serialized body collider: ' + actor['source'])
+            colliders = [{'bounds': list(actor['position'][:2]) * 2}]
         if control['kind'] == 'FsmActor':
             # A family with no serialized collider: tk2d builds its box from the frame that plays, and the guest
             # reads that table (hk_sim::fsm_actor). The spec's own box is the empty one at the origin.
@@ -862,6 +880,17 @@ def generated_actor_records(region):
             initial_direction, random_start_direction = -1, False
             # `Roams` rides the placement's start-alert word: a roamer starts awake.
             start_alert = control['roams']
+        elif control['kind'] == 'MossCharger':
+            from moss_charger import CLIP_SLOTS as CHARGER_SLOTS
+            charger_clips = tuple(slot + '_clip' for slot, _ in CHARGER_SLOTS)
+            if any(key not in actor for key in charger_clips) or not actor.get('corpse'):
+                raise ValueError(f'Moss Charger is missing cooked clips or corpse: {actor["source"]}')
+            clips = '[' + ','.join(str(actor[key]) for key in charger_clips) + ']'
+            rng = '[' + ','.join(map(str, control['range_q16'])) + ']'
+            controller = 'hk_sim::ActorController::MossCharger {' + f'clips:{clips},range:{rng}' + '}'
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            # Scale +1 faces right, the art's authored side.
+            initial_direction, random_start_direction = 1, False
         elif control['kind'] == 'GruzMother':
             # The fight's numbers are shared/hk-sim/src/gruz_mother.rs, asserted
             # by host/false_knight_art.py's Gruz Mother bank; the polygon and
@@ -996,6 +1025,7 @@ def generated_actor_records(region):
             + (blocker_clips if control['kind'] == 'Blocker' else ()) \
             + (pigeon_clips if control['kind'] == 'Pigeon' else ()) \
             + (moss_clips if control['kind'] == 'MossWalker' else ()) \
+            + (charger_clips if control['kind'] == 'MossCharger' else ()) \
             + (mosquito_clips if control['kind'] == 'Mosquito' else ()) \
             + (guard_clips if control['kind'] == 'HuskGuard' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ()) \
