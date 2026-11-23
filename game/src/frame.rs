@@ -1274,7 +1274,10 @@ pub fn simulate(
                 game.vitals.soul = game.vitals.soul.saturating_sub(hero.fireball.cost);
                 if cue == hk_sim::SpellCue::Burst {
                     camera::request(camera::Shake::Big);
-                    ability_sound(audio::FIREBALL);
+                    // `hero_scream_spell` began with the antic; the cast sound stands in where it cannot.
+                    if !scene_sfx::spell_ready() {
+                        ability_sound(audio::FIREBALL);
+                    }
                     ability_fx::scream(&game.player);
                 }
             }
@@ -1299,13 +1302,16 @@ pub fn simulate(
         if let Some(choice) = game.cast.take_chosen() {
             // RelinquishControl: no bounce carries into the spell.
             game.nail_response = hk_sim::NailResponse::new();
+            // `Quake Antic`'s and `Scream Antic1`'s AudioPlay.
             if choice == hk_sim::Choice::Quake {
                 game.player.start_quake(&QUAKE_PARAMS);
                 // `Quake Antic`'s EnemyKillShake.
                 camera::request(camera::Shake::Kill);
+                scene_sfx::play(scene_sfx::HERO_QUAKE_SPELL_PREPARE);
                 unsafe { HK_SPELL_QUAKES = HK_SPELL_QUAKES.wrapping_add(1) }
             } else {
                 game.player.start_scream();
+                scene_sfx::play(scene_sfx::HERO_SCREAM_SPELL);
                 unsafe { HK_SPELL_SCREAMS = HK_SPELL_SCREAMS.wrapping_add(1) }
             }
         }
@@ -1621,9 +1627,14 @@ pub fn simulate(
         if hard {
             hard_landing::landed(r.scene, &mut game.player);
         }
-        // `Quake1 Land`: BigShake and `Q Slam`'s blast; the hard landing's sound stands in for
-        // the land's own, and the Focus dust for the blast where its art is not resident.
+        // `Quake1 Land`: BigShake, `hero_quake_spell_impact` and `Q Slam`'s blast. Where the impact
+        // cannot play the hard landing's sound stands in, and the Focus dust for the blast where its
+        // art is not resident.
         let quake_landed = game.player.spell == hk_sim::HeroSpell::QuakeLand(0);
+        let impact = quake_landed && scene_sfx::spell_ready();
+        if impact {
+            scene_sfx::play(scene_sfx::HERO_QUAKE_SPELL_IMPACT);
+        }
         if quake_landed {
             camera::request(camera::Shake::Big);
             if !ability_fx::quake_land(&game.player) {
@@ -1635,8 +1646,9 @@ pub fn simulate(
             }
         }
         hard_landing::tick(&game.player);
+        // The impact is the landing's only sound: no landing for the movement sounds to answer.
         audio::movement_tick(
-            was_grounded,
+            was_grounded || impact,
             game.player.grounded,
             (game.door.entry_footsteps() || (dir != 0 && !locked))
                 && game.vitals.can_control()
