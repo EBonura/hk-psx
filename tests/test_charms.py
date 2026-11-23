@@ -70,6 +70,7 @@ class CookedCatalogueTests(unittest.TestCase):
         self.assertEqual(numeric['focus']['deep_focus'], {'numerator': 33, 'denominator': 20, 'heal': 2,
                                                           'multiplier': numeric['focus']['deep_focus']['multiplier']})
         self.assertEqual(numeric['steady_body_recoil_ticks'], 0)
+        self.assertEqual((numeric['fragile_greed']['numerator'], numeric['fragile_greed']['denominator']), (1, 5))
         self.assertEqual(numeric['spell_twister_cost'], 24)
         self.assertEqual((numeric['shaman_stone']['damage'], numeric['shaman_stone']['x'],
                           numeric['shaman_stone']['y']), (20, [13, 10], [8, 5]))

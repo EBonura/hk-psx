@@ -21,6 +21,7 @@ pub const BASE: HeroParams = HeroParams {
     nail_response: crate::NAIL_RESPONSE_PARAMS,
     ground_speed: crate::PARAMS.speed,
     dash_cooldown_ticks: crate::PARAMS.dash_cooldown_ticks,
+    greed: false,
 };
 /// The cheat key the cache was composed for, and whether it is still current.
 static mut KEY: u8 = 0;

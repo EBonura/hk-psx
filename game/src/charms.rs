@@ -48,6 +48,9 @@ pub enum Effect {
     SoulPerHit(u16),
     /// Fragile Heart: `CharmUpdate` raises `maxHealth` over `maxHealthBase`.
     MaxHealth(u16),
+    /// Fragile Greed: `HealthManager::Die` adds `CeilToInt(n * 0.2f)` to each drop count
+    /// while the charm is worn and unbroken; `GREED_SHARE` is that 0.2 (`geo_drops`).
+    GeoDrops,
     /// Fragile Strength: `Set Slash Damage` truncates nail damage times 1.5.
     NailScale { numerator: u16, denominator: u16 },
     /// Grubsong: `TakeDamageCharmEffects` charges SOUL on a damaging hit.
@@ -438,10 +441,28 @@ fn compose(s: &State, mut p: HeroParams) -> HeroParams {
                     alone
                 };
             }
+            // `Die` tests `brokenCharm_24` as well as `equippedCharm_24`.
+            Effect::GeoDrops => p.greed = !s.broken(charm),
             Effect::None | Effect::SoulOnDamage { .. } => {}
         }
     }
     p
+}
+/// An enemy's three drop counts (small, medium, large) as `HealthManager::Die` flings them:
+/// with Fragile Greed each gains `ceil(n * GREED_SHARE)`, more coins of the same sizes.
+/// `geo::World` queues what its loose pool cannot seat yet, so none is lost.
+#[inline(never)]
+pub fn geo_drops(drops: [u16; 3]) -> [u16; 3] {
+    greed_drops(crate::hero_params::current(), drops)
+}
+fn greed_drops(p: &HeroParams, mut drops: [u16; 3]) -> [u16; 3] {
+    let (numerator, denominator) = GREED_SHARE;
+    if p.greed {
+        for n in &mut drops {
+            *n += (*n * numerator + denominator - 1) / denominator;
+        }
+    }
+    drops
 }
 /// `HeroController::TakeDamageCharmEffects`, called after a hit that landed.
 /// A hit's damage at the board's present state (doubled while overcharmed).
@@ -1191,6 +1212,21 @@ mod tests {
         screen.step(DOWN);
         assert_eq!(screen.message, None);
         assert!(screen.step(0x2000) && !screen.open);
+    }
+    #[test]
+    fn fragile_greed_adds_a_ceiling_fifth_to_every_drop_size() {
+        const FRAGILE_GREED: usize = 24;
+        let mut s = owning(&[FRAGILE_GREED]);
+        let drops = |s: &State, d| greed_drops(&compose(s, hero_base()), d);
+        assert_eq!(drops(&s, [40, 5, 0]), [40, 5, 0], "an unworn charm adds nothing");
+        assert_eq!(s.toggle(FRAGILE_GREED), Ok(true));
+        // CeilToInt(n * 0.2f): 2 becomes 3, 5 becomes 6, 40 becomes 48, 0 stays 0.
+        assert_eq!(drops(&s, [2, 0, 0]), [3, 0, 0]);
+        assert_eq!(drops(&s, [40, 5, 0]), [48, 6, 0]);
+        assert_eq!(drops(&s, [1, 1, 1]), [2, 2, 2]);
+        // `brokenCharm_24` turns it off, as Die tests it.
+        s.broken = s.broken.or(bit(FRAGILE_GREED));
+        assert_eq!(drops(&s, [40, 5, 0]), [40, 5, 0]);
     }
     #[test]
     fn charms_go_on_and_come_off_only_at_a_bench() {
