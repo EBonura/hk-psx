@@ -74,6 +74,9 @@ psx-pack = { path = "../.psoxide/sdk/crates/psx-pack" }
 psx-spu = { path = "../.psoxide/sdk/crates/psx-spu" }
 psx-mc = { path = "../.psoxide/sdk/crates/psx-mc" }
 psx-splash = { path = "../.psoxide/sdk/crates/psx-splash" }
+# The scene core (CORE-ABI.md): the embedded core image, `__core_boot` (the EXE's entry) and the calls to the
+# window's jump table. Linked with psoxide-core.ld (host/build_guest.py).
+psx-core = { path = "../.psoxide/sdk/crates/psx-core", features = ["link"] }
 
 hk-format = {path="../shared/hk-format"}
 hk-sim = {path="../shared/hk-sim"}

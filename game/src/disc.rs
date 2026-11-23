@@ -4,7 +4,8 @@
 use crate::room_decode::{Decoder, Error as DecodeError};
 use hk_format::coverage::{CoverageValidation, CoverageView, Expected as CoverageExpected};
 use hk_format::{Room, Scene, WorldMeta};
-use psx_pack::cd::{SectorReader, SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
+use psx_core::link as core_cd;
+use psx_pack::cd::{SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
 /// The loader's names for the SDK's one-transfer CD engine with a sector count
 /// (`psx_cdstream::counted`): one read or head park at a time, its progress while sectors land,
@@ -478,10 +479,6 @@ const _: () = assert!(REGION_SCENE_LOCAL.len() <= 1 << 16);
 // where the mapping is built.
 const _: () = assert!(SCENE_COUNT <= 1 << 8);
 const EMPTY: usize = usize::MAX;
-const SEEK_POLL: u32 = 4_000_000;
-/// A seek-first read's bound on the seek (SDK fce1f6855bc1: the reader waits by time, not spins):
-/// the SDK's own `FIRST_SECTOR_WAIT`, which covers a drive spinning up from idle.
-const SEEK_WAIT: psx_io::cd::wait::WaitTime = psx_io::cd::wait::FIRST_SECTOR_WAIT;
 /// Byte operations one decoder step may run between pad checkpoints during a load. 4096
 /// took about a VBlank on a dense room (the False Knight journey's first load) before the
 /// format walks went (`room_decode::TRUST_COOK`); a step now costs a few milliseconds. On a tour
@@ -978,7 +975,6 @@ pub struct Cache {
     /// resident. At 47 scenes that table and its header were 21,888 bytes of
     /// `.data`; at the full catalogue they would be about 221,000.
     group_bases: [u32; GROUPS],
-    reader: SectorReader,
     ready: bool,
     loaded_scenes: usize,
     loaded_atlases: usize,
@@ -1105,61 +1101,39 @@ fn checkpoint() {
     crate::input::checkpoint();
     crate::intro::tick();
 }
-/// The pad poll a seek or a sector wait takes between looks (a named function so the
-/// `dyn FnMut` shims stay two jumps).
-#[inline(never)]
-fn pad_idle() {
+/// The scene core's idle hook (CORE-ABI.md 3.1): every look of every CD wait inside the core takes the pad poll
+/// that comes due, as HK's own polled waits did between looks, so a route tape's polls land where they did.
+extern "C" fn core_idle() {
     crate::input::poll_only();
 }
-#[inline(never)]
-fn sector(reader: &mut SectorReader, dst: &mut [u32]) -> bool {
-    assert!(dst.len() == SECTOR_WORDS);
-    for word in dst.iter_mut() {
-        unsafe { core::ptr::write_volatile(word, 0) };
-    }
-    // The next sector can be several frames away (the head still settling, the
-    // drive at its own pace), so wait for it a look at a time and take the pad
-    // poll that comes due between looks; `read_sector` spins without one. The
-    // bound is the reader's own (`DATA_POLL`, a worst-case seek).
-    let mut looks = 0u32;
-    loop {
-        match unsafe { reader.try_read_sector(dst.try_into().unwrap()) } {
-            Ok(true) => break,
-            Ok(false) if looks < SEEK_POLL => {
-                looks += 1;
-                crate::input::poll_only();
-            }
-            _ => return false,
-        }
-    }
-    unsafe { HK_CD_SECTORS_READ = HK_CD_SECTORS_READ.saturating_add(1) };
-    scene_sectors(1);
-    true
+/// This program's copy of its scene table (SCENES.TBL at member LBA 22, CORE-ABI.md 1), read once at boot:
+/// the header and HK's rows (one Program image, its START scene). A row more needs more words here.
+static mut SCENE_TABLE: [u32; 16 + 8 * 2] = [0; 16 + 8 * 2];
+/// The table [`psx_core::link::switch`] and `load_image` take, once `Cache::init` has read it.
+pub fn scene_table() -> &'static [u32] {
+    // SAFETY: written only by `init`, before anything reads it.
+    unsafe { &*(&raw const SCENE_TABLE) }
 }
-/// Read directory sector `index` into the scene arena. The arena is the port's
-/// staging area for bytes that are checked and then dropped, the same deal the
-/// ADPCM banks and the per-scene effect art make; `init` is the only caller and
-/// refuses to run while a scene owns the arena.
-fn header_sector(reader: &mut SectorReader, index: usize) -> bool {
-    if (index + 1) * SECTOR_BYTES > SCENE_ARENA_BYTES {
+/// Read `sectors` from member LBA `lba` into the scene arena through the scene core: one seek-first start, the
+/// core's retries and its proven Pause at the end.
+fn core_read(lba: u32, sectors: usize) -> bool {
+    if sectors * SECTOR_BYTES > SCENE_ARENA_BYTES {
         return false;
     }
-    let words = unsafe {
-        core::slice::from_raw_parts_mut(
-            (&raw mut BUFFERS.words)
-                .cast::<u32>()
-                .add(index * SECTOR_WORDS),
-            SECTOR_WORDS,
-        )
-    };
-    sector(reader, words)
+    // SAFETY: the arena holds `sectors` sectors (checked above), word aligned; `init` is the only caller and
+    // refuses to run while a scene owns the arena.
+    if unsafe { core_cd::read(lba, sectors as u32, (&raw mut BUFFERS.words).cast::<u32>(), None) } != 0 {
+        return false;
+    }
+    unsafe { HK_CD_SECTORS_READ = HK_CD_SECTORS_READ.saturating_add(sectors as u32) };
+    scene_sectors(sectors);
+    true
 }
 impl Cache {
     /// Safety: exactly one Cache owns BUFFERS and the CD controller.
     pub const unsafe fn new() -> Self {
         Self {
             group_bases: [0; GROUPS],
-            reader: SectorReader::new(),
             ready: false,
             loaded_scenes: 0,
             loaded_atlases: 0,
@@ -1198,9 +1172,6 @@ impl Cache {
         {
             return Err(LoadError::RoomMismatch);
         }
-        if !unsafe { self.reader.prepare_single_speed() } {
-            return Err(LoadError::Prepare);
-        }
         // The directory is staged in the scene arena and dropped once checked,
         // like the ADPCM banks and the per-scene effect art. Refuse if anything
         // is admitted; bootstrap calls this through `prepare_ambience`, which
@@ -1208,11 +1179,15 @@ impl Cache {
         if self.loaded_scenes != 0 {
             return Err(LoadError::HeaderRead);
         }
-        if !unsafe {
-            self.reader
-                .start_read_seek_first(WORLD_PACK_DEFAULT_LBA, SEEK_WAIT)
-        } || !header_sector(&mut self.reader, 0)
-        {
+        // The scene core owns the drive's polled reads (CORE-ABI.md 3): its waits take the pad poll, and it reads
+        // its own scene table first, once, as every program on the core does.
+        core_cd::set_idle_hook(Some(core_idle));
+        // SAFETY: the one writer, before any reader.
+        if core_cd::read_table(unsafe { &mut *(&raw mut SCENE_TABLE) }).is_err() {
+            return Err(LoadError::Prepare);
+        }
+        // The whole directory in one read: its size is the build's (PACK_HEADER_SECTORS).
+        if !core_read(WORLD_PACK_DEFAULT_LBA, PACK_HEADER_SECTORS) {
             return Err(LoadError::HeaderRead);
         }
         let h = {
@@ -1226,14 +1201,6 @@ impl Cache {
             || h.table_bytes as usize != TOTAL_CHUNKS * 24
         {
             return Err(LoadError::HeaderInvalid);
-        }
-        for i in 1..PACK_HEADER_SECTORS {
-            if !header_sector(&mut self.reader, i) {
-                return Err(LoadError::HeaderRead);
-            }
-        }
-        unsafe {
-            self.reader.stop();
         }
         // Every field of every entry is checked against the generated manifests
         // and the running sector cursor, exactly as when the parsed table was
@@ -1279,7 +1246,7 @@ impl Cache {
         }
         // MUSIC.XA by name: the pack's cooked layout does not fix where the XA songs
         // sit, and a disc that moves this program keeps the name. Read through the
-        // polled reader, before the CD interrupt owns the controller.
+        // scene core, before the CD interrupt owns the controller.
         self.find_xa();
         cd_stream::install();
         self.ready = true;
@@ -1319,13 +1286,8 @@ impl Cache {
         // first sector is the descriptor: told, it copies the whole read for each of the two.
         unsafe { core::arch::asm!("/* {0} */", inout(reg) lba, options(pure, nomem, nostack, preserves_flags)) };
         loop {
-            if !unsafe { self.reader.start_read_seek_first(lba, SEEK_WAIT) }
-                || !header_sector(&mut self.reader, 0)
-            {
+            if !core_read(lba, 1) {
                 return;
-            }
-            unsafe {
-                self.reader.stop();
             }
             let s = unsafe { &*(&raw const BUFFERS.words).cast::<[u8; psx_io::iso::BYTES]>() };
             if lba != psx_io::iso::PVD_LBA {
@@ -1913,8 +1875,11 @@ impl Cache {
         let mut words=[0u32;SECTOR_WORDS];
         for pass in 0..2 {
             if pass==1 && !crate::runner_audio::begin_overlay() {return Err(LoadError::RoomMismatch);}
-            if !unsafe{self.reader.start_read_seek_first_with(lba,SEEK_WAIT,&mut pad_idle)} {
-                unsafe{self.reader.stop();}
+            // A stream session of the scene core (CORE-ABI.md 3.1): one seek-first start, then a sector at a time into
+            // `words`, validated (and on the second pass uploaded) as it lands, then the core's proven Pause.
+            if core_cd::client_attach()!=0 {return Err(LoadError::PayloadRead);}
+            if core_cd::stream_open(lba,0)!=0 {
+                core_cd::client_detach();
                 return Err(LoadError::PayloadRead);
             }
             let result=(|| {
@@ -1922,7 +1887,10 @@ impl Cache {
                 let mut offset=0;
                 while offset<size {
                     checkpoint();
-                    if !sector(&mut self.reader,&mut words){return Err(LoadError::PayloadRead);}
+                    // SAFETY: `words` is one sector, word aligned.
+                    if unsafe{core_cd::stream_sector(words.as_mut_ptr())}!=0 {return Err(LoadError::PayloadRead);}
+                    unsafe{HK_CD_SECTORS_READ=HK_CD_SECTORS_READ.saturating_add(1)};
+                    scene_sectors(1);
                     let n=(size-offset).min(SECTOR_BYTES);
                     let bytes=unsafe{core::slice::from_raw_parts(words.as_ptr().cast::<u8>(),n)};
                     if !crate::runner_audio::validate_fragment(mossman,offset,bytes){return Err(LoadError::RoomMismatch);}
@@ -1933,8 +1901,10 @@ impl Cache {
                 if hash.finish()!=checksum {return Err(LoadError::RoomMismatch);}
                 Ok(())
             })();
-            unsafe{self.reader.stop();}
+            let paused=core_cd::pause();
+            core_cd::client_detach();
             result?;
+            if paused!=0 {return Err(LoadError::PayloadRead);}
         }
         crate::runner_audio::finish_overlay(mossman);
         Ok(())

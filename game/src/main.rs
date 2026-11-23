@@ -5,6 +5,8 @@
 #![feature(optimize_attribute)]
 #![feature(fn_align)]
 extern crate psx_rt;
+// The scene core: `__core_boot` is the entry (psoxide-core.ld) and its stored image rides `.data`.
+extern crate psx_core;
 use hk_format::{i32_at, u32_at, Room};
 use hk_sim::{HeroAttacks, HeroHit, Nail, Player, ONE};
 use psx_gpu::{self as gpu, display::DoubleBuffer, display::Resolution, display::VideoMode};

@@ -318,7 +318,10 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # it; --emit-relocs keeps the relocations its fixups and checks read.
     # The boot overlay's stored bytes lie where .bss will be (code_modules.boot_layer), so the section-overlap check is
     # off, as for every psoxide-boot.ld program; the IMAGE, MODLINK and BOOTRUN region bounds still hold.
-    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs','-Clink-arg=-u__boot_entry','-Clink-arg=--no-check-sections',f'-Clink-arg=-Map={link_map}']
+    # The scene core (CORE-ABI.md 4.1): psoxide-core.ld stores psx-core's image after .data, under .bss, and makes
+    # `__core_boot` the entry, which runs the boot mover next (4.2a). Its stored copy overlaps .bss too.
+    core_script=ROOT/'.psoxide/sdk/psoxide-core.ld'
+    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}',f'-Clink-arg=-T{core_script}','-Clink-arg=--emit-relocs','-Clink-arg=-u__core_boot','-Clink-arg=-u__boot_entry','-Clink-arg=--no-check-sections',f'-Clink-arg=-Map={link_map}']
     # A panic is a BREAK at the faulting instruction (-Cpanic=immediate-abort), not a formatted message: core::fmt, the panic
     # Location records and their file names (about 23 KB of the resident image) stay out of RAM. psx-rt's exception handler
     # records Cause/EPC/BadVAddr (__psx_rt_fault_*), which the gates already read (__psx_rt_fault_count) and
