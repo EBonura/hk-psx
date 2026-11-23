@@ -17,7 +17,7 @@ from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, ROOM_BYTE_BUDGET, TEXT
 from focus import FOCUS_CLIPS,source_focus_values,generated_focus_params
 from superdash import source_superdash_values
 from dream_nail import source_dream_nail_values,generated_dream_nail_params
-from spells import source_spell_values,generated_spell_params
+from spells import source_spell_values,generated_spell_params,source_quake_scream_values,generated_quake_scream_params
 from actors import actor_sources,hazard_sources,shroom_sources,source_vital_values,generated_vital_params,generated_nail_response_params
 from UnityPy.helpers.MeshHelper import MeshHandler
 
@@ -1080,6 +1080,7 @@ def cook(source=None,scene=None,region=None,output=None,shared_pixels=None,share
     params+=generated_nail_response_params(constants,dt)
     params+=generated_dream_nail_params(source_dream_nail_values(s))
     params+=generated_spell_params(source_spell_values(s))
+    params+=generated_quake_scream_params(source_quake_scream_values(s))
     if write_shared:
         vital_values=source_vital_values(s,constants)
         params+=generated_vital_params(vital_values)
