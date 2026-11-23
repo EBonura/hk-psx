@@ -30,6 +30,7 @@ dependencies = [
  "hk-format",
  "hk-sim",
  "psx-cdstream",
+ "psx-core",
  "psx-display",
  "psx-fmv",
  "psx-fx",
@@ -70,6 +71,13 @@ dependencies = [
  "psx-hw",
  "psx-io",
  "psx-rt",
+]
+
+[[package]]
+name = "psx-core"
+version = "0.1.0"
+dependencies = [
+ "psx-scene-abi",
 ]
 
 [[package]]
@@ -184,6 +192,10 @@ dependencies = [
  "psx-math",
  "psx-tick",
 ]
+
+[[package]]
+name = "psx-scene-abi"
+version = "0.1.0"
 
 [[package]]
 name = "psx-splash"

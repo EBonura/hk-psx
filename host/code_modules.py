@@ -597,11 +597,11 @@ def layer(script):
     script = sub(r'^(STACK_RESERVE = [^\n]*)$',
                  r'\1\nPOOL_BYTES = %#x; /* hk-psx: streaming code pool, host/code_modules.py */\n'
                  r'POOL_BASE = STACK_INIT - STACK_RESERVE - POOL_BYTES;' % POOL_BYTES, script)
-    # The SDK's RAM region ends RAM_SIZE - BIOS_SIZE above the load address less the reserve; the game's ends 256 bytes
-    # lower, at STACK_INIT, so the link bound agrees with `__heap_end` and the reported stack floor.
+    # The SDK's RAM region ends at the top of RAM less the reserve; the game's ends 256 bytes lower, at STACK_INIT, so
+    # the link bound agrees with `__heap_end` and the reported stack floor.
     # HK_MEASURE_OVERLAP (bytes, measurement only, refused outside `build_guest.py --work`): lets the static image run that far
     # into the pool so a build that does not fit yet still links and publishes, and the pool-fit gate and the map can be read.
-    script = sub(r'LENGTH = EXE_HEAD_BYTES \+ RAM_SIZE - BIOS_SIZE - STACK_RESERVE$',
+    script = sub(r'LENGTH = EXE_HEAD_BYTES \+ RAM_BASE \+ RAM_SIZE - LOAD_ADDR - STACK_RESERVE$',
                  'LENGTH = EXE_HEAD_BYTES + STACK_INIT - LOAD_ADDR - STACK_RESERVE - POOL_BYTES'
                  + (f' + {MEASURE_OVERLAP:#x} /* hk-psx: HK_MEASURE_OVERLAP, measurement only */' if MEASURE_OVERLAP else '') + '\n'
                  f'    MODLINK (rwx) : ORIGIN = {LINK_BASE:#x}, LENGTH = {LINK_STRIDE * len(MODULES):#x}', script)
@@ -669,15 +669,16 @@ def boot_layer(script, sdk_boot):
     The SDK script places the overlay at the heap's start (`BOOT_VMA = __bss_end`); HK has no heap worth the name (the few
     KB between `.bss` and the pool), so the overlay runs from the pool's base instead. The pool is outside `.bss`, so
     psx-rt's `_start` does not clear it after the mover (game/src/boot.rs) has run, and nothing writes the pool before the
-    title module installs (game/src/main.rs: the splash runs before the first CD read). It is stored after `.data` as the SDK
-    lays it out (`__boot_lma`, read by psoxide.ld's `__load_end`).
+    title module installs (game/src/main.rs: the splash runs before the first CD read). It is stored after the scene core's
+    stored image, as the SDK lays the two out (`__boot_lma` = `__psx_core_store_end`, read by psoxide.ld's `__load_end`).
+    The EXE's entry is the core's `__core_boot` (psoxide-core.ld), which goes on to `__boot_entry` (CORE-ABI.md 4.2a).
 
     The SDK's sections are taken from its script, not copied here, and given a region of their own (BOOTRUN, the pool):
     linked as it is (`-T psoxide-boot.ld` with BOOT_VMA at the pool), ld.lld puts `.boot` in IMAGE, which ends at the
     pool, and refuses the link ("section '.boot' will not fit in region 'IMAGE'", measured 11-23). They are placed
     ahead of `.text` as the modules are, with HK's additions (BOOT_SECTIONS) beside the SDK's patterns."""
     m = re.search(r'^SECTIONS \{\n(.*)^\}\n', sdk_boot, flags=re.M | re.S)
-    if not m or '__initial_pc = __boot_entry;' not in sdk_boot or 'INSERT AFTER .bss;' not in sdk_boot:
+    if not m or 'PROVIDE(__initial_pc = __boot_entry);' not in sdk_boot or 'INSERT AFTER .bss;' not in sdk_boot:
         raise ValueError('psoxide-boot.ld changed; review the boot overlay layer')
     body = m[1]
 
@@ -695,9 +696,8 @@ def boot_layer(script, sdk_boot):
                  r'\1\n    BOOTRUN (rwx) : ORIGIN = %#x, LENGTH = %#x' % (pool_base(), POOL_BYTES), script)
     block = ('    /* hk-psx: the SDK\'s boot overlay (psoxide-boot.ld), run from the module pool before the title module\n'
              '       installs; host/code_modules.py boot_layer. */\n'
-             '    __initial_pc = __boot_entry;\n'
              '    BOOT_VMA = POOL_BASE;\n'
-             '    BOOT_LMA = __data_end;\n' + body)
+             '    BOOT_LMA = __psx_core_store_end;\n' + body)
     return sub(r'^(    \.text : \{)$', block.replace('\\', '\\\\') + r'\n\1', script)
 
 
