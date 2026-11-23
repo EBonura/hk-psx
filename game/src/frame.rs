@@ -2193,7 +2193,7 @@ pub fn simulate(
                 geo::EnemySpec {
                     source_id: e.source_id,
                     scene: r.scene as u8,
-                    drops: e.drops,
+                    drops: charms::geo_drops(e.drops),
                     fling: geo::FLING[e.mega as usize],
                     offset: e.offset,
                 },

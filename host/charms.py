@@ -552,6 +552,43 @@ def movement_charms(bodies, constants):
     }
 
 
+def fragile_greed(bodies):
+    """Charm 24's Geo, from `HealthManager::Die`.
+
+    While `equippedCharm_24` is set and `brokenCharm_24` is not, each of the three
+    drop counts (small, medium, large) gains `Mathf.CeilToInt(n * 0.2f)` before
+    the coins are flung, so the extra coins are more coins of the same size. The
+    guest has no floats: the multiplier is the small rational it stands for, and
+    the ceiling is integer arithmetic, checked here against float32 for every
+    count a u16 can hold.
+    """
+    import struct
+    body = bodies[('HealthManager', 'Die')]
+    start = next(i for i, (op, operand) in enumerate(body)
+                 if op == 'ldfld' and operand == 'equippedCharm_24')
+    assert body[start + 1][0].startswith('brfalse') and body[start + 4] == ('ldfld', 'brokenCharm_24') \
+        and body[start + 5][0].startswith('brtrue'), 'Die no longer gates charm 24 on it being unbroken'
+    # Three times `n = n + CeilToInt((float)n * m)`: ldloc, ldloc, conv.r4, ldc.r4, mul, call, add, stloc.
+    window = body[start + 6:start + 6 + 3 * 8]
+    multipliers = []
+    for k in range(3):
+        step = window[8 * k:8 * k + 8]
+        ops = [op for op, _ in step]
+        local = {str(step[i][1]) for i in (0, 1, 7)}
+        assert ops[2:7] == ['conv.r4', 'ldc.r4', 'mul', 'call', 'add'] and step[5][1] == 'CeilToInt' \
+            and ops[0].startswith('ldloc') and ops[1].startswith('ldloc') and ops[7].startswith('stloc') \
+            and len(local) == 1, f'Die no longer adds CeilToInt(n * m) to drop count {k}'
+        multipliers.append(step[3][1])
+    assert len(set(multipliers)) == 1, f'the three drop sizes now differ: {multipliers}'
+    numerator, denominator = _ratio(multipliers[0])
+    f32 = lambda v: struct.unpack('<f', struct.pack('<f', v))[0]
+    m = f32(multipliers[0])
+    for n in range(1 << 16):
+        assert math.ceil(f32(f32(n) * m)) == (n * numerator + denominator - 1) // denominator, \
+            f'ceil({n} * {m}) is not integer arithmetic'
+    return {'multiplier': multipliers[0], 'numerator': numerator, 'denominator': denominator}
+
+
 def steady_body(bodies):
     """Charm 14: `RecoilLeft` and `RecoilRight` return before arming a recoil.
 
@@ -668,7 +705,6 @@ UNIMPLEMENTED = {
     18: 'NailSlash scales about its own pivot, and the slash polygons are cooked in '
         'hero space without it',
     22: 'no Hatchling minion actor',
-    24: 'enemy Geo drops are cooked per actor with no multiplier hook',
     26: 'no nail art charge in the port',
     27: 'Joni’s Blessing converts every mask to Lifeblood, which the mask HUD '
         'and Focus healing rules do not model',
@@ -715,6 +751,8 @@ def _effect(charm_id, shell, bonuses, heart, nails, grub, numeric):
         return 'Effect::SoulPerHit(%d)' % bonuses[charm_id]
     if charm_id == 23:
         return 'Effect::MaxHealth(%d)' % heart
+    if charm_id == 24:
+        return 'Effect::GeoDrops'
     if charm_id == 25:
         numerator, denominator = _ratio(nails['fragile_strength'])
         return 'Effect::NailScale{numerator:%d,denominator:%d}' % (numerator, denominator)
@@ -757,7 +795,7 @@ def charm_table(catalogue, shell, bonuses, heart, nails, grub, table, numeric):
     return rows
 
 
-def generated_charms_rs(rows, rules, defaults, layout, art, reminder):
+def generated_charms_rs(rows, rules, defaults, layout, art, reminder, greed):
     """The guest table. `Charm` and `Effect` are declared in game/src/charms.rs.
 
     The panel geometry is cooked with the table because the icon size sets the
@@ -784,6 +822,8 @@ def generated_charms_rs(rows, rules, defaults, layout, art, reminder):
         '/// `Overcharm Check` counts a refused attempt and breaks through on this one.',
         f"pub const OVERCHARM_BREAK_ATTEMPT:u8={rules['overcharm_break_attempt']};",
         f'pub const CHARMS:[Charm;CHARM_COUNT]=[' + ','.join(entries) + '];',
+        '/// Fragile Greed\'s share of each drop count, `HealthManager::Die`\'s 0.2f as a ratio.',
+        'pub const GREED_SHARE:(u16,u16)=(%d,%d);' % (greed['numerator'], greed['denominator']),
         f"/// `Charm Equip Msg` ({reminder['sheet']} {reminder['key']}), wrapped as a description is.",
         'pub const BENCH_REMINDER:&str="' + '\\n'.join(quoted(l)[1:-1] for l in reminder['lines']) + '";',
         '/// The board, derived by `host/charms.py::panel_layout` against the 320x240',
@@ -1134,7 +1174,7 @@ def source_charm_values(source, assembly, scenes):
         ('HeroController', 'TakeDamageCharmEffects'), ('PlayerData', 'CalculateNotchesUsed'),
         ('GameManager', 'RefreshOvercharm'), ('HeroController', 'Move'),
         ('HeroController', 'HeroDash'), ('HeroController', 'Attack'), ('HeroController', 'DoAttack'),
-        ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight')})
+        ('HeroController', 'RecoilLeft'), ('HeroController', 'RecoilRight'), ('HealthManager', 'Die')})
     hero, constants = hero_constants(source)
     base_soul, bonuses = soul_per_hit_charms(bodies)
     heart = fragile_heart_bonus(bodies)
@@ -1144,6 +1184,7 @@ def source_charm_values(source, assembly, scenes):
     numeric = {
         'movement': movement_charms(bodies, constants),
         'steady_body_recoil_ticks': steady_body(bodies),
+        'fragile_greed': fragile_greed(bodies),
         'focus': focus_charms(source),
         'spell_twister_cost': spell_twister(source),
         'shaman_stone': shaman_stone(source),
@@ -1202,6 +1243,8 @@ def source_charm_values(source, assembly, scenes):
             'is drawn at its cooked size.',
             'Quick Slash shortens the attack state and its cooldown; the slash clips play at '
             'their cooked rate.',
+            'Fragile Greed adds its coins to enemy deaths only, as HealthManager.Die does; '
+            'SetGeoFlashing, which makes the extra coins glint, is not drawn.',
         ],
     }
 
@@ -1223,7 +1266,8 @@ def cook():
         preview.save(ROOT / f'.hkpsx/charm-icons/palette{i}.png')
     (ROOT / 'data/charms.rs').write_text(generated_charms_rs(
         values['charms'], values['equip_rules'], {'charmSlots': values['starting_notches']},
-        icons['layout'], art, values['bench_reminder']))
+        icons['layout'], art, values['bench_reminder'],
+        values['effects']['parameter_charms']['fragile_greed']))
     dump(ROOT / '.hkpsx/charm-catalog.json', values)
     print(f"{values['charm_count']} charms, {values['starting_notches']} starting notches, "
           f"overcharm breaks through on attempt {values['equip_rules']['overcharm_break_attempt']}")

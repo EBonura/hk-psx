@@ -24,6 +24,9 @@ pub struct HeroParams {
     pub ground_speed: i32,
     /// `HeroController::HeroDash`: `DASH_COOLDOWN`, or Dashmaster's `DASH_COOLDOWN_CH`.
     pub dash_cooldown_ticks: u16,
+    /// Fragile Greed worn and unbroken, which `HealthManager::Die` tests before it raises
+    /// each drop count (the game holds the cooked share).
+    pub greed: bool,
 }
 impl HeroParams {
     /// The movement record a grounded or airborne step runs with.
