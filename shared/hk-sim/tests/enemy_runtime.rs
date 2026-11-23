@@ -522,6 +522,13 @@ mod boss_fx {
     pub const HIT: i32 = 3;
     pub fn request(_: i32, _: i32, _: i32, _: usize) {}
 }
+/// game/src/main.rs `nail_parry` over the stubs here: `NailParry`'s parryInvulnTimer
+/// (INVUL_TIME_PARRY 0.25 s, 15 ticks), EnemyKillShake and the parry sound.
+pub fn nail_parry(player: &mut hk_sim::Player) {
+    player.quake_invuln = 15;
+    camera::request(camera::Shake::Kill);
+    scene_sfx::play(scene_sfx::HERO_PARRY);
+}
 mod camera {
     /// `game/src/camera.rs` declares these; `tests/camera_shake_runtime.rs`
     /// drives the real module over the serialized `CameraShake` table.
