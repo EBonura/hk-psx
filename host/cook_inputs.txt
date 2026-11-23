@@ -1,5 +1,15 @@
 # Code whose change invalidates cooked regions. Shared by host/hk-build/main.rs
 # (whole-cook cache) and host/regions.py (per-region reuse).
+#
+# The build hashes every path here, both sections, to decide whether to run the
+# cook. Per region, a Python file above the divider counts only in the code that
+# region's cook ran (host/cook_trace.py), and any repo Python the cook runs counts
+# that way whether it is listed or not; a non-Python file above the divider is
+# hashed whole into every region's key. Listing a Python file here is what makes
+# the build rerun the cook when it changes, which now recooks only the regions
+# whose cook ran the changed code.
+# The region-cook tracer: hashed whole into every region's key.
+host/cook_trace.py
 host/cook.py
 # The texel quantiser every cooked texture goes through.
 host/quantize.py

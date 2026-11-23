@@ -154,26 +154,42 @@ class RegionTests(unittest.TestCase):
 
 
 class CookReuseTests(unittest.TestCase):
-    """A region's reuse survives the provenance list growing, not a file changing."""
+    """A region's reuse survives the provenance list growing, not a file or its code changing."""
     def test_growth_keeps_a_cook_and_a_changed_input_drops_it(self):
-        import hashlib,json,tempfile
-        from regions import cook_cache_key,cached_cook,record_cook,inputs_digest
+        import hashlib,json,tempfile,cook_trace
+        from regions import cook_cache_key,cached_cook,record_cook
         region={'scene_id':3,'activation_bounds':[0,0,1,1]}
         with tempfile.TemporaryDirectory() as temp:
             d=Path(temp)
             for name in ('scene.json','unsupported.json'):(d/name).write_text('{}')
             (d/'room.hk').write_bytes(b'pack')
             cooked={'pack_sha256':hashlib.sha256(b'pack').hexdigest()}
-            first={'code':'c','inputs':{'a':'1','b':'2'}}
-            # A pack cooked before inputs were recorded is kept once, and rewritten.
-            legacy=cook_cache_key(region,first)['legacy']
-            (d/'cook-cache.json').write_text(json.dumps({'key':legacy,'cooked':cooked}))
-            self.assertEqual(cached_cook(d,cook_cache_key(region,first)),cooked)
-            self.assertIn('input_names',json.loads((d/'cook-cache.json').read_text()))
-            grown={'code':'c','inputs':{'a':'1','b':'2','new':'3'}}
+            first={'data':'c','inputs':{'a':'1','b':'2'}}
+            key=cook_cache_key(region,first)
+            trace={'scheme':cook_trace.SCHEME,'files':{},'shadow':[]}
+            def write(**fields):
+                record={'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked,'trace':trace}
+                record.update(fields)
+                (d/'cook-cache.json').write_text(json.dumps(record))
+            write()
+            self.assertEqual(cached_cook(d,key),cooked)
+            grown={'data':'c','inputs':{'a':'1','b':'2','new':'3'}}
             self.assertEqual(cached_cook(d,cook_cache_key(region,grown)),cooked)
-            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'code':'c','inputs':{'a':'1','b':'9','new':'3'}})))
-            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'code':'other','inputs':grown['inputs']})))
+            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'data':'c','inputs':{'a':'1','b':'9','new':'3'}})))
+            self.assertIsNone(cached_cook(d,cook_cache_key(region,{'data':'other','inputs':grown['inputs']})))
+            # The code the region ran: no trace, or a file of it gone, is no reuse.
+            write(trace=None)
+            self.assertIsNone(cached_cook(d,key))
+            write(trace=dict(trace,files={'host/no-such-file.py':{'sha':'0','mask':None,'digest':'0'}}))
+            self.assertIsNone(cached_cook(d,key))
+            # A pack cooked before traces existed is never reused.
+            write(trace=None,key=key['key']);record=json.loads((d/'cook-cache.json').read_text());del record['trace']
+            (d/'cook-cache.json').write_text(json.dumps(record))
+            self.assertIsNone(cached_cook(d,key))
+            # This process never started the tracer, so it records nothing and drops the old record.
+            write()
+            record_cook(d,key,cooked)
+            self.assertFalse((d/'cook-cache.json').exists())
 
 if __name__ == '__main__':
     unittest.main()

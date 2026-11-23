@@ -16,6 +16,24 @@ import struct
 import subprocess
 from pathlib import Path
 
+
+def cook_input_sections():
+    """host/cook_inputs.txt as (paths above the postpass divider, paths below it)."""
+    above,below,found=[],[],False
+    for line in (Path(__file__).resolve().parents[1]/'host/cook_inputs.txt').read_text().splitlines():
+        line=line.strip()
+        if line=='# --- postpass only ---':found=True;continue
+        if not line or line.startswith('#'):continue
+        (below if found else above).append(line)
+    return above,below
+
+
+if __name__=='__main__':
+    # Before any cooker module is imported: a region's reuse key is the code its cook ran
+    # (host/cook_trace.py). Postpass code is declared not to change a cooked byte.
+    import cook_trace
+    cook_trace.start(cook_input_sections()[1])
+
 from source import ROOT, Source, dump
 from scene import Scene
 from cook import cook, CAM_X, CAM_Y, Atlas, append_actor_art
@@ -416,25 +434,26 @@ def scene_metadata(sc, info):
 
 
 def cook_fingerprints(source):
-    """Inputs and code identity for per-region cook reuse.
+    """Inputs for per-region cook reuse, other than the cooker code a region ran.
 
-    Code excludes quality.py (the scene catalog) so growing the catalog keeps
-    earlier regions; the budget constants it contributes are hashed by value.
+    The code a region ran is its trace (host/cook_trace.py), checked file by file
+    at reuse time. What the key holds is everything else the cook reads that
+    the trace cannot see: the non-Python files above the postpass divider of
+    host/cook_inputs.txt, the four budget constants of quality.py by value (the
+    scene catalog grows without recooking earlier regions), the tracer and the
+    interpreter. Python files listed above the divider are hashed by the build
+    (host/hk-build/main.rs) to decide whether to run the cook at all.
     """
     from quality import SCENERY_MAX_AXIS, STATIC_PAGE_BUDGET, TEXTURE_BUDGET, ROOM_BYTE_BUDGET, SCENERY_TEXEL_CAP, SCENERY_SCENE_CAPS
+    import cook_trace
     def sha(path):
         with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
-    code=hashlib.sha256()
-    # host/cook_inputs.txt is the shared list. Its postpass section is the whole
-    # difference between the two caches this feeds: the build hashes the file
-    # entire, so a postpass change re-runs the cook, while a base region's key
-    # stops at the divider so that same change reuses all 693 cooked packs.
-    for line in (ROOT/'host/cook_inputs.txt').read_text().splitlines():
-        if line.strip()=='# --- postpass only ---':break
-        line=line.strip()
-        if not line or line.startswith('#'):continue
-        code.update(f'{line}:{sha(ROOT/line)}\n'.encode())
-    code.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET,SCENERY_TEXEL_CAP,sorted(SCENERY_SCENE_CAPS.items())]).encode())
+    data=hashlib.sha256()
+    data.update(f'{cook_trace.SCHEME}\n{sys.version}\nhost/cook_trace.py:{sha(ROOT/"host/cook_trace.py")}\n'.encode())
+    # The same list the build hashes; its postpass section is code a region's bytes do not depend on.
+    for line in cook_input_sections()[0]:
+        if not line.endswith('.py'):data.update(f'{line}:{sha(ROOT/line)}\n'.encode())
+    data.update(json.dumps([SCENERY_MAX_AXIS,STATIC_PAGE_BUDGET,TEXTURE_BUDGET,ROOM_BYTE_BUDGET,SCENERY_TEXEL_CAP,sorted(SCENERY_SCENE_CAPS.items())]).encode())
     inputs={};interim=ROOT/'.hkpsx/regions-source-inputs.json'
     provenance=ROOT/'.hkpsx/regions-provenance.json'
     raw=interim.read_bytes() if interim.exists() else None
@@ -451,7 +470,7 @@ def cook_fingerprints(source):
         path=source.directory/name
         if not path.is_file():return None
         inputs[name]=names[name] if checked else sha(path)
-    return {'code':code.hexdigest(),'inputs':inputs,'source':str(source.directory.resolve()),
+    return {'data':data.hexdigest(),'inputs':inputs,'source':str(source.directory.resolve()),
             'interim':checked,'established':provenance.exists()}
 
 
@@ -468,47 +487,62 @@ def cook_cache_key(region, fingerprints):
     the provenance listed when it ran, and stays fresh while each of those is
     unchanged. The list only grows (write_provenance keeps every file any run
     loaded), so keying on the whole list made one more asset file read by a
-    postpass (the False Knight's bank) recook every region.
+    postpass (the False Knight's bank) recook every region. The cooker code is
+    checked the same way, against the trace the cook recorded (`code_fresh`).
     """
     if not fingerprints:return None
     shas=fingerprints['inputs'];names=sorted(shas)
     key=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
-    return {'key':key({'region':region,'code':fingerprints['code'],'source':fingerprints.get('source')}),
+    return {'key':key({'region':region,'data':fingerprints['data'],'source':fingerprints.get('source')}),
             'names':names,'shas':shas,'source':fingerprints.get('source'),
             'interim':fingerprints.get('interim',False),
             'established':fingerprints.get('established',True),
-            'inputs':inputs_digest(shas,names),
-            # What a cook written before this keyed on, so those packs are kept.
-            'legacy':key({'region':region,'fingerprints':{'code':fingerprints['code'],'inputs':inputs_digest(shas,names)}})}
+            'inputs':inputs_digest(shas,names)}
+
+
+def code_fresh(trace):
+    """Whether the cooker code a recorded region ran is unchanged in effect (host/cook_trace.py)."""
+    import cook_trace
+    return cook_trace.stale(trace) is None
 
 
 def cached_cook(destination, key):
-    """Return the earlier cook report when its key and cooked files are intact."""
+    """Return the earlier cook report when its key, its code trace and cooked files are intact."""
     if key is not None and key.get('interim'):
         result=subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-check',destination.name],
                               input=json.dumps({'key':key}),text=True,capture_output=True,check=True)
-        return json.loads(result.stdout)
+        hit=json.loads(result.stdout)
+        if hit is None or not code_fresh(hit.get('trace')):return None
+        return hit['cooked']
     cache=destination/'cook-cache.json'
     if key is None or not cache.is_file():return None
     try:old=json.loads(cache.read_text())
     except ValueError:return None
     room=destination/'room.hk'
     names=old.get('input_names')
-    if names is None:fresh=old.get('key')==key['legacy']
-    else:fresh=old.get('key')==key['key'] and all(name in key['shas'] for name in names) and inputs_digest(key['shas'],names)==old.get('inputs')
+    if names is None:return None
+    fresh=old.get('key')==key['key'] and all(name in key['shas'] for name in names) and inputs_digest(key['shas'],names)==old.get('inputs')
     if not fresh or not room.is_file() or not (destination/'scene.json').is_file() or not (destination/'unsupported.json').is_file():return None
     with room.open('rb') as stream:
         if hashlib.file_digest(stream,'sha256').hexdigest()!=old['cooked'].get('pack_sha256'):return None
-    if names is None:record_cook(destination,key,old['cooked'])
+    if not code_fresh(old.get('trace')):return None
     return old['cooked']
 
 
 def record_cook(destination, key, cooked):
+    """Record a finished cook for reuse, or nothing when this process cannot say which code
+    it ran (not started through `main`, or a cooker file changed during the cook)."""
+    import cook_trace
+    trace=cook_trace.snapshot()
+    if trace is None:
+        # An earlier record must not vouch for these new bytes.
+        (destination/'cook-cache.json').unlink(missing_ok=True)
+        return
     if key.get('interim'):
         subprocess.run([os.environ['HK_REGION_CACHE_HELPER'],'region-cache-record',destination.name],
-                       input=json.dumps({'key':key,'cooked':cooked}),text=True,check=True)
+                       input=json.dumps({'key':dict(key,trace=trace),'cooked':cooked}),text=True,check=True)
     else:
-        try:(destination/'cook-cache.json').write_text(json.dumps({'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked}))
+        try:(destination/'cook-cache.json').write_text(json.dumps({'key':key['key'],'input_names':key['names'],'inputs':key['inputs'],'cooked':cooked,'trace':trace}))
         except TypeError:pass  # a report that is not JSON simply is not reused
 
 

@@ -165,9 +165,14 @@ fn record(
     valid_key(key, manifest)?;
     let region = region_dir(root, name)?;
     let outputs = expected_outputs(root, &region, cooked)?;
-    let receipt = json!({"schema": 2, "key": key["key"], "source": key["source"],
+    // The trace is the cooker code the region ran (host/cook_trace.py); regions.py checks it
+    // against the code on disk after this receipt's own checks pass.
+    if !key["trace"].is_object() {
+        return Err("region cache record has no code trace".into());
+    }
+    let receipt = json!({"schema": 3, "key": key["key"], "source": key["source"],
         "inputs": key["inputs"], "source_manifest_sha256": manifest_sha,
-        "outputs": outputs, "cooked": cooked});
+        "outputs": outputs, "cooked": cooked, "trace": key["trace"]});
     let final_path = region.join("cook-cache.json");
     let temp = region.join(format!("cook-cache.{}.tmp", std::process::id()));
     std::fs::write(&temp, serde_json::to_vec(&receipt)?)?;
@@ -193,7 +198,8 @@ fn check(
         Ok(value) => value,
         Err(_) => return Ok(None),
     };
-    if old["schema"] != 2
+    if old["schema"] != 3
+        || !old["trace"].is_object()
         || old["key"] != key["key"]
         || old["source"] != key["source"]
         || old["inputs"] != key["inputs"]
@@ -221,7 +227,7 @@ fn check(
     if expected.iter().any(|(name, hash)| saved[name] != *hash) {
         return Ok(None);
     }
-    Ok(Some(cooked.clone()))
+    Ok(Some(json!({"cooked": cooked, "trace": old["trace"]})))
 }
 
 pub fn run(root: &Path, action: &str, name: &str) -> Result<()> {
@@ -258,7 +264,8 @@ mod tests {
         let manifest = json!({"source":"/retail/one", "inputs":{"a":"hash-a"}});
         let inputs = manifest["inputs"].as_object().unwrap();
         let key = json!({"key":"region-code-key", "source":"/retail/one", "interim":true,
-            "names":["a"], "shas":manifest["inputs"], "inputs":full_inputs_digest(inputs).unwrap()});
+            "names":["a"], "shas":manifest["inputs"], "inputs":full_inputs_digest(inputs).unwrap(),
+            "trace":{"scheme":"test", "files":{}}});
         let cooked =
             json!({"pack_sha256":sha256_file(&region.join("room.hk")).unwrap(), "pages":0});
         (root, manifest, key, cooked)
@@ -270,8 +277,11 @@ mod tests {
         record(&root, "region-002", &key, &cooked, &manifest, "manifest").unwrap();
         assert_eq!(
             check(&root, "region-002", &key, &manifest, "manifest").unwrap(),
-            Some(cooked)
+            Some(json!({"cooked": cooked, "trace": key["trace"]}))
         );
+        let mut untraced = key.clone();
+        untraced.as_object_mut().unwrap().remove("trace");
+        assert!(record(&root, "region-002", &untraced, &cooked, &manifest, "manifest").is_err());
         let scene = root.join("data/regions/region-002/scene.json");
         std::fs::write(&scene, b"changed").unwrap();
         assert!(check(&root, "region-002", &key, &manifest, "manifest")
