@@ -2074,6 +2074,13 @@ pub fn simulate(
                 game.player.x + PARAMS.half_width,
                 game.player.y + PARAMS.top,
             ];
+            parry_shade(
+                &mut game.shade,
+                &attacks,
+                &game.vitals,
+                &mut game.nail_response,
+                &mut game.player,
+            );
             if strike_shade(&mut game.shade, &attacks) {
                 audio::enemy_hit();
             }
