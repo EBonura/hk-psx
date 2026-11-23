@@ -90,7 +90,22 @@ FX_CLIPS = (('Dash Effect', 'knight', 'Dash Effect', 4.11, -0.55, -1.509, 1.509,
             # (a child at (1.13, 0), scale 2) as the ball leaves, and the ball's own `Wall Impact`
             # child (1.709, 0), scale 2.5, when a wall stops it.
             ('Fireball Blast', 23262, 'Blast', 1.13, 0.0, 2.0, 2.0, 1.7),
-            ('Fireball Wall Impact', 23262, 'Fireball Wall Impact', 1.709, 0.0, 2.5, 2.5, 1.35))
+            ('Fireball Wall Impact', 23262, 'Fireball Wall Impact', 1.709, 0.0, 2.5, 2.5, 1.35),
+            # Desolate Dive's `Q Slam` (`Quake Blast`, Screen) and Howling Wraiths' `Scr Heads` (`Scream1`, LinearDodge):
+            # children of the Knight's `Spells` that `Spell Control` switches on at the landing (`Quake1 Land`) and at the
+            # burst (`Scream Burst 1`). A path names the child: its own transform and its animator's library are read.
+            # `Hit Box Control` keeps both facing the way they were authored whichever way the Knight faces.
+            ('Quake Slam', ('Spells', 'Q Slam'), 'Quake Blast', None, None, None, None, 1.7),
+            ('Scream Heads', ('Spells', 'Scr Heads'), 'Scream1', None, None, None, None, 1.7))
+# Desolate Dive's and Howling Wraiths' poses, the clips `Spell Control` plays (`Quake Antic`, `Quake1 Down`, `Quake1
+# Land`; `Scream Antic1`, `Scream Burst 1`, `Scream End`). They are cooked after the effects, in the `art_spell` pack
+# with the slam and the heads, and take the palette of the body sheet that holds SPELL_PALETTE_CLIP (each texel the
+# nearest entry of its coverage class), so they need no CLUT row of their own and leave every other frame as it was.
+SPELL_CLIPS = ('Quake Antic', 'Quake Fall', 'Quake Land', 'Scream Start', 'Scream', 'Scream End')
+SPELL_PALETTE_CLIP = 'Fireball1 Cast'
+# Effects mapped to the bright palette without being fitted into it, so adding them leaves every earlier frame's
+# texels as they were: the slam and the heads are the same white and blue light as the fireball's.
+FX_PALETTE_FROZEN = ('Quake Slam', 'Scream Heads')
 # A frame is cut to parts of at most this many texels a side: the animation slot.
 FX_PART = 64
 # Tone of an effect's light, (gamma, gain): each premultiplied value v (0..255) becomes 255 * gain * (v / 255) ** gamma.
@@ -118,7 +133,8 @@ FX_PALETTE_BURST_WEIGHT = 6
 STREAM_PACKS = (('art_death', 'data/art-death.hk', ('Death',)),
                 ('art_wake', 'data/art-wake.hk', ('Sit Fall Asleep', 'Wake To Sit', 'Wake Up Ground Lie', 'Wake Up Ground Rise')),
                 ('art_fx', 'data/art-fx.hk', ('Dash Effect', 'Double Jump Wings', 'Wall Puff', 'Double Jump Flash')),
-                ('art_fx_spell', 'data/art-fx-spell.hk', ('Fireball Blast', 'Fireball Wall Impact')))
+                ('art_fx_spell', 'data/art-fx-spell.hk', ('Fireball Blast', 'Fireball Wall Impact')),
+                ('art_spell', 'data/art-spell.hk', ('Quake Slam', 'Scream Heads') + SPELL_CLIPS))
 # One streamed frame's record at the head of its pack: offset into the pack's coded texels (u32), width and
 # height (u16), palette (u32) and the four bounds (i32, Q16): the guest's `Frame` field for field.
 STREAM_RECORD = '<IHHIiiii'
@@ -188,6 +204,47 @@ def effect_animation(source):
         clip = next(c for c in library['clips'] if c['name'] == name)
         out[name] = (clip, local['x'], local['y'], k['x'])
     return out
+
+def knight_child_effect(source, path):
+    """An effect that is a child of the Knight (`path` of names under him): its local position and scale, and the
+    clips of its animator's library."""
+    from spells import _knight_child, _component
+    file = source.file('resources.assets')
+    hero = next(o for o in file.objects.values()
+                if o.type.name == 'MonoBehaviour' and source.typename(o) == 'HeroController')
+    knight = source.read(file.objects[hero.parse_monobehaviour_head().m_GameObject.m_PathID])
+    go, transform = _knight_child(source, file, knight, path)
+    local, k = transform['m_LocalPosition'], transform['m_LocalScale']
+    assert abs(k['x'] - k['y']) < 1e-4 and k['x'] > 0, f'{path[-1]} is no longer scaled evenly'
+    animator = source.read(_component(source, file, go, 'tk2dSpriteAnimator'))
+    library = source.read(source.ref(file, animator['library']))
+    return local['x'], local['y'], k['x'], k['y'], library['clips']
+
+def coverage_texels(image, palette):
+    """`image` as 4bpp texels (rows padded to whole halfwords) of an existing `quantize_alpha_coverage` palette:
+    each texel's coverage class as that quantizer decides it at full opacity, then the nearest colour of the class
+    (half-covered entries carry the semi-transparency bit, opaque ones do not)."""
+    from materials import alpha_coverage
+    words = struct.unpack('<16H', palette)
+    rgb = lambda w: tuple((w >> shift & 31) * 255 // 31 for shift in (0, 5, 10))
+    classes = {1: [k for k in range(1, 16) if words[k] & 0x8000],
+               2: [k for k in range(1, 16) if words[k] and not words[k] & 0x8000]}
+    assert classes[1] and classes[2], 'the palette lost a coverage class'
+    w, h = image.size
+    stride = (w + 3) // 4 * 2
+    texels = bytearray(stride * h)
+    cache = {}
+    rgba = image.convert('RGBA')
+    for i, (r, g, b, a) in enumerate(rgba.get_flattened_data() if hasattr(rgba, 'get_flattened_data') else rgba.getdata()):
+        level = alpha_coverage(a, 128, i % w, i // w)
+        if level == 0:
+            continue
+        key = (level, r, g, b)
+        if key not in cache:
+            cache[key] = min(classes[level], key=lambda k: sum((x - y) ** 2 for x, y in zip((r, g, b), rgb(words[k]))))
+        x, y = i % w, i // w
+        texels[y * stride + x // 2] |= cache[key] << ((x & 1) * 4)
+    return bytes(texels)
 
 def packbits(data):
     """Run-length coding for a frame's texels, which are mostly a few long runs of
@@ -360,7 +417,7 @@ def cook():
     source = Source()
     anim_obj, table = knight_animation(source)
     by_name = {c['name']: c for c in table['clips']}
-    missing = [n for n in ORDER + LOOK_CLIPS + (HARD_LAND_CLIP,) + CRASH_CLIPS + DEATH_CLIPS + (WAKE_GROUND,)
+    missing = [n for n in ORDER + LOOK_CLIPS + (HARD_LAND_CLIP,) + CRASH_CLIPS + DEATH_CLIPS + (WAKE_GROUND,) + SPELL_CLIPS
                + tuple(c for _, source_, c, *_ in FX_CLIPS if source_ == 'knight') if n not in by_name]
     assert not missing, f'the Knight animation lost {missing}'
     resources = source.file('resources.assets')
@@ -506,8 +563,12 @@ def cook():
                 fx_samples += [c for c in part.getdata() if light(c) >= FX_THRESHOLD]
             clips.append(dict(name=name, start=start, count=1, parts=len(images) - start, fps=1, wrap=2, loop=0))
             continue
-        clip = by_name[clip_name] if library == 'knight' else next(
-            c for c in source.read(resources.objects[library])['clips'] if c['name'] == clip_name)
+        if isinstance(library, tuple):
+            lx, ly, kx, ky, clips_of = knight_child_effect(source, library)
+            clip = next(c for c in clips_of if c['name'] == clip_name)
+        else:
+            clip = by_name[clip_name] if library == 'knight' else next(
+                c for c in source.read(resources.objects[library])['clips'] if c['name'] == clip_name)
         assert clip['wrapMode'] == 2, f'{clip_name} no longer plays once'
         start = len(images)
         fx_clip_frames.append(len(fx_frame_first))
@@ -521,17 +582,28 @@ def cook():
                 images.append(part)
                 boxes.append(part_box)
                 art_sources.append(f'{source.sid(obj)}:{frame["spriteId"]}')
-                fx_samples += [c for c in part.getdata() if light(c) >= FX_THRESHOLD]
+                # The spells' slam and heads take the palette as the earlier effects fitted it (FX_PALETTE_FROZEN).
+                if name not in FX_PALETTE_FROZEN:
+                    fx_samples += [c for c in part.getdata() if light(c) >= FX_THRESHOLD]
         clips.append(dict(name=name, start=start, count=len(clip['frames']), parts=len(images) - start,
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=0))
     fx_frame_first.append(len(images))
+
+    # Desolate Dive's and Howling Wraiths' poses (SPELL_CLIPS), after the effects: the last streamed pack.
+    for name in SPELL_CLIPS:
+        clip = by_name[name]
+        start = len(images)
+        for frame in clip['frames']:
+            sprite(frame['spriteCollection'], frame['spriteId'])
+        clips.append(dict(name=name, start=start, count=len(clip['frames']),
+                          fps=int(clip['fps']), wrap=clip['wrapMode'], loop=int(clip.get('loopStart', 0))))
 
     # One CLUT per group of clips that fits a single 256x256 quantizer sheet, so
     # every frame of one animation keeps one palette.
     effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'} | {name for name, _, _, _ in EFFECT_LIBRARY_CLIPS}
     groups, current = [], []
     for clip in clips:
-        if clip['name'] in effect_names or clip['name'] in fx_names:
+        if clip['name'] in effect_names or clip['name'] in fx_names or clip['name'] in SPELL_CLIPS:
             continue
         indices = list(range(clip['start'], clip['start'] + clip['count']))
         if shelf([images[i].size for i in current + indices]) is None:
@@ -642,6 +714,23 @@ def cook():
             assert len(texels) <= SLOT_BYTES and w <= FX_PART and h <= FX_PART, f'effect part {i} ({w}x{h}) exceeds one 64x64 animation slot'
             target = next(blob for k, (start, end) in enumerate(pack_ranges) if start <= i < end for blob in (pack_blobs[k],))
             frames[i] = dict(offset=len(target), width=w, height=h, bounds=boxes[i], clut=bright_clut)
+            target.extend(coded)
+            raw_bytes += len(texels)
+
+    # The spell poses take the palette of the body sheet holding SPELL_PALETTE_CLIP: each texel's coverage class as
+    # `quantize_alpha_coverage` decides it, then the nearest colour of that class in the palette.
+    anchor = by_clip[SPELL_PALETTE_CLIP]['start']
+    spell_clut = next(k for k, group in enumerate(groups) if anchor in group)
+    for name in SPELL_CLIPS:
+        clip = by_clip[name]
+        for i in range(clip['start'], clip['start'] + clip['count']):
+            image = images[i]
+            texels = coverage_texels(image, palettes[spell_clut])
+            coded = packbits(texels)
+            assert unpackbits(coded) == texels
+            assert len(texels) <= SLOT_BYTES and image.width <= 64 and image.height <= 64, f'spell frame {i} exceeds one animation slot'
+            target = next(pack_blobs[k] for k, (start, end) in enumerate(pack_ranges) if start <= i < end)
+            frames[i] = dict(offset=len(target), width=image.width, height=image.height, bounds=boxes[i], clut=spell_clut)
             target.extend(coded)
             raw_bytes += len(texels)
 
