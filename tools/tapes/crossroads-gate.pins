@@ -16,6 +16,9 @@ HK_SAVE_LOADED = 1
 # of the two families living in these scenes and takes a mask doing it. Exact on
 # purpose. A Climber left alive at full health is the point of the last one, so a
 # regression that stops the Climber contacting the Knight shows here.
+# The tape swings only from poll 1230 (tools/tapes/crossroads-gate.route): the
+# swings it made on the way down the shaft and along the floor struck the walls,
+# and since the nail recoils off terrain they pushed the Knight off his line.
 HK_ENEMY_KILLS = 1
 HK_ENEMY_HITS = 2
 HK_HEALTH = 4
