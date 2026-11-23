@@ -14,8 +14,8 @@ where each piece lives. Source records are from the installed Windows build (`re
 | Monarch Wings double jump | `Double J Wings` (`Double Jump Wings 2`, 6 frames at 16 fps), `White Flash DJ` (holds 0.125 s, fades in 0.4 s), `Double J Feather` (moth feathers, 65 a second for 0.4 s) | the wings from `art_fx`; the flash as a small round glow of blue light (one cooked frame, 3.2 units across, held 8 ticks and faded over 24); the feathers are not presented (their texture is not in a scene's particle art) |
 | Vengeful Spirit | `Fireball Top`: `Fireball Blast`, `particles`, `white_light`; the ball sheds soul orbs (80 a second); `Wall Impact` when a wall stops it, `Ball End` when it expires | `Fireball Blast` and `Wall Impact` from `art_fx_spell`, `Ball End` (linked art); the orbs are not presented (a cloud of about thirty more quads in a spell fight, which tipped the Baldur fight from 2 to 3 vblanks a frame on 150 of its frames) |
 | Focus, heal | Lines Anim, Burst, White Flash R, Dust, Can Focus Particles | already presented (`focus_fx.rs`) |
-| Desolate Dive | `Q Charge`, `Q Trail`, `Q Flash Start`, `Q Flash Slam`, `Q Slam` (`Quake Blast`), `Q1 Pillar`, `Q Orbs`; the Knight's `Quake Antic`, `Quake Fall`, `Quake Land` | none of it is cooked: the antic stands in the Crystal Heart's ground charge, the fall the ordinary falling pose, the landing the `HardLand` crouch, the hard landing's sound and the Focus dust; `BigShake` and `EnemyKillShake` are the camera's |
-| Howling Wraiths | `Scr Heads` (`Scream1`), `Scr Base`, `Scr Orbs`; the Knight's `Scream Start`, `Scream`, `Scream End` | none of it is cooked: the body stands in the fireball's antic and cast clips and the cast sound; `BigShake` is the camera's |
+| Desolate Dive | `Q Charge`, `Q Trail`, `Q Flash Start`, `Q Flash Slam`, `Q Slam` (`Quake Blast`), `Q1 Pillar`, `Q Orbs`; the Knight's `Quake Antic`, `Quake Fall`, `Quake Land` | the Knight's three clips and `Q Slam` from the `art_spell` pack (`ability_fx::quake_land` at the landing). Not cooked: `Q Charge`, `Q Trail`, the two flashes, `Q1 Pillar`, `Q Orbs`, and the spell's sounds (`hero_quake_spell_prepare`, `hero_quake_spell_impact`): the hard landing's sound stands in. Where the pack is not resident the earlier stand-ins play (the Crystal Heart's ground charge, the ordinary fall, `HardLand`, the Focus dust). `BigShake` and `EnemyKillShake` are the camera's |
+| Howling Wraiths | `Scr Heads` (`Scream1`), `Scr Base`, `Scr Orbs`; the Knight's `Scream Start`, `Scream`, `Scream End` | the Knight's three clips and `Scr Heads` from `art_spell` (`ability_fx::scream` at the burst). Not cooked: `Scr Base`, `Scr Orbs` and `hero_scream_spell`: the fireball's cast sound stands in. Without the pack the fireball's antic and cast clips stand in for the body. `BigShake` is the camera's |
 | Nail arts | `Cyclone Slash`, `Great Slash`, `Dash Slash` | the abilities are not in the port |
 | Crystal Heart | the `SD *` effects | not presented (the body poses are) |
 
@@ -72,6 +72,33 @@ cache's slots are spoken for (`request`). The parts are decoded straight into th
 
 The dust is the break-effects cooker's (docs/BREAK_EFFECTS.md): the Knight's owners are cooked into every scene
 (`host/hk-cook/src/break_effects.rs`, `HERO_*_OWNER`), at no resident cost beyond the style and emitter rows.
+
+## Desolate Dive and Howling Wraiths (`art_spell`)
+
+The last streamed pack, after `art_fx_spell`: `Quake Slam` (`Q Slam`'s `Quake Blast`, 6 frames, 10 parts) and `Scream Heads`
+(`Scr Heads`' `Scream1`, 13 frames, 12 parts), both at 1.7 screen pixels a texel, then the Knight's `Quake Antic`, `Quake Fall`,
+`Quake Land`, `Scream Start`, `Scream` and `Scream End` (27 frames at his own density). The two effects are children of the
+Knight's `Spells`: their transforms and library are read from the prefab (`knight_child_effect`), and since `Hit Box Control`
+keeps them facing as authored whichever way he faces, they are raised facing that way. They are mapped to the bright palette
+without being fitted into it (`FX_PALETTE_FROZEN`), and the poses take the palette of the body sheet that holds
+`Fireball1 Cast` (`coverage_texels`: the coverage class `quantize_alpha_coverage` would give each texel, then the nearest colour
+of that class), so the pack takes no CLUT row and every earlier frame is unchanged. 21,993 bytes: the heads 11,593, the
+poses 7,881, the slam 2,519, frame records included.
+
+It is the third optional pack (`HK_FX_FIT` is a u16 a scene, three bits a row, filled in pack order so it only takes what
+`art_fx` and `art_fx_spell` leave). Against the module report of the current landing chain (58 rooms) it fits beside the room
+and the Death and respawn clips in 54 rooms, and beside the Shade's art too in 25. The guest carries it while he owns either
+spell (`ability_fx::wants_quake_scream`); where it is not resident the poses fall back to the stand-ins
+(`main.rs` `spell_stand_in`) and the landing raises the Focus dust instead of the slam.
+
+Resident cost: eight clip rows, the effect frame indices, a `STREAM_PACKS` row, `HK_FX_FIT` doubled (66 bytes) and a sixth
+carry slot. The nine effect slots and the sixth carry slot unrolled `ability_fx::tick`/`request`/`draw_world` and
+`modules::carry`/`wanted`/`fetch_pending`, which are now built for size; with that, free RAM below the module pool went from
+5,148 to 5,724 bytes.
+
+The spells' sounds are not cooked. The Focus range of SPU RAM, where the ability one-shots ride, has 32 bytes left, and the
+three clips need about 19 KB at the lowest rates the ability ladder allows; a per-scene bank row (`["all"]`, docs/SCENE_SFX.md)
+costs a 12-byte `ENTRIES` row per scene and event in resident RAM (about 2.4 KB for the three across 66 scenes).
 
 ## Pins
 
