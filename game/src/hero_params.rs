@@ -22,7 +22,30 @@ pub const BASE: HeroParams = HeroParams {
     ground_speed: crate::PARAMS.speed,
     dash_cooldown_ticks: crate::PARAMS.dash_cooldown_ticks,
     greed: false,
+    reserve: hk_sim::SoulReserve {
+        max: 0,
+        per_hit: crate::charms::RESERVE_SOUL_PER_HIT,
+    },
 };
+/// `StartSoulLimiter` sets `maxMP` to 66 while a Shade is owed, and `EndSoulLimiter` back to 99.
+const SOUL_LIMITED: u16 = 66;
+static mut LIMITED: bool = false;
+/// The Shade's soul limiter, which the caller reports each tick; a change composes again.
+pub fn set_soul_limited(on: bool) {
+    // SAFETY: as in `invalidate`.
+    unsafe {
+        if LIMITED != on {
+            LIMITED = on;
+            FRESH = false;
+        }
+    }
+}
+/// `HeroController::SoulGain` for a nail hit that landed, with the live vessel and reserve.
+#[inline(never)]
+pub fn soul_gain(vitals: &mut hk_sim::Vitals, cheats: Settings) {
+    let p = get(cheats);
+    vitals.soul_gain(p.vitals, p.reserve);
+}
 /// The cheat key the cache was composed for, and whether it is still current.
 static mut KEY: u8 = 0;
 static mut FRESH: bool = false;
@@ -79,8 +102,13 @@ fn compose(key: u8) {
     // The source's order: `PlayerData::MaxHealth` is `maxHealthBase` plus the
     // charm bonuses, so the shop's masks come first and a charm adds to them.
     p.vitals = crate::shop::vitals(p.vitals);
+    p.reserve.max = crate::shop::soul_reserve();
     p = crate::charms::hero(p);
     Settings::from_param_key(key).override_vitals(&mut p.vitals);
+    // SAFETY: as in `invalidate`.
+    if unsafe { LIMITED } {
+        p.vitals.max_soul = p.vitals.max_soul.min(SOUL_LIMITED);
+    }
     // SAFETY: as in `invalidate`.
     unsafe {
         CACHE = p;

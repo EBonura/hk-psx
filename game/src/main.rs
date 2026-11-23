@@ -827,24 +827,6 @@ fn apply_hurt(
 // exactly the cooked base; if the two ever disagreed, every new game would
 // start on the wrong number of masks and nothing else would say so.
 const _: () = assert!(VITAL_PARAMS.max_health == shop::STARTING_MASKS as u16);
-/// StartSoulLimiter caps the vessel at 66 while a Shade is owed.
-const SOUL_LIMITED: u16 = 66;
-/// The SOUL ceiling: the live `max_soul`, which carries whatever reserve a
-/// fused vessel added to the Knight's own vessel, or the limiter's figure
-/// while a Shade is owed.
-///
-/// The limited figure is the vessel's alone, not the vessel's plus the
-/// reserve: the source's rule for a limiter running against a reserve was not
-/// read here, and no run can reach that pair anyway, because Sly stocks two of
-/// the three fragments a vessel needs and nothing else in the admitted slice
-/// sells one.
-fn soul_cap(shade: &shade::World, max_soul: u16) -> u16 {
-    if shade.soul_limited() {
-        SOUL_LIMITED.min(max_soul)
-    } else {
-        max_soul
-    }
-}
 /// The active nail polygon against the scene's soul totems; the attack counter
 /// is the swing token, so one swing pays a totem once.
 fn strike_totems(scene: usize, attacks: &HeroAttacks, swing: u32) -> u16 {

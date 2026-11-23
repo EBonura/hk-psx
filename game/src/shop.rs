@@ -422,30 +422,23 @@ pub fn pick_up(apply: impl FnOnce(&mut State)) {
     apply(s);
     publish(s);
 }
-/// `PlayerData.maxHealthBase` and `MPReserveMax` composed onto the cooked
-/// no-charm parameters. `hero_params` calls this ahead of `charms::hero`,
-/// which is the source's own order: `PlayerData::MaxHealth` recomputes
-/// `maxHealth` as `maxHealthBase` plus the equipped charm bonuses, so a charm
-/// bonus is added to the mask total and never the other way round.
-///
-/// What this does not reproduce: the source keeps the reserve as a second pool
-/// behind `MPCharge`, filling it only once the vessel is full and spending it
-/// only once the vessel is empty. `hk_sim::Vitals` has one SOUL pool, and gain
-/// and spend across the pair are indistinguishable from one pool of the two
-/// capacities added, so the reserve is expressed as ceiling here. The HUD is
-/// where the two differ: `hud_state::SoulSpec` clamps the orb at the source's
-/// own 99, so the reserve reads as a full vessel and its own vessels are not
-/// drawn.
+/// `PlayerData.maxHealthBase` composed onto the cooked no-charm parameters.
+/// `hero_params` calls this ahead of `charms::hero`, which is the source's own
+/// order: `PlayerData::MaxHealth` recomputes `maxHealth` as `maxHealthBase`
+/// plus the equipped charm bonuses, so a charm bonus is added to the mask total
+/// and never the other way round.
 pub fn vitals(base: VitalParams) -> VitalParams {
     player_data(state(), base)
+}
+/// `PlayerData.MPReserveMax`, which `hero_params` puts in `HeroParams::reserve`. The
+/// vessel stays `maxMP`: the reserve is a second pool behind it (`hk_sim::Vitals`).
+pub fn soul_reserve() -> u16 {
+    state().soul_reserve()
 }
 fn player_data(s: &State, mut base: VitalParams) -> VitalParams {
     // Composed once per change by `hero_params`; see the note over
     // `charms::compose` for why that matters.
     base.max_health = u16::from(s.masks);
-    if s.vessels != 0 {
-        base.max_soul = base.max_soul.saturating_add(s.soul_reserve());
-    }
     base
 }
 
@@ -1241,21 +1234,18 @@ mod tests {
     }
 
     #[test]
-    fn a_fused_vessel_raises_the_soul_ceiling_and_a_loose_fragment_does_not() {
+    fn a_fused_vessel_adds_a_reserve_and_a_loose_fragment_does_not() {
         // Sly stocks two of the three a vessel needs, so this is the state no
         // purchase in this shop can reach; `vessels` is still what a fuse
         // moves, and the ceiling is still what it has to move.
         let mut state = State::new();
         state.vessel_fragments = FRAGMENTS_PER_VESSEL - 1;
         assert_eq!(state.soul_reserve(), 0);
-        assert_eq!(player_data(&state, BASE).max_soul, BASE.max_soul);
         state.vessels = 1;
         state.vessel_fragments = 0;
         assert_eq!(state.soul_reserve(), SOUL_PER_VESSEL);
-        assert_eq!(
-            player_data(&state, BASE).max_soul,
-            BASE.max_soul + SOUL_PER_VESSEL
-        );
+        // The vessel itself stays `maxMP`; the reserve is its own pool.
+        assert_eq!(player_data(&state, BASE).max_soul, BASE.max_soul);
         // The reserve is whole vessels, which is why it is counted rather than
         // accumulated: a record can hold no partial one.
         let (slots, counters) = state.record();

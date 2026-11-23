@@ -683,7 +683,7 @@ pub fn render(
         game.vitals.health,
         vitals.max_health,
         game.vitals.soul,
-        soul_cap(&game.shade, vitals.max_soul),
+        vitals.max_soul,
         game.paused,
         game.vitals.blue_health,
         game.door
@@ -932,11 +932,9 @@ pub fn interact(
         .cheats
         .maintain(&mut game.vitals, VITAL_PARAMS);
     cheats::publish(game.settings.cheats);
-    // StartSoulLimiter lowers maxMP itself while a Shade is owed.
-    game.vitals.soul = game.vitals.soul.min(soul_cap(
-        &game.shade,
-        game.settings.cheats.params().max_soul,
-    ));
+    // StartSoulLimiter lowers maxMP itself while a Shade is owed (`hero_params` composes it).
+    hero_params::set_soul_limited(game.shade.soul_limited());
+    game.vitals.soul = game.vitals.soul.min(game.settings.cheats.params().max_soul);
     unsafe {
         HK_PAUSED = u32::from(game.paused);
         HK_PAUSE_CONTROLS = u32::from(game.paused && game.pause_menu.controls);
@@ -1073,8 +1071,8 @@ fn wake(game: &mut Game, scene: usize, cache: &disc::Cache) {
     game.thunk = hk_sim::terrain_thunk::TerrainThunk::new();
     game.focus.interrupt();
     focus_audio::interrupt();
-    game.vitals
-        .add_soul(game.settings.cheats.params(), shaman::WAKE_SOUL);
+    let hero = hero_params::get(game.settings.cheats);
+    game.vitals.add_soul(hero.vitals, hero.reserve, shaman::WAKE_SOUL);
     if let Some(id) = cache.locate(scene, x, y) {
         game.respawn = Some((scene, [x, y], 1, id));
         game.safe = (x, y, id);
@@ -1267,6 +1265,9 @@ pub fn simulate(
         game.cast.aim = i8::from(pad.is_held(button::UP)) - i8::from(pad.is_held(button::DOWN));
         let was_antic = game.cast.phase == hk_sim::CastPhase::Antic;
         let hero = hero_params::get(game.settings.cheats);
+        // `Vessel Drain` tops the vessel up from the reserve; a spend below restarts its pause.
+        game.vitals.drain_reserve(hero.vitals);
+        let soul_before = game.vitals.soul;
         // A Dive or Wraiths already running goes on before anything new is cast.
         match game.player.spell_tick(&QUAKE_PARAMS, &SCREAM_PARAMS) {
             hk_sim::SpellCue::None => {}
@@ -1338,6 +1339,10 @@ pub fn simulate(
             &mut game.vitals,
         );
         focus_audio::tick(&game.focus, focus_events);
+        // `TakeMP` for a spell and each Focus drain step send `MP DRAIN` on to the reserve.
+        if game.vitals.soul < soul_before || focus_events.drained > 0 {
+            game.vitals.soul_spent();
+        }
         if focus_fx::tick(
             game.focus.lines_active(),
             focus_events.completed,
@@ -1812,7 +1817,8 @@ pub fn simulate(
         ]);
         let totem_soul = strike_totems(r.scene, &attacks, game.attacks);
         if totem_soul > 0 {
-            game.vitals.add_soul(VITAL_PARAMS, totem_soul);
+            let hero = hero_params::get(game.settings.cheats);
+            game.vitals.add_soul(hero.vitals, hero.reserve, totem_soul);
             scene_sfx::play(scene_sfx::SOUL_TOTEM_SLASH);
             camera::request(camera::Shake::Kill);
         }
@@ -2116,7 +2122,7 @@ pub fn simulate(
                 game.state.edge_reader(r, room),
             );
             if roller.hits > 0 {
-                game.vitals.gain_soul_on_nail_hit(params);
+                hero_params::soul_gain(&mut game.vitals, game.settings.cheats);
                 audio::enemy_hit();
             }
             if roller.killed {
@@ -2238,7 +2244,8 @@ pub fn simulate(
             HK_SOUL = game.vitals.soul as u32;
         }
         if enemy_events.dream_soul > 0 {
-            game.vitals.add_soul(VITAL_PARAMS, enemy_events.dream_soul);
+            let hero = hero_params::get(game.settings.cheats);
+            game.vitals.add_soul(hero.vitals, hero.reserve, enemy_events.dream_soul);
         }
         if enemy_events.hits > 0 {
             audio::enemy_hit();

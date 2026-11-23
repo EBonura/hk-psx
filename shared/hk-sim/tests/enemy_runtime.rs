@@ -28,6 +28,10 @@ mod hero_params {
     pub fn nail_response() -> hk_sim::NailResponseParams {
         crate::NAIL_RESPONSE_PARAMS
     }
+    // No reserve vessels here: SoulGain into the vessel alone.
+    pub fn soul_gain(v: &mut hk_sim::Vitals, cheats: crate::cheats::Settings) {
+        v.gain_soul_on_nail_hit(vitals(cheats));
+    }
 }
 #[allow(clippy::all, unexpected_cfgs)] // game source, linted with the game
 #[path = "../../../game/src/cheats.rs"]

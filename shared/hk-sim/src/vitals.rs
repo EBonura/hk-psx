@@ -30,12 +30,32 @@ pub enum Hurt {
 pub const DEATH_FREEZE_TICKS: u16 = 24;
 /// `InvulnerablePulse.pulseDuration` on the Knight (0.1 s) in 60 Hz ticks.
 pub const PULSE_TICKS: u16 = 6;
+/// `Vessel Drain`'s `Drain Pause`: it waits 1 s of game time after the last SOUL spent
+/// before the reserve starts topping the vessel up.
+pub const RESERVE_PAUSE_TICKS: u16 = 60;
+/// The reserve vessels: `PlayerData.MPReserveMax` (33 SOUL a fused vessel) and what
+/// `HeroController::SoulGain` charges a nail hit once the vessel is full (its second
+/// arm, 6 plus the worn charms' share), which `AddMPCharge` then puts in the reserve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoulReserve {
+    pub max: u16,
+    pub per_hit: u16,
+}
+impl SoulReserve {
+    pub const NONE: Self = Self { max: 0, per_hit: 0 };
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Vitals {
     pub health: u16,
     /// Temporary Lifeblood; consumed before normal masks, never Focus-healed.
     pub blue_health: u16,
+    /// `MPCharge`, the vessel.
     pub soul: u16,
+    /// `MPReserve`, the SOUL in the reserve vessels.
+    pub reserve: u16,
+    /// `Vessel Drain`: 0 while idle, otherwise the ticks left of `Drain Pause`, and 1 while
+    /// it moves SOUL from the reserve into the vessel.
+    pub reserve_drain: u16,
     pub invulnerable_ticks: u16,
     /// What `invulnerable_ticks` was set to, so `invulnerable_pulse` knows how
     /// long the current invulnerability has run.
@@ -53,6 +73,8 @@ impl Vitals {
             health: p.max_health,
             blue_health: 0,
             soul: 0,
+            reserve: 0,
+            reserve_drain: 0,
             invulnerable_ticks: 0,
             invulnerable_from: 0,
             recoil_ticks: 0,
@@ -179,14 +201,53 @@ impl Vitals {
     pub fn reset_blue_health(&mut self) {
         self.blue_health = 0;
     }
+    /// `SoulGain` with no reserve vessels.
     pub fn gain_soul_on_nail_hit(&mut self, p: VitalParams) {
+        self.soul_gain(p, SoulReserve::NONE);
+    }
+    /// `HeroController::SoulGain`: `soul_per_hit` while the vessel is below `max_soul`,
+    /// the reserve arm's charge once it is full, through `AddMPCharge`.
+    #[inline(never)]
+    pub fn soul_gain(&mut self, p: VitalParams, r: SoulReserve) {
         if !self.dead {
-            self.soul = self.soul.saturating_add(p.soul_per_hit).min(p.max_soul);
+            let amount = if self.soul < p.max_soul { p.soul_per_hit } else { r.per_hit };
+            self.add_soul(p, r, amount);
         }
     }
-    /// `AddMPCharge`, as the Dream Nail's reward uses it.
-    pub fn add_soul(&mut self, p: VitalParams, amount: u16) {
-        self.soul = self.soul.saturating_add(amount).min(p.max_soul);
+    /// `PlayerData::AddMPCharge`: what does not fit in the vessel goes to the reserve
+    /// while the reserve has room (clamped to `MPReserveMax`), and the vessel is left full.
+    #[inline(never)]
+    pub fn add_soul(&mut self, p: VitalParams, r: SoulReserve, amount: u16) {
+        let total = u32::from(self.soul) + u32::from(amount);
+        let max = u32::from(p.max_soul);
+        if total <= max {
+            self.soul = total as u16;
+            return;
+        }
+        if self.reserve < r.max {
+            self.reserve = (u32::from(self.reserve) + total - max).min(u32::from(r.max)) as u16;
+        }
+        self.soul = p.max_soul;
+    }
+    /// SOUL spent (`TakeMP` for a spell, a Focus drain step): the Soul Orb sends `MP DRAIN` to
+    /// `Vessel Drain`, which starts its pause again from wherever it was.
+    pub fn soul_spent(&mut self) {
+        self.reserve_drain = RESERVE_PAUSE_TICKS;
+    }
+    /// One tick of `Vessel Drain` on game time. When `Drain Pause` runs out it moves one SOUL a
+    /// frame (`AddMPChargeSpa(1)`, `TakeReserveMP(1)`) until the reserve is empty or the vessel
+    /// is full (`CANCEL`, back to idle).
+    #[inline(never)]
+    pub fn drain_reserve(&mut self, p: VitalParams) {
+        match self.reserve_drain {
+            0 => {}
+            1 if self.reserve == 0 || self.soul >= p.max_soul => self.reserve_drain = 0,
+            1 => {
+                self.soul += 1;
+                self.reserve -= 1;
+            }
+            t => self.reserve_drain = t - 1,
+        }
     }
     pub fn take_soul(&mut self, amount: u16) {
         self.soul = self.soul.saturating_sub(amount);
@@ -285,6 +346,57 @@ mod tests {
         v.finish_hazard_respawn(P);
         assert_eq!((v.health, v.soul), (3, 11));
         assert_eq!(v.invulnerable_ticks, P.hazard_invulnerable_ticks);
+    }
+    #[test]
+    fn a_full_vessel_overflows_into_the_reserve_and_the_reserve_tops_it_up() {
+        // One fused vessel (33), and SoulGain's full-vessel arm of 6.
+        let r = SoulReserve { max: 33, per_hit: 6 };
+        let mut v = Vitals::new(P);
+        for _ in 0..9 {
+            v.soul_gain(P, r);
+        }
+        // 9 hits of 11 fill the vessel exactly; the reserve is untouched.
+        assert_eq!((v.soul, v.reserve), (99, 0));
+        v.soul_gain(P, r);
+        assert_eq!((v.soul, v.reserve), (99, 6));
+        // AddMPCharge's overflow: 95 + 11 leaves 99 and puts the 7 over in the reserve.
+        v.soul = 95;
+        v.soul_gain(P, r);
+        assert_eq!((v.soul, v.reserve), (99, 13));
+        // The reserve is clamped to MPReserveMax.
+        v.add_soul(P, r, 100);
+        assert_eq!((v.soul, v.reserve), (99, 33));
+        // A cast: nothing moves for Drain Pause's second, then one SOUL a tick.
+        v.take_soul(33);
+        v.soul_spent();
+        for _ in 0..RESERVE_PAUSE_TICKS - 1 {
+            v.drain_reserve(P);
+        }
+        assert_eq!((v.soul, v.reserve), (66, 33));
+        v.drain_reserve(P);
+        assert_eq!((v.soul, v.reserve), (67, 32));
+        // Another spend restarts the pause mid-drain.
+        v.soul_spent();
+        v.drain_reserve(P);
+        assert_eq!((v.soul, v.reserve), (67, 32));
+        for _ in 0..RESERVE_PAUSE_TICKS + 40 {
+            v.drain_reserve(P);
+        }
+        // 67 and 32 make exactly a full vessel; the next tick finds it full and goes idle.
+        assert_eq!((v.soul, v.reserve, v.reserve_drain), (99, 0, 0));
+        // A full vessel stops it with SOUL left in the reserve.
+        v.reserve = 20;
+        v.soul = 90;
+        v.soul_spent();
+        for _ in 0..RESERVE_PAUSE_TICKS + 20 {
+            v.drain_reserve(P);
+        }
+        assert_eq!((v.soul, v.reserve, v.reserve_drain), (99, 11, 0));
+        // With no reserve vessels a full vessel gains nothing.
+        let mut w = Vitals::new(P);
+        w.soul = 99;
+        w.soul_gain(P, SoulReserve::NONE);
+        assert_eq!((w.soul, w.reserve), (99, 0));
     }
     #[test]
     fn soul_and_healing_saturate_without_unlocking_reserve() {
