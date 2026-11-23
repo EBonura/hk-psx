@@ -14,7 +14,8 @@ CORE_WINDOW_BYTES = int(os.environ.get('HK_CORE_WINDOW_BYTES', '10240'), 0)
 if CORE_WINDOW_BYTES % 0x100 or not 0 <= CORE_WINDOW_BYTES < 0x10000:
     raise ValueError(f'HK_CORE_WINDOW_BYTES {CORE_WINDOW_BYTES} must be whole 256-byte lines under 64 KiB')
 RAM_SIZE = 0x200000 - CORE_WINDOW_BYTES
-STACK_INIT = 0x80000000 + RAM_SIZE - 0x100
+RAM_TOP = 0x80000000 + RAM_SIZE
+STACK_INIT = RAM_TOP - 0x100
 
 
 def prepare_linker(root, output):
