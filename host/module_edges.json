@@ -131,6 +131,11 @@
   ],
   [
     "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
+    "fat_fly",
+    "hk_psx::enemies::Actor::advance_fat_fly::world::terrain::EnemyWorld::tick::runner_event::frame::simulate"
+  ],
+  [
+    "hk_psx::enemies::Actor::advance_in_view::EnemyWorld::tick::runner_event::frame::simulate",
     "moss_charger",
     "hk_psx::enemies::Actor::advance_moss_charger::world::terrain"
   ],
@@ -223,6 +228,11 @@
     "hk_psx::enemies::EnemyWorld::tick::runner_event::frame::simulate",
     "mawlek",
     "hk_psx::enemies::Actor::strike_mawlek"
+  ],
+  [
+    "hk_psx::enemies::EnemyWorld::tick::runner_event::frame::simulate",
+    "fat_fly",
+    "hk_sim::fat_fly::FatFly::took_damage"
   ],
   [
     "hk_psx::enemies::EnemyWorld::tick::runner_event::frame::simulate",

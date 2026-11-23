@@ -423,6 +423,18 @@ def actor_sources(sc, bounds=None):
                 actor['limitations'] = list(control['limitations'])
             except (ValueError, KeyError, StopIteration) as error:
                 actor['movement_error'] = str(error)
+        # The Fat Fly (Obble) carries two FSMs its FSMActivator switches on; the name and that
+        # component are the gate (host/fat_fly.py).
+        if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Fat Fly') \
+                and any(kind == 'FSMActivator' for _, kind, _ in records):
+            from fat_fly import recognize as recognize_fat_fly
+            try:
+                control = recognize_fat_fly(sc, actor)
+                actor['movement_control'] = control
+                actor['movement_supported'] = True
+                actor['limitations'] = list(control['limitations'])
+            except (ValueError, KeyError, StopIteration) as error:
+                actor['movement_error'] = str(error)
         # The Moss Charger has no Walker and no collider of its own; the name and its
         # NonBouncer are the gate (host/moss_charger.py).
         if not actor['movement_supported'] and sc.gos[gid]['m_Name'].startswith('Moss Charger') \
@@ -880,6 +892,16 @@ def generated_actor_records(region):
             initial_direction, random_start_direction = -1, False
             # `Roams` rides the placement's start-alert word: a roamer starts awake.
             start_alert = control['roams']
+        elif control['kind'] == 'FatFly':
+            fat_fly_clips = ('attack_clip', 'shot_clip', 'impact_clip')
+            if any(key not in actor for key in fat_fly_clips) or not actor.get('corpse'):
+                raise ValueError(f'Fat Fly is missing cooked clips or corpse: {actor["source"]}')
+            controller = 'hk_sim::ActorController::FatFly {' + ','.join(f'{key}:{actor[key]}' for key in fat_fly_clips) + '}'
+            # The controller owns every velocity and the facing. The box is cooked from the world
+            # collider, so a mirrored placement's box is already mirrored: its authored facing is +1.
+            speed, turn_ticks, turn_cooldown_ticks = 0, 0, 0
+            start_right = bool(control['start_right'])
+            initial_direction, random_start_direction = (1 if start_right else -1), False
         elif control['kind'] == 'MossCharger':
             from moss_charger import CLIP_SLOTS as CHARGER_SLOTS
             charger_clips = tuple(slot + '_clip' for slot, _ in CHARGER_SLOTS)
@@ -1026,6 +1048,7 @@ def generated_actor_records(region):
             + (pigeon_clips if control['kind'] == 'Pigeon' else ()) \
             + (moss_clips if control['kind'] == 'MossWalker' else ()) \
             + (charger_clips if control['kind'] == 'MossCharger' else ()) \
+            + (fat_fly_clips if control['kind'] == 'FatFly' else ()) \
             + (mosquito_clips if control['kind'] == 'Mosquito' else ()) \
             + (guard_clips if control['kind'] == 'HuskGuard' else ()) \
             + (false_knight_clips if control['kind'] == 'FalseKnight' else ()) \

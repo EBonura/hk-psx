@@ -17,6 +17,7 @@ def corpse_source(source, scene, actor):
     if kind=='GruzzerReserve':kind='Gruzzer'
     if kind in ('Vengefly','Gruzzer','Mosquito'):return _breaker_corpse_source(source,scene,actor,kind)
     if kind=='Baldur':return _roller_corpse_source(source,scene,actor)
+    if kind=='FatFly':return _fat_fly_corpse_source(source,scene,actor)
     if kind=='Aspid':return _aspid_corpse_source(source,scene,actor)
     if kind=='AcidFlyer':return _acid_flyer_corpse_source(source,scene,actor)
     if kind=='EggSac':return _egg_sac_corpse_source(source,scene,actor)
@@ -167,6 +168,53 @@ def _breaker_corpse_source(source,scene,actor,kind):
     return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
             'spawn_offset':[0,0],'gravity':42*65536,'breaker':True,'smash_bounces':3 if gruzzer else 0,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(bounce*65536),'land_delay_ticks':0,
             'limitations':['Break pieces, spatter and infected wave on landing are not presented; the corpse is removed',
+                           'Fixed-point terrain solver is not complete Box2D']}
+
+def _fat_fly_corpse_source(source,scene,actor):
+    """`Corpse Fat Fly` (docs/FAT_FLY.md): fling 20 from the body, gravity 0.8, ObjectBounce 0.6, a circle
+    collider (radius 0.6, offset 0.02, -0.01) that the guest carries as its bounding box, free rotation with
+    `SpinSelfSimple` (not presented), a two-frame Death Air and a one-frame looping Death Land."""
+    components=list(_components(scene,actor['game_object']))
+    deaths=[d for _,typ,d in components if typ=='EnemyDeathEffects']
+    if len(deaths)!=1:raise ValueError('actor needs exactly one EnemyDeathEffects')
+    death=deaths[0]
+    if any(death[k] for k in ('isCorpseRecyclable','corpseFacesRight','lowCorpseArc','rotateCorpse')) or death['corpseFlingSpeed']!=20 \
+            or death['corpseSpawnPoint']!={'x':0.,'y':0.,'z':0.}:
+        raise ValueError('unsupported corpse launch')
+    obj=source.ref(scene.file,death['corpsePrefab']);go=source.read(obj)
+    if go['m_Name']!='Corpse Fat Fly':raise ValueError('unvalidated Fat Fly corpse prefab: '+go['m_Name'])
+    parts={}
+    for ref in go['m_Component']:
+        component=source.ref(obj.assets_file,ref['component']);typ=source.typename(component)
+        if typ in parts:raise ValueError('duplicate corpse component')
+        parts[typ]=(component,source.read(component))
+    if any(k not in parts for k in ('Corpse','tk2dSprite','tk2dSpriteAnimator','Rigidbody2D','CircleCollider2D','ObjectBounce','Transform','SpinSelfSimple')) \
+            or 'BoxCollider2D' in parts:
+        raise ValueError('unsupported Fat Fly corpse prefab')
+    corpse=parts['Corpse'][1];body=parts['Rigidbody2D'][1];ob=parts['ObjectBounce'][1];circle=parts['CircleCollider2D'][1]
+    if any(corpse[k] for k in ('breaker','bigBreaker','chunker','deathStun','fungusExplode','goopExplode','hatcher','instantChunker','massless','spineBurst','zomHive','resetRotation')) \
+            or corpse['landEffects']['m_PathID']:
+        raise ValueError('unsupported special corpse')
+    if body['m_BodyType']!=0 or body['m_LinearDamping']!=0 or abs(body['m_GravityScale']-.8)>1e-6 or body['m_Constraints']!=0:
+        raise ValueError('unsupported corpse body')
+    if abs(ob['bounceFactor']-.6)>1e-6 or ob['speedThreshold']!=1 or any(ob[k] for k in ('playSound','playAnimationOnBounce','sendFSMEvent')):
+        raise ValueError('unsupported corpse bounce')
+    if not circle['m_Enabled'] or circle['m_IsTrigger'] or abs(circle['m_Radius']-.6)>1e-6:
+        raise ValueError('unsupported Fat Fly corpse collider')
+    sprite=parts['tk2dSprite'][1];transform=parts['Transform'][1]
+    if sprite['_color']!={'r':1.0,'g':1.0,'b':1.0,'a':1.0} or sprite['_scale']!={'x':1.0,'y':1.0,'z':1.0} or transform['m_LocalScale']!={'x':1.0,'y':1.0,'z':1.0}:
+        raise ValueError('unsupported corpse scale/color')
+    matrix=scene.world(scene.go_transform[actor['game_object']]);sx=abs(matrix[0][0]);sy=abs(matrix[1][1])
+    off=circle['m_Offset'];r=circle['m_Radius']
+    bounds=[(off['x']-r)*sx,(off['y']-r)*sy,(off['x']+r)*sx,(off['y']+r)*sy]
+    anim=parts['tk2dSpriteAnimator'][1];library_o=source.ref(obj.assets_file,anim['library']);library=source.read(library_o)
+    selected=[next(c for c in library['clips']if c['name']==name)for name in ('Death Air','Death Land')]
+    if [(c['fps'],c['wrapMode'],len(c['frames']))for c in selected]!=[(12,2,2),(30,0,1)]:raise ValueError('unvalidated corpse clip timing')
+    if any(c.get('loopStart',0)!=0 or any(f.get('triggerEvent',False)for f in c['frames'])for c in selected):
+        raise ValueError('unsupported corpse animation events/loop start')
+    return {'source':source.sid(obj),'library':source.sid(library_o),'library_object':library_o,'clips':selected,'scale':[sx,sy],'bounds':[round(v*65536)for v in bounds],
+            'spawn_offset':[0,0],'gravity':48*65536,'breaker':False,'fling_speed':round(death['corpseFlingSpeed']*65536),'bounce_factor':round(.6*65536),'land_delay_ticks':60,
+            'limitations':['The circle body is solved as its bounding box and does not spin (SpinSelfSimple); Corpse Steam and Flame are not presented',
                            'Fixed-point terrain solver is not complete Box2D']}
 
 def _roller_corpse_source(source,scene,actor):
@@ -471,7 +519,7 @@ def append_shot_art(source,actors,cooker):
     prefab whose body or box the pool would get wrong."""
     for actor in actors:
         control=actor.get('movement_control',{})
-        if not actor['movement_supported'] or control.get('kind')not in('Aspid','Blocker'):continue
+        if not actor['movement_supported'] or control.get('kind')not in('Aspid','Blocker','FatFly'):continue
         shot=control['shot'];library_o=shot.pop('library_object');library=source.read(library_o)
         scale=shot['scale']
         for kind,name in (('shot','Idle'),('impact','Impact')):
