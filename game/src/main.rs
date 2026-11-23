@@ -757,6 +757,16 @@ pub static mut HK_GRUBS: u32 = 0;
 fn strike_shade(shade: &mut shade::World, attacks: &HeroAttacks) -> bool {
     attacks.slash().is_some_and(|hit| shade.strike(hit.points(), hit.damage))
 }
+/// `nail_clash_tink`'s Blocked Hit for the Knight, wherever the FSM sits (the Shade's Slash,
+/// the Mawlek's arms: one FSM, the same digest): `NailParry` arms parryInvulnTimer for
+/// INVUL_TIME_PARRY, EnemyKillShake, and the parry sound where the scene's bank has it.
+/// The recoil is the caller's, as it differs.
+#[inline(never)]
+pub fn nail_parry(player: &mut Player) {
+    player.quake_invuln = shade::PARRY_INVULN_TICKS;
+    camera::request(camera::Shake::Kill);
+    scene_sfx::play(scene_sfx::HERO_PARRY);
+}
 /// `nail_clash_tink` on the Shade's Slash: `NailParry`'s parryInvulnTimer, EnemyKillShake, the
 /// parry sound (where the scene's bank has it), and the recoil the slash's direction picks.
 #[inline(never)]
@@ -771,9 +781,7 @@ fn parry_shade(
     let Some(hit) = attacks.slash().filter(|hit| shade.parry(hit)) else {
         return;
     };
-    player.quake_invuln = shade::PARRY_INVULN_TICKS;
-    camera::request(camera::Shake::Kill);
-    scene_sfx::play(scene_sfx::HERO_PARRY);
+    nail_parry(player);
     if vitals.can_control() {
         response.contact(hero_params::nail_response(), hit.kind, hit.facing, player);
     }
