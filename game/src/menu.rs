@@ -542,7 +542,7 @@ fn draw_menu(menu: &State, v: View, slots: &[&str; 4], fault: &str) {
         }
         Page::Cheats => {
             // The same flourishes as Options: a window of eight rows follows the cursor through the
-            // twelve cheats and Back.
+            // fourteen cheats, the unlock and Back.
             flourishes(24, 224, lv, v.gain);
             centered_caps(51, "CHEATS", title);
             const WINDOW: usize = 8;
