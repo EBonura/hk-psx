@@ -105,3 +105,10 @@ Per-scene Geo bank landing (docs/GEO.md). Measured A/B in the same session: the 
 
 - greenpath-walk: frame_time 327 to 345 (measured 329); kings-death: frame_time 233 to 246 (measured 234). Layout noise of the repin and the Shaker code (0.6 and 0.4 percent over), ceilings follow the measurement plus 5 percent as `validate --repin` does.
 - hornet-road and hornet-road-defeated are retired (tapes, cuts, pins, routes and cards deleted). They climbed Fungus1_22's 120 unit shaft open loop, and Fungus1_22 holds three Mossman Shakers (24.1, 32.5), (8.1, 13.6), (19.6, 84.5) that now gas the Knight: the climb never reached the Fungus1_21 gate (load 1 not admitted in 7,200 ticks, closed loop; the open-loop copy drifts). The road to Hornet's arena is walked from a new game by `walk-new-game-to-hornet` (Fungus1_31, 32, 20_v02, 21, 04) and `walk-fungus1-32-to-hornet`; her arena, bank and Cloak pins are `walk-hornet-fight`'s. Not covered any more: the Fungus1_22 shaft itself (off the route since 20_v02), which wants a closed-loop walk with fights.
+
+## 2026-11-23 02:36 UTC, disc d69281ac9aba
+
+- secret-c08: frame_time 261 to 277 (measured 263)
+- secret-f08b: frame_time 236 to 254 (measured 241), pacing 74 to 113 (measured 85)
+
+The gameplay batch (lane/hk-batch2-1122: nail terrain recoil, wall-slide and turn rules, the tink sounds, the hero attack list, cached HeroParams, eight charms) and its searched layout (fdc10858). Both routes still break their walls as pinned (secret hits and breaks unchanged). The nail recoil pushes the Knight off the wall between swings on these two tapes, but that is not what moved the figures: a copy of each tape that steps back to the wall between swings, so the Knight stands where main had him, measured the same (secret-f08b 241 and 85 again, secret-c08 265), so the move is the batch's code and layout, 0.8 and 2.1 percent over, inside the 10 percent guard. Moved by `validate --repin`; outcome pins unchanged.
