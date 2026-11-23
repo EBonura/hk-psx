@@ -29,12 +29,14 @@ commands = [
   ["cargo", "hk-build", "build", "--no-validate", "--hollow-knight", "{input:hollow-knight}", "--sdk-source", "{input:sdk}", "--library", "{out}"],
   ["cargo", "hk-build", "walk-compile", "--library", "{out}"],
 ]
-collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json" }
+collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "hot-text.order" = "build/hot-text.order", "hot-text.order.placed" = "build/hot-text.order.placed" }
 env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_WALK_SYNC = "poll" }
 env_remove = ["HK_GUEST_FEATURES", "HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
 map = "game.map"
-# Until the batch search lands a stamped game/hk.layout, the ship disc is unplaced; an install refuses without it.
+# The ordering file the link followed (host/build_guest.py place_hot_text) and its .placed sidecar: the build
+# stage runs `psoxide-pgo followed` on it against game.map, so the disc is proven to carry the searched layout.
+order = "hot-text.order"
 layout_files = ["game/hk.layout"]
 
 # The route-input twin: what the route tapes replay (validate) and the speed windows measure.
@@ -49,11 +51,12 @@ commands = [
   ["cp", "tools/cards/secret-c37.mcd", "{out}/card-secret-c37.mcd"],
   ["cp", "tools/cards/kings-return.mcd", "{out}/card-kings-return.mcd"],
 ]
-collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "build.json" = ".hkpsx/build.json" }
+collect = { "game.map" = "build/hk-psx-normal.map", "hk-psx.exe" = "dist/hk-psx.exe", "build-normal.json" = ".hkpsx/build-normal.json", "build.json" = ".hkpsx/build.json", "hot-text.order" = "build/hot-text.order", "hot-text.order.placed" = "build/hot-text.order.placed" }
 env = { HK_COOK_STORE = "{input:hk-cook-store}", HK_OVERLAY_SDK = "{input:sdk}", HK_GUEST_FEATURES = "route-input" }
 env_remove = ["HK_HOT_LAYOUT", "HK_INTRO"]
 disc = "Hollow Knight (hk-psx).cue"
 map = "game.map"
+order = "hot-text.order"
 
 # The original files by content (the digest is the build stage's input:NAME fact): the retail
 # install the cook read, and the SDK checkout at the pin. The cook store is not pinned: it is a
