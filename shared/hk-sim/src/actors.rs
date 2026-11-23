@@ -85,6 +85,15 @@ pub enum ActorController {
     MossWalker {
         clips: [u16; 4],
     },
+    /// Moss Charger, driven by `crate::moss_charger::MossCharger`. It has no collider of
+    /// its own (the frame's box is `moss_charger::MossCharger::collider`), so the spec's
+    /// box is empty. `walk_clip`/`turn_clip` are Charge and TurnRun; `clips` are every
+    /// clip it plays, in `moss_charger::Clip` order. `range` is the detached `Attack
+    /// Range` trigger box relative to the tuft, in world axes (it never mirrors).
+    MossCharger {
+        clips: [u16; crate::moss_charger::Clip::COUNT],
+        range: [i32; 4],
+    },
     /// Rolling Baldur driven by `crate::baldur::Baldur`; `walk_clip` is Idle.
     Baldur {
         start_clip: u16,

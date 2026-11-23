@@ -343,6 +343,11 @@ fn encode_controller(c: &ActorController, w: &mut Writer) {
             w.u8(20);
             w.u16(idle_clip);
         }
+        C::MossCharger { clips, range } => {
+            w.u8(22);
+            w.u16s(&clips);
+            w.i32s(&range);
+        }
         C::FalseKnight {
             jump_antic_clip,
             land_clip,
@@ -365,7 +370,7 @@ fn encode_controller(c: &ActorController, w: &mut Writer) {
 /// decoder reads a payload with one loop over this table and builds the variant from the numbers, which
 /// takes a fraction of the code of a reader call per field (`Runner`, tag 3, carries a nested enum and
 /// is read by hand).
-const SHAPES: [&[u8]; 22] = [
+const SHAPES: [&[u8]; 23] = [
     &[1],
     &[4, 4, 4, 4],
     &[],
@@ -388,6 +393,7 @@ const SHAPES: [&[u8]; 22] = [
     &[1, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4],
     &[2],
     &[2, 2, 2, 2, 4, 4, 4, 4, 2, 4],
+    &[2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4],
 ];
 const MAX_FIELDS: usize = 24;
 
@@ -450,6 +456,7 @@ fn decode_controller(r: &mut Reader) -> Option<ActorController> {
         18 => C::Pigeon { clips: clips(&a, 0) },
         19 => C::FsmActor { family: a[0] as u8, clips: clips(&a, 1), trigger: coords(&a, 9) },
         20 => C::Static { idle_clip: a[0] as u16 },
+        22 => C::MossCharger { clips: clips(&a, 0), range: coords(&a, 7) },
         _ => C::FalseKnight {
             jump_antic_clip: a[0] as u16,
             land_clip: a[1] as u16,
