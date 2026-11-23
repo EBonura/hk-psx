@@ -65,7 +65,7 @@ mod vitals;
 pub use focus::{Focus, FocusClip, FocusEvents, FocusInput, FocusParams};
 pub mod script;
 mod spell;
-pub use spell::{Cast, CastPhase, Fireball, FireballParams};
+pub use spell::{Cast, CastPhase, Choice, Fireball, FireballParams, HeroSpell, QuakeParams, ScreamParams, SpellCue};
 mod dream_nail;
 pub use dream_nail::{DreamNail, DreamNailParams, DreamPhase};
 mod nail_response;
@@ -260,6 +260,10 @@ pub struct Player {
     pub fall_ticks: u16,
     /// Ticks of the hard landing's lock left (`hero_state == hard_landing`); zero when not locked.
     pub hard_land: u16,
+    /// Desolate Dive or Howling Wraiths, while one owns the Knight (spell.rs).
+    pub spell: HeroSpell,
+    /// `parryInvulnTimer` as `QuakeInvuln` sets it: contact damage passes.
+    pub quake_invuln: u16,
 }
 impl Player {
     pub const fn spawn(x: i32, y: i32) -> Self {
@@ -307,6 +311,8 @@ impl Player {
             land_tick: 0,
             fall_ticks: 0,
             hard_land: 0,
+            spell: HeroSpell::Off,
+            quake_invuln: 0,
         }
     }
     pub fn tick(&mut self, p: Params, dir: i32, jump: bool, room: &Room) {
@@ -329,6 +335,7 @@ impl Player {
         // CanDash: the cooldown, no dash running, not inside an attack's
         // recovery window, and either footing, an unspent air dash or a wall.
         let allowed = self.has_dash
+            && self.spell == HeroSpell::Off
             && self.dash_left == 0
             && self.dash_cooldown == 0
             && !self.attack_recovering
@@ -370,6 +377,8 @@ impl Player {
         self.shroom_bouncing = false;
         self.vy = 0;
         self.super_dash = SuperDash::Off;
+        // HERO DAMAGED takes Spell Control to `Cancel All`.
+        self.spell = HeroSpell::Off;
     }
     /// What `HeroController::Bounce` and `BounceHigh` do to the Knight besides
     /// arming the bounce (`NailResponse` holds that): a pogo hands back the
@@ -398,7 +407,10 @@ impl Player {
     pub fn super_dash_input(&mut self, p: Params, held: bool) {
         self.super_dash = match self.super_dash {
             SuperDash::Off
-                if held && self.has_super_dash && (self.grounded || self.wall_sliding) =>
+                if held
+                    && self.has_super_dash
+                    && self.spell == HeroSpell::Off
+                    && (self.grounded || self.wall_sliding) =>
             {
                 // The entry call is the charge's first tick.
                 SuperDash::Charging(1)
@@ -598,7 +610,16 @@ impl Player {
             SuperDash::Charging(_) | SuperDash::Ready | SuperDash::Recovering(_)
         );
         let dashing = self.dash_left > 0;
-        let (dir, speed) = if super_dashing {
+        let (dir, speed) = if self.spell != HeroSpell::Off {
+            // Dive and Wraiths hold the velocity they set, with gravity off
+            // (`AffectedByGravity(false)`). On a floor the source's ground check
+            // is a raycast; here the floor pass needs a step downwards to keep
+            // him on it, so a grounded and unrisen Knight still falls into it.
+            if self.grounded && self.vy <= 0 {
+                self.vy = -p.gravity / 60;
+            }
+            (0, 0)
+        } else if super_dashing {
             // SetGravity2dScale(0): the travel owns velocity outright.
             self.vy = 0;
             (self.facing, p.super_dash_speed)
@@ -707,6 +728,10 @@ impl Player {
                 self.jumping = false;
                 self.head_bump = p.head_bump_ticks;
             }
+        }
+        // `Quake1 Down`'s HERO LANDED.
+        if self.spell == HeroSpell::QuakeDown && self.grounded {
+            self.spell = HeroSpell::QuakeLand(0);
         }
         // Source CheckTouchingWall is a raycast, so contact holds whether or
         // not the wall is being pushed into. A probe just outside each side

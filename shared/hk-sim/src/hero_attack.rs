@@ -27,6 +27,8 @@ pub enum Class {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Source {
     Fireball,
+    Quake,
+    Scream,
     Nail,
     DreamNail,
 }
@@ -198,12 +200,14 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1]
 }
 
-/// Spells, the nail swing, the Dream Nail: at most one of each today.
-pub const MAX_HITS: usize = 3;
+/// Vengeful Spirit's ball, up to three of Dive's or Wraiths' hits (they never
+/// overlap each other, but either can run while a ball flies), the nail swing
+/// and the Dream Nail.
+pub const MAX_HITS: usize = 6;
 
 /// This tick's live hero attacks, built once after the Knight has moved and
 /// swung, and read by every receiver. Empty slots are `None`, so an idle tick
-/// writes three tags rather than three shapes.
+/// writes six tags rather than six shapes.
 pub struct HeroAttacks {
     hits: [Option<HeroHit>; MAX_HITS],
 }
