@@ -5,7 +5,6 @@ use std::io::{self, Read, Write};
 
 const HEADER: usize = 0x800;
 const LOAD: u32 = 0x8001_0000;
-const RAM_END: u32 = 0x8020_0000;
 const MAGIC: u32 = 0x4841_5A54;
 
 fn resident_size(bytes: &[u8]) -> Result<usize, String> {
@@ -32,7 +31,9 @@ fn resident_size(bytes: &[u8]) -> Result<usize, String> {
     Ok(payload)
 }
 
-fn compose(resident: &[u8], module: &[u8]) -> Result<(Vec<u8>, u32), String> {
+/// `ram_top` is the top of the RAM the program links for, 0x8000_0000 + the `RAM_SIZE` the build gave the linker
+/// (host/stack_budget.py): 0x8020_0000 for a whole 2 MiB, lower under the scene core's window.
+fn compose(resident: &[u8], module: &[u8], ram_top: u32) -> Result<(Vec<u8>, u32), String> {
     let payload = resident_size(resident)?;
     if module.is_empty() || !module.len().is_multiple_of(4) {
         return Err("module image must be nonempty and word aligned".into());
@@ -43,7 +44,7 @@ fn compose(resident: &[u8], module: &[u8]) -> Result<(Vec<u8>, u32), String> {
     let end = at
         .checked_add(u32::try_from(module.len()).map_err(|_| "module too large")?)
         .ok_or("placement end overflows")?;
-    if end > RAM_END {
+    if end > ram_top {
         return Err(format!("module placement ends beyond RAM at {end:#x}"));
     }
     let mut result = Vec::with_capacity(resident.len() + module.len());
@@ -128,9 +129,9 @@ fn hex(value: &str) -> Result<u32, String> {
 
 fn run(args: &[String], input: &[u8]) -> Result<Vec<u8>, String> {
     match args {
-        [action, resident, composite] if action == "compose" => {
+        [action, resident, composite, ram_top] if action == "compose" => {
             let resident = std::fs::read(resident).map_err(|e| e.to_string())?;
-            let (bytes, at) = compose(&resident, input)?;
+            let (bytes, at) = compose(&resident, input, hex(ram_top)?)?;
             std::fs::write(composite, bytes).map_err(|e| e.to_string())?;
             Ok(format!("{at:x}\n").into_bytes())
         }
@@ -150,7 +151,7 @@ fn run(args: &[String], input: &[u8]) -> Result<Vec<u8>, String> {
             )?;
             Ok(format!("{capacity}\n").into_bytes())
         }
-        _ => Err("usage: hk-module-image compose RESIDENT COMPOSITE < IMAGE; hk-module-image extract RESIDENT COMPOSITE LENGTH > IMAGE; hk-module-image clean-capacity COMPOSITE LINK_LO LINK_HI AT TRAMP_LO TRAMP_HI".into()),
+        _ => Err("usage: hk-module-image compose RESIDENT COMPOSITE RAM_TOP < IMAGE; hk-module-image extract RESIDENT COMPOSITE LENGTH > IMAGE; hk-module-image clean-capacity COMPOSITE LINK_LO LINK_HI AT TRAMP_LO TRAMP_HI".into()),
     }
 }
 
@@ -179,6 +180,10 @@ fn main() {
 mod tests {
     use super::*;
 
+    /// RAM_BASE + RAM_SIZE for a whole 2 MiB link, and for RAM_SIZE_OVERRIDE 0x1FE000 (the scene core's window).
+    const STOCK_TOP: u32 = 0x8020_0000;
+    const CORE_TOP: u32 = 0x801F_E000;
+
     fn resident(payload: usize) -> Vec<u8> {
         let mut exe = vec![0x5a; HEADER + payload];
         exe[..8].copy_from_slice(b"PS-X EXE");
@@ -192,7 +197,7 @@ mod tests {
         let mut exe = resident(0x1000);
         exe[HEADER + 0x20..HEADER + 0x24].copy_from_slice(&0x4841_5a54u32.to_le_bytes());
         let module = [1, 2, 3, 4, 5, 6, 7, 8];
-        let (image, at) = compose(&exe, &module).unwrap();
+        let (image, at) = compose(&exe, &module, STOCK_TOP).unwrap();
         assert_eq!(at, LOAD + 0x1000);
         assert_eq!(image.len(), exe.len() + module.len());
         assert_eq!(&image[..exe.len()], exe);
@@ -203,7 +208,7 @@ mod tests {
     #[test]
     fn extraction_rejects_resident_mutation_and_truncation() {
         let exe = resident(0x1000);
-        let (mut image, _) = compose(&exe, &[1, 2, 3, 4]).unwrap();
+        let (mut image, _) = compose(&exe, &[1, 2, 3, 4], STOCK_TOP).unwrap();
         image[HEADER] ^= 1;
         assert!(extract(&exe, &image, 4)
             .unwrap_err()
@@ -215,7 +220,7 @@ mod tests {
     #[test]
     fn extraction_returns_only_patched_module_and_accepts_sector_padding() {
         let exe = resident(0x1000);
-        let (mut image, _) = compose(&exe, &[1, 2, 3, 4]).unwrap();
+        let (mut image, _) = compose(&exe, &[1, 2, 3, 4], STOCK_TOP).unwrap();
         image[exe.len()..exe.len() + 4].copy_from_slice(&[9, 8, 7, 6]);
         image.extend_from_slice(&[0; 8]);
         assert_eq!(extract(&exe, &image, 4).unwrap(), [9, 8, 7, 6]);
@@ -229,14 +234,27 @@ mod tests {
     fn malformed_header_and_out_of_ram_fail() {
         let mut exe = resident(0x1000);
         exe[0x1c..0x20].copy_from_slice(&0x2000u32.to_le_bytes());
-        assert!(compose(&exe, &[1, 2, 3, 4]).is_err());
+        assert!(compose(&exe, &[1, 2, 3, 4], STOCK_TOP).is_err());
         let mut exe = resident(0x1000);
         exe[0x18..0x1c].copy_from_slice(&0x8002_0000u32.to_le_bytes());
-        assert!(compose(&exe, &[1, 2, 3, 4])
+        assert!(compose(&exe, &[1, 2, 3, 4], STOCK_TOP)
             .unwrap_err()
             .contains("load address"));
-        let exe = resident((RAM_END - LOAD) as usize - 4);
-        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8]).is_err());
+        let exe = resident((STOCK_TOP - LOAD) as usize - 4);
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8], STOCK_TOP).is_err());
+    }
+
+    #[test]
+    fn placement_must_end_under_the_ram_top_the_build_linked_for() {
+        // The same resident and module fit a whole 2 MiB and are refused under the core window.
+        let exe = resident((CORE_TOP - LOAD) as usize - 8);
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8], CORE_TOP).is_ok());
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], CORE_TOP).is_err());
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], STOCK_TOP).is_ok());
+        let exe = resident((STOCK_TOP - LOAD) as usize - 8);
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8], STOCK_TOP).is_ok());
+        assert!(compose(&exe, &[1, 2, 3, 4, 5, 6, 7, 8], CORE_TOP).is_err());
+        assert!(run(&["compose".into(), "r".into(), "c".into(), "0x801fe000".into()], &[0; 4]).is_err());
     }
 
     #[test]
@@ -245,7 +263,7 @@ mod tests {
         let mut module = vec![0; 0x80];
         module[0x40..0x44].copy_from_slice(&MAGIC.to_le_bytes());
         module[0x44..0x48].copy_from_slice(&14u32.to_le_bytes());
-        let (image, at) = compose(&exe, &module).unwrap();
+        let (image, at) = compose(&exe, &module, STOCK_TOP).unwrap();
         assert_eq!(
             clean_capacity(
                 &image,
@@ -263,7 +281,7 @@ mod tests {
         let mut module = vec![0; 0x80];
         module[0x40..0x44].copy_from_slice(&MAGIC.to_le_bytes());
         module[0x44..0x48].copy_from_slice(&14u32.to_le_bytes());
-        let (mut image, at) = compose(&exe, &module).unwrap();
+        let (mut image, at) = compose(&exe, &module, STOCK_TOP).unwrap();
         let link = (0x8040_8000, 0x8040_8080);
         let tramp = (0x8040_8040, 0x8040_8080);
         image[exe.len() + 0x40] = 0;

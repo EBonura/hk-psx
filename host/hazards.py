@@ -14,6 +14,7 @@ scan() then proves the final code clean.
 """
 import os,re,hashlib,json,subprocess
 from pathlib import Path
+from stack_budget import RAM_TOP
 ROOT=Path(__file__).resolve().parents[1]
 
 def _symbols(map_path):
@@ -61,7 +62,7 @@ def _module_tool():
     return _MODULE_TOOL
 
 def compose_module(resident,image,composite):
-    done=subprocess.run([str(_module_tool()),'compose',str(resident),str(composite)],
+    done=subprocess.run([str(_module_tool()),'compose',str(resident),str(composite),f'{RAM_TOP:x}'],
                         input=bytes(image),capture_output=True,check=True)
     return int(done.stdout.strip(),16)
 
