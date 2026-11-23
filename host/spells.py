@@ -166,8 +166,9 @@ QUAKE_SCREAM_LIMITATIONS = [
     'Level 1 only: quakeLevel or screamLevel 2 plays as level 1.',
     'Shaman Stone and Spell Twister read only through MP Cost; the charm damages of '
     'Q Fall Damage, Q Slam and Scr Heads are not applied.',
-    'The Knight\'s Quake and Scream clips and the Q Slam, Q Trail, Q Pillar and Scr Heads '
-    'art and sounds are not cooked; the guest stands in existing clips and effects.',
+    'The Knight\'s Quake and Scream clips and the Q Slam and Scr Heads effects are cooked '
+    '(host/ability_art.py, the art_spell pack); Q Charge, Q Trail, Q Flash Start, Q Flash Slam, '
+    'Q1 Pillar, Q Orbs, Scr Base and Scr Orbs are not, nor are the spells\' own sounds.',
 ]
 
 def _knight_child(source, file, knight, path):
