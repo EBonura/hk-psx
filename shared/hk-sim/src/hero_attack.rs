@@ -7,6 +7,7 @@
 //! that says how a receiver answers it. A new attack (Desolate Dive, Howling
 //! Wraiths, a nail art) is one more entry of an existing class.
 use crate::{AttackParams, Nail, Player};
+use core::mem::MaybeUninit;
 
 /// How a receiver answers a hit. Receivers branch on this, never on `Source`,
 /// so a new attack of an existing class needs no receiver change.
@@ -71,6 +72,9 @@ impl HeroHit {
     /// Knight collection faces left at positive scale X, so a local point's x
     /// is negated for a right-facing Knight. This is the one copy of the
     /// transform; every nail, wall slash and Dream Nail shape comes from it.
+    /// Kept out of line: each caller would otherwise carry its own copy of the
+    /// sixteen-point fill.
+    #[inline(never)]
     pub fn polygon(
         source: Source,
         class: Class,
@@ -206,10 +210,13 @@ fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
 pub const MAX_HITS: usize = 6;
 
 /// This tick's live hero attacks, built once after the Knight has moved and
-/// swung, and read by every receiver. Empty slots are `None`, so an idle tick
-/// writes six tags rather than six shapes.
+/// swung, and read by every receiver. Only the first `len` slots are written,
+/// so an idle tick writes one byte rather than six shapes, and a receiver's
+/// walk runs over the live entries alone instead of an unrolled test of every
+/// slot (which grew each receiver when the list grew to six).
 pub struct HeroAttacks {
-    hits: [Option<HeroHit>; MAX_HITS],
+    hits: [MaybeUninit<HeroHit>; MAX_HITS],
+    len: u8,
 }
 
 impl Default for HeroAttacks {
@@ -221,19 +228,30 @@ impl Default for HeroAttacks {
 impl HeroAttacks {
     pub const fn new() -> Self {
         Self {
-            hits: [None; MAX_HITS],
+            hits: [const { MaybeUninit::uninit() }; MAX_HITS],
+            len: 0,
         }
     }
 
     /// Append one live attack. Receivers see entries in push order; every push
     /// comes before the tick's first `end_swing`.
     pub fn push(&mut self, hit: HeroHit) {
-        let slot = self.hits.iter_mut().find(|h| h.is_none());
-        *slot.expect("more live hero attacks than MAX_HITS") = Some(hit);
+        let slot = self
+            .hits
+            .get_mut(self.len as usize)
+            .expect("more live hero attacks than MAX_HITS");
+        slot.write(hit);
+        self.len += 1;
+    }
+
+    fn live(&self) -> &[HeroHit] {
+        // SAFETY: `push` writes every slot below `len` before raising it, and
+        // `end_swing` only moves written slots down; `MaybeUninit<T>` has `T`'s layout.
+        unsafe { core::slice::from_raw_parts(self.hits.as_ptr().cast(), self.len as usize) }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &HeroHit> {
-        self.hits.iter().flatten()
+        self.live().iter()
     }
 
     /// The live hits of one class, in order.
@@ -248,12 +266,14 @@ impl HeroAttacks {
 
     /// A hit the Knight takes resets the nail (`respond_to_hurt`), so the swing
     /// stops reaching anything for the rest of the tick. Spells already in
-    /// flight and the Dream Nail are not affected.
+    /// flight and the Dream Nail are not affected, and keep their order.
+    #[inline(never)]
     pub fn end_swing(&mut self) {
-        for slot in &mut self.hits {
-            if slot.is_some_and(|h| h.class == Class::Slash) {
-                *slot = None;
-            }
+        // One swing at most: close the gap it leaves.
+        let len = self.len as usize;
+        if let Some(i) = self.live().iter().position(|h| h.class == Class::Slash) {
+            self.hits.copy_within(i + 1..len, i);
+            self.len -= 1;
         }
     }
 }
@@ -351,5 +371,7 @@ mod tests {
         assert!(list.slash().is_none());
         assert_eq!(list.iter().count(), 2);
         assert_eq!(list.of(Class::Dream).count(), 1);
+        let order: [Source; 2] = core::array::from_fn(|i| list.iter().nth(i).unwrap().source);
+        assert_eq!(order, [Source::Fireball, Source::DreamNail], "the rest keep their order");
     }
 }
