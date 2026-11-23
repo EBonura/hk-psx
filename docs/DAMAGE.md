@@ -75,7 +75,11 @@ other, because it no longer has its own copy to drift.
 ## Not in this audit
 
 The source's `damageMode`, parry invulnerability and the `INVUL_TIME_*` variants
-beyond the plain and hazard windows. Armour and shields, which no admitted enemy
+beyond the plain and hazard windows, except where Desolate Dive uses them:
+`SetDamageModeFSM(1)` from `Quake1 Down` to `Quake Finish` and the
+`INVUL_TIME_QUAKE` window `QuakeInvuln` starts both let contact damage pass
+(hazardType 1) and not spikes or acid, as the Shade Cloak's dash does, so they
+reach the same `Hurt::Ignored` through `Player::ignores_contact`. Armour and shields, which no admitted enemy
 has: the Zombie Shield and Guard are on the unsupported roster. Hit-stop is
 implemented as `freeze_ticks` on the Knight only; the source also freezes the
 attacker, which the port does not.

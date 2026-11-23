@@ -14,7 +14,9 @@ where each piece lives. Source records are from the installed Windows build (`re
 | Monarch Wings double jump | `Double J Wings` (`Double Jump Wings 2`, 6 frames at 16 fps), `White Flash DJ` (holds 0.125 s, fades in 0.4 s), `Double J Feather` (moth feathers, 65 a second for 0.4 s) | the wings from `art_fx`; the flash as a small round glow of blue light (one cooked frame, 3.2 units across, held 8 ticks and faded over 24); the feathers are not presented (their texture is not in a scene's particle art) |
 | Vengeful Spirit | `Fireball Top`: `Fireball Blast`, `particles`, `white_light`; the ball sheds soul orbs (80 a second); `Wall Impact` when a wall stops it, `Ball End` when it expires | `Fireball Blast` and `Wall Impact` from `art_fx_spell`, `Ball End` (linked art); the orbs are not presented (a cloud of about thirty more quads in a spell fight, which tipped the Baldur fight from 2 to 3 vblanks a frame on 150 of its frames) |
 | Focus, heal | Lines Anim, Burst, White Flash R, Dust, Can Focus Particles | already presented (`focus_fx.rs`) |
-| Desolate Dive, Howling Wraiths, nail arts | `Q Slam`, `Scr Heads`, `Cyclone Slash`, `Great Slash`, `Dash Slash` | the abilities are not in the port |
+| Desolate Dive | `Q Charge`, `Q Trail`, `Q Flash Start`, `Q Flash Slam`, `Q Slam` (`Quake Blast`), `Q1 Pillar`, `Q Orbs`; the Knight's `Quake Antic`, `Quake Fall`, `Quake Land` | none of it is cooked: the antic stands in the Crystal Heart's ground charge, the fall the ordinary falling pose, the landing the `HardLand` crouch, the hard landing's sound and the Focus dust; `BigShake` and `EnemyKillShake` are the camera's |
+| Howling Wraiths | `Scr Heads` (`Scream1`), `Scr Base`, `Scr Orbs`; the Knight's `Scream Start`, `Scream`, `Scream End` | none of it is cooked: the body stands in the fireball's antic and cast clips and the cast sound; `BigShake` is the camera's |
+| Nail arts | `Cyclone Slash`, `Great Slash`, `Dash Slash` | the abilities are not in the port |
 | Crystal Heart | the `SD *` effects | not presented (the body poses are) |
 
 ## How it is built
