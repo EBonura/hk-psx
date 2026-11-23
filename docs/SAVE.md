@@ -46,6 +46,8 @@ one store of named fields. What persists, and who owns it in a session:
 | Sly's bools and counters, `maxHealthBase`, `MPReserveMax`, keys, eggs | PlayerData | `shop::State` | ids 43 to 60 |
 | Charm board: `gotCharm_N`, `equippedCharm_N`, `charmSlots`, `canOvercharm` | PlayerData | `charms::State` | ids 61 to 66 |
 | NPC conversation cursors (two bits per NPC) | the NPCs' own PlayerData bools | `dialogue` | id 67 (`port.npcCursors`) |
+| The Grubfather's rewards paid, his last one | `grubRewards`, `finalGrubRewardCollected` | `player_data` (`grubfather.rs`) | ids 68, 69 |
+| Relics and Pale Ore picked up | `trinket1` to `trinket3`, `ore` | `player_data` (the pickups' and the Grubfather's grant) | ids 70 to 73 |
 | Broken walls, mined rocks, cocoon, secrets, arenas, enemy deaths, grubs, totems, area titles seen, pickups, map scenes | SceneData persistent items | `persist::Store` (walls and rocks from `world::State` and `geo::World`) | item list after PlayerData |
 | Title style unlocks | roaming shared data | `save::UNLOCKED` | its own file (below) |
 
