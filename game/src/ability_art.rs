@@ -20,13 +20,15 @@ static DATA: &[u8] = include_bytes!(concat!(
     "/../data/ability-art.hk"
 ));
 /// The carried module of each streamed pack, in `STREAM_PACKS` order
-/// (host/ability_art.py): the Death clip, the respawn clips, then the ability effects.
+/// (host/ability_art.py): the Death clip, the respawn clips, the ability effects, then Desolate Dive's
+/// and Howling Wraiths' art.
 #[cfg(not(test))]
-const STREAMS: [usize; 4] = [
+const STREAMS: [usize; 5] = [
     crate::modules::ART_DEATH,
     crate::modules::ART_WAKE,
     crate::modules::ART_FX,
     crate::modules::ART_FX_SPELL,
+    crate::modules::ART_SPELL,
 ];
 /// Bytes of one streamed frame record at the head of a pack: the guest `Frame` field for field
 /// (offset u32, width and height u16, palette u32, four bounds i32).
@@ -93,6 +95,18 @@ pub const WALL_PUFF: usize = 37;
 pub const FLASH_EFFECT: usize = 38;
 pub const FIREBALL_BLAST: usize = 39;
 pub const WALL_IMPACT: usize = 40;
+/// The `art_spell` pack: Desolate Dive's slam (`Q Slam`'s `Quake Blast`) and Howling Wraiths' heads
+/// (`Scr Heads`' `Scream1`), effects cut to parts like the ones above, then the Knight's own poses for
+/// both spells (`host/ability_art.py` SPELL_CLIPS), whole frames like his other clips.
+pub const QUAKE_SLAM: usize = 41;
+pub const SCREAM_HEADS: usize = 42;
+pub const QUAKE_ANTIC: usize = 43;
+pub const QUAKE_FALL: usize = 44;
+pub const QUAKE_LAND: usize = 45;
+pub const SCREAM_START: usize = 46;
+pub const SCREAM: usize = 47;
+pub const SCREAM_END: usize = 48;
+const _: () = assert!(ABILITY_CLIPS.len() == SCREAM_END + 1 && STREAM_PACKS.len() == 5);
 
 /// Above every Shade key, which are themselves above every room texture table.
 pub const KEY_BASE: u16 = crate::shade::KEY_BASE + crate::shade::SHADE_FRAMES.len() as u16;
@@ -139,6 +153,7 @@ fn pack(k: usize) -> Option<&'static [u8]> {
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-wake.hk"))[..],
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-fx.hk"))[..],
             &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-fx-spell.hk"))[..],
+            &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/art-spell.hk"))[..],
         ]
         .get(k)
         .copied()
