@@ -790,9 +790,11 @@ fn read_profile<B: Block>(card: &mut Card<B>, profile: usize) -> Result<Slot, Fa
     Ok(if seen { Slot::Corrupt } else { Slot::Empty })
 }
 /// Every profile, for the selection screen. Boot-time, before the pad sampler
-/// starts (nothing else uses SIO0).
+/// starts (nothing else uses SIO0). Boot-only code (psoxide-boot.ld's `.text.boot_only.*`, run from the
+/// module pool): main.rs calls it once, before the title module installs there.
 #[inline(never)]
 #[cfg_attr(not(test), optimize(size))]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.save_survey")]
 pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
     let mut card = Card::new(SlotOne::new(false));
     let mut slots = [Slot::Empty; PROFILES];
@@ -831,6 +833,42 @@ pub fn survey() -> ([Slot; PROFILES], Option<Fault>) {
         HK_SAVE_FAULT = fault.map_or(0, |f| f as u32 + 1);
     }
     (slots, fault)
+}
+/// Each slot's one line on the save screen, its text in `text`. Geo and masks are what the record holds; the
+/// source also shows play time, completion and the map zone, none of which this port tracks. Boot-only code
+/// (`.text.boot_only.*`, as `survey`): main.rs calls it once, before the title module installs; the lines it
+/// returns point into `text` or at string constants, which stay resident.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.slot_lines")]
+pub fn slot_lines<'a>(slots: &[Slot; PROFILES], text: &'a mut [[u8; 16]; PROFILES]) -> [&'a str; PROFILES] {
+    let mut used = [0usize; PROFILES];
+    for (i, slot) in slots.iter().enumerate() {
+        if let Slot::Used(save) = slot {
+            let line = &mut text[i];
+            let mut at = 0;
+            for b in b"Geo " {
+                line[at] = *b;
+                at += 1;
+            }
+            let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
+            for b in psx_math::fmt::u32_dec(&mut digits, save.geo.min(9999)).bytes() {
+                line[at] = b;
+                at += 1;
+            }
+            used[i] = at;
+        }
+    }
+    let text: &'a [[u8; 16]; PROFILES] = text;
+    let mut lines = ["Empty"; PROFILES];
+    for (i, slot) in slots.iter().enumerate() {
+        lines[i] = match slot {
+            Slot::Empty => "Empty",
+            Slot::Corrupt => "Damaged",
+            Slot::Used(_) => core::str::from_utf8(&text[i][..used[i]]).unwrap_or("Used"),
+        };
+    }
+    lines
 }
 /// The chosen profile's PlayerData into `pd` and its SceneData items into
 /// `store`, migrating an HKS4 or HKS5 record. Re-reads the copy `survey`

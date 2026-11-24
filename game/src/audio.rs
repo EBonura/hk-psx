@@ -94,6 +94,10 @@ pub fn level() -> u8 {
 /// Owns the SPU reset for every bank in the game, so it runs before the title
 /// screen: the retail BIOS leaves a live reverb preset behind and `spu::init`
 /// is what silences it. The samples themselves arrive later, from the disc.
+/// Boot-only code (`.text.boot_only.*`): main.rs calls it once, before the title
+/// module installs in the module pool it runs from.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.audio_init")]
 pub fn init() {
     assert!(SAMPLES.len() == VOICES.len());
     // set_volume applies one gain to the shared voice, so everything that

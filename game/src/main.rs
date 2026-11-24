@@ -1004,39 +1004,14 @@ fn main() {
     // before the first CD read. Its code runs from the module pool, where psx-rt's `__boot_entry` put it
     // before `_start` (which flushes the whole I-cache before `main`).
     presentation::boot_splash(&mut fb);
-    // Each slot's one line on the save screen. Geo and masks are what the
-    // record holds; the source also shows play time, completion and the map
-    // zone, none of which this port tracks.
+    // Each slot's one line on the save screen (save.rs `slot_lines`, boot-only code).
     let mut slot_text = [[0u8; 16]; save::PROFILES];
-    let mut slot_used = [0usize; save::PROFILES];
-    for (i, slot) in slots.iter().enumerate() {
-        if let save::Slot::Used(save) = slot {
-            let line = &mut slot_text[i];
-            let mut at = 0;
-            for b in b"Geo " {
-                line[at] = *b;
-                at += 1;
-            }
-            let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
-            for b in psx_math::fmt::u32_dec(&mut digits, save.geo.min(9999)).bytes() {
-                line[at] = b;
-                at += 1;
-            }
-            slot_used[i] = at;
-        }
-    }
-    let mut slot_lines = ["Empty"; save::PROFILES];
-    for (i, slot) in slots.iter().enumerate() {
-        slot_lines[i] = match slot {
-            save::Slot::Empty => "Empty",
-            save::Slot::Corrupt => "Damaged",
-            save::Slot::Used(_) => {
-                core::str::from_utf8(&slot_text[i][..slot_used[i]]).unwrap_or("Used")
-            }
-        };
-    }
+    let slot_lines = save::slot_lines(&slots, &mut slot_text);
     let profile_fault = card_fault.map_or("", |f| f.message());
     audio::init();
+    // The disc's directory, once, by boot-only code (disc.rs `boot_init`, run from the module pool, so before the
+    // title module installs there). Retried until it reads: no scene loads without it, and nothing after boot can.
+    while unsafe { &mut *(&raw mut ROOM_CACHE) }.boot_init().is_err() {}
     // Before the title: it plays two of these. A failed read is retried by
     // bootstrap's prepare_ambience, so it only costs the title its clips.
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.prepare_world_sfx();

@@ -1116,8 +1116,8 @@ extern "C" fn core_idle() {
 fn core_prove_stop() -> bool {
     // SAFETY: op COMMAND with no parameter bytes and no response buffer.
     let r = unsafe { core_cd::cd(cd_op::COMMAND, 0, u32::from(psx_hw::cd::CMD_GETSTAT) << 8, core::ptr::null_mut()) };
-    // The low byte is the outcome; 0 is acknowledged (the core image's `__psx_core_cd_impl`).
-    r & 0xff == 0
+    // The low byte is the outcome.
+    r & 0xff == cd_op::ACKNOWLEDGED
 }
 /// Read `sectors` from member LBA `lba` into the scene arena through the scene core: one seek-first start, the
 /// core's retries and its proven Pause at the end.
@@ -1125,7 +1125,7 @@ fn core_read(lba: u32, sectors: usize) -> bool {
     if sectors * SECTOR_BYTES > SCENE_ARENA_BYTES {
         return false;
     }
-    // SAFETY: the arena holds `sectors` sectors (checked above), word aligned; `init` is the only caller and
+    // SAFETY: the arena holds `sectors` sectors (checked above), word aligned; `boot_init` is the only caller and
     // refuses to run while a scene owns the arena.
     if unsafe { core_cd::read(lba, sectors as u32, (&raw mut BUFFERS.words).cast::<u32>(), None) } != 0 {
         return false;
@@ -1156,8 +1156,24 @@ impl Cache {
             early: false,
         }
     }
-    #[cfg_attr(not(test), optimize(size))]
+    /// The directory is checked: `boot_init` has run and passed. Every reader calls this first.
+    #[inline(always)]
     fn init(&mut self) -> Result<(), LoadError> {
+        if self.ready {
+            Ok(())
+        } else {
+            Err(LoadError::HeaderInvalid)
+        }
+    }
+    /// Read and check the pack's directory, find MUSIC.XA and hand the drive to the stream engine, once, at boot
+    /// (main.rs, right after `audio::init` and before the title module installs). Boot-only code (psoxide-boot.ld's
+    /// `.text.boot_only.*`, run from the module pool), so it costs no resident byte; nothing after boot may call it,
+    /// and nothing needs to: `ready` is never cleared once set. A failure is retried by main.rs until the
+    /// directory reads and checks, as the bootstrap's retry loop did before (no scene can load without it).
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
+    #[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.cache_boot_init")]
+    pub fn boot_init(&mut self) -> Result<(), LoadError> {
         if self.ready {
             return Ok(());
         }
@@ -1179,8 +1195,7 @@ impl Cache {
         }
         // The directory is staged in the scene arena and dropped once checked,
         // like the ADPCM banks and the per-scene effect art. Refuse if anything
-        // is admitted; bootstrap calls this through `prepare_ambience`, which
-        // makes the same refusal, long before the first scene is read.
+        // is admitted; main.rs calls this at boot, long before the first scene is read.
         if self.loaded_scenes != 0 {
             return Err(LoadError::HeaderRead);
         }
@@ -1283,7 +1298,9 @@ impl Cache {
     /// volume descriptor and the first sector of the root directory (a handful of
     /// files). Stages both in the arena's first sector, which the pack header
     /// check above has finished with.
+    /// Boot-only code that only `boot_init` calls (`.text.boot_inner.*`).
     #[inline(never)]
+    #[cfg_attr(target_arch = "mips", link_section = ".text.boot_inner.hk_psx.find_xa")]
     fn find_xa(&mut self) {
         let mut lba = psx_io::iso::PVD_LBA;
         // SAFETY: an empty assembly block that returns its operand. The compiler is not told the
