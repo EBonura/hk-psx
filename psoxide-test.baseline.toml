@@ -1,7 +1,7 @@
 # Written by `psoxide-test bless`; edit only by blessing again (decision 4: a bar changes by editing
 # psoxide-test.toml with a reason, never by hand-editing these numbers).
 schema = 1
-blessed_commit = "939e1b63f097a7652eed902d9b98f9b51e30211b+dirty"
+blessed_commit = "5d97f4c4c60a58c68c55e37823b753397c216e6b"
 sdk_pin = "6e32ce0a94a32dbe207018d52abc0104e63b9a03"
 
 [size.ship]
