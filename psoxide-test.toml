@@ -63,7 +63,7 @@ order = "hot-text.order"
 # cache that a cook publishes into.
 [originals]
 hollow-knight = "3521cb92cf9d68f48de9063aa3d3fabf75b0670b7451c519079e43c9723496de"
-sdk = "6f9c12f5343e12b450c853df3b9da6b763305012829379746ed68ce06059a3c4"
+sdk = "b410741ae483e2a11a2650f0c36dfaeb3dc84a05f1ff5ef9b167d74d2fbe6059"
 
 [[size]]
 build = "ship"
