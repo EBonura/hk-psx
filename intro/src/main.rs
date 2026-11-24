@@ -99,19 +99,20 @@ const MOVIES: [Cooked; cooked::MOVIES] = [
 /// No sector for two seconds ends the movie.
 const STALL_VBLANKS: u32 = 120;
 
-/// The hand-off the game leaves in the last 64 bytes of RAM (game/src/intro.rs `play`), above the stack
-/// it runs on (the 256 bytes over its initial stack pointer are nobody's): a magic and its complement, the
-/// stack pointer to come back with, the address to return to, the RAM the movie buffers may use (the scene
-/// arena) and its length, the disc's base sector and CD-DA track base that the SDK's file lookup needs, and
-/// the picture's position the title's screen setting chose.
-const MAILBOX: *mut u32 = 0x801F_FFC0 as *mut u32;
+/// The hand-off the game leaves in the scene core's scene-private area (game/src/intro.rs `Hand`, 120 of its 124
+/// bytes at 0x801FFF80, above the core's window): the poem's state between steps, the game's words for the poem's
+/// steps, then the mailbox: a magic, the stack pointer to come back with, the address to return to, the RAM the
+/// movie buffers may use (the scene arena) and its length, the picture's position the title's screen setting
+/// chose, the mode, the result and the step entry. The disc's base sector and CD-DA track base that the SDK's
+/// file lookup needs come in `$a1`/`$a2` from the core block (the game's enter stub reads them there).
+const MAILBOX: *mut u32 = 0x801F_FFCC as *mut u32;
 const MAGIC: u32 = 0x484B_4E47; // "HKNG"
-/// More of the hand-off, below the mailbox: the game's words for the poem's steps (game/src/intro.rs), and
-/// below them the poem's state between steps.
-const CARRY: *mut poem::Carry = 0x801F_FF40 as *mut poem::Carry;
+/// More of the hand-off, below the mailbox: the poem's state between steps, then the game's words for the
+/// poem's steps (game/src/intro.rs).
+const CARRY: *mut poem::Carry = 0x801F_FF80 as *mut poem::Carry;
 const _: () = assert!(core::mem::size_of::<poem::Carry>() <= 64);
 
-/// What the game asks of a call (mailbox word 10).
+/// What the game asks of a call (mailbox word 7).
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Mode {
     /// Play the poem and its piano until the piano is over.
@@ -120,7 +121,7 @@ enum Mode {
     Movies,
 }
 
-/// What a call tells the game (mailbox word 11).
+/// What a call tells the game (mailbox word 8).
 const RESULT_DONE: u32 = 0;
 /// The piano is over and the poem is not.
 const RESULT_YIELD: u32 = 2;
@@ -146,15 +147,15 @@ struct Handoff {
 impl Handoff {
     /// The mailbox, if the game wrote one: power-on garbage is no hand-off.
     fn read() -> Option<Handoff> {
-        // SAFETY: eight words of RAM nothing else uses; volatile reads of a block the game wrote before it called.
+        // SAFETY: words of RAM nothing else uses; volatile reads of a block the game wrote before it called.
         let word = |i: usize| unsafe { core::ptr::read_volatile(MAILBOX.add(i)) };
-        (word(0) == MAGIC && word(1) == !MAGIC).then(|| Handoff {
-            saved_sp: word(2),
-            return_pc: word(3),
-            arena: word(4) as usize,
-            arena_bytes: word(5) as usize,
-            screen: (word(8) as i32 as i16, word(9) as i32 as i16),
-            mode: match word(10) {
+        (word(0) == MAGIC).then(|| Handoff {
+            saved_sp: word(1),
+            return_pc: word(2),
+            arena: word(3) as usize,
+            arena_bytes: word(4) as usize,
+            screen: (word(5) as i32 as i16, word(6) as i32 as i16),
+            mode: match word(7) {
                 1 => Mode::Movies,
                 _ => Mode::Poem,
             },
@@ -164,7 +165,7 @@ impl Handoff {
     /// Leave for the game with `result`: the stack it called from, then the code after its call.
     fn leave(&self, result: u32) -> ! {
         // SAFETY: the mailbox word the game reads after the call.
-        unsafe { core::ptr::write_volatile(MAILBOX.add(11), result) };
+        unsafe { core::ptr::write_volatile(MAILBOX.add(8), result) };
         // SAFETY: the game's `hk_intro_enter` saved its registers on the stack at `saved_sp` and put the
         // address of its restore code in the mailbox; that code reloads them and returns to its caller.
         unsafe {
@@ -482,8 +483,8 @@ fn main() {
                     unsafe { core::arch::asm!("move {0}, $28", out(reg) gp, options(nomem, nostack)) };
                     // SAFETY: mailbox words the game reads after the call.
                     unsafe {
-                        core::ptr::write_volatile(MAILBOX.add(12), hk_poem_tick_entry as *const () as usize as u32);
-                        core::ptr::write_volatile(MAILBOX.add(13), gp);
+                        core::ptr::write_volatile(MAILBOX.add(9), hk_poem_tick_entry as *const () as usize as u32);
+                        core::ptr::write_volatile(MAILBOX.add(10), gp);
                     }
                     result = RESULT_YIELD;
                 }
@@ -534,13 +535,13 @@ core::arch::global_asm!(
     .globl hk_poem_tick_entry
 hk_poem_tick_entry:
     lui $8, 0x8020
-    lw $4, -0x40+40($8)
+    lw $4, -0x34+28($8)
     jal hk_poem_tick
     nop
     lui $8, 0x8020
-    sw $2, -0x40+44($8)
-    lw $25, -0x40+12($8)
-    lw $29, -0x40+8($8)
+    sw $2, -0x34+32($8)
+    lw $25, -0x34+8($8)
+    lw $29, -0x34+4($8)
     jr $25
     nop
 "#

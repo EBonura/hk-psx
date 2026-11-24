@@ -12,11 +12,11 @@
 //! blob uses of the game's is the scene arena, which nothing needs between
 //! the title and the first scene's load.
 //!
-//! The hand-off block ([`Hand`]) is the last 192 bytes of RAM, above the stack: the mailbox proper is ten
-//! words (a magic and its complement, the stack pointer to return with, the address of [`hk_intro_leave`],
-//! the arena's address and length, the disc's base sector and CD-DA track base, which the SDK's file lookup
-//! needs as a chain loader passes them, and the screen position the title chose), then the mode the game asks
-//! for and what the program answers. The magic goes last, so power-on garbage is no hand-off.
+//! The hand-off block ([`Hand`]) is the scene core's scene-private area, above the core's window: the mailbox
+//! proper is seven words (a magic, the stack pointer to return with, the address of [`hk_intro_leave`], the
+//! arena's address and length, and the screen position the title chose), then the mode the game asks for and
+//! what the program answers. The disc's base sector and CD-DA track base, which the SDK's file lookup needs as a
+//! chain loader passes them, are the core block's. The magic goes last, so power-on garbage is no hand-off.
 //!
 //! The poem and the first scene's load overlap. The program is called three times (the mailbox's mode word):
 //! to play the poem with its piano, which holds the drive until the piano is over; then, with the drive
@@ -29,10 +29,12 @@
 //!
 //! Only built with the `intro` feature.
 
-/// The hand-off block in the last 192 bytes of RAM, above the stack the game runs on (its initial stack pointer
-/// is 0x801FFF00; the 256 bytes over it are nobody's). The program (intro/src/main.rs) reads and writes the
-/// same words: the first 64 bytes are its own state for the poem (poem.rs `Carry`), then come the loader's
-/// words for the poem's steps, then the mailbox, where the program has always looked for it.
+/// The hand-off block: the scene core's scene-private area (`psx_scene_abi::block::OFF_PRIVATE`, 124 bytes at
+/// 0x801FFF80), which the core never touches and which lies above the core's window and the stack the game runs
+/// on. The program (intro/src/main.rs) reads and writes the same words: the first 64 bytes are its own state for
+/// the poem (poem.rs `Carry`), then come the loader's words for the poem's steps, then the mailbox. The disc's
+/// base sector and CD-DA track base are the core block's own (offsets 0x0C and 0x10), so the mailbox does not
+/// carry them; one magic word says the game wrote it.
 #[repr(C)]
 struct Hand {
     poem_state: [u32; 16],
@@ -42,33 +44,32 @@ struct Hand {
     step_sp: u32,
     step_last: u32,
     step_state: u32,
-    spare: [u32; 13],
-    /// The mailbox: a magic and its complement, the stack pointer to return with, the address of
-    /// [`hk_intro_leave`], the arena's address and length, the disc's base sector and CD-DA track base (the
-    /// SDK's file lookup needs them, as a chain loader passes them), the screen position the title chose, what
-    /// the game asks (a mode, which a step takes as the VBlank count), what the program answers, and where its
-    /// step of the poem is (address and global pointer).
+    /// The mailbox: a magic, the stack pointer to return with, the address of [`hk_intro_leave`], the arena's
+    /// address and length, the screen position the title chose, what the game asks (a mode, which a step takes
+    /// as the VBlank count), what the program answers, and where its step of the poem is (address and global
+    /// pointer).
     magic: u32,
-    magic_not: u32,
     saved_sp: u32,
     leave_pc: u32,
     arena: u32,
     arena_bytes: u32,
-    lba_offset: u32,
-    cdda_base: u32,
     screen_x: u32,
     screen_y: u32,
     mode: u32,
     result: u32,
     step_pc: u32,
     step_gp: u32,
-    spare2: [u32; 2],
 }
-const HAND: *mut Hand = 0x801F_FF40 as *mut Hand;
+const HAND: *mut Hand = (psx_core::abi::block::ADDR as usize + psx_scene_abi::block::OFF_PRIVATE) as *mut Hand;
 const MAGIC: u32 = 0x484B_4E47; // "HKNG"
-// The program's block for the poem sits at the start of `Hand`; the mailbox is 16 words after it, where the
-// program has always looked for it.
-const _: () = assert!(core::mem::offset_of!(Hand, magic) == 128 && core::mem::size_of::<Hand>() == 192);
+// The program's block for the poem sits at the start of `Hand`, the mailbox after the step words; the program
+// (intro/src/main.rs) uses the same offsets, and the whole block fits the scene-private area.
+const _: () = assert!(
+    core::mem::offset_of!(Hand, magic) == 76
+        && core::mem::size_of::<Hand>() == 120
+        && core::mem::size_of::<Hand>() <= psx_scene_abi::block::PRIVATE_BYTES
+        && psx_core::abi::block::ADDR as usize + psx_scene_abi::block::OFF_PRIVATE == 0x801F_FF80
+);
 /// The block's address as a value the compiler cannot fold into every access: one base register per function
 /// and an offset per word, instead of a 32-bit address built for each (a few dozen bytes of the RAM below
 /// the pool).
@@ -121,16 +122,17 @@ hk_intro_enter:
     sw $30, 32($29)
     sw $28, 36($29)
     sw $31, 40($29)
-    sw $29, 8($7)
+    sw $29, 4($7)
     lui $2, %hi(hk_intro_leave)
     addiu $2, $2, %lo(hk_intro_leave)
-    sw $2, 12($7)
+    sw $2, 8($7)
     move $25, $4
     move $28, $5
     move $29, $6
     li $4, {magic}
-    lw $5, 24($7)
-    lw $6, 28($7)
+    lui $8, 0x8020
+    lw $5, -0x100+0x0C($8)
+    lw $6, -0x100+0x10($8)
     jr $25
     nop
 hk_intro_leave:
@@ -199,11 +201,8 @@ pub fn play(
     unsafe {
         core::ptr::write_volatile(hand!(h, arena), arena as u32);
         core::ptr::write_volatile(hand!(h, arena_bytes), arena_bytes as u32);
-        core::ptr::write_volatile(hand!(h, lba_offset), psx_io::disc_base::lba_offset());
-        core::ptr::write_volatile(hand!(h, cdda_base), u32::from(psx_io::disc_base::cdda_track_base()));
         core::ptr::write_volatile(hand!(h, screen_x), screen.0);
         core::ptr::write_volatile(hand!(h, screen_y), screen.1);
-        core::ptr::write_volatile(hand!(h, magic_not), !MAGIC);
         core::ptr::write_volatile(hand!(h, magic), MAGIC);
     }
     // SAFETY: the blob's link range, checked by the writer to lie inside the empty pool (no overlap with
