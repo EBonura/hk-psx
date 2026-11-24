@@ -21,6 +21,9 @@ mod music {
     pub fn service() {
         super::AUDIO_CHECKPOINTS.fetch_add(1, super::Ordering::SeqCst);
     }
+    pub fn service_scratch() {
+        super::AUDIO_CHECKPOINTS.fetch_add(1, super::Ordering::SeqCst);
+    }
 }
 mod presentation {
     pub fn checkpoint() {
