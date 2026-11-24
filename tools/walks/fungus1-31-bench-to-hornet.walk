@@ -19,7 +19,7 @@ wait until expr u8(HK_HERO_LOCK) == 0 timeout 900
 include hornet-defs.walk
 check sealed HK_HORNET_ENCOUNTERS == 1 ; HK_ARENA_GATE_CLOSES >= 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0
 hold left until x le 28.8 timeout 200                              # out of the right corner before she wakes: the gate she is sealed behind leaves the Knight at x 32.4, and her leaps pin him to that wall
-loop hornet-fight until expr u32(HK_HORNET_PHASE) >= 2 || u32(HK_DEATHS) > 0 max 5000 timeout 30000
+loop hornet-fight until expr u32(HK_HORNET_PHASE) >= 2 || u32(HK_DEATHS) > 0 max 10000 timeout 30000   # a round costs about 3 ticks, so the pass cap stays above the tick bound: on mister,gpu-irq=never the same boot fights for 18,500 ticks (about 5,900 rounds) and 5000 ran out with her at 30 HP
 include hornet-round.walk
 end
 wait until HK_HORNET_PHASE == 3 timeout 900
