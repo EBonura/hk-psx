@@ -1,11 +1,11 @@
-# Fungus1_31 from the arrival to the left Toll Machine (x 10.5, y 51.4). Planned by hk-walkplan room (landing margins, respawn recoveries, closed-loop passes) from fungus1-31-entry.mcd.
+# Fungus1_31 from the arrival to the left Toll Machine (x 10.5, y 51.4), with its Obbles. Planned by hk-walkplan room (landing margins, respawn recoveries, closed-loop passes) from fungus1-31-entry.mcd, 2026-11-23.
 at 24.00 3.39
-clear d31a-h001-arc 30.780 7.390
+clear d31a-h001-arc 30.780 7.390 23.26 29.25
 loop d31a-h001 until expr (abs(i32(HK_PLAYER_X) - 2017198) <= 58982 || (i32(HK_PLAYER_X) >= 1950466 && i32(HK_PLAYER_X) <= 2149581)) && abs(i32(HK_PLAYER_Y) - 484311) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1520435 && i32(HK_PLAYER_X) <= 1787473 && abs(i32(HK_PLAYER_Y) - 549888) <= 19661   # d31a-h001: back from the floor at y 8.39 (x 23.2 to 27.2)
-walk 27.22
-drop 27.85 3.39
-walk 26.95
+if expr i32(HK_PLAYER_X) >= 1743128 && i32(HK_PLAYER_X) <= 1756365 && abs(i32(HK_PLAYER_Y) - 542110) <= 19661   # d31a-h001: back from the floor at y 8.27 (x 26.6 to 26.8)
+walk 24.43
+drop 23.81 3.39
+walk 26.09
 end
 walk 26.49
 walk 26.06   # run-up
@@ -21,38 +21,31 @@ retreat 30.31 32.25
 heal
 clear d31a-h002-arc 27.180 11.390 30.31 32.25
 loop d31a-h002 until expr (abs(i32(HK_PLAYER_X) - 1781268) <= 58982 || (i32(HK_PLAYER_X) >= 1717043 && i32(HK_PLAYER_X) <= 1848000)) && abs(i32(HK_PLAYER_Y) - 746455) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1427364 && i32(HK_PLAYER_X) <= 1588023 && abs(i32(HK_PLAYER_Y) - 812032) <= 19661   # d31a-h002: back from the floor at y 12.39 (x 21.8 to 24.2)
-walk 23.77
-walk 23.77   # take-off
-hold left+cross for 5
-hold left for 35
-wait until HK_WALK_READY == 1 timeout 300
-walk 17.80   # run-up
-walk 18.23   # take-off
-hold right+cross for 16
-hold right for 24
-wait until HK_WALK_READY == 1 timeout 300
-walk 23.34   # run-up
-walk 23.77   # take-off
-hold right+cross for 5
-hold right for 14
-wait until HK_WALK_READY == 1 timeout 300
-walk 25.96   # run-up
-walk 26.39   # take-off
-hold right+cross for 20
-hold right for 11
-wait until HK_WALK_READY == 1 timeout 300
-end
-if expr i32(HK_PLAYER_X) >= 1489312 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h002: back from the floor at y 3.39 (x 22.8 to 29.8)
-walk 27.88   # run-up
-walk 28.31   # take-off
+if expr i32(HK_PLAYER_X) >= 1496512 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h002: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.68   # run-up
+walk 29.11   # take-off
 hold right+cross for 20
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
 end
-if expr i32(HK_PLAYER_X) >= 1700079 && i32(HK_PLAYER_X) <= 1706633 && abs(i32(HK_PLAYER_Y) - 662528) <= 19661   # d31a-h002: back from the floor at y 10.11 (x 26.0 to 26.0)
-drop 25.36 8.39
+if expr i32(HK_PLAYER_X) >= 1520435 && i32(HK_PLAYER_X) <= 1756365 && abs(i32(HK_PLAYER_Y) - 549888) <= 19661   # d31a-h002: back from the floor at y 8.39 (x 23.2 to 26.8)
 walk 26.75
+walk 24.54
+drop 23.91 3.39
+walk 26.47
+walk 26.04   # run-up
+walk 26.47   # take-off
+hold right+cross for 20
+hold right for 11
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1700845 && i32(HK_PLAYER_X) <= 1821901 && abs(i32(HK_PLAYER_Y) - 662528) <= 19661   # d31a-h002: back from the floor at y 10.11 (x 26.0 to 27.8)
+drop 25.51 8.39
+walk 25.43   # run-up
+walk 25.86   # take-off
+hold right+cross for 5
+hold right for 3
+wait until HK_WALK_READY == 1 timeout 300
 walk 24.54
 drop 23.91 3.39
 walk 26.47
@@ -76,20 +69,9 @@ retreat 26.75 27.65
 heal
 clear d31a-h003-arc 30.780 15.390 26.75 27.65
 loop d31a-h003 until expr (abs(i32(HK_PLAYER_X) - 2017198) <= 58982 || (i32(HK_PLAYER_X) >= 1950466 && i32(HK_PLAYER_X) <= 2149581)) && abs(i32(HK_PLAYER_Y) - 1008599) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 2077491 && i32(HK_PLAYER_X) <= 2084045 && abs(i32(HK_PLAYER_Y) - 837374) <= 19661   # d31a-h003: back from the floor at y 12.78 (x 31.8 to 31.8)
-walk 31.47
-drop 30.85 7.39
-walk 31.47
-walk 31.90   # run-up
-walk 31.47   # take-off
-hold left+cross for 20
-hold left for 11
-wait until HK_WALK_READY == 1 timeout 300
-end
-if expr i32(HK_PLAYER_X) >= 1495750 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h003: back from the floor at y 3.39 (x 22.9 to 29.8)
-walk 29.10
-walk 28.67   # run-up
-walk 29.10   # take-off
+if expr i32(HK_PLAYER_X) >= 1496661 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h003: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.82   # run-up
+walk 29.25   # take-off
 hold right+cross for 20
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -98,6 +80,23 @@ walk 31.01   # run-up
 walk 30.58   # take-off
 hold left+cross for 20
 hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1947493 && i32(HK_PLAYER_X) <= 2149581 && abs(i32(HK_PLAYER_Y) - 484352) <= 19661   # d31a-h003: back from the floor at y 7.39 (x 29.8 to 32.8)
+walk 30.89   # run-up
+walk 30.46   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 2077491 && i32(HK_PLAYER_X) <= 2084045 && abs(i32(HK_PLAYER_Y) - 837374) <= 19661   # d31a-h003: back from the floor at y 12.78 (x 31.8 to 31.8)
+walk 31.47
+drop 30.85 7.39
+walk 31.47
+walk 31.90   # run-up
+walk 31.47   # take-off
+hold left+cross for 20
+hold left for 11
 wait until HK_WALK_READY == 1 timeout 300
 end
 walk 27.46
@@ -114,12 +113,30 @@ retreat 30.31 32.25
 heal
 clear d31a-h004-arc 23.860 18.390 30.31 32.25
 loop d31a-h004 until expr (abs(i32(HK_PLAYER_X) - 1563689) <= 58982 || (i32(HK_PLAYER_X) >= 1360982 && i32(HK_PLAYER_X) <= 1721071)) && abs(i32(HK_PLAYER_Y) - 1205207) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1717043 && i32(HK_PLAYER_X) <= 1854329 && abs(i32(HK_PLAYER_Y) - 746496) <= 19661   # d31a-h004: back from the floor at y 11.39 (x 26.2 to 28.2)
-walk 27.41
-walk 26.98   # run-up
-walk 27.41   # take-off
+if expr i32(HK_PLAYER_X) >= 1496512 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h004: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.68   # run-up
+walk 29.11   # take-off
 hold right+cross for 20
 hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.58
+walk 31.01   # run-up
+walk 30.58   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.54
+walk 27.11   # run-up
+walk 27.54   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1717444 && i32(HK_PLAYER_X) <= 1850908 && abs(i32(HK_PLAYER_Y) - 746496) <= 19661   # d31a-h004: back from the floor at y 11.39 (x 26.3 to 28.2)
+walk 26.53
+walk 26.53   # take-off
+hold right+cross for 20
+hold right for 11
 wait until HK_WALK_READY == 1 timeout 300
 end
 walk 30.50
@@ -136,9 +153,29 @@ retreat 21.32 25.71
 heal
 clear d31a-h005-arc 27.240 23.310 21.32 25.71
 loop d31a-h005 until expr (abs(i32(HK_PLAYER_X) - 1785201) <= 58982 || (i32(HK_PLAYER_X) >= 1691274 && i32(HK_PLAYER_X) <= 1870063)) && abs(i32(HK_PLAYER_Y) - 1527644) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1488573 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h005: back from the floor at y 3.39 (x 22.8 to 29.8)
-walk 28.28   # run-up
-walk 28.71   # take-off
+if expr i32(HK_PLAYER_X) >= 1110115 && i32(HK_PLAYER_X) <= 1243579 && abs(i32(HK_PLAYER_Y) - 872029) <= 19661   # d31a-h005: back from the floor at y 13.31 (x 17.0 to 18.9)
+walk 17.39   # run-up
+walk 17.82   # take-off
+hold right+cross for 28
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.38
+end
+if expr i32(HK_PLAYER_X) >= 1717043 && i32(HK_PLAYER_X) <= 1854355 && abs(i32(HK_PLAYER_Y) - 746496) <= 19661   # d31a-h005: back from the floor at y 11.39 (x 26.2 to 28.2)
+walk 26.59
+walk 26.59   # take-off
+hold right+cross for 20
+hold right for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 31.30   # run-up
+walk 30.87   # take-off
+hold left+cross for 28
+hold left for 20
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1494266 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h005: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.78   # run-up
+walk 29.21   # take-off
 hold right+cross for 20
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -162,9 +199,9 @@ hold left for 19
 wait until HK_WALK_READY == 1 timeout 300
 end
 if expr i32(HK_PLAYER_X) >= 1947516 && i32(HK_PLAYER_X) <= 2149581 && abs(i32(HK_PLAYER_Y) - 1008640) <= 19661   # d31a-h005: back from the floor at y 15.39 (x 29.8 to 32.8)
-walk 30.73
-walk 31.16   # run-up
-walk 30.73   # take-off
+walk 30.87
+walk 31.30   # run-up
+walk 30.87   # take-off
 hold left+cross for 28
 hold left for 20
 wait until HK_WALK_READY == 1 timeout 300
@@ -182,10 +219,56 @@ retreat 26.36 27.98
 heal
 clear d31a-h006-arc 24.280 27.390 26.36 27.98
 loop d31a-h006 until expr (abs(i32(HK_PLAYER_X) - 1591214) <= 58982 || (i32(HK_PLAYER_X) >= 1520435 && i32(HK_PLAYER_X) <= 1657946)) && abs(i32(HK_PLAYER_Y) - 1795031) <= 19661 max 6 timeout 1800
-if expr i32(HK_PLAYER_X) >= 1358428 && i32(HK_PLAYER_X) <= 1718517 && abs(i32(HK_PLAYER_Y) - 1205248) <= 19661   # d31a-h006: back from the floor at y 18.39 (x 20.8 to 26.2)
-walk 21.19   # take-off
-hold right+cross for 34
-hold right for 8
+if expr i32(HK_PLAYER_X) >= 1364121 && i32(HK_PLAYER_X) <= 1715145 && abs(i32(HK_PLAYER_Y) - 1205248) <= 19661   # d31a-h006: back from the floor at y 18.39 (x 20.9 to 26.1)
+walk 23.91
+walk 23.48   # run-up
+walk 23.91   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1488759 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h006: back from the floor at y 3.39 (x 22.8 to 29.8)
+walk 28.56   # run-up
+walk 28.99   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.58
+walk 31.01   # run-up
+walk 30.58   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.54
+walk 27.11   # run-up
+walk 27.54   # take-off
+hold right+cross for 20
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.30
+walk 30.73   # run-up
+walk 30.30   # take-off
+hold left+cross for 24
+hold left for 19
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.80
+walk 23.37   # run-up
+walk 23.80   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1951074 && i32(HK_PLAYER_X) <= 2149581 && abs(i32(HK_PLAYER_Y) - 1008640) <= 19661   # d31a-h006: back from the floor at y 15.39 (x 29.8 to 32.8)
+walk 30.67   # run-up
+walk 30.24   # take-off
+hold left+cross for 24
+hold left for 19
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.73
+walk 23.30   # run-up
+walk 23.73   # take-off
+hold right+cross for 28
+hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
 end
 clear d31a-h006-tight 24.280 27.390 26.36 27.98
@@ -203,9 +286,63 @@ retreat 23.75 24.75
 heal
 clear d31a-h007-arc 29.810 30.390 23.75 24.75
 loop d31a-h007 until expr (abs(i32(HK_PLAYER_X) - 1953628) <= 58982 || (i32(HK_PLAYER_X) >= 1886896 && i32(HK_PLAYER_X) <= 2215117)) && abs(i32(HK_PLAYER_Y) - 1991639) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1491088 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h007: back from the floor at y 3.39 (x 22.8 to 29.8)
-walk 28.32   # run-up
-walk 28.75   # take-off
+if expr i32(HK_PLAYER_X) >= 1698913 && i32(HK_PLAYER_X) <= 1868637 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h007: back from the floor at y 23.31 (x 26.0 to 28.5)
+walk 26.80
+walk 27.23   # run-up
+walk 26.80   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.56
+end
+if expr i32(HK_PLAYER_X) >= 1361975 && i32(HK_PLAYER_X) <= 1722064 && abs(i32(HK_PLAYER_Y) - 1205248) <= 19661   # d31a-h007: back from the floor at y 18.39 (x 20.8 to 26.2)
+walk 23.88
+walk 23.45   # run-up
+walk 23.88   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.67   # run-up
+walk 27.24   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.56
+end
+if expr i32(HK_PLAYER_X) >= 1618067 && i32(HK_PLAYER_X) <= 1624621 && abs(i32(HK_PLAYER_Y) - 2060630) <= 19661   # d31a-h007: back from the floor at y 31.44 (x 24.7 to 24.7)
+walk 25.29
+drop 25.92 18.39
+walk 23.91
+walk 23.48   # run-up
+walk 23.91   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.67   # run-up
+walk 27.24   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.56
+end
+if expr i32(HK_PLAYER_X) >= 1654327 && i32(HK_PLAYER_X) <= 1669946 && abs(i32(HK_PLAYER_Y) - 2100850) <= 19661   # d31a-h007: back from the floor at y 32.06 (x 25.3 to 25.4)
+drop 25.92 18.39
+walk 23.91
+walk 23.48   # run-up
+walk 23.91   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.67   # run-up
+walk 27.24   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.56
+end
+if expr i32(HK_PLAYER_X) >= 1495319 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h007: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.25   # run-up
+walk 28.68   # take-off
 hold right+cross for 20
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -240,115 +377,6 @@ hold left for 4
 wait until HK_WALK_READY == 1 timeout 300
 walk 24.56
 end
-if expr i32(HK_PLAYER_X) >= 1618067 && i32(HK_PLAYER_X) <= 1624621 && abs(i32(HK_PLAYER_Y) - 2060630) <= 19661   # d31a-h007: back from the floor at y 31.44 (x 24.7 to 24.7)
-walk 25.29
-drop 25.92 18.39
-walk 23.91
-walk 23.48   # run-up
-walk 23.91   # take-off
-hold right+cross for 28
-hold right for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 27.67   # run-up
-walk 27.24   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1699652 && i32(HK_PLAYER_X) <= 1869376 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h007: back from the floor at y 23.31 (x 26.0 to 28.5)
-walk 26.81
-walk 27.24   # run-up
-walk 26.81   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1654327 && i32(HK_PLAYER_X) <= 1669946 && abs(i32(HK_PLAYER_Y) - 2100850) <= 19661   # d31a-h007: back from the floor at y 32.06 (x 25.3 to 25.4)
-drop 25.92 18.39
-walk 23.91
-walk 23.48   # run-up
-walk 23.91   # take-off
-hold right+cross for 28
-hold right for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 27.67   # run-up
-walk 27.24   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1672457 && i32(HK_PLAYER_X) <= 1679011 && abs(i32(HK_PLAYER_Y) - 2161239) <= 19661   # d31a-h007: back from the floor at y 32.98 (x 25.6 to 25.6)
-drop 26.10 18.39
-walk 23.81
-walk 23.38   # run-up
-walk 23.81   # take-off
-hold right+cross for 28
-hold right for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 27.67   # run-up
-walk 27.24   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1644497 && i32(HK_PLAYER_X) <= 1651051 && abs(i32(HK_PLAYER_Y) - 2089947) <= 19661   # d31a-h007: back from the floor at y 31.89 (x 25.1 to 25.1)
-walk 24.59
-drop 25.22 27.39
-end
-if expr i32(HK_PLAYER_X) >= 1948500 && i32(HK_PLAYER_X) <= 2149581 && abs(i32(HK_PLAYER_Y) - 1008640) <= 19661   # d31a-h007: back from the floor at y 15.39 (x 29.8 to 32.8)
-walk 30.47
-walk 30.90   # run-up
-walk 30.47   # take-off
-hold left+cross for 28
-hold left for 20
-wait until HK_WALK_READY == 1 timeout 300
-walk 23.40   # run-up
-walk 23.83   # take-off
-hold right+cross for 28
-hold right for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 27.67   # run-up
-walk 27.24   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1627897 && i32(HK_PLAYER_X) <= 1634451 && abs(i32(HK_PLAYER_Y) - 2071534) <= 19661   # d31a-h007: back from the floor at y 31.61 (x 24.9 to 24.9)
-walk 25.44
-drop 26.07 18.39
-walk 23.78
-walk 23.35   # run-up
-walk 23.78   # take-off
-hold right+cross for 28
-hold right for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 27.67   # run-up
-walk 27.24   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
-if expr i32(HK_PLAYER_X) >= 1634666 && i32(HK_PLAYER_X) <= 1641220 && abs(i32(HK_PLAYER_Y) - 2079042) <= 19661   # d31a-h007: back from the floor at y 31.72 (x 25.0 to 25.0)
-walk 24.44
-walk 24.72
-drop 25.34 27.39
-end
-if expr i32(HK_PLAYER_X) >= 1985619 && i32(HK_PLAYER_X) <= 2001238 && abs(i32(HK_PLAYER_Y) - 1873169) <= 19661   # d31a-h007: back from the floor at y 28.58 (x 30.3 to 30.5)
-drop 26.48 23.31
-walk 26.76
-walk 27.19   # run-up
-walk 26.76   # take-off
-hold left+cross for 20
-hold left for 4
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.56
-end
 walk 24.84
 walk 24.41   # run-up
 walk 24.84   # take-off
@@ -363,10 +391,29 @@ retreat 29.34 33.25
 heal
 clear d31a-h008-arc 25.250 34.390 29.34 33.25
 loop d31a-h008 until expr (abs(i32(HK_PLAYER_X) - 1654784) <= 58982 || (i32(HK_PLAYER_X) >= 1297972 && i32(HK_PLAYER_X) <= 1721516)) && abs(i32(HK_PLAYER_Y) - 2253783) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1698913 && i32(HK_PLAYER_X) <= 1868637 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h008: back from the floor at y 23.31 (x 26.0 to 28.5)
-walk 26.80
-walk 27.23   # run-up
-walk 26.80   # take-off
+if expr i32(HK_PLAYER_X) >= 1696285 && i32(HK_PLAYER_X) <= 1866009 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h008: back from the floor at y 23.31 (x 25.9 to 28.4)
+walk 27.59
+walk 28.02   # run-up
+walk 27.59   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.84
+walk 24.41   # run-up
+walk 24.84   # take-off
+hold right+cross for 20
+hold right for 16
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1364252 && i32(HK_PLAYER_X) <= 1715276 && abs(i32(HK_PLAYER_Y) - 1205248) <= 19661   # d31a-h008: back from the floor at y 18.39 (x 20.9 to 26.1)
+walk 23.91
+walk 23.48   # run-up
+walk 23.91   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.67   # run-up
+walk 27.24   # take-off
 hold left+cross for 20
 hold left for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -398,9 +445,9 @@ hold right+cross for 20
 hold right for 16
 wait until HK_WALK_READY == 1 timeout 300
 end
-if expr i32(HK_PLAYER_X) >= 1495348 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h008: back from the floor at y 3.39 (x 22.9 to 29.8)
-walk 28.25   # run-up
-walk 28.68   # take-off
+if expr i32(HK_PLAYER_X) >= 1496114 && i32(HK_PLAYER_X) <= 1952973 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h008: back from the floor at y 3.39 (x 22.9 to 29.8)
+walk 28.26   # run-up
+walk 28.69   # take-off
 hold right+cross for 20
 hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -454,25 +501,43 @@ retreat 20.36 25.72
 heal
 clear d31a-h009-arc 28.360 38.710 20.36 25.72
 loop d31a-h009 until expr (abs(i32(HK_PLAYER_X) - 1858601) <= 58982 || (i32(HK_PLAYER_X) >= 1773739 && i32(HK_PLAYER_X) <= 1943463)) && abs(i32(HK_PLAYER_Y) - 2536899) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1887747 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 1991680) <= 19661   # d31a-h009: back from the floor at y 30.39 (x 28.9 to 33.8)
-walk 29.98   # run-up
-walk 29.55   # take-off
+if expr i32(HK_PLAYER_X) >= 865075 && i32(HK_PLAYER_X) <= 1258651 && abs(i32(HK_PLAYER_Y) - 222208) <= 19661   # d31a-h009: back from the floor at y 3.39 (x 13.2 to 19.2)
+walk 18.60
+walk 18.17   # run-up
+walk 18.60   # take-off
+hold right+cross for 16
+hold right for 24
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.18
+walk 26.75   # run-up
+walk 27.18   # take-off
+hold right+cross for 20
+hold right for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 31.90   # run-up
+walk 31.47   # take-off
 hold left+cross for 20
 hold left for 11
 wait until HK_WALK_READY == 1 timeout 300
-end
-if expr i32(HK_PLAYER_X) >= 2079333 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 2319360) <= 19661   # d31a-h009: back from the floor at y 35.39 (x 31.8 to 33.8)
-walk 32.33
-walk 32.76   # run-up
-walk 32.33   # take-off
-hold left+cross for 28
-hold left for 24
+walk 27.45
+walk 27.02   # run-up
+walk 27.45   # take-off
+hold right+cross for 20
+hold right for 4
 wait until HK_WALK_READY == 1 timeout 300
-end
-if expr i32(HK_PLAYER_X) >= 1699654 && i32(HK_PLAYER_X) <= 1869378 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h009: back from the floor at y 23.31 (x 26.0 to 28.5)
-walk 26.81
-walk 27.24   # run-up
-walk 26.81   # take-off
+walk 30.50
+walk 30.93   # run-up
+walk 30.50   # take-off
+hold left+cross for 28
+hold left for 20
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.43   # run-up
+walk 23.86   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.67   # run-up
+walk 27.24   # take-off
 hold left+cross for 20
 hold left for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -487,6 +552,66 @@ walk 29.97   # run-up
 walk 29.54   # take-off
 hold left+cross for 20
 hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 865674 && i32(HK_PLAYER_X) <= 1126048 && abs(i32(HK_PLAYER_Y) - 2188288) <= 19661   # d31a-h009: back from the floor at y 33.39 (x 13.3 to 17.1)
+walk 17.13
+drop 22.52 18.39
+walk 22.09   # run-up
+walk 22.52   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.37   # run-up
+walk 26.94   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.84
+walk 24.41   # run-up
+walk 24.84   # take-off
+hold right+cross for 20
+hold right for 16
+wait until HK_WALK_READY == 1 timeout 300
+walk 29.54
+walk 29.97   # run-up
+walk 29.54   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1694010 && i32(HK_PLAYER_X) <= 1872799 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h009: back from the floor at y 23.31 (x 25.9 to 28.5)
+walk 27.42
+walk 27.85   # run-up
+walk 27.42   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 23.85   # run-up
+walk 24.28   # take-off
+hold right+cross for 24
+hold right for 16
+wait until HK_WALK_READY == 1 timeout 300
+walk 29.54
+walk 29.97   # run-up
+walk 29.54   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1884375 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 1991680) <= 19661   # d31a-h009: back from the floor at y 30.39 (x 28.8 to 33.8)
+walk 29.65   # run-up
+walk 29.22   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 2079333 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 2319360) <= 19661   # d31a-h009: back from the floor at y 35.39 (x 31.8 to 33.8)
+walk 32.33
+walk 32.76   # run-up
+walk 32.33   # take-off
+hold left+cross for 28
+hold left for 24
 wait until HK_WALK_READY == 1 timeout 300
 end
 walk 24.82   # run-up
@@ -502,41 +627,10 @@ retreat 27.62 29.10
 heal
 clear d31a-h010-arc 31.410 43.390 27.62 29.10
 loop d31a-h010 until expr (abs(i32(HK_PLAYER_X) - 2058486) <= 58982 || (i32(HK_PLAYER_X) >= 1955494 && i32(HK_PLAYER_X) <= 2149581)) && abs(i32(HK_PLAYER_Y) - 2843607) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 2084475 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 2319360) <= 19661   # d31a-h010: back from the floor at y 35.39 (x 31.9 to 33.8)
-walk 32.41
-walk 32.84   # run-up
-walk 32.41   # take-off
-hold left+cross for 16
-hold left for 11
-wait until HK_WALK_READY == 1 timeout 300
-walk 28.12
-end
-if expr i32(HK_PLAYER_X) >= 2143027 && i32(HK_PLAYER_X) <= 2149581 && abs(i32(HK_PLAYER_Y) - 2864870) <= 19661   # d31a-h010: back from the floor at y 43.71 (x 32.8 to 32.8)
-drop 31.23 43.39
-walk 31.51
-walk 31.94   # run-up
-walk 31.51   # take-off
-hold left+cross for 5
-hold left for 19
-wait until HK_WALK_READY == 1 timeout 300
-end
-if expr i32(HK_PLAYER_X) >= 1886321 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 1991680) <= 19661   # d31a-h010: back from the floor at y 30.39 (x 28.8 to 33.8)
-walk 29.39
-walk 29.82   # run-up
-walk 29.39   # take-off
-hold left+cross for 20
-hold left for 11
-wait until HK_WALK_READY == 1 timeout 300
-walk 24.67   # run-up
-walk 25.10   # take-off
-hold right+cross for 20
-hold right for 8
-wait until HK_WALK_READY == 1 timeout 300
-walk 28.09
-end
-if expr i32(HK_PLAYER_X) >= 1692360 && i32(HK_PLAYER_X) <= 1871149 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h010: back from the floor at y 23.31 (x 25.9 to 28.5)
-walk 27.82   # run-up
-walk 27.39   # take-off
+if expr i32(HK_PLAYER_X) >= 1691819 && i32(HK_PLAYER_X) <= 1870608 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h010: back from the floor at y 23.31 (x 25.9 to 28.5)
+walk 26.70
+walk 27.12   # run-up
+walk 26.70   # take-off
 hold left+cross for 20
 hold left for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -558,6 +652,36 @@ hold right+cross for 20
 hold right for 8
 wait until HK_WALK_READY == 1 timeout 300
 walk 28.09
+end
+if expr i32(HK_PLAYER_X) >= 1296331 && i32(HK_PLAYER_X) <= 1719875 && abs(i32(HK_PLAYER_Y) - 2253824) <= 19661   # d31a-h010: back from the floor at y 34.39 (x 19.8 to 26.2)
+walk 23.69   # run-up
+walk 24.12   # take-off
+hold right+cross for 20
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1888977 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 1991680) <= 19661   # d31a-h010: back from the floor at y 30.39 (x 28.9 to 33.8)
+walk 29.57
+walk 30.00   # run-up
+walk 29.57   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.85   # run-up
+walk 25.28   # take-off
+hold right+cross for 20
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 28.09
+end
+if expr i32(HK_PLAYER_X) >= 2079342 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 2319360) <= 19661   # d31a-h010: back from the floor at y 35.39 (x 31.8 to 33.8)
+walk 32.33
+walk 32.76   # run-up
+walk 32.33   # take-off
+hold left+cross for 16
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 28.04
 end
 walk 27.81
 walk 27.52   # run-up
@@ -573,30 +697,18 @@ retreat 30.39 32.25
 heal
 clear d31a-h011-arc 25.190 43.390 30.39 32.25
 loop d31a-h011 until expr (abs(i32(HK_PLAYER_X) - 1650852) <= 58982 || (i32(HK_PLAYER_X) >= 1585971 && i32(HK_PLAYER_X) <= 1717584)) && abs(i32(HK_PLAYER_Y) - 2843607) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1258291 && i32(HK_PLAYER_X) <= 1584111 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h011: back from the floor at y 45.39 (x 19.2 to 24.1)
-walk 23.98
-drop 28.69 38.71
-walk 27.86
-walk 27.43   # run-up
-walk 27.86   # take-off
+if expr i32(HK_PLAYER_X) >= 1773615 && i32(HK_PLAYER_X) <= 1943339 && abs(i32(HK_PLAYER_Y) - 2536893) <= 19661   # d31a-h011: back from the floor at y 38.71 (x 27.1 to 29.6)
+walk 27.80
+walk 27.51   # run-up
+walk 27.80   # take-off
 hold right+cross for 24
 hold right for 8
 wait until HK_WALK_READY == 1 timeout 300
 walk 30.58
 end
-if expr i32(HK_PLAYER_X) >= 1771343 && i32(HK_PLAYER_X) <= 1941067 && abs(i32(HK_PLAYER_Y) - 2536893) <= 19661   # d31a-h011: back from the floor at y 38.71 (x 27.1 to 29.6)
-walk 27.91
-walk 27.48   # run-up
-walk 27.91   # take-off
-hold right+cross for 24
-hold right for 8
-wait until HK_WALK_READY == 1 timeout 300
-walk 30.58
-end
-if expr i32(HK_PLAYER_X) >= 1693895 && i32(HK_PLAYER_X) <= 1872684 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h011: back from the floor at y 23.31 (x 25.9 to 28.5)
-walk 26.87
-walk 27.29   # run-up
-walk 26.87   # take-off
+if expr i32(HK_PLAYER_X) >= 1695402 && i32(HK_PLAYER_X) <= 1865126 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h011: back from the floor at y 23.31 (x 25.9 to 28.4)
+walk 27.32   # run-up
+walk 26.89   # take-off
 hold left+cross for 20
 hold left for 4
 wait until HK_WALK_READY == 1 timeout 300
@@ -620,6 +732,37 @@ wait until HK_WALK_READY == 1 timeout 300
 walk 27.81
 walk 27.52   # run-up
 walk 27.81   # take-off
+hold right+cross for 24
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.58
+end
+if expr i32(HK_PLAYER_X) >= 1882964 && i32(HK_PLAYER_X) <= 2215117 && abs(i32(HK_PLAYER_Y) - 1991680) <= 19661   # d31a-h011: back from the floor at y 30.39 (x 28.8 to 33.8)
+walk 29.47
+walk 29.90   # run-up
+walk 29.47   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.76   # run-up
+walk 25.19   # take-off
+hold right+cross for 20
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.81
+walk 27.52   # run-up
+walk 27.81   # take-off
+hold right+cross for 24
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.58
+end
+if expr i32(HK_PLAYER_X) >= 1258291 && i32(HK_PLAYER_X) <= 1584111 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h011: back from the floor at y 45.39 (x 19.2 to 24.1)
+walk 23.98
+drop 28.69 38.71
+walk 27.86
+walk 27.43   # run-up
+walk 27.86   # take-off
 hold right+cross for 24
 hold right for 8
 wait until HK_WALK_READY == 1 timeout 300
@@ -639,11 +782,59 @@ retreat 24.75 25.66
 heal
 clear d31a-h012-arc 22.040 45.390 24.75 25.66
 loop d31a-h012 until expr (abs(i32(HK_PLAYER_X) - 1444413) <= 58982 || (i32(HK_PLAYER_X) >= 1258291 && i32(HK_PLAYER_X) <= 1583665)) && abs(i32(HK_PLAYER_Y) - 2974679) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 1097104 && i32(HK_PLAYER_X) <= 1257763 && abs(i32(HK_PLAYER_Y) - 3040256) <= 19661   # d31a-h012: back from the floor at y 46.39 (x 16.8 to 19.1)
-walk 19.14
-drop 20.80 45.39
-walk 20.37   # run-up
-walk 20.80   # take-off
+if expr i32(HK_PLAYER_X) >= 1773514 && i32(HK_PLAYER_X) <= 1943238 && abs(i32(HK_PLAYER_Y) - 2536893) <= 19661   # d31a-h012: back from the floor at y 38.71 (x 27.1 to 29.6)
+walk 27.53
+walk 27.53   # take-off
+hold right+cross for 24
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.30
+walk 30.73   # run-up
+walk 30.30   # take-off
+hold left+cross for 16
+hold left for 21
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1693122 && i32(HK_PLAYER_X) <= 1871911 && abs(i32(HK_PLAYER_Y) - 1527604) <= 19661   # d31a-h012: back from the floor at y 23.31 (x 25.9 to 28.5)
+walk 27.28   # run-up
+walk 26.85   # take-off
+hold left+cross for 20
+hold left for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.84
+walk 24.41   # run-up
+walk 24.84   # take-off
+hold right+cross for 20
+hold right for 16
+wait until HK_WALK_READY == 1 timeout 300
+walk 29.54
+walk 29.97   # run-up
+walk 29.54   # take-off
+hold left+cross for 20
+hold left for 11
+wait until HK_WALK_READY == 1 timeout 300
+walk 24.82   # run-up
+walk 25.25   # take-off
+hold right+cross for 20
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 27.81
+walk 27.52   # run-up
+walk 27.81   # take-off
+hold right+cross for 24
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.30
+walk 30.73   # run-up
+walk 30.30   # take-off
+hold left+cross for 16
+hold left for 21
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1099283 && i32(HK_PLAYER_X) <= 1259942 && abs(i32(HK_PLAYER_Y) - 3040256) <= 19661   # d31a-h012: back from the floor at y 46.39 (x 16.8 to 19.2)
+drop 20.84 45.39
+walk 20.41   # run-up
+walk 20.84   # take-off
 hold right+cross for 12
 hold right for 20
 wait until HK_WALK_READY == 1 timeout 300
@@ -661,10 +852,37 @@ retreat 19.75 23.61
 heal
 clear d31a-h013-arc 18.030 46.390 19.75 23.61
 loop d31a-h013 until expr (abs(i32(HK_PLAYER_X) - 1181614) <= 58982 || (i32(HK_PLAYER_X) >= 1096752 && i32(HK_PLAYER_X) <= 1257411)) && abs(i32(HK_PLAYER_Y) - 3040215) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 1586501 && i32(HK_PLAYER_X) <= 1719965 && abs(i32(HK_PLAYER_Y) - 2843648) <= 19661   # d31a-h013: back from the floor at y 43.39 (x 24.3 to 26.2)
+walk 25.24   # run-up
+walk 24.81   # take-off
+hold left+cross for 12
+hold left for 12
+wait until HK_WALK_READY == 1 timeout 300
+walk 21.21
+end
+if expr i32(HK_PLAYER_X) >= 1773494 && i32(HK_PLAYER_X) <= 1943218 && abs(i32(HK_PLAYER_Y) - 2536893) <= 19661   # d31a-h013: back from the floor at y 38.71 (x 27.1 to 29.6)
+walk 27.39
+walk 27.39   # take-off
+hold right+cross for 24
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 30.30
+walk 30.73   # run-up
+walk 30.30   # take-off
+hold left+cross for 16
+hold left for 21
+wait until HK_WALK_READY == 1 timeout 300
+walk 25.62   # run-up
+walk 25.19   # take-off
+hold left+cross for 12
+hold left for 12
+wait until HK_WALK_READY == 1 timeout 300
+walk 21.21
+end
 if expr i32(HK_PLAYER_X) >= 709468 && i32(HK_PLAYER_X) <= 1101005 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h013: back from the floor at y 45.39 (x 10.9 to 16.8)
-walk 15.86
-walk 15.43   # run-up
-walk 15.86   # take-off
+walk 15.99
+walk 15.56   # run-up
+walk 15.99   # take-off
 hold right+cross for 12
 hold right for 22
 wait until HK_WALK_READY == 1 timeout 300
@@ -683,12 +901,20 @@ retreat 17.29 18.64
 heal
 clear d31a-h014-arc 14.180 51.390 17.29 18.64
 loop d31a-h014 until expr (abs(i32(HK_PLAYER_X) - 929300) <= 58982 || (i32(HK_PLAYER_X) >= 537395 && i32(HK_PLAYER_X) <= 1059487)) && abs(i32(HK_PLAYER_Y) - 3367895) <= 19661 max 3 timeout 900
-if expr i32(HK_PLAYER_X) >= 706067 && i32(HK_PLAYER_X) <= 1101005 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h014: back from the floor at y 45.39 (x 10.8 to 16.8)
-walk 14.97
-walk 14.54   # run-up
-walk 14.97   # take-off
+if expr i32(HK_PLAYER_X) >= 706103 && i32(HK_PLAYER_X) <= 1101005 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h014: back from the floor at y 45.39 (x 10.8 to 16.8)
+walk 15.80
+walk 15.37   # run-up
+walk 15.80   # take-off
 hold right+cross for 8
-hold right for 13
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 1258291 && i32(HK_PLAYER_X) <= 1589690 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h014: back from the floor at y 45.39 (x 19.2 to 24.2)
+walk 20.06
+walk 20.49   # run-up
+walk 20.06   # take-off
+hold left+cross for 8
+hold left for 8
 wait until HK_WALK_READY == 1 timeout 300
 end
 walk 18.30
@@ -705,6 +931,30 @@ retreat 8.75 15.62
 heal
 clear d31a-h015-arc 10.990 51.390 8.75 15.62
 loop d31a-h015 until expr (abs(i32(HK_PLAYER_X) - 720241) <= 58982 || (i32(HK_PLAYER_X) >= 537395 && i32(HK_PLAYER_X) <= 1067988)) && abs(i32(HK_PLAYER_Y) - 3367895) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 705332 && i32(HK_PLAYER_X) <= 1101005 && abs(i32(HK_PLAYER_Y) - 2974720) <= 19661   # d31a-h015: back from the floor at y 45.39 (x 10.8 to 16.8)
+walk 15.79
+walk 15.36   # run-up
+walk 15.79   # take-off
+hold right+cross for 8
+hold right for 8
+wait until HK_WALK_READY == 1 timeout 300
+walk 18.28
+walk 18.71   # run-up
+walk 18.28   # take-off
+hold left+cross for 28
+hold left for 9
+wait until HK_WALK_READY == 1 timeout 300
+walk 13.90
+end
+if expr i32(HK_PLAYER_X) >= 1098499 && i32(HK_PLAYER_X) <= 1259158 && abs(i32(HK_PLAYER_Y) - 3040256) <= 19661   # d31a-h015: back from the floor at y 46.39 (x 16.8 to 19.2)
+walk 18.19
+walk 18.62   # run-up
+walk 18.19   # take-off
+hold left+cross for 28
+hold left for 9
+wait until HK_WALK_READY == 1 timeout 300
+walk 13.90
+end
 walk 13.62
 walk 14.05   # run-up
 walk 13.62   # take-off

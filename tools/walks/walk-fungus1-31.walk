@@ -1,5 +1,5 @@
 name walk-fungus1-31
-title from a seeded card at Fungus1_31's arrival (fungus1-31-entry.mcd, Vengeful Spirit owned, 60 Geo, no cheat): down to the left Toll Machine, the 50 Geo paid, across, the bench and its save, and the climb to the top gate into Fungus1_32
+title from a seeded card at Fungus1_31's arrival (fungus1-31-entry.mcd, Vengeful Spirit owned, 60 Geo, no cheat): down to the left Toll Machine, the 50 Geo paid, across, the bench and its save, a power cycle and Continue there, and the climb to the top gate into Fungus1_32
 max_ticks 60000
 sync poll
 # One segment of walk-new-game-to-hornet that starts from a known save (docs/ROUTES.md, "Why the walk to Hornet moves with the build"). The hops are the planner's
@@ -13,5 +13,10 @@ press cross
 wait until HK_GAME_MODE == 1 timeout 1200
 include fungus1-31a-chain.walk
 include fungus1-31-toll-chain.walk
+# A power cycle and Continue at the bench, as walk-new-game-to-hornet does there, so the climb starts from the save exactly as
+# walk-fungus1-31-bench-to-hornet and the chain start it (docs/ROUTES.md, "The walk to Hornet in two boots").
+include continue-reload.walk
 include fungus1-31b-chain.walk
-check in-32 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_BENCH_RESTS >= 1 ; HK_INPUT_MISSED_VBLANKS == 0
+# The bench rest is judged before the power cycle (`rested` in fungus1-31-toll-chain.walk, HK_BENCH_RESTS >= 1); the reboot clears
+# that counter, so here the save it wrote is what the climb started from.
+check in-32 HK_DEATHS == 0 ; HK_CHEATS == 0 ; HK_HEALTH >= 1 ; HK_SAVE_LOADED == 1 ; HK_INPUT_MISSED_VBLANKS == 0

@@ -39,68 +39,19 @@ hold left for 21
 wait 6
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 118.31 154.66
-snipe
-guard 2
-retreat 118.31 154.66
-heal
-clear d10-h004-arc 142.570 8.390 118.31 154.66
-loop d10-h004 until expr (abs(i32(HK_PLAYER_X) - 9343468) <= 58982 || (i32(HK_PLAYER_X) >= 7714243 && i32(HK_PLAYER_X) <= 10175119)) && abs(i32(HK_PLAYER_Y) - 549847) <= 19661 max 3 timeout 900
-walk 151.01
-walk 151.44   # run-up
-walk 151.01   # take-off
+# The Moss Charger's floor (x 118.3 to 154.7, y 8.39; it lies buried at x 136.4, comes up when the Knight is near and charges along
+# the floor). A fight here walks him onto it and a hop lands in its run, so the floor is crossed without one: walk west, and jump
+# west over anything within 5.5 units ahead or 3 behind at his height (a buried charger, or one that charges), until he stands
+# at x 123 for the hop down. Hand-written 2026-11-23 when the Moss Chargers were admitted; the planner does not model foes.
+def moss_near any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && abs(dy) <= 163840 && dx >= -360448 && dx <= 196608)
+loop d10-moss until expr i32(HK_PLAYER_X) <= 8060928 && u32(HK_WALK_READY) == 1 max 8 timeout 900
+hold left until expr $moss_near || i32(HK_PLAYER_X) <= 8060928 timeout 400
+if expr $moss_near
 hold left+cross for 34
-hold left for 27
-wait 6
+hold left for 20
+end
 wait until HK_WALK_READY == 1 timeout 300
 end
-fight 4 118.31 154.66
-snipe
-guard 2
-retreat 118.31 154.66
-heal
-clear d10-h005-arc 135.790 8.390 118.31 154.66
-loop d10-h005 until expr (abs(i32(HK_PLAYER_X) - 8899133) <= 58982 || (i32(HK_PLAYER_X) >= 7714243 && i32(HK_PLAYER_X) <= 10174464)) && abs(i32(HK_PLAYER_Y) - 549847) <= 19661 max 3 timeout 900
-walk 142.29
-walk 142.72   # run-up
-walk 142.29   # take-off
-hold left+cross for 20
-hold left for 27
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 118.31 154.65
-snipe
-guard 2
-retreat 118.31 154.65
-heal
-clear d10-h006-arc 129.290 8.390 118.31 154.65
-loop d10-h006 until expr (abs(i32(HK_PLAYER_X) - 8473149) <= 58982 || (i32(HK_PLAYER_X) >= 7714243 && i32(HK_PLAYER_X) <= 10175119)) && abs(i32(HK_PLAYER_Y) - 549847) <= 19661 max 3 timeout 900
-walk 136.22   # run-up
-walk 135.79   # take-off
-hold left+cross for 20
-hold left for 27
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 118.31 154.66
-snipe
-guard 2
-retreat 118.31 154.66
-heal
-clear d10-h007-arc 122.790 8.390 118.31 154.66
-loop d10-h007 until expr (abs(i32(HK_PLAYER_X) - 8047165) <= 58982 || (i32(HK_PLAYER_X) >= 7714243 && i32(HK_PLAYER_X) <= 10175119)) && abs(i32(HK_PLAYER_Y) - 549847) <= 19661 max 3 timeout 900
-walk 129.72   # run-up
-walk 129.29   # take-off
-hold left+cross for 20
-hold left for 27
-wait 6
-wait until HK_WALK_READY == 1 timeout 300
-end
-fight 4 118.31 154.66
-snipe
-guard 2
-retreat 118.31 154.66
 heal
 clear d10-h008-arc 114.350 8.390 118.31 154.66
 loop d10-h008 until expr (abs(i32(HK_PLAYER_X) - 7494042) <= 58982 || (i32(HK_PLAYER_X) >= 7251558 && i32(HK_PLAYER_X) <= 7554990)) && abs(i32(HK_PLAYER_Y) - 549847) <= 19661 max 3 timeout 900
