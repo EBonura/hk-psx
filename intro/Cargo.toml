@@ -27,7 +27,10 @@ opt-level     = 2
 trim-paths    = "all"
 
 [dependencies]
-psx-rt          = { path = "../.psoxide/sdk/crates/psx-rt" }
+# `called-program`: the game calls this program and it returns into the game (game/src/intro.rs), so
+# psx-rt's `_start` returns after `main` and its entry state leaves the game's VRAM, display and CD
+# mixer alone. The enter/leave stubs and `machine::Saved` still save and restore the rest.
+psx-rt          = { path = "../.psoxide/sdk/crates/psx-rt", features = ["called-program"] }
 psx-gpu         = { path = "../.psoxide/sdk/crates/psx-gpu" }
 psx-io          = { path = "../.psoxide/sdk/crates/psx-io" }
 psx-hw          = { path = "../.psoxide/crates/psx-hw" }
