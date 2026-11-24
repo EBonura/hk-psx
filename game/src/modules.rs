@@ -207,6 +207,12 @@ pub fn scene_modules(scene: usize) -> Mods {
 /// wants them again.
 pub fn retire_boss() {
     unsafe {
+        if !RETIRED.or(RETIRE_AFTER_BOSS).and_not(RETIRED).is_empty() {
+            // What the room asks for changes now (its boss's code leaves `wanted`, and the Knight's ability art is asked for
+            // in its place, `fx_fit`'s third row), so a give-up recorded for the old ask must not stop the new one: the Shade's
+            // art asked for beside the live boss as her fight ended found no room, and kept art_fx out after the Cloak.
+            PF_GAVE_UP = (0, usize::MAX);
+        }
         RETIRED = RETIRED.or(RETIRE_AFTER_BOSS);
         PINNED = PINNED.and_not(RETIRE_AFTER_BOSS);
     }
@@ -1172,7 +1178,7 @@ static mut PF: PoolFetch = PoolFetch {
     job: None,
 };
 /// The last (kind, scene) a fetch gave up on, so it is not tried again until
-/// the next admission.
+/// the next admission, or until the room's boss retires (`retire_boss`).
 static mut PF_GAVE_UP: (u8, usize) = (0, usize::MAX);
 const POOL_WORDS: usize = 1024;
 fn pf() -> &'static mut PoolFetch {
