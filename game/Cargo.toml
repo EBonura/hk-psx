@@ -83,7 +83,9 @@ psx-scene-abi = { path = "../.psoxide/sdk/crates/psx-scene-abi" }
 hk-format = {path="../shared/hk-format"}
 hk-sim = {path="../shared/hk-sim"}
 hk-cache = {path="../shared/hk-cache"}
-psx-io = { path = "../.psoxide/sdk/crates/psx-io" }
+# `core-cd`: the XA player's waited drive commands go through the scene core's CD slot, so psx-io's polled
+# command layer is not linked (CORE-ABI.md); its calls never run on a scratchpad stack (input.rs `checkpoint_scratch`).
+psx-io = { path = "../.psoxide/sdk/crates/psx-io", features = ["core-cd"] }
 psx-cdstream = { path = "../.psoxide/sdk/crates/psx-cdstream" }
 psx-hw = { path = "../.psoxide/crates/psx-hw" }
 psx-fmv = { path = "../.psoxide/sdk/crates/psx-fmv" }

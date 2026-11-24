@@ -214,6 +214,20 @@ pub fn checkpoint() {
         poll_slow(now);
     }
 }
+/// `checkpoint` for code that runs on the 1 KB scratchpad stack (the renderer): the same services and pad
+/// poll, but the boss song's drive commands wait for the next `checkpoint` (music.rs `service_scratch`).
+/// They go through the scene core's CD slot, which the scratchpad stack has no room for, and the core's
+/// rule keeps CD work off a scratchpad stack.
+#[inline(never)]
+pub fn checkpoint_scratch() {
+    crate::presentation::checkpoint();
+    crate::exit_fade::service();
+    crate::music::service_scratch();
+    let now = psx_rt::interrupts::vblank_count();
+    if unsafe { SAMPLER.poll_due(now) } {
+        poll_slow(now);
+    }
+}
 /// Only the pad half of `checkpoint`, for code that runs inside one (an SPU
 /// upload from the audio service): take a poll that has come due, and nothing
 /// else, so the services are never re-entered.

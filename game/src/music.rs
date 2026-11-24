@@ -710,8 +710,35 @@ pub fn read_cut(landed: usize) {
 }
 #[no_mangle]
 pub static mut HK_MUSIC_CUT_READS: u32 = 0;
-/// Every checkpoint; does its work at most once per VBlank.
+/// The VBlank `boss_service` last ran in.
+static mut BOSS_SEEN: u32 = 0;
+/// Every checkpoint on the main stack; does its work at most once per VBlank. The boss song's drive
+/// commands run from here only: they go through the scene core's CD slot, which a scratchpad stack has no
+/// room for (and the core's rule keeps CD work off it), so `service_scratch` leaves them to the next call here.
 pub fn service() {
+    let Some(now) = service_head() else {
+        let now = psx_rt::interrupts::vblank_count();
+        // A scratchpad checkpoint took this VBlank's turn: the boss song's turn is still due.
+        if unsafe { BOSS_SEEN } != now {
+            unsafe { BOSS_SEEN = now };
+            boss_service(now);
+        }
+        return;
+    };
+    unsafe { BOSS_SEEN = now };
+    boss_service(now);
+    service_tail(now);
+}
+/// `service` for code on the scratchpad stack (input.rs `checkpoint_scratch`): everything but the boss
+/// song's turn, which the next `service` takes.
+pub fn service_scratch() {
+    if let Some(now) = service_head() {
+        service_tail(now);
+    }
+}
+/// The stream's service on every call; `Some(now)` once per VBlank, when the rest is due.
+#[inline(never)]
+fn service_head() -> Option<u32> {
     let now = psx_rt::interrupts::vblank_count();
     let a = area();
     if stream::running() {
@@ -723,13 +750,18 @@ pub fn service() {
         }
     }
     if a.last == now {
-        return;
+        return None;
     }
     a.last = now;
     unsafe {
         HK_MUSIC_FIFO_FILL = a.fifo.filled as u32;
     }
-    boss_service(now);
+    Some(now)
+}
+/// The once-a-VBlank part of `service` after the boss song's turn.
+#[inline(never)]
+fn service_tail(now: u32) {
+    let a = area();
     // The ramp runs on VBlanks, so a fade keeps going through a load.
     let elapsed = now.wrapping_sub(a.fade_start);
     a.volume = if elapsed > u32::MAX / 2 {
