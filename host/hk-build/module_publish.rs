@@ -207,7 +207,16 @@ fn describe(elf_path: &Path, declaration: &Path, output: &Path) -> Result<()> {
     }
     check_module_edges(&edges)?;
 
-    let result = json!({"header":".ps_exe_head","resident":[".text",".data",".bss"],"compact_sites":"HK_MODULE_IMPORTS","compact_ranges":"HK_MODULE_IMPORT_RANGE","compact_trap":"__hk_module_trap","images":images});
+    // Resident: the image, plus the scene core's stored image (psoxide-core.ld) and the boot-only memory
+    // (psoxide-boot.ld) when the link has them. Both run elsewhere than they are stored; the SDK's composer writes
+    // every resident section at its load address.
+    let mut resident = vec![".text", ".data", ".bss"];
+    for name in [".boot", ".boot_inner", ".boot_bss", ".psx_core_store"] {
+        if elf.section(name).is_ok_and(|(_, section)| section.flags & 2 != 0 && section.size != 0) {
+            resident.push(name);
+        }
+    }
+    let result = json!({"header":".ps_exe_head","resident":resident,"compact_sites":"HK_MODULE_IMPORTS","compact_ranges":"HK_MODULE_IMPORT_RANGE","compact_trap":"__hk_module_trap","images":images});
     if output.exists() {
         return Err("publication declaration already exists".into());
     }

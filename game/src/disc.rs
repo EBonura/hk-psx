@@ -5,6 +5,7 @@ use crate::room_decode::{Decoder, Error as DecodeError};
 use hk_format::coverage::{CoverageValidation, CoverageView, Expected as CoverageExpected};
 use hk_format::{Room, Scene, WorldMeta};
 use psx_core::link as core_cd;
+use psx_scene_abi::cd_op;
 use psx_pack::cd::{SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
 /// The loader's names for the SDK's one-transfer CD engine with a sector count
@@ -1106,13 +1107,16 @@ fn checkpoint() {
 extern "C" fn core_idle() {
     crate::input::poll_only();
 }
-/// This program's copy of its scene table (SCENES.TBL at member LBA 22, CORE-ABI.md 1), read once at boot:
-/// the header and HK's rows (one Program image, its START scene). A row more needs more words here.
-static mut SCENE_TABLE: [u32; 16 + 8 * 2] = [0; 16 + 8 * 2];
-/// The table [`psx_core::link::switch`] and `load_image` take, once `Cache::init` has read it.
-pub fn scene_table() -> &'static [u32] {
-    // SAFETY: written only by `init`, before anything reads it.
-    unsafe { &*(&raw const SCENE_TABLE) }
+/// After the scene core's reads and Pauses, the first command to the drive goes through the core's command slot
+/// (`cd_op::COMMAND`), which proves the Pause the last read ended with (SDK scene-core rule: a program that drives
+/// the controller itself after `psx_core_read` or `psx_core_pause` sends its first command through op 0). The
+/// counted stream engine (`psx_cdstream`) talks to the registers itself, so this GetStat hands it a drive that is
+/// proven stopped, as the polled reader's own proven Pause did before the core.
+#[inline(never)]
+fn core_prove_stop() -> bool {
+    // SAFETY: op COMMAND with no parameter bytes and no response buffer.
+    let r = unsafe { core_cd::cd(cd_op::COMMAND, 0, u32::from(psx_hw::cd::CMD_GETSTAT) << 8, core::ptr::null_mut()) };
+    r & 0xff == cd_op::ACKNOWLEDGED
 }
 /// Read `sectors` from member LBA `lba` into the scene arena through the scene core: one seek-first start, the
 /// core's retries and its proven Pause at the end.
@@ -1179,13 +1183,9 @@ impl Cache {
         if self.loaded_scenes != 0 {
             return Err(LoadError::HeaderRead);
         }
-        // The scene core owns the drive's polled reads (CORE-ABI.md 3): its waits take the pad poll, and it reads
-        // its own scene table first, once, as every program on the core does.
+        // The scene core owns the drive's polled reads (CORE-ABI.md 3): its waits take the pad poll. HK never
+        // switches scenes itself, so it never reads SCENES.TBL (the core reads it on a program's first switch).
         core_cd::set_idle_hook(Some(core_idle));
-        // SAFETY: the one writer, before any reader.
-        if core_cd::read_table(unsafe { &mut *(&raw mut SCENE_TABLE) }).is_err() {
-            return Err(LoadError::Prepare);
-        }
         // The whole directory in one read: its size is the build's (PACK_HEADER_SECTORS).
         if !core_read(WORLD_PACK_DEFAULT_LBA, PACK_HEADER_SECTORS) {
             return Err(LoadError::HeaderRead);
@@ -1248,6 +1248,9 @@ impl Cache {
         // sit, and a disc that moves this program keeps the name. Read through the
         // scene core, before the CD interrupt owns the controller.
         self.find_xa();
+        if !core_prove_stop() {
+            return Err(LoadError::Prepare);
+        }
         cd_stream::install();
         self.ready = true;
         for k in 0..crate::modules::PACKAGE_CHUNKS {
@@ -1904,7 +1907,7 @@ impl Cache {
             let paused=core_cd::pause();
             core_cd::client_detach();
             result?;
-            if paused!=0 {return Err(LoadError::PayloadRead);}
+            if paused!=0 || !core_prove_stop() {return Err(LoadError::PayloadRead);}
         }
         crate::runner_audio::finish_overlay(mossman);
         Ok(())

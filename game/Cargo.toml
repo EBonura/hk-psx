@@ -77,11 +77,15 @@ psx-splash = { path = "../.psoxide/sdk/crates/psx-splash" }
 # The scene core (CORE-ABI.md): the embedded core image, `__core_boot` (the EXE's entry) and the calls to the
 # window's jump table. Linked with psoxide-core.ld (host/build_guest.py).
 psx-core = { path = "../.psoxide/sdk/crates/psx-core", features = ["link"] }
+# The core CD slot's op codes and outcomes (cd_op), as the XA player uses them.
+psx-scene-abi = { path = "../.psoxide/sdk/crates/psx-scene-abi" }
 
 hk-format = {path="../shared/hk-format"}
 hk-sim = {path="../shared/hk-sim"}
 hk-cache = {path="../shared/hk-cache"}
-psx-io = { path = "../.psoxide/sdk/crates/psx-io" }
+# core-cd: the XA player's waited commands go through the scene core's CD slot (op 0), which proves the
+# Pause every core read ends with before the drive takes the next command.
+psx-io = { path = "../.psoxide/sdk/crates/psx-io", features = ["core-cd"] }
 psx-cdstream = { path = "../.psoxide/sdk/crates/psx-cdstream" }
 psx-hw = { path = "../.psoxide/crates/psx-hw" }
 psx-fmv = { path = "../.psoxide/sdk/crates/psx-fmv" }

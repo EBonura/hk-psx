@@ -309,10 +309,12 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     if profile is None:os.environ["HK_SHARED_PUBLISHER"]="1"
     if code_modules.MEASURE_OVERLAP and not work:raise ValueError('HK_MEASURE_OVERLAP is for measurement builds under --work only')
     layered=code_modules.layer(base_linker.read_text())
-    # The boot splash's overlay (the SDK's psoxide-boot.ld), run from the module pool before the title module installs.
-    layered=code_modules.boot_layer(layered,(ROOT/'.psoxide/sdk/psoxide-boot.ld').read_text())
     linker=out/f'hk-psx-ovl-{hashlib.sha256(layered.encode()).hexdigest()[:16]}.ld'
     linker.write_text(layered)
+    # The boot splash's memory (the SDK's psoxide-boot.ld) runs from the module pool before the title module installs.
+    overrides=code_modules.boot_overrides()
+    boot_overrides=out/f'hk-psx-boot-{hashlib.sha256(overrides.encode()).hexdigest()[:16]}.ld'
+    boot_overrides.write_text(overrides)
     # A list, handed to cargo as CARGO_ENCODED_RUSTFLAGS (0x1f-separated):
     # RUSTFLAGS is split on whitespace, so a checkout under a path with a
     # space (say ~/Library/Application Support) handed rustc half a linker
@@ -321,12 +323,16 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # every code module in the output at its link address. code_modules
     # cuts the PS-X EXE (header, .text, .data) and the module images out of
     # it; --emit-relocs keeps the relocations its fixups and checks read.
-    # The boot overlay's stored bytes lie where .bss will be (code_modules.boot_layer), so the section-overlap check is
-    # off, as for every psoxide-boot.ld program; the IMAGE, MODLINK and BOOTRUN region bounds still hold.
-    # The scene core (CORE-ABI.md 4.1): psoxide-core.ld stores psx-core's image after .data, under .bss, and makes
-    # `__core_boot` the entry, which runs the boot mover next (4.2a). Its stored copy overlaps .bss too.
+    # The scene core (CORE-ABI.md 4.1) and boot-only memory, in the SDK's order: HK's overrides, psoxide-core.ld,
+    # psoxide-boot.ld, then the layered psoxide.ld (the main script). psoxide-core.ld stores psx-core's image after
+    # .data and .boot and makes `__core_boot` the entry, which goes on to psx-rt's `__boot_entry` (the mover), then
+    # `_start`. The stored copies lie where .bss will be; the SDK scripts give them load addresses no other section
+    # uses, so the linker's section checks stay on.
     core_script=ROOT/'.psoxide/sdk/psoxide-core.ld'
-    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{linker}',f'-Clink-arg=-T{core_script}','-Clink-arg=--emit-relocs','-Clink-arg=-u__core_boot','-Clink-arg=-u__boot_entry','-Clink-arg=--no-check-sections',f'-Clink-arg=-Map={link_map}']
+    boot_text=code_modules.boot_script((ROOT/'.psoxide/sdk/psoxide-boot.ld').read_text())
+    boot_script=out/f'hk-psx-bootld-{hashlib.sha256(boot_text.encode()).hexdigest()[:16]}.ld'
+    boot_script.write_text(boot_text)
+    flags=delay_slot_flags().split()+[f'-Clink-arg=-T{boot_overrides}',f'-Clink-arg=-T{core_script}',f'-Clink-arg=-T{boot_script}',f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs','-Clink-arg=-u__core_boot',f'-Clink-arg=-Map={link_map}']
     # A panic is a BREAK at the faulting instruction (-Cpanic=immediate-abort), not a formatted message: core::fmt, the panic
     # Location records and their file names (about 23 KB of the resident image) stay out of RAM. psx-rt's exception handler
     # records Cause/EPC/BadVAddr (__psx_rt_fault_*), which the gates already read (__psx_rt_fault_count) and

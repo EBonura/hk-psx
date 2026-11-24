@@ -43,6 +43,7 @@ dependencies = [
  "psx-pad",
  "psx-residency",
  "psx-rt",
+ "psx-scene-abi",
  "psx-splash",
  "psx-spu",
  "psx-telemetry",
@@ -142,6 +143,7 @@ version = "0.1.0"
 dependencies = [
  "psx-hw",
  "psx-math",
+ "psx-scene-abi",
 ]
 
 [[package]]

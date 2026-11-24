@@ -436,6 +436,11 @@ pub fn package(
     let _ = std::fs::remove_dir_all(&temp);
     std::fs::create_dir_all(&temp)?;
     let staged = temp.join(format!("{DISC_NAME}.bin"));
+    // The scene table (SCENES.TBL at LBA 22, the scene core's ABI): HK is one Program with one START scene. The
+    // core hash is the prebuilt core's, the one the EXE carries (psx-core `link`); mkisopsx checks the EXE ends with
+    // it. HK itself never switches, so it never reads the table; a launcher's core switch into HK does.
+    let scenes = temp.join("hk.scenes");
+    std::fs::write(&scenes, "program PSX.EXE -\nscene START PSX.EXE start\n")?;
     let mut command = Command::new("cargo");
     command
         .args(["run", "--locked", "--release", "--manifest-path"])
@@ -448,7 +453,11 @@ pub fn package(
         .args(["--volume", "HKPSX", "--world-pack-extra-dir"])
         .arg(&chunks)
         .arg("--world-pack-order-file")
-        .arg(&order);
+        .arg(&order)
+        .arg("--scenes")
+        .arg(&scenes)
+        .arg("--core-image")
+        .arg(root.join(".psoxide/sdk/crates/psx-core/prebuilt/psx-core.bin"));
     if let Some(intro) = intro {
         for movie in &intro.movies {
             command.arg("--xa-file").arg(movie);

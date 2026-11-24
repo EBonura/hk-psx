@@ -40,11 +40,13 @@ pub fn start(fb: &mut DoubleBuffer) {
 /// boot, and the splash polls the pad every frame for its skip press. Data and not a `cfg` in code, so the
 /// twin links the same code as the shipping build (docs/HOT-TEXT.md); 1 and 2, so both builds keep it in
 /// stored data. Exported, so the compiler cannot fold it. It lives in the boot overlay with the splash
-/// (host/code_modules.py `BOOT_SECTIONS`), so it costs no resident byte either.
+/// (psoxide-boot.ld's `.data.boot_only.*`), so it costs no resident byte either.
 #[no_mangle]
+#[cfg_attr(target_arch = "mips", link_section = ".data.boot_only.hk_psx.HK_BOOT_SPLASH")]
 static mut HK_BOOT_SPLASH: u8 = if cfg!(feature = "route-input") { 1 } else { 2 };
 /// The splash's line, a static of its own so its bytes go to the boot overlay with the splash and not into
 /// the merged string data of the resident image.
+#[cfg_attr(target_arch = "mips", link_section = ".rodata.boot_only.hk_psx.BOOT_SPLASH_LINE")]
 static BOOT_SPLASH_LINE: [u8; 18] = *b"Built with PSoXide";
 
 /// The shared PSoXide boot splash (psx-splash: the Bonnie Studios mark and its line, 150 VBlanks, skipped
@@ -52,9 +54,11 @@ static BOOT_SPLASH_LINE: [u8; 18] = *b"Built with PSoXide";
 /// over: it draws into the program's own buffers and leaves them black for the title's first frame.
 ///
 /// Boot-only: this function, the splash and the code only the splash calls run from the module pool
-/// (boot.rs, host/code_modules.py `boot_layer`), so it must be called before the title module installs.
+/// (psoxide-boot.ld, moved there by psx-rt's `__boot_entry`; host/code_modules.py `boot_overrides`), so it
+/// must be called before the title module installs.
 #[inline(never)]
 #[optimize(size)]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.boot_splash")]
 pub fn boot_splash(fb: &mut DoubleBuffer) {
     // SAFETY: a plain read of the flag above.
     if unsafe { core::ptr::read_volatile(&raw const HK_BOOT_SPLASH) } != 2 {
