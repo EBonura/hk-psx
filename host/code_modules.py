@@ -81,6 +81,9 @@ STACK_FLOOR = STACK_INIT - STACK_RESERVE
 # aspid +424, climber +224, fsm3_body +180: `debris::unit` is no longer inlined, same toolchain), and the worst room (10, nine carried
 # modules) then needed 105,768 of the 104,448 B the old pool leaves after the fence.
 POOL_BYTES = 0x1B000
+# Where `main` starts in every build (game/src/main.rs `.psx_hot.00_main`, aligned to 64 after psx-rt's 1,040-byte
+# `_start` at 0x80010000, SDK 80d432926e69); `layer` makes the link fail anywhere else.
+MAIN_ADDRESS = 0x80010440
 MEASURE_OVERLAP = int(os.environ.get('HK_MEASURE_OVERLAP', '0'), 0)
 
 def _sim(*mods):
@@ -626,6 +629,11 @@ def layer(script):
             block += [f'    .mod_{name} {link_address(k):#x} : {{', *code, *data, '    } > MODLINK',
                       f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= {LINK_STRIDE:#x}, "module {name} outgrew 64 KiB")',
                       f'    ASSERT(SIZEOF(.mod_{name}) + {4 * (TRAMP_WORDS + 2)} <= POOL_BYTES, "module {name} outgrew the pool")']
+    # `main` (game/src/main.rs, `.psx_hot.00_main`) must start at one address in the shipping build and the route-input
+    # twin, or the twin's searched layout does not describe the disc. Two links cannot compare, so each pins it.
+    block += [f'    ASSERT(main == {MAIN_ADDRESS:#x}, "hk-psx: main is not at {MAIN_ADDRESS:#x} (psx-rt _start changed '
+              'size?): the ship build and the route-input twin must place it alike; check both maps, then update '
+              'MAIN_ADDRESS in host/code_modules.py")']
     return sub(r'^(    \.text : \{)$', '\n'.join(block) + r'\n\n\1', script)
 
 

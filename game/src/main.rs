@@ -970,27 +970,28 @@ fn publish_walk_senses(game: &frame::Game) {
     }
 }
 
-/// In a section of its own at the front of the text (`.psx_hot`, sdk/psoxide.ld): the game loop's code is not
-/// quite the same in the shipping build and the route-input twin (register allocation differs with the features),
-/// so the hot-text layout cannot bind it; placed here, it sits at the same address in both builds and ahead of the
-/// laid-out text, which `psoxide-pgo place` then lays out from where it really starts (docs/HOT-TEXT.md). Aligned
-/// to 1 KB, so that it starts at the same address whatever psx-rt's `_start` ahead of it weighs (956 bytes in the
-/// twin, 972 in the shipping build).
-#[no_mangle]
-#[link_section = ".psx_hot.00_main"]
-#[rustc_align(1024)]
-fn main() {
+/// The display and the frame buffers, once, at the top of `main`. Boot-only code (psoxide-boot.ld's
+/// `.text.boot_only.*`, run from the module pool, where psx-rt's `__boot_entry` put it): its one caller is `main`,
+/// which runs once and calls it before the title module installs there.
+#[inline(never)]
+#[optimize(size)]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.boot_display")]
+fn boot_display() -> DoubleBuffer {
     gpu::init(VideoMode::Ntsc, Resolution::R320X240);
     psx_rt::interrupts::install_vblank_counter();
-    let mut fb = DoubleBuffer::new(Resolution::R320X240);
-    presentation::start(&mut fb);
-    // The renderer's working storage lives for the whole program in this
-    // frame, inside the 48 KiB stack reservation (measured peak about 32 KiB,
-    // boss-fight), rather than in .bss: see render::RenderScratch.
-    let mut render_scratch = core::mem::MaybeUninit::<render::RenderScratch>::uninit();
-    unsafe {
-        render::bind_scratch(render_scratch.as_mut_ptr());
-    }
+    DoubleBuffer::new(Resolution::R320X240)
+}
+
+/// What `main` does once between the display and the title: the card survey, the pad's first poll, the boot
+/// splash, the slot lines, the SPU reset, the disc's directory and the world sounds the title plays. Boot-only
+/// code as `boot_display` (one caller, `main`, before `title::open` installs the title module over the pool); the
+/// slot lines it returns point into `slot_text` or at string constants, which stay resident.
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.boot_prefix")]
+fn boot_prefix<'a>(
+    fb: &mut DoubleBuffer,
+    slot_text: &'a mut [[u8; 16]; save::PROFILES],
+) -> ([save::Slot; save::PROFILES], Option<save::Fault>, [&'a str; save::PROFILES]) {
     gpu::set_draw_area(0, 0, 319, 239);
     gpu::set_draw_offset(0, 0);
     // The card is read before the pad sampler exists: SIO0 is not yet shared.
@@ -1003,11 +1004,9 @@ fn main() {
     // The PSoXide boot splash, before anything of the title: after the card (the splash polls the pad) and
     // before the first CD read. Its code runs from the module pool, where psx-rt's `__boot_entry` put it
     // before `_start` (which flushes the whole I-cache before `main`).
-    presentation::boot_splash(&mut fb);
+    presentation::boot_splash(fb);
     // Each slot's one line on the save screen (save.rs `slot_lines`, boot-only code).
-    let mut slot_text = [[0u8; 16]; save::PROFILES];
-    let slot_lines = save::slot_lines(&slots, &mut slot_text);
-    let profile_fault = card_fault.map_or("", |f| f.message());
+    let slot_lines = save::slot_lines(&slots, slot_text);
     audio::init();
     // The disc's directory, once, by boot-only code (disc.rs `boot_init`, run from the module pool, so before the
     // title module installs there). Retried until it reads: no scene loads without it, and nothing after boot can.
@@ -1015,6 +1014,34 @@ fn main() {
     // Before the title: it plays two of these. A failed read is retried by
     // bootstrap's prepare_ambience, so it only costs the title its clips.
     let _ = unsafe { &mut *(&raw mut ROOM_CACHE) }.prepare_world_sfx();
+    (slots, card_fault, slot_lines)
+}
+
+/// In a section of its own at the front of the text (`.psx_hot`, sdk/psoxide.ld): the game loop's code is not
+/// quite the same in the shipping build and the route-input twin (register allocation differs with the features),
+/// so the hot-text layout cannot bind it; placed here, it sits at the same address in both builds and ahead of the
+/// laid-out text, which `psoxide-pgo place` then lays out from where it really starts (docs/HOT-TEXT.md). Aligned
+/// to 64 bytes: psx-rt's `_start` ahead of it is 1,040 bytes in both builds on the scene core, so `main` starts at
+/// 0x80010440 in each. It was 1 KB while `_start` weighed 956 (twin) and 972 (ship) bytes; once `_start` passed
+/// 1 KB that alignment left 1,008 bytes of padding. The link pins the address (host/code_modules.py
+/// `MAIN_ADDRESS`), so a `_start` that moves `main` in one build fails both links instead of splitting them.
+#[no_mangle]
+#[link_section = ".psx_hot.00_main"]
+#[rustc_align(64)]
+fn main() {
+    let mut fb = boot_display();
+    presentation::start(&mut fb);
+    // The renderer's working storage lives for the whole program in this
+    // frame, inside the 48 KiB stack reservation (measured peak about 32 KiB,
+    // boss-fight), rather than in .bss: see render::RenderScratch.
+    let mut render_scratch = core::mem::MaybeUninit::<render::RenderScratch>::uninit();
+    unsafe {
+        render::bind_scratch(render_scratch.as_mut_ptr());
+    }
+    // Everything once before the title (`boot_prefix`, boot-only code).
+    let mut slot_text = [[0u8; 16]; save::PROFILES];
+    let (slots, card_fault, slot_lines) = boot_prefix(&mut fb, &mut slot_text);
+    let profile_fault = card_fault.map_or("", |f| f.message());
     // The title's code (an overlay, title.rs) and the title art follow it on the disc, in that order;
     // menu::run uploads the art to VRAM before anything else takes the arena.
     let opened = title::open(unsafe { &mut *(&raw mut ROOM_CACHE) });
