@@ -328,6 +328,9 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     # .data and .boot and makes `__core_boot` the entry, which goes on to psx-rt's `__boot_entry` (the mover), then
     # `_start`. The stored copies lie where .bss will be; the SDK scripts give them load addresses no other section
     # uses, so the linker's section checks stay on.
+    # The program carries the scene core, whose window the ABI fixes at 8,192 B (psoxide-core.ld asserts STACK_INIT too).
+    from stack_budget import CORE_WINDOW_BYTES
+    if CORE_WINDOW_BYTES!=0x2000:raise ValueError(f'HK_CORE_WINDOW_BYTES {CORE_WINDOW_BYTES}: the scene core ABI fixes the window at 8,192 B')
     core_script=ROOT/'.psoxide/sdk/psoxide-core.ld'
     boot_text=code_modules.boot_script((ROOT/'.psoxide/sdk/psoxide-boot.ld').read_text())
     boot_script=out/f'hk-psx-bootld-{hashlib.sha256(boot_text.encode()).hexdigest()[:16]}.ld'
