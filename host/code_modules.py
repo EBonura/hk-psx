@@ -633,12 +633,6 @@ def layer(script):
 # `.boot_inner` (code only boot code calls). HK's own boot-only code and data are named into them by `link_section`
 # (game/src/presentation.rs).
 BOOT_OUTPUT_SECTIONS = ('.boot', '.boot_inner')
-# Input sections HK adds to `.boot_inner` (boot_script): generic code of other crates that only the splash reaches in
-# HK, which no crate can name by section: the font upload (no other HK code links psx_font), psx_vram's 16-bit upload
-# (only the splash's mark and font call it) and the pad closure HK hands the splash. psoxide-boot.ld refuses any
-# resident reference into `.boot_inner`.
-BOOT_INNER_SECTIONS = ('.text.*psx_font*', '.rodata.*psx_font*', '.text.*8psx_vram12upload_16bpp*',
-                       '.text.*12presentation11boot_splash*')
 
 
 def check_boot_reach(elf_path):
@@ -673,25 +667,14 @@ def boot_overrides():
     `.bss` and the pool, and HK sets `__heap_end = POOL_BASE`, `layer`), so it runs from the module pool instead, which
     nothing writes before the title module installs (game/src/main.rs: the splash runs before the first CD read). The pool
     is outside `.bss`, so psx-rt's `_start` does not clear it after the mover has run. The run range is the whole pool,
-    which lies above `__heap_end` and below the stack reserve: psoxide-boot.ld takes a BOOT_RUN_END_OVERRIDE up to the
-    stack reserve's floor. Numbers, not POOL_BASE: this file is read before the layered psoxide.ld defines it."""
+    which lies above `__heap_end` and ends at the stack reserve's floor, where psoxide-boot.ld's default BOOT_STACK (the
+    whole reserve) bounds a run range whatever `__heap_end` is. HK's own boot-only code goes in by section name only
+    (`.text.boot_only.hk_psx.*`, game/src/presentation.rs). Numbers, not POOL_BASE: this file is read before the layered
+    psoxide.ld defines it."""
     base = pool_base()
     return ('/* hk-psx: host/code_modules.py boot_overrides: boot-only memory runs from the module pool */\n'
             f'BOOT_VMA_OVERRIDE = {base:#x};\n'
             f'BOOT_RUN_END_OVERRIDE = {base + POOL_BYTES:#x};\n')
-
-
-def boot_script(sdk_boot):
-    """The SDK's psoxide-boot.ld with HK's BOOT_INNER_SECTIONS added to `.boot_inner`, after the SDK's own patterns.
-
-    psoxide-boot.ld says a program adds its own sections with a further script naming the same output section; ld.lld
-    makes that a second `.boot_inner` whose stored bytes overlap the core image's and .bss's (measured 11-24), so the
-    patterns go into the SDK's description itself. Everything else is the SDK's text; a changed shape is refused."""
-    anchor = '        *(.text.boot_inner.* .rodata.boot_inner.*)\n'
-    if sdk_boot.count(anchor) != 1:
-        raise ValueError('psoxide-boot.ld changed; review the boot-only patterns (host/code_modules.py boot_script)')
-    added = ''.join(f'        *({p}) /* hk-psx: host/code_modules.py BOOT_INNER_SECTIONS */\n' for p in BOOT_INNER_SECTIONS)
-    return sdk_boot.replace(anchor, anchor + added)
 
 
 class Elf:

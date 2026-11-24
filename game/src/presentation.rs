@@ -73,8 +73,18 @@ pub fn boot_splash(fb: &mut DoubleBuffer) {
         fb,
         line,
         psx_display::Brightness::new(crate::display::brightness()),
-        || psx_pad::ButtonState::from_bits(crate::input::poll_bits()),
+        boot_splash_pad,
     );
+}
+/// The pad read the splash polls for its skip press, a named function and not a closure: a closure
+/// cannot carry a section (psoxide-boot.ld), so its body would stay resident. Whatever glue the
+/// compiler makes to call it through the splash's `FnMut` stays resident, a few instructions. Not
+/// `optimize(size)`: that kept `poll_bits` out of line here, which put a resident copy of it in .text
+/// (+192 B) and made the menu module call it instead of inlining it (measured 11-24).
+#[inline(never)]
+#[cfg_attr(target_arch = "mips", link_section = ".text.boot_only.hk_psx.boot_splash_pad")]
+fn boot_splash_pad() -> psx_pad::ButtonState {
+    psx_pad::ButtonState::from_bits(crate::input::poll_bits())
 }
 fn presenter()-> &'static mut Presenter {
     // SAFETY: set once by `start`; the main thread is the only caller.

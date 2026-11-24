@@ -332,9 +332,7 @@ def build(telemetry=False, candidate=False, residency="scene_gate", run_prepass=
     from stack_budget import CORE_WINDOW_BYTES
     if CORE_WINDOW_BYTES!=0x2000:raise ValueError(f'HK_CORE_WINDOW_BYTES {CORE_WINDOW_BYTES}: the scene core ABI fixes the window at 8,192 B')
     core_script=ROOT/'.psoxide/sdk/psoxide-core.ld'
-    boot_text=code_modules.boot_script((ROOT/'.psoxide/sdk/psoxide-boot.ld').read_text())
-    boot_script=out/f'hk-psx-bootld-{hashlib.sha256(boot_text.encode()).hexdigest()[:16]}.ld'
-    boot_script.write_text(boot_text)
+    boot_script=ROOT/'.psoxide/sdk/psoxide-boot.ld'
     flags=delay_slot_flags().split()+[f'-Clink-arg=-T{boot_overrides}',f'-Clink-arg=-T{core_script}',f'-Clink-arg=-T{boot_script}',f'-Clink-arg=-T{linker}','-Clink-arg=--emit-relocs','-Clink-arg=-u__core_boot',f'-Clink-arg=-Map={link_map}']
     # A panic is a BREAK at the faulting instruction (-Cpanic=immediate-abort), not a formatted message: core::fmt, the panic
     # Location records and their file names (about 23 KB of the resident image) stay out of RAM. psx-rt's exception handler

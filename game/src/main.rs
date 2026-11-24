@@ -1002,7 +1002,7 @@ fn main() {
     let _ = input::poll_bits();
     // The PSoXide boot splash, before anything of the title: after the card (the splash polls the pad) and
     // before the first CD read. Its code runs from the module pool, where psx-rt's `__boot_entry` put it
-    // before `_start` and flushed the I-cache lines over it.
+    // before `_start` (which flushes the whole I-cache before `main`).
     presentation::boot_splash(&mut fb);
     // Each slot's one line on the save screen. Geo and masks are what the
     // record holds; the source also shows play time, completion and the map
