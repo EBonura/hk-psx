@@ -114,7 +114,8 @@ def startup_polls(frontend,cue,symbols,tape,memcard,work):
         command+=['--memcard',str(work/'card.mcd')]
     with (work/'replay.log').open('w')as log:subprocess.run(command,stdout=log,stderr=subprocess.STDOUT,check=True)
     for row in csv.DictReader((work/'route.csv').open()):
-        if int(row['ram_'+symbols['HK_INPUT_POLLS'][2:]])>=1:return int(row['port1_polls'])-1
+        # Route tick 0 is sampled before `_start` clears .bss (see `main`): not the program's counter yet.
+        if int(row['route_tick'])>0 and int(row['ram_'+symbols['HK_INPUT_POLLS'][2:]])>=1:return int(row['port1_polls'])-1
     raise ValueError('the sampler never polled in the startup probe')
 
 def anchor(data,startup,recorded):
@@ -182,7 +183,10 @@ def main():
     report['inputs_unchanged']=inputs()==before;report['exit_code']=result.returncode
     ram=(out/'ram.bin').read_bytes()
     report['final_ram']={n:struct.unpack_from('<I',ram,int(addr,16)&0x1fffff)[0]for n,addr in watches.items()}
-    rows=list(csv.DictReader((out/'route.csv').open()))
+    # The first sample (route tick 0) is taken before psx-rt's `_start` clears .bss: on the scene core the boot-only
+    # code's stored copy lies where .bss will be (psoxide-boot.ld), so the watched counters there read its bytes, not
+    # the program's. Every later sample is the program's own.
+    rows=[row for row in csv.DictReader((out/'route.csv').open()) if int(row['route_tick'])>0]
     report['maximum_observed']={n:max([int(row['ram_'+addr[2:]])for row in rows]+[report['final_ram'][n]])for n,addr in watches.items()}
     report['stop']=re.findall(r'route-ticks=(\d+)\s+port1-polls=(\d+)',(out/'replay.log').read_text())
     report['completed']=bool(report['stop'])and int(report['stop'][-1][1])==start+count
