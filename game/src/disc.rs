@@ -4,8 +4,8 @@
 use crate::room_decode::{Decoder, Error as DecodeError};
 use hk_format::coverage::{CoverageValidation, CoverageView, Expected as CoverageExpected};
 use hk_format::{Room, Scene, WorldMeta};
+use psx_core::abi::cd_op;
 use psx_core::link as core_cd;
-use psx_scene_abi::cd_op;
 use psx_pack::cd::{SECTOR_WORDS, WORLD_PACK_DEFAULT_LBA};
 use psx_pack::{parse_entry, parse_header, PackEntry, SECTOR_BYTES};
 /// The loader's names for the SDK's one-transfer CD engine with a sector count
@@ -1110,13 +1110,14 @@ extern "C" fn core_idle() {
 /// After the scene core's reads and Pauses, the first command to the drive goes through the core's command slot
 /// (`cd_op::COMMAND`), which proves the Pause the last read ended with (SDK scene-core rule: a program that drives
 /// the controller itself after `psx_core_read` or `psx_core_pause` sends its first command through op 0). The
-/// counted stream engine (`psx_cdstream`) talks to the registers itself, so this GetStat hands it a drive that is
-/// proven stopped, as the polled reader's own proven Pause did before the core.
+/// counted stream engine (`psx_cdstream`) and the XA player talk to the registers themselves, so this GetStat hands
+/// them a drive that is proven stopped, as the polled reader's own proven Pause did before the core.
 #[inline(never)]
 fn core_prove_stop() -> bool {
     // SAFETY: op COMMAND with no parameter bytes and no response buffer.
     let r = unsafe { core_cd::cd(cd_op::COMMAND, 0, u32::from(psx_hw::cd::CMD_GETSTAT) << 8, core::ptr::null_mut()) };
-    r & 0xff == cd_op::ACKNOWLEDGED
+    // The low byte is the outcome; 0 is acknowledged (the core image's `__psx_core_cd_impl`).
+    r & 0xff == 0
 }
 /// Read `sectors` from member LBA `lba` into the scene arena through the scene core: one seek-first start, the
 /// core's retries and its proven Pause at the end.

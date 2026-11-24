@@ -143,7 +143,6 @@ version = "0.1.0"
 dependencies = [
  "psx-hw",
  "psx-math",
- "psx-scene-abi",
 ]
 
 [[package]]
