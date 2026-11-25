@@ -1,6 +1,6 @@
 # The walker's standing expressions (host/hk-build/walk.rs adds these before every script): what a macro such as
 # `strike`, `guard`, `snipe`, `heal` or `fight` reacts to, derived by the gate from the raw words the guest publishes
-# (the actor table HK_ACT, the Knight's position, facing and vertical speed, HK_NAIL_BUSY, HK_WALK_READY, HK_HEALTH,
+# (the actor table HK_ACT, the ranged-attack words HK_ACT_VOLLEY, HK_ACT_GAS and HK_VOLLEY_SHOT, the Knight's position, facing and vertical speed, HK_NAIL_BUSY, HK_WALK_READY, HK_HEALTH,
 # HK_HEALTH_MAX, HK_SOUL, HK_FOCUS_LOCKED). Q16 world units. A swing reaches 3.2 units sideways from the Knight's origin
 # (a body adds a little), 1.6 up and 2.4 down; the overhead swing 1.4 either side from 0.3 to 2.8 up; a jump gets a foe up
 # to 5 above. They were guest code (EnemyWorld::foe_senses) until the gate learned expressions.
@@ -32,6 +32,26 @@ def strike_up $ready && $foe_up
 def turn_left $strike_left && i32(HK_PLAYER_FACING) > 0
 def turn_right $strike_right && i32(HK_PLAYER_FACING) < 0
 def jumpstrike $ready && $foe_jump && (u32(HK_WALK_READY) == 1 || i32(HK_PLAYER_VY) > 0)
+# Volleys: an Obble throws four shots on the diagonals at 12 units a second, from where it hovers; they are not bodies, so HK_ACT
+# does not hold them. HK_ACT_VOLLEY is the ticks until each slot's next volley (0: none coming; in the last 46, its wind-up, it has
+# stopped, so where the shots will fly is known), HK_VOLLEY_SHOT the volley shots in flight ({x, y}, x 2147483647 for none) and
+# HK_VOLLEY_SHOT_DIR which way each flies (bit 0: right, bit 1: up). The Knight's body is 0.5 wide and spans 1.39 to 0.11 below his
+# position, so its centre is 0.75 below. A shot is a threat while he is within 8 units, it has not passed him by more than half a
+# unit (twice the distance along its line, -1), and its line passes within 0.9 of his centre (`d`, twice that miss, under 1.8); a
+# wind-up within 48 ticks of a thrower within 12 units counts as its four lines. `fire_dir` is the way off the first such line (1
+# right, -1 left, the side of the line he is on; 0 none): each candidate is coded 2 x row + (d < 0), throwers after the 8 shot rows.
+# Row addresses inside the loops below (read through i32, as `row` above).
+def vrow HK_VOLLEY_SHOT + 8 * j
+def arow HK_ACT + 8 * i
+def fire_dir let a = min(j in 0..8: let b = u8(HK_VOLLEY_SHOT_DIR + j), dx = i32(HK_PLAYER_X) - i32($vrow), dy = i32(HK_PLAYER_Y) - 49152 - i32($vrow + 4), d = dx - ((b & 1) * 2 - 1) * ((b & 2) - 1) * dy in i32($vrow) != 2147483647 && abs(dx) < 524288 && abs(dy) < 524288 && ((b & 1) * 2 - 1) * dx + ((b & 2) - 1) * dy > -65536 && abs(d) < 117965 ? 2 * j + (d < 0) : 999), c = a < 16 ? a : min(i in 0..32: let dx = i32(HK_PLAYER_X) - i32($arow), dy = i32(HK_PLAYER_Y) - 49152 - i32($arow + 4), d = (dx >= 0) == (dy >= 0) ? dx - dy : dx + dy in u8(HK_ACT_VOLLEY + i) != 0 && u8(HK_ACT_VOLLEY + i) <= 48 && i32($arow) != 2147483647 && abs(dx) < 786432 && abs(dy) < 786432 && abs(d) < 117965 ? 16 + 2 * i + (d < 0) : 999) in c == 999 ? 0 : 1 - 2 * (c & 1)
+def under_fire $fire_dir != 0
+# Before a hop: a thrower within 14 units throws within 90 ticks (the run-up and the flight), or a volley shot is within 8 units.
+def volley_near any(i in 0..32: let v = u8(HK_ACT_VOLLEY + i) in v != 0 && v <= 90 && i32($arow) != 2147483647 && abs(i32($arow) - i32(HK_PLAYER_X)) < 917504 && abs(i32($arow + 4) - i32(HK_PLAYER_Y)) < 917504)
+# A Mossman Shaker's gas (HK_ACT_GAS: winding up, 45 ticks, or out): its cloud reaches 4.6 units either side, 1.44 below and 3.27
+# above it. `gas_x`: the x of the first Shaker gassing within 5.6 units across at his height (2147483647 for none). A step away only
+# helps where the floor reaches 5.6 past it (walk.rs `dodge`); on a floor it shares, the fight goes on as before.
+def gas_x let k = min(i in 0..32: let dy = i32($arow + 4) - i32(HK_PLAYER_Y) in u8(HK_ACT_GAS + i) != 0 && i32($arow) != 2147483647 && abs(i32($arow) - i32(HK_PLAYER_X)) < 367002 && dy > -327680 && dy < 131072 ? i : 32) in k < 32 ? i32(HK_ACT + 8 * k) : 2147483647
+def shot_near any(j in 0..8: i32($vrow) != 2147483647 && abs(i32($vrow) - i32(HK_PLAYER_X)) < 524288 && abs(i32($vrow + 4) - i32(HK_PLAYER_Y)) < 524288)
 def focus u32(HK_HEALTH) < u32(HK_HEALTH_MAX) && (u32(HK_SOUL) >= 33 || u32(HK_FOCUS_LOCKED) == 1) && (u32(HK_WALK_READY) == 1 || u32(HK_FOCUS_LOCKED) == 1) && !$foe_near
 # A live foe ahead on that side within 5 units at the Knight's height (something to get away from), and few masks left.
 def chaser_left any(i in 0..33: let ax = i32($row), dx = ax - i32(HK_PLAYER_X), dy = i32($row + 4) - i32(HK_PLAYER_Y) in $live && ax != 2147483647 && dx < 0 && dx >= -(5 * 65536) && abs(dy) <= 3 * 65536)

@@ -66,6 +66,8 @@ const WALK_PER_TICK: f64 = 0.138;
 /// ticks of `WALK_PER_TICK`, so a stop exactly at the bound lets one more step carry the Knight off the ledge (hk-walk
 /// 2026-11-15: a landing 0.00006 inside the bound, one step, a 13 unit fall).
 const EDGE_BAND: f64 = 0.15;
+/// How far short of a floor's end a step off a volley's line stops (a held walk overshoots by up to 0.41).
+const DODGE_BAND: f64 = 0.5;
 /// `stand X` walks in to this far short of X before it taps: a held walk's overshoot (a poll late, plus a catch-up step) is
 /// at most three steps, 0.41, so it never carries the Knight past X.
 const STAND_APPROACH: f64 = 0.6;
@@ -73,6 +75,9 @@ const STAND_APPROACH: f64 = 0.6;
 const STAND_BAND: f64 = 0.07;
 /// Rounds of `fight`/`snipe` a `clear` makes at most.
 const CLEAR_ROUNDS: u32 = 10;
+/// Waits for a volley to pass a `clear` makes at most (each ends with the volley, a shot's line crossing the
+/// Knight, or a multiple of 128 pad polls).
+const VOLLEY_WAITS: u32 = 6;
 /// How far before its take-off a leap lets go of the walk (see `macros`).
 const LEAP_EARLY: f64 = 0.3;
 
@@ -594,17 +599,41 @@ fn strike_both(out: &mut String, label: &str) {
 /// expression is false (the top of the rise, or the foe gone; no time at all when no foe is above), swing there,
 /// and wait for the ground.
 fn snipe(out: &mut String, label: &str) {
-    let _ = writeln!(out, "hold cross until expr !$jumpstrike timeout 60 # {label}: jump at a foe above");
+    // Not into a volley: a jump cannot step off a shot's line, so none starts (and a rise ends) while a thrower near him
+    // is due within 90 ticks or a volley shot is within 8 units (a jump at an Obble right after its volley is the safe one).
+    let _ = writeln!(out, "hold cross until expr !$jumpstrike || $volley_near || $shot_near timeout 60 # {label}: jump at a foe above");
     strike_both(out, label);
     let _ = writeln!(out, "wait until HK_WALK_READY == 1 timeout 300 # {label}: back on the ground");
 }
 
 /// Focus while masks are missing and SOUL pays for a heal and no foe is close: the `focus` expression is false
 /// otherwise, so the step takes no time when Focus is not wanted.
-fn heal(out: &mut String, label: &str) {
-    let _ = writeln!(out, "hold circle until expr !$focus timeout 240 # {label}: focus");
+fn heal(out: &mut String, label: &str, floor: Option<(f64, f64)>) {
+    // Only on a known floor does a volley end the Focus (the step off its line follows); elsewhere there is no step.
+    let fire = if floor.is_some() { " || $under_fire" } else { "" };
+    let _ = writeln!(out, "hold circle until expr !$focus{fire} timeout 240 # {label}: focus");
     // The heal's release still owns the Knight for a few ticks: a jump pressed in them is lost.
     let _ = writeln!(out, "wait until HK_FOCUS_LOCKED == 0 timeout 120 # {label}: focus over");
+    dodge(out, label, floor);
+}
+
+/// Off the line of a volley (`fire_dir`, walk-prelude.walk): walk the way out while a volley shot's line or a
+/// thrower's wind-up crosses the Knight, never past the floor under him (LO and HI, as `fight` takes them). At
+/// the floor's end he stays: turning back would cross the line (on a floor under a unit wide that made him pace
+/// to and fro under the shot). No time at all with nothing thrown near, and nothing without
+/// a known floor (the Knight is not walked off an unknown platform). Each hold ends on game state: a wind-up ends
+/// in its volley within 48 ticks and a shot passes him within a few more.
+fn dodge(out: &mut String, label: &str, floor: Option<(f64, f64)>) {
+    let Some((lo, hi)) = floor else { return };
+    // A held walk runs on up to 0.41 past where it is let go, so the step stops half a unit short of an end.
+    let lo = ((lo + DODGE_BAND) * ONE as f64).round() as i64;
+    let hi = ((hi - DODGE_BAND) * ONE as f64).round() as i64;
+    let _ = writeln!(out, "hold right until expr !($fire_dir > 0 && i32(HK_PLAYER_X) < {hi}) timeout 120 # {label}: off a volley's line, right");
+    let _ = writeln!(out, "hold left until expr !($fire_dir < 0 && i32(HK_PLAYER_X) > {lo}) timeout 120 # {label}: off a volley's line, left");
+    // Away from a gassing Shaker, only where the floor reaches past its cloud (5.6 units from it): on a floor it shares
+    // he would only back into the corner, inside the cloud, instead of fighting it.
+    let _ = writeln!(out, "hold right until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && g <= x && g + 367002 < {hi} && x < {hi}) timeout 120 # {label}: out of a gas cloud, right");
+    let _ = writeln!(out, "hold left until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && g > x && g - 367002 > {lo} && x > {lo}) timeout 120 # {label}: out of a gas cloud, left");
 }
 
 /// The standing expressions of `walk-prelude.walk`, defined before every script.
@@ -695,6 +724,9 @@ fn definitions(text: &str) -> Result<String> {
 pub fn macros(text: &str) -> Result<String> {
     let mut out = String::new();
     let (mut at_x, mut at_y): (Option<f64>, Option<f64>) = (None, None);
+    // The floor under the Knight (its x ends) as the last `fight N LO HI`, `retreat LO HI` or `clear ... LO HI`
+    // named it, for the macros that stay on it (`guard`, `heal`, `snipe`); any other line may move him off it.
+    let mut floor: Option<(f64, f64)> = None;
     for (index, line) in text.lines().enumerate() {
         let located = |e: String| format!("line {}: {e}", index + 1);
         let (code, comment) = match line.split_once('#') {
@@ -726,6 +758,9 @@ pub fn macros(text: &str) -> Result<String> {
                 units(to + tol)
             );
         };
+        if !matches!(tokens.first(), Some(&("fight" | "snipe" | "guard" | "retreat" | "heal" | "clear" | "strike")) | None) {
+            floor = None;
+        }
         match tokens.as_slice() {
             ["at", x, y] => {
                 at_x = Some(number(Some(x))?);
@@ -907,6 +942,7 @@ pub fn macros(text: &str) -> Result<String> {
             // limits are the floor under the Knight, so the walk never leaves it.
             ["retreat", lo, hi, rest @ ..] => {
                 let (lo, hi) = (number(Some(lo))?, number(Some(hi))?);
+                floor = Some((lo, hi));
                 let masks = match rest {
                     [] => 2,
                     ["at", n] => number(Some(n))? as u64,
@@ -928,8 +964,14 @@ pub fn macros(text: &str) -> Result<String> {
             ["clear", name, tx, ty, rest @ ..] => {
                 let (tx, ty) = ((number(Some(tx))? * ONE as f64).round() as i64, (number(Some(ty))? * ONE as f64).round() as i64);
                 let round = match rest {
-                    [] => "strike\n".to_string(),
-                    [lo, hi] => format!("fight 1 {lo} {hi}\n"),
+                    [] => {
+                        floor = None;
+                        "strike\n".to_string()
+                    }
+                    [lo, hi] => {
+                        floor = Some((number(Some(lo))?, number(Some(hi))?));
+                        format!("fight 1 {lo} {hi}\n")
+                    }
                     _ => return Err(located("clear NAME TX TY [LO HI]".into())),
                 };
                 let hot = format!(
@@ -944,10 +986,30 @@ pub fn macros(text: &str) -> Result<String> {
                     out.push_str(&rounds);
                     let _ = writeln!(out, "end");
                 }
+                // Last, right before the hop (after the rounds, which take time an Obble uses to wind up again): a volley
+                // thrown during the run-up or the flight takes the Knight in the air, where nothing can avoid it: while a
+                // thrower near him is due within 90 ticks or a volley shot is within 8 units, he waits where he stands,
+                // stepping off a volley's line when one crosses him. A throw comes at least 166 ticks after the last one,
+                // so a wait ends with the volley and the shots' passing. Unrolled behind `if` like the rounds, and each
+                // wait also ends at the next multiple of 128 pad polls, so the clear always ends: a volley still due
+                // after the last pass is left to the hop.
+                // Where the floor leaves no room for a step off a line (narrower than twice DODGE_BAND plus 0.3, or not
+                // known), standing through a volley is a hit as often as the hop is: there he waits only for shots
+                // already in flight near him and hops while a throw is still coming (a 0.8-wide ledge under an Obble
+                // took the volley while it waited for it).
+                let roomy = floor.filter(|(lo, hi)| hi - lo >= 2.0 * DODGE_BAND + 0.3);
+                let near = if roomy.is_some() { "$volley_near || $shot_near" } else { "$shot_near" };
+                let fire = if roomy.is_some() { " || $under_fire" } else { "" };
+                for pass in 1..=VOLLEY_WAITS {
+                    let _ = writeln!(out, "if expr {near} # {name}: wait out a volley, pass {pass}");
+                    dodge(&mut out, name, roomy);
+                    let _ = writeln!(out, "wait until expr !({near}){fire} || (u32(HK_INPUT_POLLS) & 127) == 0 timeout 300");
+                    let _ = writeln!(out, "end");
+                }
             }
             ["strike"] => strike_both(&mut out, label),
             ["snipe"] => snipe(&mut out, label),
-            ["heal"] => heal(&mut out, label),
+            ["heal"] => heal(&mut out, label, floor),
             ["guard", rest @ ..] => {
                 let rounds = if rest.is_empty() { 2 } else { number(rest.first())? as u64 };
                 // `guard N X`: back to x X after every round (a hit pushes him, a tap of the pad
@@ -960,8 +1022,9 @@ pub fn macros(text: &str) -> Result<String> {
                 // may: nothing here moves him anywhere that matters, so a small platform stays
                 // under his feet.
                 for _ in 0..rounds {
+                    dodge(&mut out, label, floor);
                     strike_both(&mut out, label);
-                    heal(&mut out, label);
+                    heal(&mut out, label, floor);
                     // Time to pass: a foe that is not here yet arrives while the rounds run.
                     let _ = writeln!(out, "wait 4");
                     if let Some(x) = mark {
@@ -981,6 +1044,9 @@ pub fn macros(text: &str) -> Result<String> {
                     [n, lo, hi] => (*n as u64, Some((*lo, *hi))),
                     _ => return Err(located("fight [N] [LO HI] [noheal]".into())),
                 };
+                if bounds.is_some() {
+                    floor = bounds;
+                }
                 let (stop_right, stop_left) = match bounds {
                     Some((lo, hi)) => (
                         format!(" || i32(HK_PLAYER_X) >= {}", ((hi - EDGE_BAND) * ONE as f64).round() as i64),
@@ -988,13 +1054,19 @@ pub fn macros(text: &str) -> Result<String> {
                     ),
                     None => (String::new(), String::new()),
                 };
+                // On a known floor a close ends under fire (`under_fire` is false with nothing thrown near), for the step
+                // off the line.
+                // and a close never walks into a Shaker's gas (it ends while one within 5.6 units is gassing).
+                let fire = if bounds.is_some() { " || $under_fire || $gas_x != 2147483647" } else { "" };
                 for round in 1..=rounds {
-                    let _ = writeln!(out, "hold right until expr $gap_right == 0{stop_right} timeout 300 # {label}: round {round}, close on the right");
+                    let _ = writeln!(out, "hold right until expr $gap_right == 0{stop_right}{fire} timeout 300 # {label}: round {round}, close on the right");
+                    dodge(&mut out, label, bounds);
                     strike_one(&mut out, label, "right");
-                    let _ = writeln!(out, "hold left until expr $gap_left == 0{stop_left} timeout 300 # {label}: round {round}, close on the left");
+                    let _ = writeln!(out, "hold left until expr $gap_left == 0{stop_left}{fire} timeout 300 # {label}: round {round}, close on the left");
+                    dodge(&mut out, label, bounds);
                     strike_one(&mut out, label, "left");
                     if heals {
-                        heal(&mut out, label);
+                        heal(&mut out, label, bounds);
                     }
                 }
             }
@@ -1165,8 +1237,10 @@ mod tests {
     fn a_clear_reacts_while_the_hop_box_is_occupied_and_always_ends() {
         let toml = compile_text("name t\nat 10 5.39\nclear d1-arc 21.5 9.75 8.5 14.5\nwalk 12\n").unwrap();
         // Rounds behind guards, not a loop: it ends after its last round whatever the foe does.
-        assert_eq!(toml.matches("[step.when]").count(), CLEAR_ROUNDS as usize, "{toml}");
-        assert!(!toml.contains("max_iter") && !toml.contains("HK_INPUT_POLLS"), "{toml}");
+        assert_eq!(toml.matches("[step.when]").count(), (CLEAR_ROUNDS + VOLLEY_WAITS) as usize, "{toml}");
+        // With a floor the volley waits step off a volley's line, never past the floor's ends.
+        assert!(toml.contains("HK_VOLLEY_SHOT") && toml.contains("i32(HK_PLAYER_X) < 917504)"), "{toml}");
+        assert!(!toml.contains("max_iter"), "{toml}");
         assert!(!toml.contains('$'), "{toml}");
         assert!(compile_text("name t\nclear a 1\n").unwrap_err().contains("clear"));
     }
