@@ -625,15 +625,17 @@ fn heal(out: &mut String, label: &str, floor: Option<(f64, f64)>) {
 /// in its volley within 48 ticks and a shot passes him within a few more.
 fn dodge(out: &mut String, label: &str, floor: Option<(f64, f64)>) {
     let Some((lo, hi)) = floor else { return };
+    let (lo_end, hi_end) = ((lo * ONE as f64).round() as i64, (hi * ONE as f64).round() as i64);
     // A held walk runs on up to 0.41 past where it is let go, so the step stops half a unit short of an end.
     let lo = ((lo + DODGE_BAND) * ONE as f64).round() as i64;
     let hi = ((hi - DODGE_BAND) * ONE as f64).round() as i64;
     let _ = writeln!(out, "hold right until expr !($fire_dir > 0 && i32(HK_PLAYER_X) < {hi}) timeout 120 # {label}: off a volley's line, right");
     let _ = writeln!(out, "hold left until expr !($fire_dir < 0 && i32(HK_PLAYER_X) > {lo}) timeout 120 # {label}: off a volley's line, left");
-    // Away from a gassing Shaker, only where the floor reaches past its cloud (5.6 units from it): on a floor it shares
-    // he would only back into the corner, inside the cloud, instead of fighting it.
-    let _ = writeln!(out, "hold right until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && g <= x && g + 367002 < {hi} && x < {hi}) timeout 120 # {label}: out of a gas cloud, right");
-    let _ = writeln!(out, "hold left until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && g > x && g - 367002 > {lo} && x > {lo}) timeout 120 # {label}: out of a gas cloud, left");
+    // Away from a gassing Shaker that is off this floor (one the fight cannot reach), only where the floor reaches past
+    // its cloud (5.6 units from it). A Shaker on the floor is fought as before (walk-shaker-fight): stepping away from
+    // it whenever it winds up would never let the nail reach it.
+    let _ = writeln!(out, "hold right until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && (g < {lo_end} || g > {hi_end}) && g <= x && g + 367002 < {hi} && x < {hi}) timeout 120 # {label}: out of a gas cloud, right");
+    let _ = writeln!(out, "hold left until expr let g = $gas_x, x = i32(HK_PLAYER_X) in !(g != 2147483647 && (g < {lo_end} || g > {hi_end}) && g > x && g - 367002 > {lo} && x > {lo}) timeout 120 # {label}: out of a gas cloud, left");
 }
 
 /// The standing expressions of `walk-prelude.walk`, defined before every script.
@@ -1056,8 +1058,15 @@ pub fn macros(text: &str) -> Result<String> {
                 };
                 // On a known floor a close ends under fire (`under_fire` is false with nothing thrown near), for the step
                 // off the line.
-                // and a close never walks into a Shaker's gas (it ends while one within 5.6 units is gassing).
-                let fire = if bounds.is_some() { " || $under_fire || $gas_x != 2147483647" } else { "" };
+                // and a close never walks into the gas of a Shaker off the floor (one within 5.6 units gassing beyond LO or HI).
+                let fire = match bounds {
+                    Some((lo, hi)) => format!(
+                        " || $under_fire || (let g = $gas_x in g != 2147483647 && (g < {} || g > {}))",
+                        (lo * ONE as f64).round() as i64,
+                        (hi * ONE as f64).round() as i64
+                    ),
+                    None => String::new(),
+                };
                 for round in 1..=rounds {
                     let _ = writeln!(out, "hold right until expr $gap_right == 0{stop_right}{fire} timeout 300 # {label}: round {round}, close on the right");
                     dodge(&mut out, label, bounds);
