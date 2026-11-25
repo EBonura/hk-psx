@@ -112,3 +112,9 @@ Per-scene Geo bank landing (docs/GEO.md). Measured A/B in the same session: the 
 - secret-f08b: frame_time 236 to 254 (measured 241), pacing 74 to 113 (measured 85)
 
 The gameplay batch (lane/hk-batch2-1122: nail terrain recoil, wall-slide and turn rules, the tink sounds, the hero attack list, cached HeroParams, eight charms) and its searched layout (fdc10858). Both routes still break their walls as pinned (secret hits and breaks unchanged). The nail recoil pushes the Knight off the wall between swings on these two tapes, but that is not what moved the figures: a copy of each tape that steps back to the wall between swings, so the Knight stands where main had him, measured the same (secret-f08b 241 and 85 again, secret-c08 265), so the move is the batch's code and layout, 0.8 and 2.1 percent over, inside the 10 percent guard. Moved by `validate --repin`; outcome pins unchanged.
+
+## 2026-11-25, the modular scene core (SDK 80d432926e69) and its searched layout (seed 5)
+
+- baldur-spell: pacing 553 to 584 (measured 556)
+
+The move to the modular scene core and a new searched hot-text layout (game/hk.layout, seed 5 of four seeds tried: 3, 1, 5 and 7 with kings-return weighted 1). On the route-input twin this build measures 556 frames over 2 vblanks (frame time 288 of 634 frames); the installed d3b5 build's own install-tier run measured 548 (287 of 638), and its history across the 2026-11-24 logs runs 530 to 548. Every other outcome of the route is unchanged (completed, no faults, same final position and region). Whole validate set against that installed run, frame time per route: 45 routes within 0.5% or equal; slower c37-stand +1.2%, cornifer-map +3.6%, secret-c37 +2.5%, baldur-spell +0.3%; faster cocoon-open -2.3%, grub-jar -1.0%, husk-guard -0.9%. Cause inferred to be placement (the same layout costs c37-stand's speed window 0.42%), not proven. Moved by the documented rule (measurement plus 5 percent); no other pin changed.
