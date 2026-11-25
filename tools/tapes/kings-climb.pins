@@ -11,6 +11,8 @@ long_frames = 47
 # made against the shaft walls pushed the Knight off his jumps. ctrl-climb keeps
 # the recorded swings; it passes on them, and on this tape it reports 30 frames
 # of late prop art (HK_MODULE_ART_LATE) on the path it then takes.
+# Kills, hits and SOUL are not pinned (2026-11-25, docs/REPIN-LOG.md): incidental to the blind swings,
+# they move with frame timing.
 HK_CHEATS = 1
 HK_SCRIPT_TRANSITIONS = 1
 HK_SCRIPT_WRITES = 1
@@ -20,7 +22,4 @@ HK_SCRIPT_NATIVE = 0
 HK_REGION_ID = 30
 HK_DEATHS = 0
 HK_HEALTH = 5
-HK_ENEMY_KILLS = 2
-HK_ENEMY_HITS = 4
 HK_BREAK_COUNT = 11
-HK_SOUL = 44
