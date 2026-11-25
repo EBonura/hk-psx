@@ -8,6 +8,7 @@ include fungus1-32-chain.walk
 include fungus1-20v02-chain.walk
 include fungus1-21-chain.walk
 wait until HK_WALK_READY == 1 timeout 300
+heal                                                                 # masks topped up as far as SOUL pays before her arena (no foe near this gate)
 include fungus1-04.walk
 wait until HK_HORNET_ENCOUNTERS == 1 timeout 300
 wait until expr u8(HK_HERO_LOCK) == 1 timeout 300                      # her greeting has taken hold of the Knight (the lock can come a few ticks after the encounter count)

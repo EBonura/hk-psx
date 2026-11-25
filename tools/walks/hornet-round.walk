@@ -1,9 +1,11 @@
 # One round of the Hornet fight: reactions in order of what matters; each costs no time when there is nothing to react to.
-# The Focus hold ends on game state (!$hheal); its timeout is only the failure bound, so it must outlast the longest legal Focus
+# The Focus starts on $hheal and its hold ends on game state (!$hkeep); its timeout is only the failure bound, so it must outlast the longest legal Focus
 # (data/params.rs, hk-sim focus.rs and spell.rs): FIREBALL tap_ticks 15 + FOCUS hold_ticks 15 - 1 before the lock, start_ticks 15,
 # then floor(max_soul 99 / cost 33) = 3 heals of ceil(33 x drain_interval_us 27000 x 60 / 1e6) = 54 drain + heal_ticks 12, then
 # finish_ticks 14: 29 + 15 + 3 x 66 + 14 = 256 ticks from the press (measured 256 on real and mister). 300 leaves 44 ticks of margin.
-hold circle until expr !$hheal timeout 300           # Focus when nothing can reach him
+if expr $hheal                                       # Focus when nothing can reach him for a heal's length
+hold circle until expr !$hkeep timeout 300           # and hold it while no hit is coming
+end
 wait until HK_FOCUS_LOCKED == 0 timeout 120
 hold right until expr !$hunder_right timeout 90                              # off the point her air dash aims at
 hold left until expr !$hunder_left timeout 90

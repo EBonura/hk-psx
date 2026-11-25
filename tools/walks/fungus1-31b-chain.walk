@@ -822,6 +822,24 @@ retreat 10.68 11.48
 heal
 clear d31b-h017-arc 15.860 103.390 10.68 11.48
 loop d31b-h017 until expr (abs(i32(HK_PLAYER_X) - 1039401) <= 58982 || (i32(HK_PLAYER_X) >= 963604 && i32(HK_PLAYER_X) <= 1196783)) && abs(i32(HK_PLAYER_Y) - 6775767) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 340787 && i32(HK_PLAYER_X) <= 511181 && abs(i32(HK_PLAYER_Y) - 6120448) <= 19661   # d31b-h017: back from the floor at y 93.39 (x 5.2 to 7.8), where a hit near the ledge (x 10.7 to 12.0, under an Obble) knocks him; hop 16's own way back, then hop 16
+walk 6.69   # run-up
+walk 7.12   # take-off
+hold right+cross for 12
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 8.30
+stand 7.96   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 507904 && i32(HK_PLAYER_X) <= 760873 && abs(i32(HK_PLAYER_Y) - 6251520) <= 19661   # d31b-h017: back from hop 16's floor at y 95.39 (x 7.75 to 11.61): hop 16
+stand 7.96   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
 walk 11.43
 walk 11.00   # run-up
 walk 11.43   # take-off
@@ -843,6 +861,24 @@ retreat 10.67 11.97
 heal
 clear d31b-h019-arc 4.780 102.390 10.67 11.97
 loop d31b-h019 until expr (abs(i32(HK_PLAYER_X) - 313262) <= 58982 || (i32(HK_PLAYER_X) >= 78643 && i32(HK_PLAYER_X) <= 470644)) && abs(i32(HK_PLAYER_Y) - 6710231) <= 19661 max 3 timeout 900
+if expr i32(HK_PLAYER_X) >= 340787 && i32(HK_PLAYER_X) <= 511181 && abs(i32(HK_PLAYER_Y) - 6120448) <= 19661   # d31b-h019: back from the floor at y 93.39 (x 5.2 to 7.8), where a hit near the ledge (x 10.7 to 12.0, under an Obble) knocks him; hop 16's own way back, then hop 16
+walk 6.69   # run-up
+walk 7.12   # take-off
+hold right+cross for 12
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+walk 8.30
+stand 7.96   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
+if expr i32(HK_PLAYER_X) >= 507904 && i32(HK_PLAYER_X) <= 760873 && abs(i32(HK_PLAYER_Y) - 6251520) <= 19661   # d31b-h019: back from hop 16's floor at y 95.39 (x 7.75 to 11.61): hop 16
+stand 7.96   # take-off
+hold right+cross for 28
+hold right for 4
+wait until HK_WALK_READY == 1 timeout 300
+end
 walk 10.86
 walk 11.29   # run-up
 walk 10.86   # take-off

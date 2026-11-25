@@ -39,12 +39,19 @@ def hunder_right $air_threat && $hdx > 0 && (($adash_early && $px < 1376256) || 
 def hunder_left $air_threat && $hdx <= 0 && (($adash_early && $px > 2097152) || (!$adash_early && i32(HK_PLAYER_FACING) < 0))
 def flee_left $air_threat && $hdx > 0 && $px > 1146880 && !$hunder_right
 def flee_right $air_threat && $hdx <= 0 && $px < 2326528 && !$hunder_left
-# Focus: masks missing, SOUL for it (or one under way), on the ground, and no hit box can reach him for the next stretch: the Knight is
-# still invulnerable from a hit and she is not near, or she is throwing from beyond the needle's reach (the throw is 100 ticks in which she stays put).
-def hheal $focus && !$g_dash && !$dash_coming && !$air_threat && (u32(HK_HEALTH) <= 3 || $adx > 655360) && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504 || (u32(HK_HEALTH) <= 3 && $adx > 327680 && $hcalm && !$dash_coming))
+# Focus: masks missing, SOUL for it (or one under way), on the ground, and a window long enough for a heal to finish (a Focus let go
+# before its heal keeps none of the SOUL it drained): the Knight is still invulnerable from a hit and she is not near, she is throwing
+# from beyond the needle's reach (the throw is 100 ticks in which she stays put), or she is far; with 3 masks or fewer, also when she is
+# calm and more than 5 units off (a short window, worth the risk only then). Not gated on the mask count otherwise: a boot that came in
+# with 4 of 5 masks never healed and died with SOUL drained (hk-fix NOTES "Hornet walks 11-25").
+def hheal $focus && !$g_dash && !$dash_coming && !$air_threat && (($adx > 294912 && u16(HK_HORNET_INVULN) >= 45) || ($adx > 622592 && ($hs == 35 || $hs == 36 || $hs == 37 || $hs == 38)) || $adx > 917504 || (u32(HK_HEALTH) <= 3 && $adx > 327680 && $hcalm))
+# A Focus once started is held while no hit is coming (her dashes, her air dash, a needle on its way, or an attack within 4 units at his
+# height): letting go when the start window merely closes (his invulnerability running down) threw the drained SOUL away.
+def hkeep $focus && !$g_dash && !$dash_coming && !$air_threat && !($hlive && $needle_near) && !($hlive && !$hcalm && $level && $adx < 262144)
 
-# Vengeful Spirit at her when SOUL is spare (more than a Focus needs), she is calm and 5 to 12 units off at his height, and he faces her: a cast owns him for about 24 ticks.
-def hcast u32(HK_SOUL) >= 66 && u32(HK_WALK_READY) == 1 && $hlive && $level && $adx > 327680 && $adx < 786432 && $hcalm && !$dash_coming && (($hdx > 0 && i32(HK_PLAYER_FACING) > 0) || ($hdx <= 0 && i32(HK_PLAYER_FACING) < 0))
+# Vengeful Spirit at her when SOUL is spare (a Focus for every missing mask stays paid for, and one more), she is calm and 5 to 12 units
+# off at his height, and he faces her: a cast owns him for about 24 ticks.
+def hcast u32(HK_SOUL) >= 66 && u32(HK_SOUL) >= 33 * (u32(HK_HEALTH_MAX) - u32(HK_HEALTH) + 1) && u32(HK_WALK_READY) == 1 && $hlive && $level && $adx > 327680 && $adx < 786432 && $hcalm && !$dash_coming && (($hdx > 0 && i32(HK_PLAYER_FACING) > 0) || ($hdx <= 0 && i32(HK_PLAYER_FACING) < 0))
 # Her ground-dash wind-up with the Knight inside its reach and room behind him to back away (the arena runs 17 to 36). The
 # wind-up is 32 to 34 ticks, or 52 to 53; a jump from its 19th tick clears the short one, but the losing runs on mister and
 # hostile boots took their hits jumping at ticks 23 to 26 of the long one, so the Knight walks out of reach instead whenever he can.
