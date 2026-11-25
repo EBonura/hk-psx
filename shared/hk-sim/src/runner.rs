@@ -410,6 +410,11 @@ impl Runner {
     pub fn swipe(&self) -> Swipe {
         self.swipe
     }
+    /// Gas: the attack is winding up (`Attack Antic`, 45 ticks with the Walker stopped) or its hit box is on.
+    /// Read-only, for the walker's words.
+    pub fn gas_threat(&self) -> bool {
+        self.is_gas() && matches!(self.swipe, Swipe::Anticipate | Swipe::Lunge)
+    }
     pub fn facing(&self) -> i32 {
         self.facing as i32
     }

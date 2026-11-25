@@ -1508,7 +1508,7 @@ fn main() {
                         #[cfg(feature = "tick-log")]
                         input::log_tick(false);
                     }
-                    game.enemies.publish_walk_words(r.scene, game.player.x);
+                    game.enemies.publish_walk_words(r.scene, game.player.x, game.player.y);
                     publish_walk_senses(&game);
                     if let Some((x, y, hp)) = game.enemies.actor_state(0, 12546) {
                         unsafe {

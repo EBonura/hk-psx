@@ -5478,6 +5478,38 @@ pub static mut HK_FK_PHASE: u32 = 0;
 #[no_mangle]
 pub static mut HK_ACT: [[i32; 2]; MAX_ACTORS] = [[ACT_NONE, 0]; MAX_ACTORS];
 pub const ACT_NONE: i32 = i32::MAX;
+/// Ticks until the actor in that `HK_ACT` slot throws its next volley (an Obble's four diagonal shots),
+/// saturating at 255; 0 for a slot with no thrower awake. Read-only, for walk expressions: a volley is not
+/// a body, so `HK_ACT` alone cannot warn of it (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_ACT_VOLLEY: [u8; MAX_ACTORS] = [0; MAX_ACTORS];
+/// 1 while the actor in that `HK_ACT` slot has a gas attack winding up or out (a Mossman Shaker: its cloud reaches
+/// about 4.6 units either side), else 0. Read-only, for walk expressions (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_ACT_GAS: [u8; MAX_ACTORS] = [0; MAX_ACTORS];
+/// How many of the loaded scene's volley shots `HK_VOLLEY_SHOT` lists (two volleys).
+pub const WALK_SHOTS: usize = 8;
+/// How far from the Knight, on each axis, a volley shot must be to be listed (12 units, Q16).
+const WALK_SHOT_REACH: i32 = 12 * ONE;
+/// The first `WALK_SHOTS` volley shots in flight within 12 units of the Knight (pool order; a shot flying on a volley's
+/// diagonal, not one already bursting on a wall), `{x, y}` Q16 world units; x is `ACT_NONE` for a row with
+/// none. Read-only, for walk expressions (`publish_walk_words`).
+#[no_mangle]
+pub static mut HK_VOLLEY_SHOT: [[i32; 2]; WALK_SHOTS] = [[ACT_NONE, 0]; WALK_SHOTS];
+/// Which way each `HK_VOLLEY_SHOT` row flies: bit 0 set when its x speed is positive, bit 1 when its y speed is
+/// (y up).
+#[no_mangle]
+pub static mut HK_VOLLEY_SHOT_DIR: [u8; WALK_SHOTS] = [0; WALK_SHOTS];
+/// `HK_ACT_VOLLEY` and `HK_ACT_GAS` for one live actor, out of line so the frame's hot code does not grow.
+#[inline(never)]
+#[cfg_attr(not(test), optimize(size))]
+fn walk_ranged(actor: &Actor) -> [u8; 2] {
+    match &actor.runtime {
+        Runtime::FatFly(f) => [f.controller.ticks_to_volley().map_or(0, |t| t.min(255) as u8), 0],
+        Runtime::Runner(r) => [0, u8::from(r.controller.gas_threat())],
+        _ => [0; 2],
+    }
+}
 /// The corpse of the loaded scene's last slot that holds one: `{x, y}` (Q16 world units, the corpse's origin)
 /// and its phase (0 none, 1 in the air, 2 landing, 3 at rest, 4 removed). For walks that check where a body
 /// comes to rest (`publish_walk_words`).
@@ -5867,7 +5899,7 @@ impl EnemyWorld {
     /// reacts to (a foe in the swing's box, a gap to close, a Focus safe to start) as expressions the gate
     /// evaluates over these (docs/ROUTES.md, Walks), so none of that logic is code on the disc.
     #[cfg_attr(not(test), optimize(size))]
-    pub fn publish_walk_words(&self, scene: usize, x: i32) {
+    pub fn publish_walk_words(&self, scene: usize, x: i32, y: i32) {
         let (mut boss_dx, mut boss_phase) = (FOE_NO_BOSS, 0);
         let mut corpse = [ACT_NONE, 0, 0];
         for (slot, entry) in self.actors.iter().enumerate() {
@@ -5881,11 +5913,13 @@ impl EnemyWorld {
                 corpse = [body.x, body.y, phase];
             }
             let mut row = [ACT_NONE, 0];
+            let mut ranged = [0; 2];
             let live = entry.as_ref().filter(|a| {
                 a.scene == scene && !a.health.dead && !matches!(a.runtime, Runtime::Static { .. })
             });
             if let Some(a) = live {
                 row = [a.x, a.y];
+                ranged = walk_ranged(a);
                 if let Runtime::FalseKnight(boss) = &a.runtime {
                     boss_dx = a.x - x;
                     boss_phase = fk_phase_code(boss.controller.phase());
@@ -5902,8 +5936,13 @@ impl EnemyWorld {
                     }
                 }
             }
-            unsafe { HK_ACT[slot] = row };
+            unsafe {
+                HK_ACT[slot] = row;
+                HK_ACT_VOLLEY[slot] = ranged[0];
+                HK_ACT_GAS[slot] = ranged[1];
+            }
         }
+        self.publish_walk_shots(scene, [x, y]);
         unsafe {
             HK_FK_DX = boss_dx;
             HK_FK_PHASE = boss_phase;
@@ -5915,6 +5954,30 @@ impl EnemyWorld {
             unsafe {
                 HK_WAVE[2 * i] = live.map_or(0, |(_, wave, _)| wave.x);
                 HK_WAVE[2 * i + 1] = live.map_or(0, |(_, wave, _)| i32::from(wave.dir));
+            }
+        }
+    }
+    /// `HK_VOLLEY_SHOT` and `HK_VOLLEY_SHOT_DIR` for `publish_walk_words`, out of line so the frame's hot code
+    /// does not grow. A volley shot keeps the x speed it was thrown with (`fat_fly::SHOT_DIAGONAL`; gravity bends
+    /// only y), which no other projectile has. Only shots within `WALK_SHOT_REACH` of the Knight on both axes are
+    /// listed: a shot that left the room flies on with no wall to stop it and must not take a row.
+    #[inline(never)]
+    #[cfg_attr(not(test), optimize(size))]
+    fn publish_walk_shots(&self, scene: usize, hero: [i32; 2]) {
+        let mut flying = self.shots.iter().flatten().filter(|s| {
+            usize::from(s.scene) == scene
+                && !s.impact
+                && s.vx.abs() == hk_sim::fat_fly::SHOT_DIAGONAL
+                && (s.x - hero[0]).abs() < WALK_SHOT_REACH
+                && (s.y - hero[1]).abs() < WALK_SHOT_REACH
+        });
+        for row in 0..WALK_SHOTS {
+            let (at, dir) = flying
+                .next()
+                .map_or(([ACT_NONE, 0], 0), |s| ([s.x, s.y], u8::from(s.vx > 0) | u8::from(s.vy > 0) << 1));
+            unsafe {
+                HK_VOLLEY_SHOT[row] = at;
+                HK_VOLLEY_SHOT_DIR[row] = dir;
             }
         }
     }

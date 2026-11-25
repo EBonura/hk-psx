@@ -135,6 +135,22 @@ impl FatFly {
     pub fn dead(&self) -> bool {
         self.flight == Flight::Dead
     }
+    /// Ticks until `tick` returns the next volley (1: the next tick), `None` while asleep or
+    /// dead. In `Wait` it is exact (the random wait is drawn on entry); after a volley it counts
+    /// the rest of `Attack` and `CD` plus the shortest wait, a lower bound. Read-only, for the
+    /// walker's words.
+    pub fn ticks_to_volley(&self) -> Option<u16> {
+        const AFTER_WAIT: u16 = ANTIC_TICKS + ATTACK_TRIGGER_TICKS;
+        let rest = match (self.flight, self.attack) {
+            (Flight::Dead, _) | (_, Attack::Sleep) => return None,
+            (_, Attack::Wait) => self.timer + AFTER_WAIT,
+            (_, Attack::Antic) => self.timer + ATTACK_TRIGGER_TICKS,
+            (_, Attack::Antic2) => self.timer,
+            (_, Attack::Shoot) => self.timer + COOLDOWN_TICKS + WAIT_TICKS[0] + AFTER_WAIT,
+            (_, Attack::Cooldown) => self.timer + WAIT_TICKS[0] + AFTER_WAIT,
+        };
+        Some(rest)
+    }
     pub fn die(&mut self) {
         self.flight = Flight::Dead;
         self.velocity = [0; 2];
@@ -378,6 +394,26 @@ mod tests {
             f.tick([40 * ONE, 0]);
         }
         assert_eq!((f.attack(), f.flight()), (Attack::Antic2, Flight::Stopped));
+    }
+    #[test]
+    fn ticks_to_volley_counts_down_to_the_volley_tick() {
+        let mut f = FatFly::new(false, 3);
+        assert_eq!(f.ticks_to_volley(), None);
+        f.tick([ONE, 0]);
+        let mut left = f.ticks_to_volley().expect("awake");
+        loop {
+            let step = f.tick([ONE, 0]);
+            if step.volley {
+                assert_eq!(left, 1);
+                break;
+            }
+            let now = f.ticks_to_volley().expect("awake");
+            assert_eq!(now, left - 1);
+            left = now;
+        }
+        assert!(f.ticks_to_volley().expect("awake") > WAIT_TICKS[0]);
+        f.die();
+        assert_eq!(f.ticks_to_volley(), None);
     }
     #[test]
     fn a_contact_reaims_from_the_authored_ranges() {
