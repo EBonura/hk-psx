@@ -2,14 +2,14 @@ pacing = 2
 frame_time = 210
 long_frames = 2
 card = town-shop.mcd
-# Sly's shop is shut on a fresh save, as in the source: Dirtmouth's
+# Sly's shop is shut until he is rescued, as in the source: Dirtmouth's
 # `Check Opened` turns `Sly_shop/open` off until `slyRescued`, and door_sly
-# is a child of it, so no gate cooks there. Sly is rescued in
-# Room_ruinhouse, which is not on this disc, so the shop stays shut for the
-# whole slice (its logic is still covered by tests/shop_runtime.rs).
-# town-shop is the same tape as before, on its 1,000 Geo card: it walks to
-# where the door was, presses UP and the buttons that used to buy twice,
-# and nothing opens and nothing is spent.
+# is a child of it, so the door cooks with slyRescued as its need. This
+# card was written before any rescue (no slyRescued), so the tape walks to
+# the door, presses UP and the buttons that used to buy twice, and nothing
+# opens and nothing is spent. The open door is walk-sly-shop's (the same
+# card seeded with the flag, town-shop-rescued.mcd), the rescue
+# walk-sly-rescue's.
 HK_SCENE_GATE_LOADS = 0
 HK_SHOP_OPENED = 0
 HK_SHOP_PURCHASES = 0
