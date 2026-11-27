@@ -202,6 +202,7 @@ pub fn open() -> bool {
     }
     (unsafe { STATE.open() || CONVO.open() })
         || crate::mapper::open()
+        || crate::sly::open()
         || crate::toll::open()
         || crate::game_map::open()
         || crate::shaman::open()
@@ -209,6 +210,7 @@ pub fn open() -> bool {
 pub fn consumes_actions() -> bool {
     (unsafe { STATE.consumes_actions() || CONVO.consumes_actions() })
         || crate::mapper::consumes_actions()
+        || crate::sly::consumes_actions()
         || crate::toll::consumes_actions()
         || crate::game_map::open()
         || crate::shaman::consumes_actions()
@@ -225,6 +227,7 @@ pub fn cancel() {
         HK_NPC_PAGE = 0;
     }
     crate::mapper::cancel();
+    crate::sly::cancel();
     crate::toll::cancel();
     crate::game_map::cancel();
     crate::shaman::cancel();
@@ -240,6 +243,7 @@ pub fn reset() {
         HK_NPC_PAGE = 0;
     }
     crate::mapper::cancel();
+    crate::sly::cancel();
     crate::toll::cancel();
     crate::game_map::cancel();
     publish_cursors();
@@ -269,7 +273,9 @@ pub fn tick(
 }
 /// The NPC whose conversation is open, by its cooked source object id.
 pub fn npc_speaking() -> Option<u32> {
-    unsafe { CONVO.active.map(|i| NPC_LINES[i].source_id) }.or_else(crate::mapper::speaking)
+    unsafe { CONVO.active.map(|i| NPC_LINES[i].source_id) }
+        .or_else(crate::mapper::speaking)
+        .or_else(crate::sly::speaking)
 }
 /// One tick of the NPC panel. `in_range` is the cooked NPC whose talk trigger
 /// the hero body is inside; the state machine is npc_state.rs.
@@ -289,9 +295,20 @@ pub fn npc_tick(scene: usize, in_range: Option<u32>, eligible: bool, bits: u16, 
         crate::mapper::idle(bits);
         0
     };
-    let in_range = in_range.filter(|&s| !crate::mapper::owns(s));
+    // Sly's rescue is room logic in the `shop` module his rooms carry (game/src/sly.rs).
+    if crate::modules::loaded(crate::modules::SHOP) {
+        crate::sly::tick(
+            scene,
+            in_range.is_some_and(crate::sly::owns),
+            eligible && unsafe { !STATE.open() && CONVO.active.is_none() } && !crate::mapper::open(),
+            bits,
+        );
+    } else {
+        crate::sly::idle(bits);
+    }
+    let in_range = in_range.filter(|&s| !crate::mapper::owns(s) && !crate::sly::owns(s));
     unsafe {
-        let eligible = eligible && !STATE.open() && !crate::mapper::open();
+        let eligible = eligible && !STATE.open() && !crate::mapper::open() && !crate::sly::open();
         let convo = &mut *(&raw mut CONVO);
         let event = convo.step(
             NPC_LINES,
@@ -447,6 +464,13 @@ pub(crate) fn panel_prompt(camera: (i32, i32), p: [i32; 2], label: &'static str)
 pub(crate) fn panel_pages(pages: &[&'static [&'static str]], page: usize) {
     panel(pages, page);
 }
+/// One page of lines a caller has put together itself (Sly's, out of his
+/// room module's text tables), with the arrow under it when `more` follow.
+/// The typewriter restarts when the first line's text moves, which it does on
+/// every page of a caller whose line array is rebuilt each frame.
+pub(crate) fn panel_lines(lines: &[&str], more: bool) {
+    ornate_keyed(lines, more, lines.first().map_or(0, |l| l.as_ptr() as usize));
+}
 pub(crate) fn panel_frame(x: i16, y: i16, w: u16, h: u16) {
     unsafe {
         BOXES[0] = RectFlat::new(x, y, w, h, 150, 150, 150);
@@ -598,6 +622,7 @@ pub fn prepare(
         } else if let Some(id) = CONVO.active {
             panel(NPC_LINES[id].conversations[CONVO.entry].pages, CONVO.page);
         } else if crate::mapper::prepare(camera, geo) {
+        } else if crate::modules::loaded(crate::modules::SHOP) && crate::sly::prepare(camera) {
         } else if crate::modules::loaded(crate::modules::TOLL) && crate::toll::prepare(camera, geo) {
         } else if crate::shaman::prepare(camera) {
         } else if closing() {
@@ -695,6 +720,7 @@ pub(crate) fn panel_up(save_ui: crate::save_ui::Ui) -> bool {
         || save_ui != crate::save_ui::Ui::Idle
         || unsafe { STATE.active.is_some() || CONVO.active.is_some() }
         || crate::mapper::open()
+        || crate::sly::open()
         || crate::toll::open()
         || crate::shaman::open()
 }
@@ -890,11 +916,14 @@ fn ornate_frame(rows: i16, under: Under, top: Option<i16>) -> i16 {
 }
 /// The ornate panel with one page of text: the page's lines centred, arrow or stop under them.
 fn ornate(lines: &[&str], more: bool) {
+    ornate_keyed(lines, more, lines.as_ptr() as usize);
+}
+/// `ornate`, with the typewriter keyed on `page` rather than on where the lines are.
+fn ornate_keyed(lines: &[&str], more: bool, page: usize) {
     let rows = lines.len().max(1) as i16;
     // The typewriter: 65 characters a second (`DialogueBox.revealSpeed`), a page from its first
     // vblank. The arrow or stop appears with the last character.
     up_age(0);
-    let page = lines.as_ptr() as usize;
     let now = psx_rt::interrupts::vblank_count();
     let typed = unsafe {
         if PAGE.0 != page {
@@ -1058,6 +1087,7 @@ pub(crate) fn prompt_up() -> bool {
         STATE.prompt.is_some()
             || CONVO.prompt.is_some()
             || crate::mapper::prompting()
+            || crate::sly::prompting()
             || crate::toll::prompting()
             || crate::pickups::prompt().is_some()
             || (!PROMPT.1.is_empty()

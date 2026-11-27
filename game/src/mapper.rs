@@ -265,7 +265,10 @@ mod live {
     pub fn owns(source: u32) -> bool {
         source == CORNIFER_SOURCE
     }
-    /// One tick; returns the Geo the purchase took.
+    /// One tick; returns the Geo the purchase took. Never inlined: it is the
+    /// `cornifer` room module's entry (host/code_modules.py), so a copy inlined
+    /// into its caller would be resident code and leave the module empty.
+    #[inline(never)]
     pub fn tick(scene: usize, in_range: bool, eligible: bool, bits: u16, geo: u32) -> u32 {
         let convo = unsafe { &mut *(&raw mut CONVO) };
         let event = convo.step(

@@ -1,0 +1,44 @@
+name walk-sly-rescue
+title Sly's rescue: from Crossroads_04's floor by the ruined house, in through door1, UP at Sly sets slyRescued as the box comes up, six pages, then the repeat line; out to Crossroads_04 and back in, and he is gone
+max_ticks 12000
+sync poll
+# A seeded card (tools/seed_card.py from secret-c04.mcd) on the floor right of door1, so this proves the room and the
+# rescue, not the way to it. door1 is a `Door Control` door (side 5): UP with the body on its strip. Sly's talk trigger
+# is the strip under him (x 13.9 to 17.5). His `Meet` writes slyRescued as it is entered, so the flag is set on the
+# first page; `Repeat` is what a second talk hears; his `Active?` removes him when the room next loads with the flag set.
+card sly-c04.mcd
+include title-continue.walk
+check start HK_SLY_RESCUED == 0 ; HK_SLY_TALKS == 0 ; HK_REGION_ID == 170 ; HK_DEATHS == 0
+walk 85.05
+press up
+wait until HK_REGION_ID == 1079 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+check in-the-house HK_SLY_RESCUED == 0 ; HK_SLY_TALKS == 0
+walk 15.2
+wait 10
+press up rest 20
+check meet HK_SLY_TALKS == 1 ; HK_SLY_PAGE == 1 ; HK_SLY_RESCUED == 1
+repeat 5 press cross rest 30
+check meet-last-page HK_SLY_PAGE == 6 ; HK_SLY_TALKS == 1
+press cross rest 30
+check meet-closed HK_SLY_PAGE == 0 ; HK_SLY_RESCUED == 1
+press up rest 20
+check repeat HK_SLY_TALKS == 2 ; HK_SLY_PAGE == 7
+repeat 2 press cross rest 30
+check repeat-closed HK_SLY_PAGE == 0 ; HK_SLY_TALKS == 2
+hold left until HK_REGION_ID == 170 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+check back-in-crossroads HK_SLY_RESCUED == 1 ; HK_DEATHS == 0
+walk 87.0                                      # off the door's strip and back onto it
+walk 85.05
+wait 10
+press up
+wait until HK_REGION_ID == 1079 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+walk 15.2
+wait 10
+press up rest 20
+check gone HK_SLY_TALKS == 2 ; HK_SLY_PAGE == 0 ; HK_SLY_RESCUED == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0

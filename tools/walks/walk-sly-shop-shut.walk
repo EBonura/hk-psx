@@ -1,0 +1,13 @@
+name walk-sly-shop-shut
+title Dirtmouth before Sly's rescue: from the bench to door_sly, UP opens nothing (the door needs slyRescued) and the Knight stays in Town
+max_ticks 4000
+sync poll
+# The same door as walk-sly-shop, on the card it was seeded from (town-shop.mcd), which has no slyRescued.
+card town-shop.mcd
+include title-continue.walk
+check start HK_SLY_RESCUED == 0 ; HK_GEO_WALLET == 1000 ; HK_REGION_ID == 100
+walk 120.97
+wait 10
+press up
+wait 200
+check shut HK_REGION_ID == 100 ; HK_SHOP_OPENED == 0 ; HK_SLY_RESCUED == 0 ; HK_DEATHS == 0 ; expr abs(i32(HK_PLAYER_X) - 7927890) <= 65536

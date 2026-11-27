@@ -358,6 +358,30 @@ def door_destination(sc, gid):
     return (scene,gate) if scene and gate else None
 
 
+# Doors the original hides on a fresh save through a load-time PlayerData gate (host/activation.py answers those once,
+# against the new save) and that a field the port now writes at run time opens: (scene, door) -> the field. Such a door
+# cooks with the field as its requirement, and the guest takes it only while the field is set (game/src/world.rs
+# `gate_takes`). Dirtmouth's door_sly is a child of Sly_shop/open, which `Check Opened` turns off until slyRescued;
+# Sly's rescue (game/src/sly.rs) sets it.
+RUNTIME_GATES={('Town','door_sly'):'slyRescued'}
+
+
+def runtime_gate(sc, info, gid):
+    """The field a door hidden at load needs, when RUNTIME_GATES names it; None for any other hidden object.
+
+    Refused unless every gate that hides it reads that one field: a door another field also hides would open
+    on the wrong condition.
+    """
+    field=RUNTIME_GATES.get((info['scene_name'],sc.gos[gid]['m_Name']))
+    if field is None or not sc._authored_active(gid):
+        return None
+    off={a for a in [gid]+sc.ancestor_gos(gid) if a in sc.gated_off}
+    rows=[r for r in sc.gates.removed if r['object_id'] in off]
+    if not off or {r['object_id'] for r in rows}!=off or any(r['field']!=field for r in rows):
+        raise ValueError(f'{info["scene_name"]}/{sc.gos[gid]["m_Name"]} is not hidden by {field} alone: {rows}')
+    return field
+
+
 def scene_metadata(sc, info):
     result=dict(info, gates=[], camera_locks=[])
     result['grass_state_count']=sum(typ=='GrassCut' for typ,_ in sc.objects.values())
@@ -365,10 +389,15 @@ def scene_metadata(sc, info):
         if typ not in ('TransitionPoint','CameraLockArea'):
             continue
         gid=tree['m_GameObject']['m_PathID']
+        needs=None
         if not sc.active(gid):
-            continue
+            needs=runtime_gate(sc,info,gid) if typ=='TransitionPoint' else None
+            if needs is None:
+                continue
         row={'source':f'{info["file"]}:{sid}','name':sc.gos[gid]['m_Name'],
              'position':sc.point(gid),'enabled':bool(tree['m_Enabled'])}
+        if needs:
+            row['needs']=needs
         for _,(kind,col) in sc.objects.items():
             if kind!='BoxCollider2D' or col['m_GameObject']['m_PathID']!=gid:
                 continue

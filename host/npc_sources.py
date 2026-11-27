@@ -48,11 +48,20 @@ ADMITTED = {
     ('Town', 'Elderbug'): ('Idle', 'Talk Left', 'Talk Right'),
     ('Crossroads_45', 'Miner'): ('Idle', 'Talk', 'Talk'),
     ('Crossroads_33', 'Cornifer'): ('Idle', 'Idle', 'Idle'),
+    # Sly, dazed in the ruined house off Crossroads_04. He stays slumped through the rescue: the source's `Meet 2`
+    # plays his `Wake` clip and turns the steam off, which the port does not reproduce, so all three slots hold
+    # `Dazed`, his default clip.
+    ('Room_ruinhouse', 'Sly Dazed'): ('Dazed', 'Dazed', 'Dazed'),
+    # Sly behind his counter in Room_shop, drawn only: the shelf is the `Shop Region` trigger's (game/src/shop.rs), and
+    # his own conversation (the shop intro, the basement) is not cooked, so he is in SCRIPTED with no module speaking
+    # for him and his prompt never comes up.
+    ('Room_shop', 'Sly Shop'): ('Idle', 'Idle', 'Idle'),
 }
-# NPCs whose conversation is not a chain npc_dialogue.py can cook, because it
-# ends in a yes/no purchase. Their art and trigger cook here as usual; their
-# conversation is host/cornifer.py and game/src/mapper.rs.
-SCRIPTED = {('Crossroads_33', 'Cornifer')}
+# NPCs whose conversation is not a chain npc_dialogue.py can cook. Their art and trigger cook here as usual.
+# Cornifer's ends in a yes/no purchase: host/cornifer.py and game/src/mapper.rs.
+# Sly's rescue is not a chain either: his conversation is one choice on slyRescued that writes the field the
+# Dirtmouth door reads at run time, and he leaves the room once it is set. host/sly.py and game/src/sly.rs.
+SCRIPTED = {('Crossroads_33', 'Cornifer'), ('Room_ruinhouse', 'Sly Dazed'), ('Room_shop', 'Sly Shop')}
 CONTROL_FSM = 'npc_control'
 CONVO_FSM = 'Conversation Control'
 # tk2d frames reach VRAM through the shared 64x64 animation slots. A frame

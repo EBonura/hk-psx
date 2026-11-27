@@ -491,7 +491,8 @@ def encode_scene(scene, rows):
                 region = bounded(gate["target_region"], 65536, "gate target region")
                 target = bounded(gate["target_scene"], 256, "gate target scene")
                 side = bounded(gate["side"], 16, "gate side")
-                add_object("gate", gate, region | (target << 16) | (side << 24),
+                need = bounded(gate.get("need", 0), 16, "gate need")
+                add_object("gate", gate, region | (target << 16) | (side << 24) | (need << 28),
                            bounded(gate["delay_ticks"], 65536, "gate collider delay"),
                            gate["bounds"], None,
                            (q(gate["spawn"][0]), q(gate["spawn"][1]), int(gate["entry_vy"])))

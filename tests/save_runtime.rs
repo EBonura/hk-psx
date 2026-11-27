@@ -904,6 +904,17 @@ fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
             if !name.starts_with("BASLUS-00000HKPSX") || name.ends_with("MS") {
                 continue;
             }
+            if payload.starts_with(b"HKS6") {
+                // A record tools/seed_card.py wrote as HKS6 (for a field HKS5 has no place for): no older
+                // guest reads it, so it is checked against its own resave only.
+                let (_, pd, store, _) = load(&payload, &bank).unwrap_or_else(|| panic!("{what}: HKS6 refuses it"));
+                let (save, _, _) = Save::decode(&payload).unwrap();
+                let again = encode(&save, &pd, store.items());
+                assert_eq!(again, payload, "{what}: not what an HKS6 bench writes for the same state");
+                versions[6] += 1;
+                records += 1;
+                continue;
+            }
             for change in same_state_both_ways(&payload, &bank, &what) {
                 changes.push(format!("{what}: {change}"));
             }
@@ -913,8 +924,8 @@ fn every_committed_fixture_card_loads_to_the_same_state_as_before() {
             records += 1;
         }
     }
-    eprintln!("{} cards, {records} records (HKS4 {}, HKS5 {}), {taken} with this bank's script fields",
-        cards.len(), versions[4], versions[5]);
+    eprintln!("{} cards, {records} records (HKS4 {}, HKS5 {}, seeded HKS6 {}), {taken} with this bank's script fields",
+        cards.len(), versions[4], versions[5], versions[6]);
     assert!(cards.len() >= 50 && records >= cards.len());
     assert!(versions[4] > 0 && versions[5] > 0, "both older formats are covered");
     // Every fixture field the openedMapperShop and currentArea merge changes.

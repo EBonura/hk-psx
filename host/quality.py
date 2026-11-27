@@ -311,6 +311,12 @@ SCENE_TABLE = (
     # grid is 16 views. Its Giant Buzzer (the Vengefly King) has no actor family yet and is left out of the cook.
     {'scene_id': 65, 'scene_name': 'Fungus1_20_v02', 'file': 'level148',
      'runtime_bounds': [-1, -6, 182, 26], 'camera_global_bounds': [0, 0, 180, 25]},
+    # The ruined house off Crossroads_04 (its door1, a `Door Control` door into this room's left1), where Sly is
+    # found dazed. Talking to him sets PlayerData slyRescued, which is what opens Dirtmouth's door_sly into Room_shop
+    # (host/sly.py, game/src/sly.rs). Envelope and camera are tools/cook_scene_pack.py's `envelope`; the plain grid is
+    # four views. No actors; its one NPC is Sly.
+    {'scene_id': 66, 'scene_name': 'Room_ruinhouse', 'file': 'level20',
+     'runtime_bounds': [-1, -5, 31, 26], 'camera_global_bounds': [0, 0, 30, 25]},
 )
 SCENE_COUNT = len(SCENE_TABLE)
 SCENE_FILES = tuple(scene['file'] for scene in SCENE_TABLE)

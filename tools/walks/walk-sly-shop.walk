@@ -1,0 +1,30 @@
+name walk-sly-shop
+title Dirtmouth after Sly's rescue: from the bench to door_sly, UP opens it into Room_shop, the shelf, one purchase, out again by the shop's left1 to the door
+max_ticks 9000
+sync poll
+# A seeded card (tools/seed_card.py hks6 from town-shop.mcd: the Dirtmouth bench and its 1,000 Geo, new-game PlayerData plus
+# slyRescued), so this proves what the flag opens, not the rescue (walk-sly-rescue earns that). door_sly cooks with slyRescued as
+# its need (host/regions.py RUNTIME_GATES): a `Door Control` door, UP with the body on its strip. walk-sly-shop-shut is the same
+# door on the card without the flag.
+card town-shop-rescued.mcd
+include title-continue.walk
+check start HK_SLY_RESCUED == 1 ; HK_GEO_WALLET == 1000 ; HK_REGION_ID == 100 ; HK_SHOP_OPENED == 0 ; HK_DEATHS == 0
+walk 120.97
+wait 10
+press up
+wait until HK_REGION_ID == 694 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+check in-the-shop HK_SHOP_OPENED == 0 ; HK_GEO_WALLET == 1000
+walk 15.6
+wait 10
+press up rest 20
+check shelf HK_SHOP_OPEN == 1 ; HK_SHOP_OPENED == 1
+press cross rest 30
+check bought HK_SHOP_PURCHASES == 1 ; expr u32(HK_SHOP_GEO_SPENT) > 0 && u32(HK_GEO_WALLET) + u32(HK_SHOP_GEO_SPENT) == 1000
+press circle rest 30
+check closed HK_SHOP_OPEN == 0 ; HK_SHOP_CLOSED == 1 ; HK_SHOP_PURCHASES == 1
+hold left until HK_REGION_ID == 100 timeout 900
+wait until HK_GAME_MODE == 1 timeout 1800
+wait until HK_WALK_READY == 1 timeout 300
+check back-in-dirtmouth HK_SHOP_PURCHASES == 1 ; HK_SLY_RESCUED == 1 ; HK_DEATHS == 0 ; HK_CHEATS == 0 ; x between 115 123

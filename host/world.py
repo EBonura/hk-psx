@@ -369,6 +369,22 @@ def entry_ground_y(scene_file, x, y):
     return max(hits) + hero_ground_elevation() if hits else None
 
 
+# The PlayerData fields a gate may need (host/regions.py RUNTIME_GATES), in the order the guest numbers them: a gate's
+# need is its index here plus one, 0 for none, in the top four bits of its bank object's state word, and
+# game/src/world.rs binds each name to its player_data field (`GATE_NEEDS` in data/regions.rs).
+GATE_NEEDS = ('slyRescued',)
+
+
+def gate_need(gate):
+    """A gate's need number: 0, or one plus the index of the field it needs in GATE_NEEDS."""
+    field = gate.get('needs')
+    if field is None:
+        return 0
+    if field not in GATE_NEEDS:
+        raise ValueError(f'gate {gate["source"]} needs {field}, which GATE_NEEDS does not number')
+    return GATE_NEEDS.index(field) + 1
+
+
 def resolve_gates(report, regions, scene):
     """Admitted TransitionPoints of one scene, resolved against the whole world.
 
@@ -467,7 +483,8 @@ def resolve_gates(report, regions, scene):
         delay_ticks = integer(round(delay * 60), 65536, 'gate collider delay')
         resolved.append({'source': gate['source'], 'target_scene': target['scene_id'],
                          'target_region': target_region, 'bounds': gate['trigger_bounds'],
-                         'spawn': xy, 'entry_vy': entry_vy, 'side': side, 'delay_ticks': delay_ticks})
+                         'spawn': xy, 'entry_vy': entry_vy, 'side': side, 'delay_ticks': delay_ticks,
+                         'need': gate_need(gate)})
     return resolved
 
 
@@ -492,7 +509,8 @@ def generate(report, out_path=None):
         raise ValueError(f'region count exceeds the {MAX_REGIONS}-slot gate destination field')
     floors = flat_floor_catalog(report, root=ROOT)
     # The guest sizes its per-scene persistent state tables from the catalog.
-    out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors)]
+    out = [f'pub const SCENES: usize = {SCENES};\n', rust_catalog(floors),
+           'pub const GATE_NEEDS: [&str; %d] = [%s];' % (len(GATE_NEEDS), ', '.join(f'"{f}"' for f in GATE_NEEDS))]
     # Reveal-mask controllers are not linked: each scene's ride in its own
     # metadata bank, where the trigger polygon the guest tests against is one
     # of the bank's own polygons. Only the per-scene pool bound is checked

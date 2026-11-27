@@ -138,7 +138,8 @@ class InstalledDoorTests(unittest.TestCase):
     def test_dirtmouths_doors_name_the_scenes_their_fsms_load(self):
         # Sly's, the stag station's and Bretta's doors sit under the `open`
         # building children Check Opened turns off on a fresh save, so they
-        # are read with the inactive doors included; none of them cooks a gate.
+        # are read with the inactive doors included (door_sly still cooks, with
+        # slyRescued as its need: test_an_empty_pair_is_the_only_one_the_fsm_fills).
         town = self.doors('Town', active_only=False)
         active = self.doors('Town')
         for door in ('door_sly', 'door_station', 'door_bretta'):
@@ -181,9 +182,15 @@ class InstalledDoorTests(unittest.TestCase):
         meta = scene_metadata(self.scenes['Town'], {'scene_id': 1, 'scene_name': 'Town', 'file': 'level7'})
         rows = {g['name']: g for g in meta['gates']}
         # door_sly is the one door whose pair the FSM fills (door_destination is
-        # tested on it above), but it is a child of Sly_shop/open, which
-        # Dirtmouth's Check Opened turns off on a fresh save: no gate cooks.
-        self.assertNotIn('door_sly', rows)
+        # tested on it above). It is a child of Sly_shop/open, which Dirtmouth's
+        # Check Opened turns off on a fresh save, so it cooks with slyRescued as
+        # its need (RUNTIME_GATES) rather than being left out.
+        self.assertEqual((rows['door_sly']['target_scene'], rows['door_sly']['entry_point']),
+                         ('Room_shop', 'left1'))
+        self.assertEqual(rows['door_sly']['needs'], 'slyRescued')
+        # Its siblings under the other buildings stay out: no field the port sets opens them.
+        self.assertNotIn('door_station', rows)
+        self.assertNotIn('door_bretta', rows)
         # door_jiji already had the pair and the FSM agrees, so it is untouched.
         self.assertEqual((rows['door_jiji']['target_scene'], rows['door_jiji']['entry_point']),
                          ('Room_Ouiji', 'left1'))

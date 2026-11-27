@@ -126,6 +126,7 @@ mod sine;
 mod script;
 mod shaman;
 mod shop;
+mod sly;
 mod soul_totems;
 mod spstack;
 mod texture_upload;
@@ -1273,14 +1274,18 @@ fn main() {
         // The view's cooked NPC, read once: the bank record cannot change while
         // this region is resident, and the tick and the draw both want it.
         // One per view, which host/regions.py refuses to exceed.
-        let region_npc = world::npcs(r).next();
+        // Sly's `Active?` reads slyRescued as his room loads (game/src/sly.rs).
+        if scene_npcs_scene != r.scene {
+            sly::enter_scene(r.scene);
+        }
+        let region_npc = world::npcs(r).next().filter(|n| !sly::gone(r.scene, n.source_id));
         // Every NPC of the scene and its view, once per scene: one standing in a
         // neighbouring view is drawn when the camera shows it.
         if scene_npcs_scene != r.scene {
             scene_npcs = [None; 4];
             let mut n = 0;
             world::scene_npcs(r.scene, input::checkpoint, |slot, npc| {
-                if n < scene_npcs.len() {
+                if n < scene_npcs.len() && !sly::gone(r.scene, npc.source_id) {
                     scene_npcs[n] = Some((slot, npc));
                     n += 1;
                 }

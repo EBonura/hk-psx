@@ -132,7 +132,12 @@ MODULES = {
     'climber': ('_RNvM*6hk_sim7climber*',) + _actor('advance_climber'),
     # Room logic behind entry-point guards (modules::loaded): Sly's shelf
     # screen, the Snail Shaman's drawing, Cornifer's conversation.
-    'shop': ('*6hk_psx4shop12presentation*',),
+    # The shop's module also holds Sly's rescue in Room_ruinhouse (game/src/sly.rs: the conversation, its drawing and its
+    # text, which is one byte string with its line and page tables so the whole of it travels here): both are Sly's,
+    # each room carries the pair, and the resident set has no bit to spare for a module of its own (32). Sly's entry
+    # points are guarded by `modules::loaded(SHOP)`.
+    'shop': ('*6hk_psx4shop12presentation*', '*6hk_psx3sly4live4tick*', '*6hk_psx3sly4live7prepare*',
+             '*6hk_psx3sly8SLY_TEXT*', '*6hk_psx3sly9SLY_LINES*', '*6hk_psx3sly9SLY_PAGES*'),
     'shaman': ('*6hk_psx6shaman4live4draw*',),
     'cornifer': ('*6hk_psx6mapper4live4tick*',),
     # The Grubfather's King Control and his reward table (game/src/grubfather.rs); `idle` stays resident.
@@ -210,8 +215,8 @@ if HORNET:
     MODULES['hornet_art'] = ('*7enemies6hornet4draw*', '*9boss_bank*', '*7enemies6hornet10convo_tick*', '*7enemies6hornet13convo_prepare*', '*7enemies6hornet12HORNET_CONVO*', '*7enemies6hornet11HORNET_ITEM*',
                            '*7enemies6hornet15HORNET_ART_*', '*7enemies6hornet16HORNET_ART_*')
 # Room logic modules by the room that runs them: (data file, constant) holding
-# the room's scene id.
-ROOM_MODULES = {'shop': ('shop.rs', 'SHOP_SCENE'), 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
+# the room's scene id, or a list of them for a module more than one room runs.
+ROOM_MODULES = {'shop': [('shop.rs', 'SHOP_SCENE'), ('sly.rs', 'SLY_SCENE')], 'shaman': ('shaman.rs', 'SHAMAN_SCENE'),
                 'cornifer': ('cornifer.rs', 'CORNIFER_SCENE'),
                 'grubfather': ('grubfather.rs', 'GRUBFATHER_SCENE'),
                 # Every scene that places a Toll Machine: one `Machine { scene: N,` row each.
@@ -303,13 +308,14 @@ def room_scenes():
     """{scene id: room logic modules} from the cooked room constants."""
     out = {}
     root = Path(__file__).resolve().parents[1] / 'data'
-    for name, (file, const) in ROOM_MODULES.items():
-        pattern = const if '(' in const else rf'pub const {const}:usize=(\d+);'
-        found = list(re.finditer(pattern, (root / file).read_text()))
-        if not found:
-            raise ValueError(f'{file} has no scene for the {name} module')
-        for m in found:
-            out.setdefault(int(m[1]), set()).add(name)
+    for name, specs in ROOM_MODULES.items():
+        for file, const in specs if isinstance(specs, list) else [specs]:
+            pattern = const if '(' in const else rf'pub const {const}:usize=(\d+);'
+            found = list(re.finditer(pattern, (root / file).read_text()))
+            if not found:
+                raise ValueError(f'{file} has no scene for the {name} module')
+            for m in found:
+                out.setdefault(int(m[1]), set()).add(name)
     return out
 
 

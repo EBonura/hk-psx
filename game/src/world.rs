@@ -775,6 +775,33 @@ pub struct Gate {
     /// `Delay Collider` FSM: ticks after the scene starts before this gate's
     /// collider exists (top gates, 3 s).
     pub delay_ticks: u16,
+    /// The PlayerData field the gate needs set, as one plus its index in
+    /// `GATE_NEEDS`; 0 for none. A door the source hides at load until a field
+    /// is set (Dirtmouth's door_sly, until slyRescued) cooks with it.
+    pub need: u8,
+}
+/// `GATE_NEEDS` (host/world.py) bound to their `player_data` fields.
+#[cfg(not(test))]
+const NEED_FIELDS: [crate::player_data::Field; GATE_NEEDS.len()] = {
+    let mut fields = [0; GATE_NEEDS.len()];
+    let mut i = 0;
+    while i < GATE_NEEDS.len() {
+        fields[i] = crate::player_data::find(GATE_NEEDS[i]);
+        assert!(fields[i] < crate::player_data::COUNT, "a gate needs a field player_data has no row for");
+        i += 1;
+    }
+    fields
+};
+/// Whether a gate's need is met now: the source re-evaluates the gate that
+/// hides the door on every scene load, and the field only ever goes from unset
+/// to set, so testing it when the door is used answers the same.
+#[cfg(not(test))]
+fn need_met(need: u8) -> bool {
+    need == 0 || crate::player_data::store().flag(NEED_FIELDS[need as usize - 1])
+}
+#[cfg(test)]
+fn need_met(_: u8) -> bool {
+    true
 }
 // The guest links data/regions_guest.rs: regions.rs without its spec statics, which travel in the scene's
 // spec chunk (spec_pool.rs). The native harnesses keep the full file and read the statics directly.
@@ -910,6 +937,7 @@ const NO_GATE: Gate = Gate {
     entry_vy: 0,
     side: 0,
     delay_ticks: 0,
+    need: 0,
 };
 /// Most hazard and checkpoint objects one bank region may list before the
 /// trigger tests fall back to scanning every object. The largest region on the
@@ -2481,6 +2509,7 @@ fn gate_of(o: &meta::Object, scene: usize) -> Gate {
         entry_vy: o.extra(2),
         side: (destination >> 24 & 0xF) as u8,
         delay_ticks: o.flags(),
+        need: (destination >> 28) as u8,
     }
 }
 /// The scan `State::gate` answers from its list, and its fallback for a
@@ -2509,6 +2538,7 @@ fn gate_takes(
     g.scene == scene
         && !recoiling
         && scene_ticks >= g.delay_ticks as u32
+        && need_met(g.need)
         && match g.side {
             // `Door Control` is never walked through: `In Range` is the
             // door's own trigger against the hero body and `Change Scene`

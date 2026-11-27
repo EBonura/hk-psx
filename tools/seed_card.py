@@ -107,7 +107,62 @@ FIELDS = {
 }
 
 
+# HKS6 (game/src/save.rs): a 52-byte header at HKS5's offsets, the PlayerData section (a u16 count, then a u16 id and
+# an i32 value per field that differs from a new game's, ids increasing), the SceneData item count and items, then
+# the checksum. The ids are indexes into `NAMES` in game/src/player_data.rs, read from there.
+HKS6_HEADER = 52
+
+
+def player_data_ids():
+    import re
+    text = (ROOT / 'game/src/player_data.rs').read_text()
+    body = text.split('pub const NAMES: [&str; COUNT] = [', 1)[1].split('];', 1)[0]
+    return {name: i for i, name in enumerate(re.findall(r'"([^"]*)"', body))}
+
+
+def to_hks6(image, fields):
+    """Rewrite every HKS4 or HKS5 record in a card as an HKS6 one: the header and the SceneData items as they were,
+    PlayerData a new game's plus `fields` ({id: value}). The old record's own PlayerData is not carried: use this
+    only on a record whose PlayerData is a new game's (every offset `save::migrate` reads is zero), which it checks."""
+    out = bytearray(image)
+    written = 0
+    for block in range(1, 16):
+        if image[block * ENTRY] != IN_USE:
+            continue
+        start = block * BLOCK
+        for magic, shortest in ((b'HKS4', 156), (b'HKS5', 166)):
+            at = image.find(magic, start, start + BLOCK)
+            if at >= 0:
+                break
+        else:
+            continue
+        length = record_length(image, at) or shortest
+        record = image[at:at + length]
+        if fnv(record[:-4]) != struct.unpack_from('<I', record, length - 4)[0]:
+            raise SystemExit(f'block {block}: the record fails its checksum')
+        items_at = ITEMS_AT if magic == b'HKS5' else None
+        player_end = items_at - 2 if items_at else length - 4
+        if any(record[HKS6_HEADER:player_end]):
+            raise SystemExit(f'block {block}: the record carries PlayerData; to_hks6 would drop it')
+        count = struct.unpack_from('<H', record, items_at - 2)[0] if items_at else 0
+        items = record[items_at:items_at + 4 * count] if items_at else b''
+        entries = sorted(fields.items())
+        rec = bytearray(b'HKS6' + record[4:HKS6_HEADER])
+        rec += struct.pack('<H', len(entries)) + b''.join(struct.pack('<Hi', i, v) for i, v in entries)
+        rec += struct.pack('<H', count) + items
+        rec += struct.pack('<I', fnv(rec))
+        if at + len(rec) > (block + 1) * BLOCK:
+            raise SystemExit(f'block {block}: the record leaves its block')
+        struct.pack_into('<II', out, at - CONTAINER_LEN + 8, len(rec), len(rec))
+        out[at:at + length] = b'\0' * length
+        out[at:at + len(rec)] = rec
+        written += 1
+    return bytes(out), written
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == 'hks6':
+        return main_hks6(sys.argv[2:])
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--from-card', type=Path, required=True, help='a valid card to base the record on')
     p.add_argument('--output', type=Path, required=True)
@@ -141,6 +196,29 @@ def main():
     a.output.write_bytes(out)
     print(f'{a.output.name}: {written} record(s) seeded at scene {a.scene} region {a.region} '
           f'({a.x}, {a.y})')
+    return 0
+
+
+def main_hks6(argv):
+    """`seed_card.py hks6 --from-card A --output B --player-field slyRescued=1`: the record of a new-game-PlayerData
+    card as HKS6, with the named PlayerData fields set. For a field HKS5 has no place for."""
+    p = argparse.ArgumentParser(prog='seed_card.py hks6', description=main_hks6.__doc__)
+    p.add_argument('--from-card', type=Path, required=True)
+    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--player-field', action='append', default=[], metavar='NAME=VALUE')
+    a = p.parse_args(argv)
+    ids = player_data_ids()
+    fields = {}
+    for text in a.player_field:
+        name, value = text.split('=')
+        if name not in ids:
+            raise SystemExit(f'{name} is not a player_data field')
+        fields[ids[name]] = int(value)
+    out, written = to_hks6(a.from_card.read_bytes(), fields)
+    if not written:
+        raise SystemExit(f'{a.from_card} holds no HKS4 or HKS5 record')
+    a.output.write_bytes(out)
+    print(f'{a.output.name}: {written} record(s) as HKS6 with {a.player_field}')
     return 0
 
 

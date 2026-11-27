@@ -102,6 +102,9 @@ const ASSET_SCRIPTS: &[&str] = &[
     // placement out of data/regions.json.
     "game_map.py",
     "cornifer.py",
+    // Sly's rescue (data/sly.rs for game/src/sly.rs): wraps his pages the same way and reads his placement
+    // out of data/regions.json.
+    "sly.py",
     // The Grubfather's rewards (data/grubfather.rs for game/src/grubfather.rs): reads the item names
     // the way pickups.py does, from the UI sheet.
     "grubfather.py",

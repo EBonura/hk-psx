@@ -1021,17 +1021,19 @@ def collect():
             'admitted_shop_scenes': [s['scene'] for s in shops if s['admitted']],
             'stag_destinations_outside_slice': [d['choice'] for d in unreachable],
             'admission_cost': [admission_cost(s['scene']) for s in shops if not s['admitted']],
-            # None on a fresh save: door_sly is a child of Sly_shop/open, which
-            # Dirtmouth's `Check Opened` turns off until slyRescued, and the
-            # rescue room is not on the disc (host/activation.py).
+            # door_sly is a child of Sly_shop/open, which Dirtmouth's `Check
+            # Opened` turns off until slyRescued (host/activation.py); it cooks
+            # with that field as its need (host/regions.py RUNTIME_GATES).
             'town_shop_door': next((g for g in
                                     next(s for s in json.loads(ADMITTED.read_text())['scenes']
                                          if s['scene_name'] == 'Town')['gates']
                                     if g['name'] == 'door_sly'), None),
             'notes': [
-                'Room_shop is admitted, but on a fresh save its way in is shut: '
+                'Room_shop is admitted, and on a fresh save its way in is shut: '
                 'Dirtmouth\'s Check Opened hides Sly_shop/open, door_sly with it, until '
-                'slyRescued, which Room_ruinhouse sets and which is not on the disc.',
+                'slyRescued, which talking to Sly in Room_ruinhouse sets (game/src/sly.rs). '
+                'The door cooks with slyRescued as its need and opens once it is set; '
+                'the building\'s open and closed art does not swap (the closed front stays).',
                 'Its way in is Dirtmouth\'s door_sly, whose serialized targetScene is '
                 'empty because the Door Control FSM holds the destination (Room_shop, '
                 'entry gate left1). regions.door_destination reads that FSM, so the '
