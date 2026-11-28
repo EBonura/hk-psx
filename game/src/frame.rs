@@ -54,6 +54,9 @@ pub struct Game {
     // The seated save prompt and what follows it: the notice while the card is
     // written, the result, and a failure the player has to see (save_ui.rs).
     pub save_ui: save_ui::Ui,
+    // A rest made while a title card was up: the card takes its quick fade-out first and the
+    // seated prompt opens when it has gone, so the two are never drawn together.
+    pub save_after_card: bool,
     // Pending Save Game record, written at the frame boundary once the player
     // accepts the bench prompt. Nothing else ever writes the card.
     pub save_requested: Option<save::Save>,
@@ -1436,7 +1439,11 @@ pub fn simulate(
         );
         // The seated prompt owns input while it is up, so the bench
         // neither reads a leave press nor starts another rest.
-        let asking = game.save_ui.modal();
+        if game.save_after_card && !title_card::up() {
+            game.save_after_card = false;
+            game.save_ui.ask();
+        }
+        let asking = game.save_ui.modal() || game.save_after_card;
         let edges = save_ui::Edges {
             up: pressed(button::UP),
             down: pressed(button::DOWN),
@@ -1526,7 +1533,14 @@ pub fn simulate(
             game.respawn = Some((r.scene, stand, game.player.facing, game.region_id));
             // The bench updates the map with the quill (`UpdateGameMap`).
             game_map::update_game_map();
-            game.save_ui.ask();
+            // A title card that is up fades out quickly first (the source's fadeOutTimeFast,
+            // which its Area Title Control runs when a conversation starts); the prompt follows.
+            if title_card::up() {
+                title_card::quick_out();
+                game.save_after_card = true;
+            } else {
+                game.save_ui.ask();
+            }
         }
         let locked = game.focus.locks_control()
             || dialogue::open()

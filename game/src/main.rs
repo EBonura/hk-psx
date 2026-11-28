@@ -1146,6 +1146,7 @@ fn main() {
         inventory_held: false,
         prev_pad: ButtonState::from_bits(0),
         save_ui: save_ui::Ui::Idle,
+        save_after_card: false,
         save_requested: None,
         respawn: None,
         safe: (SPAWN.0, SPAWN.1, 0usize),

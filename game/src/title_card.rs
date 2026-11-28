@@ -179,6 +179,18 @@ pub fn npcs_inert() -> bool {
 pub fn dismiss() {
     state().showing = NONE;
 }
+/// True while a card is up (a pause or the inventory does not count it down).
+pub fn up() -> bool {
+    state().showing != NONE
+}
+/// The card that is up takes its quick fade-out now, whatever its style (the bench's save
+/// prompt opens after it, so the two are never drawn together).
+pub fn quick_out() {
+    let s = state();
+    if s.showing != NONE && s.cut == 0 {
+        (s.cut, s.cut_level) = (s.age.max(1), level(s));
+    }
+}
 /// One simulation tick; `body` is the Knight's box.
 pub fn tick(body: [i32; 4]) {
     let s = state();
@@ -190,7 +202,7 @@ pub fn tick(body: [i32; 4]) {
             (s.cut, s.cut_level) = (s.age, level(s));
         }
         let tail = if s.style == Style::Area { AREA_TAIL } else { 0 };
-        if s.age >= delay + fade_in + hold + fade_out + tail || (s.cut != 0 && s.age - s.cut >= QUICK) {
+        if s.age >= delay + fade_in + hold + fade_out + tail || (s.cut != 0 && s.age.saturating_sub(s.cut) >= QUICK) {
             s.showing = NONE;
         }
     }
@@ -317,7 +329,7 @@ fn big_line(text: &str, y: i16, level: u8, anchor: i16, boss: bool) {
 /// How strong the card is now, 0 to 128.
 fn level(s: &State) -> u8 {
     if s.cut != 0 {
-        return (u16::from(s.cut_level) * (QUICK - (s.age - s.cut).min(QUICK)) / QUICK) as u8;
+        return (u16::from(s.cut_level) * (QUICK - s.age.saturating_sub(s.cut).min(QUICK)) / QUICK) as u8;
     }
     let (_, fade_in, hold, fade_out) = timing(s.style);
     let age = s.age.saturating_sub(s.delay);
