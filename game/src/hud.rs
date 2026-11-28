@@ -67,6 +67,131 @@ fn sprite(icon: usize, x: i16, y: i16, cut: u16, gain: u8) -> Sprite {
         material,
     )
 }
+/// `Health Break` and `Health Refill` (the health masks' tk2d clips, resources.assets 21155) play six
+/// frames at 20 fps each: 18 ticks. Their frames are not cooked (the HUD's art is linked and VRAM has
+/// no room for twelve more poses), so the masks' own two poses act them out: a break flashes the full
+/// mask white and throws its four quarters apart and down while they darken, over the empty pose; a
+/// refill flashes the full mask in from white.
+const MASK_ANIM_TICKS: u8 = 18;
+static mut BREAK_AGE: [u8; 9] = [0; 9];
+static mut REFILL_AGE: [u8; 9] = [0; 9];
+static mut SEEN_HEALTH: u16 = u16::MAX;
+static mut SHARDS: [Sprite; 8] = [const { Sprite::new(0, 0, 0, 0, (0, 0), 0, 128, 128, 128) }; 8];
+/// The SOUL orb's liquid: `MP Lose` moves it down with an `iTweenMoveTo` of 0.5 s (30 ticks; the
+/// action's default ease, linear); `MP Gain` sets it at once.
+const SOUL_DRAIN_TICKS: u8 = 30;
+static mut SOUL_SHOWN: u16 = 0;
+static mut SOUL_FROM: u16 = 0;
+static mut SOUL_TO: u16 = 0;
+static mut SOUL_AGE: u8 = 0;
+/// GeoCounter (Assembly-CSharp): a change waits 1.5 s (`addRollerStartTimer`) with "+ N" (or "- N")
+/// under the coin, then rolls into the total by `changePerTick` = max(1, N * 0.025 * 1.75) every
+/// 0.025 s, the shown amount counting down with it. Time here is in thirds of a millisecond, so a
+/// 60 Hz tick is 50 and a digit step 75.
+const GEO_WAIT_TICKS: u8 = 90;
+static mut GEO_SHOWN: u32 = u32::MAX;
+static mut GEO_SEEN: u32 = 0;
+static mut GEO_ADD: u32 = 0;
+static mut GEO_TAKE: u32 = 0;
+static mut GEO_WAIT: u8 = 0;
+static mut GEO_STEP: u32 = 1;
+static mut GEO_TIMER: i32 = 0;
+/// One simulation tick of the HUD's own animations.
+#[inline(never)]
+pub fn tick(health: u16, soul: u16, geo: u32) {
+    unsafe {
+        if SEEN_HEALTH == u16::MAX {
+            (SEEN_HEALTH, SOUL_SHOWN, SOUL_TO) = (health, soul, soul);
+        }
+        for i in 0..9u16 {
+            let k = i as usize;
+            if i >= health && i < SEEN_HEALTH {
+                (BREAK_AGE[k], REFILL_AGE[k]) = (1, 0);
+            } else if i < health && i >= SEEN_HEALTH {
+                (BREAK_AGE[k], REFILL_AGE[k]) = (0, 1);
+            } else {
+                for age in [&mut BREAK_AGE[k], &mut REFILL_AGE[k]] {
+                    if *age != 0 {
+                        *age = if *age >= MASK_ANIM_TICKS { 0 } else { *age + 1 };
+                    }
+                }
+            }
+        }
+        SEEN_HEALTH = health;
+        if soul < SOUL_TO {
+            (SOUL_FROM, SOUL_TO, SOUL_AGE) = (SOUL_SHOWN, soul, 1);
+        } else if soul > SOUL_TO {
+            (SOUL_SHOWN, SOUL_TO, SOUL_AGE) = (soul, soul, 0);
+        }
+        if SOUL_AGE != 0 {
+            let a = u32::from(SOUL_AGE);
+            SOUL_SHOWN = (u32::from(SOUL_FROM)
+                - (u32::from(SOUL_FROM) - u32::from(SOUL_TO)) * a / u32::from(SOUL_DRAIN_TICKS))
+                as u16;
+            SOUL_AGE = if SOUL_AGE >= SOUL_DRAIN_TICKS { 0 } else { SOUL_AGE + 1 };
+        }
+        geo_tick(geo);
+    }
+}
+unsafe fn geo_tick(geo: u32) {
+    if GEO_SHOWN == u32::MAX {
+        geo_refresh(geo);
+    }
+    if geo > GEO_SEEN {
+        // AddGeo cancels a running take: the total jumps to what was left.
+        if GEO_TAKE > 0 {
+            (GEO_SHOWN, GEO_TAKE) = (GEO_SEEN, 0);
+        }
+        GEO_ADD += geo - GEO_SEEN;
+        GEO_WAIT = GEO_WAIT_TICKS;
+        GEO_STEP = (GEO_ADD * 7 / 160).max(1);
+    } else if geo < GEO_SEEN {
+        if GEO_ADD > 0 {
+            (GEO_SHOWN, GEO_ADD) = (GEO_SEEN, 0);
+        }
+        GEO_TAKE += GEO_SEEN - geo;
+        GEO_WAIT = GEO_WAIT_TICKS;
+        GEO_STEP = (GEO_TAKE * 7 / 160).max(1);
+    }
+    GEO_SEEN = geo;
+    if GEO_WAIT > 0 {
+        GEO_WAIT -= 1;
+        return;
+    }
+    if GEO_ADD == 0 && GEO_TAKE == 0 {
+        GEO_SHOWN = geo;
+        return;
+    }
+    GEO_TIMER -= 50;
+    while GEO_TIMER < 0 && (GEO_ADD > 0 || GEO_TAKE > 0) {
+        GEO_TIMER += 75;
+        if GEO_ADD > 0 {
+            let n = GEO_STEP.min(GEO_ADD);
+            (GEO_ADD, GEO_SHOWN) = (GEO_ADD - n, GEO_SHOWN + n);
+        } else {
+            let n = GEO_STEP.min(GEO_TAKE).min(GEO_SHOWN);
+            (GEO_TAKE, GEO_SHOWN) = (GEO_TAKE - n.max(1).min(GEO_TAKE), GEO_SHOWN - n);
+        }
+    }
+    if GEO_ADD == 0 && GEO_TAKE == 0 {
+        (GEO_SHOWN, GEO_TIMER) = (geo, 0);
+    }
+}
+/// A new scene, a load or a respawn (`NewSceneRefresh`): the counter shows the purse, no roller runs.
+pub fn geo_refresh(geo: u32) {
+    unsafe {
+        (GEO_SHOWN, GEO_SEEN, GEO_ADD, GEO_TAKE, GEO_WAIT, GEO_TIMER) = (geo, geo, 0, 0, 0, 0);
+    }
+}
+/// The Geo total to draw, and the amount waiting beside it: positive for "+ N", negative for "- N".
+pub fn geo_counter(geo: u32) -> (u32, i32) {
+    unsafe {
+        if GEO_SHOWN == u32::MAX {
+            return (geo, 0);
+        }
+        (GEO_SHOWN, GEO_ADD as i32 - GEO_TAKE as i32)
+    }
+}
 /// Whether this frame's screen covers the HUD (set by `dialogue::prepare`, before the frame is submitted).
 static mut HIDDEN: bool = false;
 pub fn hide(hidden: bool) {
@@ -98,11 +223,49 @@ pub fn append(
                 crate::display::ot_add(ot, 0, &mut PAUSE[i], RectFlat::WORDS);
             }
         }
+        let mut shards = 0;
         for i in (0..max_health.min(9)).rev() {
             let (x, y) = mask_position(i);
-            MASKS[i as usize] = sprite(usize::from(i >= health), x, y, 0, 128);
-            crate::display::ot_add(ot, 0, &mut MASKS[i as usize], Sprite::WORDS);
+            let k = i as usize;
+            let (refill, broke) = (REFILL_AGE[k], BREAK_AGE[k]);
+            // A refill comes in from white; anything else is the pose its health says.
+            let gain = if refill != 0 && i < health {
+                (255 - u32::from(refill) * 127 / u32::from(MASK_ANIM_TICKS)) as u8
+            } else {
+                128
+            };
+            MASKS[k] = sprite(usize::from(i >= health), x, y, 0, gain);
+            if broke != 0 && i >= health && shards + 4 <= SHARDS.len() {
+                // The full pose's quarters fly apart and fall, white at first, then darkening.
+                let a = i16::from(broke);
+                let gain = if broke < 4 { 255 } else { (128 - (u16::from(broke) - 4) * 128 / 14) as u8 };
+                for q in 0..4u16 {
+                    let (qx, qy) = (q & 1, q >> 1);
+                    let (w, h) = (6u16, 7u16);
+                    let dx = if qx == 0 { -a / 2 } else { a / 2 };
+                    let dy = (a * a) / 24 - if qy == 0 { a / 3 } else { 0 };
+                    SHARDS[shards] = Sprite::with_material(
+                        x + (qx * w) as i16 + dx,
+                        y + (qy * h) as i16 + dy,
+                        w,
+                        h,
+                        (
+                            ((TEXTURE_X[0] - 320) * 4 + qx * w) as u8,
+                            (TEXTURE_Y[0] + qy * h) as u8,
+                        ),
+                        TextureMaterial::opaque(
+                            Clut::new(352, CLUT_Y[0]).uv_word(),
+                            TexturePage::new(320, 0, TextureDepth::Bit4).uv_word(0),
+                            (gain, gain, gain),
+                        ),
+                    );
+                    crate::display::ot_add(ot, 0, &mut SHARDS[shards], Sprite::WORDS);
+                    shards += 1;
+                }
+            }
+            crate::display::ot_add(ot, 0, &mut MASKS[k], Sprite::WORDS);
         }
+        let soul = if SOUL_AGE != 0 { SOUL_SHOWN } else { soul };
         let fill_h = u16_at(DATA, 34);
         let state = hud_state::SoulSpec {
             cut_zero: fixed(56),

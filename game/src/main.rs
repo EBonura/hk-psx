@@ -1355,6 +1355,7 @@ fn main() {
         }
         if scene_ticks_scene_changed {
             title_card::enter_scene(r.scene);
+            hud::geo_refresh(game.geo.wallet());
         }
         let mut pending_target: Option<usize> = None;
         // The gate the prefetch is reading for (index into the scene's gate list).

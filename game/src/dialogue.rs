@@ -504,8 +504,17 @@ pub fn prepare(
         }
         if !board {
             let geo_y = crate::hud::geo_y(total_masks);
-            number(GEO_NUMBER_X, geo_y, geo);
+            let (shown, waiting) = crate::hud::geo_counter(geo);
+            number(GEO_NUMBER_X, geo_y, shown);
             coin(GEO_COIN_X, geo_y - 1);
+            if waiting != 0 {
+                // GeoCounter's `Add Text` / `Subtract Text`: "+ N" under the coin (0.93 units down).
+                let mut digits = [0u8; psx_math::fmt::U32_DEC_MAX];
+                let n = psx_math::fmt::u32_dec(&mut digits, waiting.unsigned_abs());
+                let sign = if waiting > 0 { "+" } else { "-" };
+                text(GEO_COIN_X, geo_y + 13, sign);
+                text(GEO_COIN_X + width(sign) + width(" "), geo_y + 13, n);
+            }
         }
         if let Some((p, settings)) = pause {
             // Every pause screen is the game dimmed behind the source's own ornaments, with

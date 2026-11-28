@@ -1134,6 +1134,7 @@ pub fn simulate(
 ) {
     battle_gates::tick();
     hit_fx::tick();
+    crate::hud::tick(game.vitals.health, game.vitals.soul, game.geo.wallet());
     ability_fx::tick();
     drip::tick(r.scene);
     // What the enemies see is the camera as the previous tick left it: in the
