@@ -111,7 +111,8 @@ pub enum Trim {
 /// gate switch), ["nail_reject"] (scenes with an actor whose block plays
 /// `sword_hit_reject`, or a TinkEffect the port carries), ["gate_openings"]
 /// (scenes whose switch opens a gate that plays the row's clip) or
-/// ["vine_platforms"] (scenes with a vine platform) or ["spells"] (no scene: the spell block, `spell_block`).
+/// ["vine_platforms"] (scenes with a vine platform), ["environment", type, ...] (scenes whose
+/// SceneManager sets one of those footstep surfaces) or ["spells"] (no scene: the spell block, `spell_block`).
 /// A clip two scenes need is one row
 /// naming both. Rates follow the measured share of source energy above the new
 /// Nyquist (hk-audit/audio-census/prices.json).
@@ -1095,6 +1096,44 @@ pub const EVENTS: &[Event] = &[
         96,
         None,
     ),
+    // The Knight's run footsteps on a surface other than Dust. `HeroController.checkEnvironment` points
+    // `footStepsRunAudioSource` at the clip of PlayerData `environmentType`, which the scene's SceneManager
+    // sets on entry: 1 `footstepsRunGrass` (Greenpath), 2 `footstepsRunBone` (the Shaman's temple),
+    // 6 `footstepsRunWater` (Crossroads_30's spring; 3 `footstepsRunSpa` is the same clip). The Dust set is in
+    // the resident hero bank (cook_audio.rs), which is full, so a surface set rides the scenes that use it:
+    // ["environment", type] selects them from their SceneManager (`Scan::environments`). Late rows, at the
+    // resident footsteps' 5,512 Hz, so they never move another clip. All three clips last 2.03 to 2.05 s,
+    // as the Dust one does (RUN_SEQUENCE_TICKS).
+    ev(
+        "hero_footsteps_grass",
+        "resources.assets",
+        1194,
+        "hero_run_footsteps_grass",
+        5512,
+        &["environment", "1"],
+        79,
+        None,
+    ),
+    ev(
+        "hero_footsteps_bone",
+        "resources.assets",
+        1310,
+        "hero_run_footsteps_bones",
+        5512,
+        &["environment", "2"],
+        79,
+        None,
+    ),
+    ev(
+        "hero_footsteps_water",
+        "resources.assets",
+        1263,
+        "hero_run_footsteps_water",
+        5512,
+        &["environment", "6", "3"],
+        79,
+        None,
+    ),
     // Desolate Dive's and Howling Wraiths' sounds, which no per-scene row can carry: the Knight casts in any
     // scene, and a row per scene is twelve bytes of resident RAM in each. `Spell Control` (resources.assets)
     // plays each with `AudioPlay` on the Knight's AudioSource, volume 1, pitch 1: `hero_quake_spell_prepare`
@@ -1958,6 +1997,18 @@ fn scene_needs(
                 .map(|o| o.0)
                 .collect(),
             "vine_platforms" => vine_platforms.clone(),
+            "environment" => {
+                let types: Vec<i64> = kind[1..]
+                    .iter()
+                    .map(|t| t.parse().map_err(|_| format!("environment type {t}")))
+                    .collect::<Result<_>>()?;
+                scanned
+                    .environments
+                    .iter()
+                    .filter(|(_, e)| types.contains(e))
+                    .map(|(s, _)| *s)
+                    .collect()
+            }
             "spells" => HashSet::new(),
             "family" => families.get(kind[1]).cloned().unwrap_or_default(),
             other => return err(format!("unknown scene sound selector {other}")),
@@ -2631,6 +2682,8 @@ struct Scan {
     /// (guest scene id, event, ticks after the switch is struck, world point in Q16) for each sound the
     /// gate a `Switch Control` opens plays on its way open.
     openings: Vec<(i64, &'static str, i64, [i64; 2])>,
+    /// (guest scene id, its SceneManager's `environmentType`): the Knight's footstep surface there.
+    environments: Vec<(i64, i64)>,
 }
 
 /// The cooked collider sources of one scene's regions: terrain edges, hazards and nail bounces.
@@ -2686,6 +2739,16 @@ fn scan(source: &Source, scenes: &[J], report: &J, gate_switches: &HashSet<i64>)
             gids.dedup();
             gids
         };
+        let managers: Vec<i64> = sc
+            .objects
+            .iter()
+            .filter(|o| o.typename == "SceneManager")
+            .map(|o| o.tree.get("environmentType").and_then(Value::int).ok_or("SceneManager without environmentType"))
+            .collect::<std::result::Result<_, _>>()?;
+        if managers.len() != 1 {
+            return err(format!("{}: expected one SceneManager", jstr(s, "scene_name")));
+        }
+        out.environments.push((id, managers[0]));
         let non_thunkers = on("NonThunker", "active");
         // A TinkEffect component, or the `tink_effect` FSM two gates carry instead (Fungus1_22's `Metal Gate`
         // path 2049, Crossroads_ShamanTemple's `Bone Gate` 2144): its `Blocked Hit` plays the same

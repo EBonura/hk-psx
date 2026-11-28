@@ -1053,9 +1053,10 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             "HeroController movement audio linkage changed; revalidate environment Dust mapping",
         );
     }
-    // Footsteps are cooked for the verified Dust environment (type 0). Scenes
-    // whose SceneManager selects another surface keep the Dust set and are
-    // recorded as an explicit omission instead of stopping the cook.
+    // The resident footsteps are the verified Dust environment (type 0). Scenes
+    // whose SceneManager selects another surface play that surface's run clip
+    // from their own scene bank (scene_sfx.rs `hero_footsteps_*`, where it fits;
+    // the scene-sfx report lists a refusal); they are recorded here.
     let scenes = scene_table(root)?;
     let found: Vec<Result<Option<(String, i64)>>> = scenes
         .par_iter()
@@ -1091,14 +1092,14 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
                 ("environment_type", Json::Int(environment)),
                 (
                     "note",
-                    js("footsteps use the Dust set; this surface set is not cooked"),
+                    js("footsteps: this surface's run clip rides the scene bank (scene_sfx.rs hero_footsteps_*); Dust where refused"),
                 ),
             ]));
         }
     }
     if !omissions.is_empty() {
         println!(
-            "Movement audio: {} scenes use a non-Dust footstep environment (Dust set substituted)",
+            "Movement audio: {} scenes use a non-Dust footstep environment (their scene banks carry it)",
             omissions.len()
         );
     }

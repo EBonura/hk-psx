@@ -92,6 +92,7 @@ pub fn invalidate() {
         LOOPING = None;
         HK_SCENE_SFX_SCENE = 0;
     }
+    audio::set_surface_footsteps(None);
 }
 /// Another bank is about to write `lo..hi`: drop the resident one if it
 /// overlaps, so a play never keys on bytes that are no longer its clip.
@@ -164,6 +165,9 @@ pub fn upload(scene: usize, bytes: &[u8]) {
     }
     unsafe {
         CURRENT = scene;
+    }
+    audio::set_surface_footsteps(footsteps());
+    unsafe {
         HK_SCENE_SFX_SCENE = scene as u32 + 1;
         HK_SCENE_SFX_LOADS = HK_SCENE_SFX_LOADS.saturating_add(1);
         HK_SCENE_SFX_BYTES = HK_SCENE_SFX_BYTES.saturating_add(total);
@@ -459,6 +463,20 @@ pub fn play_pitched(event: u8, scale: u32) {
     if let Some(claim) = audio::pool_play(weight(event), (address, rate, gain), Some(pitch), bytes) {
         remember(claim);
     }
+}
+/// The Knight's run footsteps where the scene's surface is not Dust (`HeroController.checkEnvironment`):
+/// the bank's grass, bone or water clip as (SPU address, rate, gain), None where the scene runs on
+/// the resident Dust set. Not a play: no count and no miss.
+pub fn footsteps() -> Option<(u32, u32, i16)> {
+    let current = unsafe { CURRENT };
+    if current == NONE {
+        return None;
+    }
+    entries(current)
+        .iter()
+        .find(|e| matches!(e.0, HERO_FOOTSTEPS_GRASS | HERO_FOOTSTEPS_BONE | HERO_FOOTSTEPS_WATER))
+        .map(unpack)
+        .map(|(event, address, _, _, rate, _)| (address, rate, EVENT_PARAMS[event as usize].1))
 }
 /// One scene sound on a pool voice, if the resident bank holds it.
 pub fn play(event: u8) {

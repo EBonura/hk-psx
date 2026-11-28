@@ -589,10 +589,39 @@ pub fn movement_tick(was_grounded: bool, grounded: bool, running: bool, hard: bo
         movement::Landing::Hard => hard_land(),
     }
     if events.start_run {
-        play(7);
+        // The surface's own run clip where the scene's bank carries one, else the resident Dust set.
+        match unsafe { SURFACE } {
+            Some(clip) => {
+                play_on(VOICES[7], clip);
+                unsafe {
+                    HK_SFX_EVENT_COUNTS[7] = HK_SFX_EVENT_COUNTS[7].saturating_add(1);
+                    HK_FOOTSTEP_STARTS = HK_FOOTSTEP_STARTS.saturating_add(1);
+                    HK_SURFACE_FOOTSTEPS = HK_SURFACE_FOOTSTEPS.saturating_add(1);
+                }
+            }
+            None => {
+                let (address, rate, gain) = SAMPLES[7];
+                play_on(VOICES[7], (address, rate, sample_gain(7, gain)));
+                unsafe {
+                    HK_SFX_EVENT_COUNTS[7] = HK_SFX_EVENT_COUNTS[7].saturating_add(1);
+                    HK_FOOTSTEP_STARTS = HK_FOOTSTEP_STARTS.saturating_add(1);
+                }
+            }
+        }
     }
 }
 
+/// Run sequences started on a surface clip from the scene's bank (`scene_sfx::footsteps`).
+#[no_mangle]
+pub static mut HK_SURFACE_FOOTSTEPS: u32 = 0;
+/// The current scene's own run clip (SPU address, rate, gain), None on Dust: the scene bank
+/// sets it when it arrives (`scene_sfx`), and clears it when its bytes are given up.
+static mut SURFACE: Option<(u32, u32, i16)> = None;
+pub fn set_surface_footsteps(clip: Option<(u32, u32, i16)>) {
+    unsafe {
+        SURFACE = clip;
+    }
+}
 /// Pause/dialogue entry must stop the current sequence even when simulation
 /// ticks are suspended. Preserve falling duration across that suspension.
 pub fn stop_footsteps() {
