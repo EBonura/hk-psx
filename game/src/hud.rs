@@ -235,7 +235,7 @@ pub fn append(
                 128
             };
             MASKS[k] = sprite(usize::from(i >= health), x, y, 0, gain);
-            if broke != 0 && i >= health && shards + 4 <= SHARDS.len() {
+            if broke != 0 && i >= health && shards + 4 <= 8 {
                 // The full pose's quarters fly apart and fall, white at first, then darkening.
                 let a = i16::from(broke);
                 let gain = if broke < 4 { 255 } else { (128 - (u16::from(broke) - 4) * 128 / 14) as u8 };
