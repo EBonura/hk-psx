@@ -15,9 +15,9 @@ the `Knight Damage`, `Hero Death Anim` and `Bench Control` FSMs).
 | Hit: `Hit Crack`, `Hit Pt 1/2` | Unity Animator sprite (scale 2.1, random turn) and two particle systems | not presented (not tk2d clips; the tk2d `Hit Crack` and `Death Crack` clips are one-pixel placeholders) |
 | Hit to one mask: last-HP burst, leak steam, `DAMAGE LOWPASS` | `Knight Damage` `Last HP?` activates `Low Health Effect` (`Low_Health_Hit`, a white splat coloured black, 0.32 s); `Low Health Leak` breathes near-black smoke at one mask; an audio snapshot low-passes the music | `hurt_fx.rs`: the burst and the steam as soft discs of the hero light's ramp, subtracted, at the clip's decoded size and strength; the low-pass is not presented (the SPU has no filter on the CD or music voices) |
 | Death: hit stop | `Initiate` calls `FreezeMoment`: the time scale is 0 for 0.35 s of real time, then eases back over 0.1 s | `Vitals::hurt` freezes the world for `DEATH_FREEZE_TICKS` (24); the 171-tick death wait starts when it ends |
-| Death: burst | `Hero Death Anim` `Initiate`: `EnemyKillShake`, eight of each slash in every direction (and a white flare that is not scaled by the time scale) | `hit_fx::death`, the same slashes (frozen with the world during the hit stop); the flare is not presented |
-| Death: sounds | `hero_death_v2` and `hero_damage` together | `audio::hero_death` (4 kHz world bank clip) after the hurt clip |
-| Death: body | renderer off, the Hero Death object plays `Death` (18 frames at 10 fps), ash particles, the nail and the head are thrown, then the mesh renderer goes off | the `Death` clip where he fell, 108 ticks, then nothing; ash, nail and head not presented |
+| Death: burst | `Hero Death Anim` `Initiate`: `EnemyKillShake`, eight of each slash in every direction (and a white flare, `Death Crack`'s `death_crack_new`, that is not scaled by the time scale) | `hit_fx::death`, the same slashes (frozen with the world during the hit stop); the flare is `hurt_fx.rs`'s added soft disc, through the hit stop, at the clip's scale (2.6 to 10.1) and fade (1/3 s) |
+| Death: sounds | `hero_death_v2` and `hero_damage` together | `audio::hero_death` (world bank clip, 5,512 Hz, its first 6.0 s: 27 dB under the peak by then) after the hurt clip |
+| Death: body | renderer off, the Hero Death object plays `Death` (18 frames at 10 fps); `Blow` throws `Corpse Nail Hero` (20 u/s at 120 or 60 degrees, 0.8 g, bounce 0.3), `Ash Spew` spits ash both ways (25 to 45 u/s within 30 degrees) until the clip ends, then `Corpse Head` is thrown (15 u/s at 100 or 80 degrees, 1.5 g, bounce 0.5) and the mesh renderer goes off | the `Death` clip where he fell, 108 ticks; `hurt_fx.rs` throws the nail 42 ticks in and the head at 108 (their own sprites, ability art `CORPSE_NAIL`/`CORPSE_HEAD`), resting on his floor until the respawn; the ash is thinned to one speck each way every third tick |
 | Death: bookkeeping | Remove Geo, Set Shade, save | unchanged (frame.rs, docs/SHADE.md; the card is still only written by the player's "Save game?") |
 | Death: fade | `PlayerDead`: wait `DEATH_WAIT` (171 ticks of game time), then `RESPAWN FADE` (the camera's `RespawnFadingOut` waits 0.75 s), `ReadyForRespawn` 0.8 s after the fade starts, load | `Game::death_shade`: the fade runs 45 ticks from the end of the wait (`DEATH_FADE_TICKS`), black for the last 3 of the 48 (`DEATH_HOLD_TICKS`), then the respawn block and its load, which continues from black (`exit_fade::arm(255, 1)`) |
 | Respawn at a bench | camera `RESPAWN` fade in; `Bench Control` `Init Resting`: `Sit Fall Asleep` 1.2 s, `Startle`: `Wake To Sit` (9 frames at 12 fps), then resting until input | `bench::State::respawn`: `Respawned` finds the bench, `Asleep` 73 ticks with the screen fading in over 36 (the camera's `FadeIn` waits 0.6 s), `Waking` 45, then seated like after a rest |
@@ -25,8 +25,9 @@ the `Knight Damage`, `Hero Death Anim` and `Bench Control` FSMs).
 | Respawn at a marker that is no bench (seeded test cards) | error in the original | `Asleep`, `Waking`, then standing |
 
 Open: the slash scale (the FSM's `Scale Min/Max` 1 to 1.75 is applied on top of the prefab's 2; not confirmed against
-the original side by side), the death sound's 4 kHz stand-in, `Hit Crack`/`Hit Pt` and the thrown nail and head
-(Unity Animator and particle systems, which need the break-effects cooker, a full recook).
+the original side by side), `Hit Crack`/`Hit Pt` (Unity Animator and particle systems), the low-health music low-pass,
+and the shapes of the splat and the smoke (soft discs here). The nail's and head's spin is not the source's: their
+torques act through rigidbody inertia the port does not model, so each turns at a fixed rate while it flies.
 
 ## Timeline against the original
 

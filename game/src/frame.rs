@@ -518,6 +518,7 @@ pub fn render(
     // spoken for.
     let fx = !game.vitals.dead && !game.door.hidden() && ability_fx::request(&mut needed, &mut needed_len);
     let slashes = hit_fx::request(&mut needed, &mut needed_len);
+    let corpse_parts = crate::hurt_fx::request(&mut needed, &mut needed_len);
     if early {
         render::bind_animation(room, &needed[..needed_len], true);
     } else {
@@ -606,8 +607,8 @@ pub fn render(
     if slashes {
         prims += hit_fx::draw(camera);
     }
-    // The last-mask steam and burst.
-    prims += crate::hurt_fx::draw(camera);
+    // The thrown nail and head, the last-mask steam and burst and the death's flare.
+    prims += crate::hurt_fx::draw(camera, corpse_parts);
     // The flash of a break and the light it throws go over the Knight and his slash.
     prims += game.state.draw_front_particles(r.scene, camera);
     // Lines Anim and Heal Anim sit just in front of the Knight, additive.

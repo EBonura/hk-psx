@@ -857,6 +857,7 @@ fn respond_to_hurt(
         // own snapshot again (`music::respawn`).
         music::boss_silence(DEATH_MUSIC_FADE_TICKS);
         hit_fx::death(at);
+        hurt_fx::death(at, player.y + PARAMS.bottom, player.facing);
     } else {
         hit_fx::hit(at);
     }
@@ -1497,7 +1498,11 @@ fn main() {
                     if reset {
                         game.pause_menu.reset_requested = false;
                         frame::debug_reset(&mut game, &mut target);
-                    } else if !game.paused && !ui_consumed && !game.vitals.tick() {
+                    } else if !game.paused && !ui_consumed && {
+                        // `Death Crack` runs through the hit stop: it is not scaled by time.
+                        hurt_fx::tick_unscaled();
+                        !game.vitals.tick()
+                    } {
                         frame::simulate(
                             &mut game,
                             r,

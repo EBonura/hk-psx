@@ -146,6 +146,11 @@ STREAM_RECORD = '<IHHIiiii'
 EFFECT_LIBRARY_CLIPS = (('Slash Ghost 1', 21298, 'Slash Ghost 1', 2.0),
                         ('Slash Ghost 2', 21298, 'Slash Ghost 2', 2.0))
 BLANK_SPRITE = 77
+# The parts `Hero Death Anim` throws (game/src/hurt_fx.rs), one still frame each, linked after the slashes:
+# `Blow` creates `Corpse Nail Hero` (resources.assets 6648), a SpriteRenderer of Unity sprite `sword` (2420);
+# the head states create `Corpse Head` (6436), a tk2d sprite (collection 20598, sprite 111). Both are drawn
+# with the palette of the body sheet the spell poses use (`coverage_texels`), so no palette is added.
+CORPSE_CLIPS = (('Corpse Nail', 6648, 2420), ('Corpse Head', 6436, (20598, 111)))
 # The respawn at the new-game spawn (`HeroController.Respawn`, respawn type 0) plays `Wake Up Ground`:
 # 25 frames of one lying pose, 20 more getting up, and a one-pixel closing sprite. The lying pose is
 # cooked once and held (`Wake Up Ground Lie`), the rest as `Wake Up Ground Rise`.
@@ -524,6 +529,24 @@ def cook():
         clips.append(dict(name=name, start=start, count=len(frames),
                           fps=int(clip['fps']), wrap=clip['wrapMode'], loop=0))
 
+    for name, owner, art in CORPSE_CLIPS:
+        start = len(images)
+        if isinstance(art, tuple):
+            collection, index = art
+            sprite({'m_FileID': 0, 'm_PathID': collection}, index)
+        else:
+            obj = resources.objects[art]
+            data = obj.read()
+            rect, ppu = data.m_Rect, data.m_PixelsToUnits
+            w, h = rect.width / ppu, rect.height / ppu
+            box = [-w / 2, -h / 2, w / 2, h / 2]
+            dims = (max(1, math.ceil(w * scale)), max(1, math.ceil(h * scale)))
+            images.append(data.image.convert('RGBA').resize(dims, Image.Resampling.LANCZOS))
+            boxes.append(box)
+            art_sources.append(source.sid(obj))
+        assert len(images) == start + 1, f'{name}: one frame'
+        clips.append(dict(name=name, start=start, count=1, fps=1, wrap=2, loop=0))
+
     for name in DEATH_CLIPS:
         clip = by_name[name]
         start = len(images)
@@ -602,8 +625,9 @@ def cook():
     # every frame of one animation keeps one palette.
     effect_names = {name for name, _, _ in EFFECT_CLIPS} | {'Soul Burst', 'Heal Flash'} | {name for name, _, _, _ in EFFECT_LIBRARY_CLIPS}
     groups, current = [], []
+    corpse_names = {name for name, _, _ in CORPSE_CLIPS}
     for clip in clips:
-        if clip['name'] in effect_names or clip['name'] in fx_names or clip['name'] in SPELL_CLIPS:
+        if clip['name'] in effect_names or clip['name'] in fx_names or clip['name'] in SPELL_CLIPS or clip['name'] in corpse_names:
             continue
         indices = list(range(clip['start'], clip['start'] + clip['count']))
         if shelf([images[i].size for i in current + indices]) is None:
@@ -733,6 +757,19 @@ def cook():
             frames[i] = dict(offset=len(target), width=image.width, height=image.height, bounds=boxes[i], clut=spell_clut)
             target.extend(coded)
             raw_bytes += len(texels)
+
+    # The corpse parts take the same body palette, into the linked blob.
+    for name, _, _ in CORPSE_CLIPS:
+        i = by_clip[name]['start']
+        assert i < resident_frames, f'{name} is not linked'
+        image = images[i]
+        texels = coverage_texels(image, palettes[spell_clut])
+        coded = packbits(texels)
+        assert unpackbits(coded) == texels
+        assert len(texels) <= SLOT_BYTES and image.width <= 64 and image.height <= 64, f'{name} exceeds one animation slot'
+        frames[i] = dict(offset=len(blob), width=image.width, height=image.height, bounds=boxes[i], clut=spell_clut)
+        blob.extend(coded)
+        raw_bytes += len(texels)
 
     palette_bytes = b''.join(palettes)
     payload = bytes(palette_bytes) + bytes(blob)

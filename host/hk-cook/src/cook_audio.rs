@@ -235,6 +235,8 @@ const UI_WORLD: [(&str, &str); 3] = [
     ("startGame", "spa_heal"),
 ];
 
+/// World clips cooked short of their source length (clip name, seconds kept); see the world loop.
+const WORLD_KEEP: [(&str, f64); 1] = [("hero_death_v2", 6.0)];
 /// One-shots every scene can play that did not fit below the Geo bank:
 /// (event, where the source names the clip, clip name, rate). Each rate was
 /// picked from the share of the clip's source energy above the new Nyquist.
@@ -249,7 +251,7 @@ const WORLD_EVENTS: [(&str, &str, &str, i64); 5] = [
         "hero_death",
         "Hero Death FSM Start layer 0",
         "hero_death_v2",
-        4000,
+        5512,
     ),
     (
         "ui_confirm",
@@ -764,6 +766,8 @@ struct Cook<'a> {
     tool: Tool,
     /// Source files the cooked clips came from: name, bytes, sha256.
     inputs: Vec<(String, Json)>,
+    /// Seconds of the next clip `cook` keeps (its tail past them is silence), with a 20 ms fade.
+    keep: Option<f64>,
 }
 
 impl Cook<'_> {
@@ -825,7 +829,16 @@ impl Cook<'_> {
             return err(format!("changed source sound mapping: {expected}"));
         }
         let (tree, wav) = self.source_wav(clip, expected)?;
-        let (pcm, mut meta) = convert_wav(&self.tool, &wav, rate, resampler)?;
+        let (mut pcm, mut meta) = convert_wav(&self.tool, &wav, rate, resampler)?;
+        if let Some(seconds) = self.keep.take() {
+            let keep = ((seconds * rate as f64) as usize).min(pcm.len());
+            let fade = (rate as usize / 50).min(keep);
+            pcm.truncate(keep);
+            for (i, sample) in pcm[keep - fade..].iter_mut().enumerate() {
+                *sample = (*sample as i64 * (fade - i) as i64 / fade.max(1) as i64) as i16;
+            }
+            meta.push(("kept_seconds".to_string(), Json::Float(seconds)));
+        }
         let encoded = self.tool.encode_oneshot(&pcm)?;
         let mut reconstructed = decode_oneshot(&encoded)?;
         reconstructed.truncate(pcm.len());
@@ -1038,6 +1051,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
         source,
         tool: Tool::build(root, "hk-cook-audio")?,
         inputs: Vec::new(),
+        keep: None,
     };
     let resources_file = u(source.file("resources.assets"))?;
     let resources = |id: i64| u(source.object(&resources_file, id));
@@ -1685,9 +1699,18 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
             }
             _ => unreachable!(),
         };
+        // hero_death_v2 is 8.5 s, and past 6.0 s it is 27 dB under its peak and falling (-51.6 dB
+        // RMS there, silence from 7.3 s): keeping 6.0 s pays for 5,512 Hz in fewer bytes than the
+        // whole clip took at 4,000 Hz.
+        c.keep = WORLD_KEEP.iter().find(|k| k.0 == *name).map(|k| k.1);
+        let kept = c.keep.is_some();
         let mut cooked = c.cook(&clip, name, volume, *rate, origin, Resampler::Ffmpeg)?;
-        if encoded_bytes(cooked.source_frames, cooked.source_rate, *rate)?
-            != cooked.encoded.len() as i64
+        let expected = if kept {
+            (cooked.samples + 27) / 28 * 16 + 16
+        } else {
+            encoded_bytes(cooked.source_frames, cooked.source_rate, *rate)?
+        };
+        if expected != cooked.encoded.len() as i64
         {
             return err(format!("{name}: encoded size does not match the estimator"));
         }
@@ -1880,7 +1903,7 @@ pub fn cook(root: &Path, source: &Source) -> Result<()> {
                     "Ordinary SFX use pitch1.0; Great Door hit uses source pitch bounds with deterministic guest RNG",
                     "Nail uses one authored Slash sound for all supported directions",
                     "Unity mixer/positional effects omitted; source voice volumes scaled1/3 for mix headroom",
-                    "Full-rate death layers are cooked separately for reference; the guest plays hero_death_v2 from the world bank at 4000 Hz",
+                    "Full-rate death layers are cooked separately for reference; the guest plays hero_death_v2 from the world bank at 5512 Hz, its first 6.0 s (WORLD_KEEP)",
                 ]
                 .iter()
                 .map(|s| js(s))

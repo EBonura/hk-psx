@@ -77,35 +77,39 @@ pub const GET_UP: usize = 27;
 /// `DEATH` on the clips are the streamed packs (`host/ability_art.py` STREAM_PACKS).
 pub const SLASH_GHOST_1: usize = 28;
 pub const SLASH_GHOST_2: usize = 29;
-pub const DEATH: usize = 30;
-pub const SIT_FALL_ASLEEP: usize = 31;
-pub const WAKE_TO_SIT: usize = 32;
+/// The parts a death throws (`host/ability_art.py` CORPSE_CLIPS, one frame each, linked): `Corpse Nail
+/// Hero`'s `sword` sprite and `Corpse Head`'s tk2d sprite (hurt_fx.rs).
+pub const CORPSE_NAIL: usize = 30;
+pub const CORPSE_HEAD: usize = 31;
+pub const DEATH: usize = 32;
+pub const SIT_FALL_ASLEEP: usize = 33;
+pub const WAKE_TO_SIT: usize = 34;
 /// The respawn at the new-game spawn: the lying pose, then getting up (`Wake Up Ground`).
-pub const WAKE_GROUND_LIE: usize = 33;
-pub const WAKE_GROUND_RISE: usize = 34;
+pub const WAKE_GROUND_LIE: usize = 35;
+pub const WAKE_GROUND_RISE: usize = 36;
 /// The ability effects, the last streamed packs (`host/ability_art.py` FX_CLIPS): in `art_fx` the Dash
 /// Burst, the double jump's wings and flash and the wall jump's puff, each drawn at the Knight (`ability_fx.rs`);
 /// in `art_fx_spell` Vengeful Spirit's cast (`Fireball Top`'s blast) and the ball's wall impact. A
 /// frame of one of these clips is cut to parts of one animation slot each (`fx_parts`), and a clip's
 /// `start` and `count` are in whole frames of the clip, not parts.
-pub const DASH_EFFECT: usize = 35;
-pub const WINGS_EFFECT: usize = 36;
-pub const WALL_PUFF: usize = 37;
+pub const DASH_EFFECT: usize = 37;
+pub const WINGS_EFFECT: usize = 38;
+pub const WALL_PUFF: usize = 39;
 /// The double jump's `White Flash DJ`: a small round glow of blue light.
-pub const FLASH_EFFECT: usize = 38;
-pub const FIREBALL_BLAST: usize = 39;
-pub const WALL_IMPACT: usize = 40;
+pub const FLASH_EFFECT: usize = 40;
+pub const FIREBALL_BLAST: usize = 41;
+pub const WALL_IMPACT: usize = 42;
 /// The `art_spell` pack: Desolate Dive's slam (`Q Slam`'s `Quake Blast`) and Howling Wraiths' heads
 /// (`Scr Heads`' `Scream1`), effects cut to parts like the ones above, then the Knight's own poses for
 /// both spells (`host/ability_art.py` SPELL_CLIPS), whole frames like his other clips.
-pub const QUAKE_SLAM: usize = 41;
-pub const SCREAM_HEADS: usize = 42;
-pub const QUAKE_ANTIC: usize = 43;
-pub const QUAKE_FALL: usize = 44;
-pub const QUAKE_LAND: usize = 45;
-pub const SCREAM_START: usize = 46;
-pub const SCREAM: usize = 47;
-pub const SCREAM_END: usize = 48;
+pub const QUAKE_SLAM: usize = 43;
+pub const SCREAM_HEADS: usize = 44;
+pub const QUAKE_ANTIC: usize = 45;
+pub const QUAKE_FALL: usize = 46;
+pub const QUAKE_LAND: usize = 47;
+pub const SCREAM_START: usize = 48;
+pub const SCREAM: usize = 49;
+pub const SCREAM_END: usize = 50;
 const _: () = assert!(ABILITY_CLIPS.len() == SCREAM_END + 1 && STREAM_PACKS.len() == 5);
 
 /// Above every Shade key, which are themselves above every room texture table.
@@ -285,7 +289,7 @@ mod presentation {
     /// One slash frame at a world point, turned `sin`/`cos` (Q12) about its own origin and grown by
     /// `scale` sixteenths. The frame's bounds are in the sprite's own orientation, so this is not
     /// mirrored by a facing.
-    #[inline(never)]
+    #[inline]
     pub fn draw_slash(
         index: usize,
         at: [i32; 2],
@@ -293,6 +297,19 @@ mod presentation {
         scale: i32,
         camera: (i32, i32),
         tint: u8,
+    ) -> u32 {
+        draw_turned(index, at, turn, scale, camera, tint, true)
+    }
+    /// `draw_slash` for any frame: added (`additive`) or blended as the body frames are.
+    #[inline(never)]
+    pub fn draw_turned(
+        index: usize,
+        at: [i32; 2],
+        turn: (i32, i32),
+        scale: i32,
+        camera: (i32, i32),
+        tint: u8,
+        additive: bool,
     ) -> u32 {
         let Some(frame) = frame_record(index) else {
             return 0;
@@ -310,7 +327,8 @@ mod presentation {
                 120 - hk_sim::fixed::project(at[1] + ry, camera.1, crate::KNIGHT_SCALE as i32, 28),
             )
         });
-        submit(index, frame, vertices, BlendMode::Add, (tint, tint, tint))
+        let blend = if additive { BlendMode::Add } else { BlendMode::Average };
+        submit(index, frame, vertices, blend, (tint, tint, tint))
     }
     #[inline(never)]
     fn draw_with(
@@ -385,5 +403,5 @@ mod presentation {
     }
 }
 #[cfg(not(test))]
-pub use presentation::{draw, draw_additive, draw_light, draw_slash, upload, upload_frame};
+pub use presentation::{draw, draw_additive, draw_light, draw_slash, draw_turned, upload, upload_frame};
 
