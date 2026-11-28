@@ -70,15 +70,18 @@ def wrap_page(text, advances, width=272, lines_per_page=8):
 # model: Dirtmouth's `Jiji Door` (Conversation Control) keeps door_jiji's
 # collider off, shows an Inspect prompt and, with no Simple Key, opens a
 # dialogue box on `Prompts` JIJI_DOOR_NOKEY. Doors the source locks keep their
-# own line; a door the source would simply open shows its own Enter prompt and
-# a line of this port's, because the room behind it is not on the disc.
+# own prompt and line. A door the source would simply open (its Door Control
+# loads a room that is not on the disc) is left shut: no prompt and no text,
+# the way the original presents a door that cannot be entered (Dirtmouth's
+# door_sly before the rescue). The port writes no words of its own here.
 LOCKED_DOORS={'door_jiji':('Inspect','JIJI_DOOR_NOKEY'),'door_tram':('Inspect','TRAM_DOOR_NOPASS')}
-OFF_DISC_LINE='This room is not on this disc.'
+SHUT_DOORS=[]
 
 
 def door_points(source,advances):
     report=json.loads((ROOT/'data/regions.json').read_text())
     on_disc={s['scene_name'] for s in report['scenes']};prompts=None;points=[];scenes={}
+    SHUT_DOORS.clear()
     for scene in report['scenes']:
         for gate in scene['gates']:
             name=gate['name'];control=gate.get('door_control')
@@ -93,12 +96,12 @@ def door_points(source,advances):
             children=[sc.transforms[v['m_PathID']]['m_GameObject']['m_PathID'] for v in sc.transforms[sc.go_transform[gid]]['m_Children']]
             markers=[c for c in children if sc.gos[c]['m_Name']=='Prompt Marker']
             if len(markers)!=1:raise ValueError(f'{scene["scene_name"]} {name}: no single Prompt Marker')
-            if name in LOCKED_DOORS:
-                label,key=LOCKED_DOORS[name]
-                if prompts is None:prompts,_=language_sheet(source,'EN_Prompts')
-                text=prompts[key]
-            else:
-                label,key,text='Enter','',OFF_DISC_LINE
+            if name not in LOCKED_DOORS:
+                SHUT_DOORS.append({'scene':scene['scene_name'],'door':name,'target':control['target_scene'],'source':gate['source']})
+                continue
+            label,key=LOCKED_DOORS[name]
+            if prompts is None:prompts,_=language_sheet(source,'EN_Prompts')
+            text=prompts[key]
             x0,y0,x1,y1=gate['trigger_bounds']
             points.append({'source':gate['source'],'scene':scene['scene_id'],'polygon':[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],
                            'marker':sc.point(markers[0])[:2],'key':key or name,'label':label,
@@ -203,7 +206,8 @@ def cook():
     audit=ROOT/'.hkpsx/read-points';audit.mkdir(exist_ok=True)
     (audit/'provenance.json').write_text(json.dumps({'points':points,'sheet':sheet,'font_source':source.sid(font_obj),'font_sha256':hashlib.sha256(font_obj.get_raw_data()).hexdigest(),
       'outputs':{name:hashlib.sha256((ROOT/'data'/name).read_bytes()).hexdigest() for name in ['read_points.rs','read_font.hk']},
-      'adaptations':['Bounded static page layout at320x240','Cross advances, Circle closes','Original hero alignment/turn animation, dialogue sounds and Focus-specific prompt art remain unimplemented']},indent=2)+'\n')
-    print('Cooked',sum(1 for p in points if 'door' not in p),'original tablet interactions and',sum(1 for p in points if 'door' in p),'closed doors;',sum(len(p['pages']) for p in points),'pages; font image 12832 bytes')
+      'shut_doors':SHUT_DOORS,
+      'adaptations':['Doors whose room is not on the disc are shut (no prompt, no text); see shut_doors','Bounded static page layout at320x240','Cross advances, Circle closes','Original hero alignment/turn animation, dialogue sounds and Focus-specific prompt art remain unimplemented']},indent=2)+'\n')
+    print('Cooked',sum(1 for p in points if 'door' not in p),'original tablet interactions and',sum(1 for p in points if 'door' in p),'locked doors;',len(SHUT_DOORS),'shut doors;',sum(len(p['pages']) for p in points),'pages; font image 12832 bytes')
 
 if __name__=='__main__':cook()
