@@ -106,6 +106,50 @@ def door_points(source,advances):
     return points
 
 
+# Signs and tablets read through the `inspect_region` FSM (Greenpath's lore tablets, the
+# pilgrim's sign, the map shop's notice). The Knight enters its trigger, the prompt shows the
+# FSM's `Prompt Name`, UP opens `Game Text Convo` of `Game Text Sheet`. Only the Lore Tablets
+# sheet is cooked: the other users of this FSM in the admitted scenes are NPC hands with their
+# own conditions (the Hunter's `Listen`), which are not tablets.
+REGION_STATES=('Idle','In Range','Can Talk?','Take Control','Box Up','Read','Convo End')
+
+
+def region_points(source,advances,entries):
+    report=json.loads((ROOT/'data/regions.json').read_text());points=[];skipped=[]
+    for scene in report['scenes']:
+        sc=Scene(source,scene['file'])
+        for ident,(kind,t) in sc.objects.items():
+            if kind!='PlayMakerFSM' or t['fsm'].get('name')!='inspect_region':continue
+            fsm=t['fsm'];gid=t['m_GameObject']['m_PathID']
+            variables={v['name']:v['value'] for v in fsm['variables']['stringVariables']}
+            if not sc.active(gid):continue
+            if variables.get('Game Text Sheet')!='Lore Tablets':
+                skipped.append(f"{scene['scene_name']}:{sc.gos[gid]['m_Name']}:{variables.get('Game Text Sheet')}");continue
+            states={st['name']:st for st in fsm['states']}
+            if not all(n in states for n in REGION_STATES):raise ValueError('Unknown inspect_region states')
+            def actions(name):
+                d=states[name]['actionData'];return [(n.rsplit('.',1)[-1],action_fields(d,i)) for i,n in enumerate(d['actionNames']) if d['actionEnabled'][i]]
+            if [n for n,_ in actions('In Range')].count('ListenForUp')!=1:raise ValueError('Unknown inspect_region input contract')
+            if [n for n,_ in actions('Read')][:1]!=['CallMethodProper']:raise ValueError('Unknown inspect_region dispatch')
+            colliders=[(i,k,c) for i,k,c in _components(sc,gid) if k=='BoxCollider2D' and c['m_Enabled'] and c['m_IsTrigger']]
+            if len(colliders)!=1:raise ValueError('Unknown inspect_region trigger')
+            ci,ck,ct=colliders[0];polys=collider_polygons(sc,gid,ck,ct)
+            if len(polys)!=1:raise ValueError('Unknown inspect_region trigger shape')
+            transform=sc.transforms[sc.go_transform[gid]]
+            markers=[sc.transforms[v['m_PathID']]['m_GameObject']['m_PathID'] for v in transform['m_Children'] if sc.gos[sc.transforms[v['m_PathID']]['m_GameObject']['m_PathID']]['m_Name']=='Prompt Marker']
+            if len(markers)!=1:raise ValueError('Unknown inspect_region prompt marker')
+            key=variables['Game Text Convo']
+            pages=[wrapped for page in entries[key].split('<page>') for wrapped in wrap_page(page,advances)]
+            if not 1<=len(pages)<=8:raise ValueError(f'{key}: tablet page budget exceeded')
+            if any(sum(len(line.replace(' ','')) for line in page)+len('X:NextO:Close')>384 for page in pages):
+                raise ValueError(f'{key}: tablet glyph packet budget exceeded')
+            points.append({'source':source.sid(sc.file.objects[ident]),'source_sha256':hashlib.sha256(sc.file.objects[ident].get_raw_data()).hexdigest(),
+                           'collider':source.sid(sc.file.objects[ci]),'scene':scene['scene_id'],'polygon':polys[0],
+                           'marker':sc.point(markers[0])[:2],'key':key,'label':variables['Prompt Name'],'pages':pages})
+    print('inspect_region: cooked',sorted(p['key'] for p in points),'skipped',skipped)
+    return points
+
+
 def cook():
     source=Source();sc=Scene(source,'level6');entries,sheet=language_sheet(source,'EN_Lore Tablets')
     f=source.file('resources.assets');font_obj=next(o for o in f.objects.values() if o.type.name=='Font' and o.read().m_Name=='Perpetua')
@@ -146,6 +190,7 @@ def cook():
                        'collider':source.sid(sc.file.objects[ci]),'scene':0,'polygon':polys[0],
                        'marker':sc.point(markers[0])[:2],'key':key,'label':label,'pages':pages})
     if len(points)!=3:raise ValueError('Expected three supported Tutorial tablets')
+    points+=region_points(source,advances,entries)
     points+=door_points(source,advances)
     out=['// Generated from the local Windows source.','pub static POINTS:&[ReadPoint]=&[']
     for p in sorted(points,key=lambda p:(p['scene'],p['key'])):
@@ -159,6 +204,6 @@ def cook():
     (audit/'provenance.json').write_text(json.dumps({'points':points,'sheet':sheet,'font_source':source.sid(font_obj),'font_sha256':hashlib.sha256(font_obj.get_raw_data()).hexdigest(),
       'outputs':{name:hashlib.sha256((ROOT/'data'/name).read_bytes()).hexdigest() for name in ['read_points.rs','read_font.hk']},
       'adaptations':['Bounded static page layout at320x240','Cross advances, Circle closes','Original hero alignment/turn animation, dialogue sounds and Focus-specific prompt art remain unimplemented']},indent=2)+'\n')
-    print('Cooked three original tablet interactions and',len(points)-3,'closed doors;',sum(len(p['pages']) for p in points),'pages; font image 12832 bytes')
+    print('Cooked',sum(1 for p in points if 'door' not in p),'original tablet interactions and',sum(1 for p in points if 'door' in p),'closed doors;',sum(len(p['pages']) for p in points),'pages; font image 12832 bytes')
 
 if __name__=='__main__':cook()
