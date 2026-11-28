@@ -1535,6 +1535,35 @@ pub fn light_fan(tris: &[[u32; 7]]) -> u32 {
         tris.len() as u32
     }
 }
+/// Triangles of the last-mask and death effects' soft discs (hurt_fx.rs), and frames they were
+/// skipped for want of the optional allowance.
+#[no_mangle]
+pub static mut HK_SOFT_FX_TRIS: u32 = 0;
+#[no_mangle]
+pub static mut HK_SOFT_FX_SKIPPED: u32 = 0;
+/// The soft discs of hurt_fx.rs: GP0(26h) textured triangles, from the frame's optional allowance
+/// like the hero light's fan, skipped and counted without it.
+#[cfg(feature = "hero-light")]
+pub fn soft_fan(tris: &[[u32; 7]]) -> u32 {
+    unsafe {
+        if tris.is_empty() {
+            return 0;
+        }
+        if EXTRA_USED + tris.len() > EXTRA_ALLOWANCE || USED + tris.len() >= CAP {
+            HK_SOFT_FX_SKIPPED = HK_SOFT_FX_SKIPPED.wrapping_add(1);
+            return 0;
+        }
+        for tri in tris {
+            let p = &mut PACKETS[USED];
+            p.tag = 7 << 24;
+            p.words[..7].copy_from_slice(tri);
+            USED += 1;
+            EXTRA_USED += 1;
+        }
+        HK_SOFT_FX_TRIS = HK_SOFT_FX_TRIS.wrapping_add(tris.len() as u32);
+        tris.len() as u32
+    }
+}
 /// The vignette centre on screen for this frame's scenery, or None.
 /// The hero vignette (hero_light.rs) darkens each scenery draw by 1-alpha at
 /// its nearest point to the Knight, through the draw's own texture

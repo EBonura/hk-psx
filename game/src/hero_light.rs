@@ -28,7 +28,7 @@ include!(concat!(
 ));
 
 /// Octagon directions, Q12 (cos, sin).
-const DIRS: [(i32, i32); 8] = [
+pub(crate) const DIRS: [(i32, i32); 8] = [
     (4096, 0),
     (2896, 2896),
     (0, 4096),
@@ -144,6 +144,17 @@ pub fn upload() {
     psx_vram::upload_bytes(VramRect::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1, 16, 1), &clut);
 }
 
+/// The ramp's CLUT word, texture page word (blend `abr`: 1 adds, 2 subtracts), and the UV words of
+/// its centre and rim texels, for other soft discs drawn with it (hurt_fx.rs).
+#[cfg(feature = "hero-light")]
+pub(crate) fn ramp_words(abr: u8) -> (u32, u32, u32, u32) {
+    (
+        Clut::new(RAMP_CLUT_XY.0, RAMP_CLUT_XY.1).uv_word() as u32,
+        TexturePage::new(320, 256, TextureDepth::Bit4).uv_word(abr) as u32,
+        (RAMP_U0 as u32) | (RAMP_V as u32) << 8,
+        ((RAMP_U0 + 63) as u32) | (RAMP_V as u32) << 8,
+    )
+}
 /// The hero light, drawn immediately before the Knight.
 #[cfg(feature = "hero-light")]
 pub fn draw_light(scene: usize, x: i32, y: i32, camera: (i32, i32)) -> u32 {

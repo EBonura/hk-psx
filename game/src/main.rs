@@ -104,6 +104,7 @@ mod great_door;
 mod gruz_art;
 mod hard_landing;
 mod hit_fx;
+mod hurt_fx;
 #[cfg(any(feature = "hero-light", feature = "hero-vignette"))]
 mod hero_light;
 mod impact;
@@ -838,8 +839,8 @@ fn respond_to_hurt(
     audio::hurt();
     // `Knight Damage`'s `Gen` state, on the DAMAGE event TakeDamage sends:
     // AverageShake to the camera on every hit, and the dark slashes it flings
-    // (hit_fx.rs). Its Hit Crack and Hit Pt particles, the vignette flash and the
-    // low-health steam are not reproduced.
+    // (hit_fx.rs). Its Hit Crack and Hit Pt particles and the vignette flash are not
+    // reproduced; the last-mask burst and steam are hurt_fx.rs.
     camera::request(camera::Shake::Average);
     // The death FSM starts hero_damage and hero_death_v2 together; the hurt
     // clip above stands in for the first. Its Initiate state bursts the slashes

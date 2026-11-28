@@ -606,6 +606,8 @@ pub fn render(
     if slashes {
         prims += hit_fx::draw(camera);
     }
+    // The last-mask steam and burst.
+    prims += crate::hurt_fx::draw(camera);
     // The flash of a break and the light it throws go over the Knight and his slash.
     prims += game.state.draw_front_particles(r.scene, camera);
     // Lines Anim and Heal Anim sit just in front of the Knight, additive.
@@ -1135,6 +1137,7 @@ pub fn simulate(
     battle_gates::tick();
     hit_fx::tick();
     crate::hud::tick(game.vitals.health, game.vitals.soul, game.geo.wallet());
+    crate::hurt_fx::tick(game.vitals.health, game.vitals.dead, [game.player.x, game.player.y]);
     ability_fx::tick();
     drip::tick(r.scene);
     // What the enemies see is the camera as the previous tick left it: in the
@@ -1185,6 +1188,7 @@ pub fn simulate(
     } else if game.vitals.needs_death_respawn() {
         game.death_hold = 0;
         hit_fx::clear();
+        crate::hurt_fx::clear();
         ability_fx::clear();
         // The screen is already black; the load carries on from there (exit_fade.rs).
         exit_fade::arm(255, 1);
@@ -2525,6 +2529,7 @@ fn take_gate(
         (g.spawn, g.target_region)
     };
     hit_fx::clear();
+    crate::hurt_fx::clear();
     ability_fx::clear();
     game.geo.leave_scene(r.scene, geo::GEO_PARAMS);
     game.geo.reset_enemies(r.scene);

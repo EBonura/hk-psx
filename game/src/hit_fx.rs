@@ -14,7 +14,7 @@
 //! velocity times the age, which keeps each slash to six bytes.
 //!
 //! Not presented: `Hit Crack` and `Hit Pt 1/2` (Unity Animator and particle systems rather than
-//! tk2d), the low-health burst and the leak, the sword and head the death throws.
+//! tk2d). The low-health burst and leak and what the death throws are hurt_fx.rs.
 use psx_fx::NrLcg;
 use crate::ability_art;
 
